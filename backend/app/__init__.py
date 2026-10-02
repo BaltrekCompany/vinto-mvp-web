@@ -1,0 +1,1 @@
+"""Backend local de VINTO."""
