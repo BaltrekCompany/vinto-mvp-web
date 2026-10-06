@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     test_database_url: SecretStr | None = None
     db_connect_timeout: int = Field(default=3, ge=1, le=30)
     db_statement_timeout_ms: int = Field(default=2000, ge=1, le=30000)
+    auth_max_failed_attempts: int = Field(default=5, ge=1, le=20)
+    auth_lockout_minutes: int = Field(default=15, ge=1, le=1440)
 
 
 settings = Settings()

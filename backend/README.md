@@ -196,6 +196,40 @@ docker compose exec backend python import_reference.py --target test --apply
 Pruebas (`tests/test_import_reference.py`): usan bases efímeras `*_test` creadas
 desde una plantilla migrada, así que no dependen de lo que contenga `vinto_test`.
 
+## Autenticación interna (sin endpoints todavía)
+
+`app/auth/` contiene el dominio de autenticación; aún no hay routers, sesiones ni cambios de CORS.
+
+- `passwords.py`: Argon2id con `argon2-cffi` (parámetros por defecto: t=3, m=64 MiB, p=4).
+  `hash_password`, `verify_password`, `validate_password_policy`. La contraseña debe tener de
+  12 a 256 caracteres; no se exigen mayúsculas, números ni símbolos.
+- `service.py`: `normalize_username` (strip + minúsculas, `^[a-z0-9._-]{1,64}$`), `create_user` y
+  `authenticate`. Ambas esperan una conexión autocommit y gestionan su transacción.
+- `permissions.py`: matriz en código, sin acceso a la base de datos (`permissions_for_profiles`,
+  `has_permission`). Un perfil desconocido no concede nada. DATA_BALTREK administra catálogos y
+  usuarios pero no recibe permisos funcionales de planta.
+- `errors.py`: `InvalidCredentialsError` y `AccountLockedError` deberán exponerse con un mensaje
+  externo genérico en la futura API.
+
+Bloqueo: 5 intentos fallidos bloquean la cuenta 15 minutos (`AUTH_MAX_FAILED_ATTEMPTS`,
+`AUTH_LOCKOUT_MINUTES`). Un login correcto reinicia el contador; un bloqueo vencido reinicia la
+cuenta con 5 intentos nuevos. La fila de la credencial se toma con `SELECT ... FOR UPDATE`, así
+que intentos concurrentes no pierden incrementos, y contador y `auth_event` se confirman juntos.
+Usuario inexistente, inactivo y contraseña incorrecta dan el mismo `InvalidCredentialsError`; para
+un usuario inexistente se verifica la contraseña contra un hash ficticio válido. `auth_event` no
+guarda el username intentado.
+
+Crear un usuario (la contraseña se pide con getpass y nunca se imprime):
+
+```powershell
+docker compose exec backend python create_user.py --target test --username dev.jefatura --display-name "Jefatura DEV" --profile JEFATURA
+```
+
+`--target test|dev` es obligatorio y el perfil debe existir y estar activo; el CLI no crea perfiles.
+Para automatización existe `--password-env NOMBRE` (lee la contraseña de esa variable de entorno solo
+si se pide explícitamente). No hay opción para pasar la contraseña como argumento ni se guarda en
+`.env.example`.
+
 # Primera integración: contador de capturas
 
 `GET /api/captures/count?front=Bobinas` devuelve:
