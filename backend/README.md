@@ -149,6 +149,53 @@ vinto se rechaza, incluso cuando la cadena de conexión menciona `_test`.
 Las fixtures siguen revirtiéndose al final de cada prueba; el contador
 `vinto_txn.capture` de vinto debe permanecer en 0 tras ejecutar la suite.
 
+## Importación de datos de referencia (bundle Bobinas)
+
+`import_reference.py` importa `backend/seed_data/` (generado por
+`scripts/export-seed-data.mjs`) a `vinto_master`, `vinto_config` y
+`vinto_audit.import_batch/import_record`. La lógica vive en `app/seed/`
+(`bundle.py` valida; `reference.py` importa); el CLI solo orquesta.
+
+```powershell
+# dry-run: valida el bundle, consulta la base y muestra el plan; escribe 0 filas
+docker compose exec backend python import_reference.py --target test
+# importar (primera vez) y repetir (NO-OP)
+docker compose exec backend python import_reference.py --target test --apply
+```
+
+- `--target test|dev` es obligatorio. `test` usa `TEST_DATABASE_URL` mediante
+  `connect_test_database()`; `dev` usa `DATABASE_URL`. Sin `--apply` siempre es
+  un dry-run en una transacción `READ ONLY`.
+- Se valida el bundle completo antes de abrir una conexión: manifest, SHA-256 y
+  tamaños, archivos faltantes o extra, conteos, `definition_checksum` y
+  referencias internas.
+- `source_checksum` = SHA-256 del JSON canónico de `manifest.json` (claves
+  ordenadas, compacto, UTF-8). Como el manifest contiene el hash de cada
+  archivo, identifica el bundle completo.
+- El `source` estable es `vinto-reference-bobinas`. 0001 no tiene
+  `UNIQUE(source, source_checksum)`, así que la transacción toma primero
+  `pg_advisory_xact_lock` con una clave de 64 bits derivada **solo del
+  source**: bundles con checksum distinto compiten por el mismo lock y nunca
+  modifican los mismos maestros a la vez. El checksum identifica el batch, no
+  la exclusión mutua.
+- Un batch `completed` del mismo checksum no se vuelve a crear, pero **no oculta
+  el drift**: dry-run y `--apply` comparan siempre la base actual con el bundle.
+  Si coincide exactamente: dry-run `CONSISTENT / NO CHANGES` y apply `NO-OP`
+  (0 escrituras). Si algo difiere o falta (por ejemplo una `article_machine`
+  borrada a mano): `CONFLICT / DRIFT` y `--apply` se detiene sin escribir ni
+  reparar nada.
+- Todo ocurre en una transacción. Un maestro ausente se inserta; uno idéntico
+  se acepta como `already_present`; uno distinto es un conflicto y revierte la
+  importación completa (no hay `ON CONFLICT DO UPDATE`).
+- Las versiones de artículo y de formulario no se actualizan ni se crean
+  versiones nuevas automáticamente. `form_version` se inserta como `draft`, se
+  crean sus máquinas, campos y opciones, y al final se publica.
+- No se importan usuarios, credenciales, dispositivos, OT, asignaciones,
+  capturas ni recetas, y no se asigna actor (`created_by` queda NULL).
+
+Pruebas (`tests/test_import_reference.py`): usan bases efímeras `*_test` creadas
+desde una plantilla migrada, así que no dependen de lo que contenga `vinto_test`.
+
 # Primera integración: contador de capturas
 
 `GET /api/captures/count?front=Bobinas` devuelve:

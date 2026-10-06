@@ -7,7 +7,7 @@
 //
 // Reads the existing TypeScript sources (nothing is copied by hand) and writes canonical JSON.
 // It never touches PostgreSQL. Requires Node with TypeScript type stripping enabled by default
-// (>= 22.18, >= 23.6 or 24); the repository already requires Node >= 22.13.
+// (>= 22.18, >= 23.6 or 24); the repository already requires Node >= 22.18.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
