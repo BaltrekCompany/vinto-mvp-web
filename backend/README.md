@@ -403,3 +403,17 @@ Las pruebas de consulta reutilizan las fixtures técnicas del esquema y
 requieren permisos administrativos de prueba; no ejecutar esas fixtures
 con la futura cuenta restringida de producción. No quedan datos de prueba.
 
+## Captura central F6 (VINTO-P1-06, Bobinas)
+
+`POST /api/captures` (permiso `production.capture`, solo OPERACION) registra el "Registro de control de fardos". Payload:
+`{capture_id (UUIDv4 del cliente), form_code: "VINTO-P1-06", assignment_id, device_key (UUID), values{cantidad_fardos, punto_merma, tipo_producto, peso_kg, observaciones?}}`.
+El esquema es cerrado (`extra="forbid"`): máquina, turno, fecha operativa, OT, PV, artículo, línea, versión del formulario, revisión, estado, marcas de tiempo y usuario los deriva el backend.
+
+- **Idempotencia**: `capture.id = capture_id` con lock advisory por id. Reintento idéntico -> 200 `{created:false, already_submitted:true}` sin escrituras; mismo id con otro contexto/actor/valores -> 409 `CAPTURE_IDEMPOTENCY_CONFLICT`.
+- **Asignación**: debe estar activa, en Bobinas, sobre una línea operativa y con OT no cerrada, y seguir vigente ahora (reloj de PostgreSQL + `resolve_shift`); si cambió el turno o la fecha -> 409 `ASSIGNMENT_STALE`.
+- **Dispositivo**: `device_key` se resuelve contra `device.external_key`; se crea (sin máquina) si no existe y se revierte con la captura; inactivo o ligado a otra máquina -> 409.
+- **Valores**: se validan contra `field_definition`/`field_option` de la versión publicada más alta (opciones por `option_key`, decimales como `Decimal` y devueltos como texto). Errores -> 422.
+- **Transacción**: lock -> contexto de auditoría -> asignación -> dispositivo -> versión -> validación -> INSERT draft -> `capture_detail` tipados -> UPDATE a `submitted` (revisión final 1). Todo o nada.
+- `GET /api/captures` (filtros `assignment_id`, `machine_code`, `operating_date`, `limit` 1..200; más recientes primero) y `GET /api/captures/{id}`; `GET /api/captures/count` se mantiene.
+
+Orden de locks: capture_id -> máquina (misma clave que asignaciones) -> asignación FOR SHARE -> device_key.
