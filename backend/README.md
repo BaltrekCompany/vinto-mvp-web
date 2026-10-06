@@ -310,6 +310,42 @@ número, `line_code`, descripción, unidad ni ids (`extra=forbid`): el servidor 
   servidor y `vinto.reason` ("work order create", "work order add baseline line", "work order publish baseline").
 - `quantity`: hasta 15 dígitos y 3 decimales; se devuelve como número JSON.
 
+## Copia operativa y asignaciones (Bobinas)
+
+`app/assignments/` (`service.py`, `router.py`, `schemas.py`, `errors.py`). El frontend sigue con su demo en
+`localStorage`; no hay capturas, F6 central ni cierre de OT todavía.
+
+| Endpoint | Permiso | Resultado |
+|---|---|---|
+| `POST /api/assignments/activate` `{"work_order_id","baseline_line_id"}` | `assignment.manage` | 201 si crea; 200 `already_active` si ya estaba activa para esa línea, turno y fecha |
+| `POST /api/assignments/{id}/finish` | `assignment.manage` | 200; idempotente |
+| `GET /api/assignments?machine_code=&status=&operating_date=&work_order_id=&limit=` | `assignment.read` | más recientes primero |
+| `GET /api/assignments/active?machine_code=MP1` | `assignment.read` | `{assignment, current_shift, stale}`\|null, current_shift, stale}` |
+
+Solo SUPERVISION tiene `assignment.manage`: JEFATURA (aunque tenga `work_order.manage`), OPERACION, CALIDAD y
+DATA_BALTREK solo leen.
+
+- **Versión operativa**: las asignaciones nunca apuntan a una línea baseline. La primera activación de una OT
+  `published` crea la versión `operational` (siguiente `version_number`, normalmente v2): INSERT con `published_at`
+  NULL, copia de TODAS las líneas de la baseline (nuevos ids; se conservan `line_code`, PV, `article_version_id`,
+  unidad, cantidad y fecha) y solo entonces `published_at`, tras lo cual los triggers de 0001 la hacen inmutable. Las
+  siguientes activaciones reutilizan la operativa publicada de mayor `version_number` (no se crea una por turno ni por
+  asignación). La baseline no se modifica. El cliente envía la línea BASE; el backend busca la línea operativa con el
+  mismo `line_code` y rechaza ids de líneas operativas o de otra OT (404).
+- **Estado de la OT**: solo `published` o `in_progress` (409 en `draft`/`closed`); la primera asignación la pasa a
+  `in_progress`. No se cierra.
+- **Turno y fecha operativa**: el cliente no los envía. Se resuelven con `resolve_shift` sobre `clock_timestamp()` de
+  PostgreSQL y el sector de la máquina de la OT. Sin turno configurado o con configuración ambigua: 409
+  (`SHIFT_NOT_CONFIGURED` / `SHIFT_AMBIGUOUS`) con mensaje seguro, sin escribir nada.
+- **Una asignación activa por máquina**: bajo lock transaccional por máquina, la activa anterior (si es distinta) pasa
+  a `finished` con `finished_at` y se crea una nueva, todo en una transacción; una `finished` nunca se reactiva y el
+  cambio de turno genera una asignación nueva. Orden de locks (sin interbloqueos): OT (`FOR UPDATE`) -> máquina
+  (advisory) -> asignación (`FOR UPDATE`); `finish` toma máquina -> asignación.
+- **Auditoría**: cada paso fija su motivo ("create operational work order version", "activate assignment", "finish
+  previous assignment", "finish assignment"), el supervisor como actor y un `request_id` generado en el servidor.
+- `stale` en `/active`: `true` si la asignación activa ya no corresponde al turno/fecha actuales (hay que reactivar
+  para poder capturar); `null` si el turno actual no se puede resolver.
+
 # Primera integración: contador de capturas
 
 `GET /api/captures/count?front=Bobinas` devuelve:

@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
+from app.assignments.router import router as assignments_router
 from app.captures import router as captures_router
+from app.shifts import SHIFT_AMBIGUOUS, SHIFT_NOT_CONFIGURED, ShiftResolutionError
 from app.work_orders.errors import WorkOrderError
 from app.work_orders.router import router as work_orders_router
 
@@ -23,6 +25,7 @@ app.add_middleware(
 app.include_router(captures_router)
 app.include_router(auth_router)
 app.include_router(work_orders_router)
+app.include_router(assignments_router)
 
 UNAVAILABLE = UNAVAILABLE_BODY
 
@@ -37,6 +40,19 @@ async def work_order_error_handler(request: Request, error: WorkOrderError):
     """Mensaje público sin SQL. Los 422 de datos devuelven su detalle (texto propio); el resto, un mensaje genérico."""
     message = error.detail if error.http_status == 422 and error.detail else error.public_message
     return JSONResponse(status_code=error.http_status, content={"detail": message, "code": error.code})
+
+
+SHIFT_MESSAGES = {
+    SHIFT_NOT_CONFIGURED: "No hay un turno configurado para este momento; no se puede activar la asignación",
+    SHIFT_AMBIGUOUS: "La configuración de turnos es ambigua; no se puede activar la asignación",
+}
+
+
+@app.exception_handler(ShiftResolutionError)
+async def shift_resolution_handler(request: Request, error: ShiftResolutionError):
+    """La configuración de turnos impide operar: 409 con un mensaje seguro (sin horarios, ids ni SQL)."""
+    message = SHIFT_MESSAGES.get(error.code, "La configuración de turnos no permite operar ahora")
+    return JSONResponse(status_code=409, content={"detail": message, "code": error.code})
 
 
 @app.exception_handler(psycopg.Error)
