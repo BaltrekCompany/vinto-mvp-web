@@ -417,3 +417,11 @@ El esquema es cerrado (`extra="forbid"`): máquina, turno, fecha operativa, OT, 
 - `GET /api/captures` (filtros `assignment_id`, `machine_code`, `operating_date`, `limit` 1..200; más recientes primero) y `GET /api/captures/{id}`; `GET /api/captures/count` se mantiene.
 
 Orden de locks: capture_id -> máquina (misma clave que asignaciones) -> asignación FOR SHARE -> device_key.
+
+### Verificar capturas F6 en DEV (solo lectura)
+
+```powershell
+Get-Content -Raw -Encoding UTF8 .\backend\verification_f6.sql | docker compose exec -T postgres psql -U vinto_app -d vinto -v ON_ERROR_STOP=1
+```
+
+Muestra las últimas capturas F6 (estado, revisión, OT/línea/asignación, operador), sus valores tipados, la auditoría y los totales. No modifica datos.

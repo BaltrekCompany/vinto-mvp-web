@@ -13,13 +13,17 @@ import { Brand } from "@/components/vinto/brand";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
 import { CaptureCount } from "@/components/vinto/capture-count";
+import { CentralCaptures } from "@/components/vinto/central-captures";
+import { F6Capture } from "@/components/vinto/f6-capture";
 import { Login } from "@/components/vinto/login";
 import { Panel, Select, Text } from "@/components/vinto/panels";
 import { TechnicalView } from "@/components/vinto/technical-view";
 import { logout } from "@/lib/vinto/auth-api";
 import { INITIAL_VIEW, ROLE_LABELS, activeRole, hasPermission, operationalRolesFromProfiles, type OperationalRole } from "@/lib/vinto/auth";
 import { CONTEXT_MESSAGES, contextFromActive, failureMessage, toDisplayAssignment, toDisplayOt, usesCentralAssignment, type CaptureContext, type ContextCheck } from "@/lib/vinto/orders";
-import { useActiveAssignment, useAssignments, useWorkOrders } from "@/lib/vinto/use-central";
+import { listCaptures } from "@/lib/vinto/captures-api";
+import { F6_FORM_ID, type CentralCapture, type PendingAttempt } from "@/lib/vinto/captures";
+import { useActiveAssignment, useAssignments, useResource, useWorkOrders } from "@/lib/vinto/use-central";
 import { useSession } from "@/lib/vinto/use-session";
 import { FORM_DEFINITIONS, REPORT_DEFINITIONS } from "@/lib/vinto/form-definitions";
 import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
@@ -175,7 +179,7 @@ function localContext(asg: Assignment[], ots: OT[], machine: string): ContextChe
     return { ok: true, context: { assignmentId: active.id, workOrderId: ot.id, otId: ot.id, lineId: line.id, pv: line.pv, productCode: line.productCode, productName: line.productName, machine, shift: active.shift, date: active.date } };
 }
 export default function Home() {
-    const [frontChoice, setFrontChoice] = useState<Front | null>(null), [moduleChoice, setModuleChoice] = useState<Module | null>(null), [roleChoice, setRoleChoice] = useState<Role | null>(null), [loggingOut, setLoggingOut] = useState(false), [logoutNotice, setLogoutNotice] = useState(false), [machine, setMachine] = useState("MP1"), [query, setQuery] = useState(""), [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine), [selected, setSelected] = useState<FormDefinition | null>(null), [captureContext, setCaptureContext] = useState<CaptureContext | null>(null), [ots, setOts] = useState<OT[]>(() => loadCoverage().ots), [asg, setAsg] = useState<Assignment[]>(() => loadCoverage().asg), [records, setRecords] = useState<CaptureRecord[]>(() => read("vinto-p1-records", [])), [releases, setReleases] = useState<Release[]>([{ bobbin: "BM-2609-001", machine: "MP1", ot: "OT-2026-001", line: "L1", status: "Pendiente" }]);
+    const [frontChoice, setFrontChoice] = useState<Front | null>(null), [moduleChoice, setModuleChoice] = useState<Module | null>(null), [roleChoice, setRoleChoice] = useState<Role | null>(null), [loggingOut, setLoggingOut] = useState(false), [logoutNotice, setLogoutNotice] = useState(false), [machine, setMachine] = useState("MP1"), [query, setQuery] = useState(""), [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine), [selected, setSelected] = useState<FormDefinition | null>(null), [captureContext, setCaptureContext] = useState<CaptureContext | null>(null), [f6Attempt, setF6Attempt] = useState<PendingAttempt | null>(null), [ots, setOts] = useState<OT[]>(() => loadCoverage().ots), [asg, setAsg] = useState<Assignment[]>(() => loadCoverage().asg), [records, setRecords] = useState<CaptureRecord[]>(() => read("vinto-p1-records", [])), [releases, setReleases] = useState<Release[]>([{ bobbin: "BM-2609-001", machine: "MP1", ot: "OT-2026-001", line: "L1", status: "Pendiente" }]);
     // Autenticación: la autoridad es GET /api/auth/me (cookie HttpOnly). Nada de esto se persiste en el navegador.
     const { view, retry, setSession } = useSession();
     const user = view.status === "authenticated" ? view.user : null;
@@ -189,7 +193,7 @@ export default function Home() {
     const canCapture = hasPermission(user, front === "Calidad" ? "quality.capture" : "production.capture");
     // Sesión perdida (401 de una API central): vuelve al Login por el mecanismo de autenticación existente.
     function sessionLost() {
-        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null);
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null);
         setLogoutNotice(false);
         setSession({ status: "anonymous" });
     }
@@ -199,11 +203,14 @@ export default function Home() {
     const workOrders = useWorkOrders(authenticated && bobinasFront && canReadOrders && (activeModule === "programacion" || activeModule === "seguimiento"), sessionLost);
     const centralAssignments = useAssignments(authenticated && bobinasFront && canReadAssignments && activeModule === "seguimiento", sessionLost);
     const activeAssignment = useActiveAssignment(machine, authenticated && canReadAssignments && usesCentralAssignment(front, activeModule), sessionLost); // solo Bobinas / Ejecución de producción; Calidad no la consulta
+    // F6 central: lista de PostgreSQL solo para quien captura producción (Bobinas / Seguimiento); sin polling, se refresca tras un envío.
+    const canReadCaptures = hasPermission(user, "production.capture");
+    const f6List = useResource<CentralCapture[]>("captures-f6", authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento", signal => listCaptures(signal), sessionLost);
     const refreshCentral = () => { workOrders.refresh(); centralAssignments.refresh(); activeAssignment.refresh(); };
     async function endSession() {
         setLoggingOut(true);
         const result = await logout();
-        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null);
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null);
         setLogoutNotice(!result.confirmed);
         setSession({ status: "anonymous" });
         setLoggingOut(false);
@@ -254,12 +261,15 @@ export default function Home() {
         setCaptureContext(execState.check.context);
         setSelected(f);
     };
+    // F6 NO usa Capture/save(): se envía solo a la API central y no se escribe en vinto-p1-records.
+    if (selected && selected.id === F6_FORM_ID && captureContext)
+        return <F6Capture context={captureContext} online={online} attempt={f6Attempt} setAttempt={setF6Attempt} back={() => { setSelected(null); setCaptureContext(null); }} onSubmitted={() => { setSelected(null); setCaptureContext(null); f6List.refresh(); }} onAssignmentChanged={() => { setSelected(null); setCaptureContext(null); activeAssignment.refresh(); }} onSessionLost={sessionLost}/>;
     if (selected)
         return <Capture form={selected} front={front} machine={machine} context={captureContext} online={online} back={() => { setSelected(null); setCaptureContext(null); }} save={r => { setRecords(x => [r, ...x]); setSelected(null); setCaptureContext(null); toast.success("Registro guardado con vínculo OT–PV–producto"); }}/>;
     return <main className="min-h-screen bg-[#f3f6f4] text-slate-950"><Toaster richColors/><header className="sticky top-0 z-30 border-b bg-white/95"><div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4"><Brand /><div className="flex items-center gap-2"><span className="hidden text-right text-sm md:block"><b>{user.display_name}</b><br /><span className="text-slate-600">{ROLE_LABELS[role]}</span></span><Badge variant="outline" className={online ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-amber-300 bg-amber-50 text-amber-950"}>{online ? <Wifi className="mr-1 h-3.5 w-3.5"/> : <CloudOff className="mr-1 h-3.5 w-3.5"/>}{online ? "En línea" : "Offline"}</Badge><Button variant="ghost" size="icon" aria-label="Cerrar sesión" onClick={endSession}><LogOut className="h-4 w-4"/></Button></div></div></header><div className="mx-auto grid max-w-[1600px] lg:grid-cols-[270px_1fr]"><aside className="hidden min-h-[calc(100vh-64px)] bg-[#123f32] p-5 text-white lg:block"><SideTitle>Front operativo</SideTitle>{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Nav key={x} label={x} active={front === x} click={() => changeFront(x)}/>)}<SideTitle>Módulos</SideTitle><Nav label="Programación" active={activeModule === "programacion"} click={() => setModuleChoice("programacion")} icon={<ClipboardList />}/><Nav label="Ejecución" active={activeModule === "ejecucion"} click={() => setModuleChoice("ejecucion")} icon={<PlayCircle />}/><Nav label="Seguimiento" active={activeModule === "seguimiento"} click={() => setModuleChoice("seguimiento")} icon={<BarChart3 />}/><div className="mt-8 rounded-xl border border-white/15 bg-white/10 p-4 text-sm"><p className="text-emerald-100">Perfil</p><p className="font-bold">{ROLE_LABELS[role]}</p>{roles.length > 1 && <div className="mt-2 flex flex-wrap gap-1">{roles.map(r => <Button key={r} size="sm" variant={r === role ? "default" : "outline"} className="h-7 px-2 text-xs text-slate-950" onClick={() => { setRoleChoice(r); setFrontChoice(null); setModuleChoice(null); }}>{ROLE_LABELS[r]}</Button>)}</div>}<p className="mt-3 text-xs text-emerald-100">Sin Monday Producción. Expertus queda como integración futura.</p></div></aside><section className="p-4 md:p-8"><Badge className="bg-[#146b4f]">MVP To-Be actualizado</Badge><h1 className="mt-3 text-3xl font-black">{front} · {activeModule[0].toUpperCase() + activeModule.slice(1)}</h1><p className="mt-1 text-slate-700">PV → OT multiproducto → línea base → gestión operativa → ejecución → calidad → seguimiento.</p><div className="mt-5 flex gap-2 overflow-x-auto lg:hidden">{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Button key={x} variant={front === x ? "default" : "outline"} onClick={() => changeFront(x)}>{x}</Button>)}</div><div className="mt-2 flex gap-2 lg:hidden">{(["programacion", "ejecucion", "seguimiento"] as Module[]).map(x => <Button key={x} variant={activeModule === x ? "default" : "outline"} onClick={() => setModuleChoice(x)} className="capitalize">{x}</Button>)}</div><div className="mt-6">{activeModule === "programacion" && (bobinasFront ? <BobbinasProgramming machines={GROUPS.Bobinas} workOrders={workOrders.view} onChanged={refreshCentral} onSessionLost={sessionLost} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/> : <Programming front={front} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments} ots={ots} setOts={setOts} asg={asg} setAsg={setAsg} releases={releases}/>)} {activeModule === "ejecucion" && <Execution front={front} machine={machine} setMachine={setMachine} forms={forms} query={query} setQuery={setQuery} releases={releases} setReleases={setReleases} select={handleSelect} canCapture={canCapture} canRelease={canRelease} banner={<ContextBanner state={execState} machine={machine}/>}/>} {activeModule === "seguimiento" && (bobinasFront ? (workOrders.view.status === "ready" && centralAssignments.view.status === "ready"
-                ? <Tracking front={front} ots={workOrders.view.data.map(toDisplayOt)} asg={centralAssignments.view.data.map(toDisplayAssignment)} records={records} releases={releases}/>
+                ? <><Tracking front={front} ots={workOrders.view.data.map(toDisplayOt)} asg={centralAssignments.view.data.map(toDisplayAssignment)} records={records.filter(r => r.formId !== F6_FORM_ID)} releases={releases}/>{canReadCaptures && <div className="mt-6"><CentralCaptures resource={f6List.view} refresh={f6List.refresh}/></div>}</>
                 : <CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : centralAssignments.view} onRetry={refreshCentral}/>)
-            : <Tracking front={front} ots={ots} asg={asg} records={records} releases={releases}/>)}</div></section></div></main>;
+            : <Tracking front={front} ots={ots} asg={asg} records={records.filter(r => r.formId !== F6_FORM_ID)} releases={releases}/>)}</div></section></div></main>;
 }
 function Programming({ front, ots, setOts, asg, setAsg, releases, canManageOrders, canManageAssignments }: {
     front: Front;
