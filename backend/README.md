@@ -276,6 +276,40 @@ Rate limiting: NO está implementado y es un requisito antes de producción: lí
 `/api/auth/login` (preferiblemente también en Nginx). El bloqueo por cuenta no lo sustituye (un atacante puede
 bloquear cuentas ajenas). No se añadió un limitador en memoria porque fallaría con varios workers.
 
+## Órdenes de trabajo BASE (Bobinas)
+
+`app/work_orders/` (`service.py` dominio, `router.py` y `schemas.py` HTTP, `errors.py`). Alcance: solo la versión
+`baseline` (v1) de OT del sector BOBINAS; no hay versiones operativas, asignaciones ni capturas todavía. El frontend
+sigue usando `vinto-ot`/`vinto-asg` de `localStorage`.
+
+| Endpoint | Permiso | Resultado |
+|---|---|---|
+| `POST /api/work-orders` | `work_order.manage` | 201; crea OT en borrador + baseline v1 + líneas L1..Ln |
+| `POST /api/work-orders/{id}/lines` | `work_order.manage` | 201; añade la siguiente línea (solo borrador) |
+| `POST /api/work-orders/{id}/publish` | `work_order.manage` | 200; idempotente |
+| `GET /api/work-orders?machine_code=&status=&limit=` | `work_order.read` | lista, más recientes primero |
+| `GET /api/work-orders/{id}` | `work_order.read` | detalle |
+
+Solo JEFATURA tiene `work_order.manage`; SUPERVISION, OPERACION, CALIDAD y DATA_BALTREK leen. Cuerpo de creación:
+`{"machine_code": "MP1", "lines": [{"pv_reference", "article_code", "quantity", "due_date"}]}`. El cliente nunca envía
+número, `line_code`, descripción, unidad ni ids (`extra=forbid`): el servidor los resuelve.
+
+- **Máquina y artículos**: por código contra los maestros. La máquina debe existir (404), estar activa y ser del sector
+  BOBINAS (422). El artículo debe existir (404), estar activo, ser producto y tener `article_machine` para esa máquina
+  (422). Cada línea congela el `article_version_id` de mayor `version_number` y toma su unidad.
+- **Número** `OT-AAAA-NNNN` (año del reloj de PostgreSQL): se genera en el servidor dentro de la transacción tras
+  `pg_advisory_xact_lock` y el siguiente correlativo del año; `UNIQUE(number)` es la defensa final. Sin tabla nueva.
+  Puede reemplazarse cuando Expertus sea la autoridad de las OT. **`line_code`**: `L{n+1}` bajo `SELECT ... FOR UPDATE`
+  sobre la OT y su baseline.
+- **Ciclo**: `draft` -> `published`. Publicar fija `published_at` de la baseline y `status='published'`; repetirlo
+  devuelve el estado actual sin escribir. Publicada, la baseline es inmutable: no hay endpoints para editar o borrar y
+  los triggers de 0001 lo imponen en la base (409 al añadir líneas).
+- **Errores**: 401 sin sesión, 403 sin permiso, 404 OT/máquina/artículo inexistente (un id mal formado también es 404),
+  409 conflicto de estado, 422 datos inválidos, 503 base no disponible. Los mensajes no incluyen SQL.
+- **Auditoría**: cada operación fija `vinto.actor_id` (created_by/updated_by), un `vinto.request_id` generado en el
+  servidor y `vinto.reason` ("work order create", "work order add baseline line", "work order publish baseline").
+- `quantity`: hasta 15 dígitos y 3 decimales; se devuelve como número JSON.
+
 # Primera integración: contador de capturas
 
 `GET /api/captures/count?front=Bobinas` devuelve:

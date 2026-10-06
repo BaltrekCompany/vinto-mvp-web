@@ -9,6 +9,8 @@ from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
 from app.captures import router as captures_router
+from app.work_orders.errors import WorkOrderError
+from app.work_orders.router import router as work_orders_router
 
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
@@ -20,6 +22,7 @@ app.add_middleware(
 )
 app.include_router(captures_router)
 app.include_router(auth_router)
+app.include_router(work_orders_router)
 
 UNAVAILABLE = UNAVAILABLE_BODY
 
@@ -27,6 +30,13 @@ UNAVAILABLE = UNAVAILABLE_BODY
 @app.exception_handler(DatabaseUnavailable)
 async def database_unavailable_handler(request: Request, error: DatabaseUnavailable):
     return JSONResponse(status_code=503, content=UNAVAILABLE)
+
+
+@app.exception_handler(WorkOrderError)
+async def work_order_error_handler(request: Request, error: WorkOrderError):
+    """Mensaje público sin SQL. Los 422 de datos devuelven su detalle (texto propio); el resto, un mensaje genérico."""
+    message = error.detail if error.http_status == 422 and error.detail else error.public_message
+    return JSONResponse(status_code=error.http_status, content={"detail": message, "code": error.code})
 
 
 @app.exception_handler(psycopg.Error)
