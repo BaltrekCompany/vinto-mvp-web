@@ -82,8 +82,11 @@ Desde backend/:
 .\.venv\Scripts\python.exe migrate.py --status
 .\.venv\Scripts\python.exe migrate.py
 .\.venv\Scripts\python.exe migrate.py --check
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+Las pruebas ya no se ejecutan contra la base de desarrollo: ver
+"Base de pruebas (vinto_test)". Para migrar o comprobar la base de pruebas
+se usa `migrate.py --target test`.
 
 La única fuente del esquema es migrations/*.sql. Drizzle sigue separado.
 El ejecutor registra versiones y checksum, usa un bloqueo de ejecución y
@@ -96,6 +99,56 @@ con psql del contenedor desde la raíz del repositorio:
 ```powershell
 Get-Content -Raw -Encoding UTF8 .\backend\verification.sql | docker compose exec -T postgres psql -U vinto_app -d vinto -v ON_ERROR_STOP=1
 ```
+## Base de pruebas (vinto_test)
+
+El mismo PostgreSQL local aloja dos bases:
+
+| Variable | Base | Uso |
+|---|---|---|
+| DATABASE_URL | vinto | aplicación y desarrollo |
+| TEST_DATABASE_URL | vinto_test | únicamente suites automáticas |
+
+En Docker Compose el servicio backend recibe ambas, construidas con
+POSTGRES_USER y POSTGRES_PASSWORD del .env raíz (host `postgres`). Nada se
+hardcodea. backend/.env.example muestra TEST_DATABASE_URL para ejecución
+fuera de Docker.
+
+Todo se ejecuta dentro del contenedor, porque Windows puede bloquear la DLL
+de psycopg-binary. Desde la raíz del repositorio:
+
+```powershell
+docker compose up -d
+# 1. Crear vinto_test si falta y aplicar migraciones (idempotente)
+docker compose exec backend python prepare_test_db.py
+# 2. Verificar el historial de la base de pruebas
+docker compose exec backend python migrate.py --target test --check
+# 3. Ejecutar toda la suite
+docker compose exec backend python -B -m unittest discover -s tests -v
+```
+
+`prepare_test_db.py` se conecta a la base de mantenimiento `postgres` (no a
+vinto), crea la base indicada por TEST_DATABASE_URL solo si no existe y le
+aplica las migraciones pendientes. Al volver a ejecutarlo no cambia nada. Si
+una migración cambia en el futuro, se aplica de la misma forma a ambas bases:
+`migrate.py` para vinto y `migrate.py --target test` para vinto_test.
+
+### Protección contra mutaciones accidentales
+
+app/db_guard.py abre toda conexión de pruebas con `connect_test_database()`,
+que ejecuta `SELECT current_database()` y exige que el nombre real que
+informa PostgreSQL termine en `_test`. No se confía en el texto de la URL.
+Si no se cumple, se aborta con `UnsafeDatabaseError` antes de cualquier DDL o
+fixture. Tampoco hay respaldo a DATABASE_URL: sin TEST_DATABASE_URL las
+pruebas fallan con un mensaje claro.
+
+La misma regla protege `migrate.py --target test` y `prepare_test_db.py`,
+que además se niega a operar si TEST_DATABASE_URL apunta a la misma base que
+DATABASE_URL. tests/test_db_guard.py verifica que vinto_test se acepta y que
+vinto se rechaza, incluso cuando la cadena de conexión menciona `_test`.
+
+Las fixtures siguen revirtiéndose al final de cada prueba; el contador
+`vinto_txn.capture` de vinto debe permanecer en 0 tras ejecutar la suite.
+
 # Primera integración: contador de capturas
 
 `GET /api/captures/count?front=Bobinas` devuelve:
@@ -143,10 +196,10 @@ WHERE f.area = 'quality';
 ```
 
 Pruebas de contrato, CORS, conexión fallida y conteos reales con fixtures
-revertidas (desde backend/):
+revertidas (contra vinto_test, ver "Base de pruebas"):
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p test_capture_api.py -v
+docker compose exec backend python -B -m unittest tests.test_capture_api -v
 ```
 
 Las pruebas de consulta reutilizan las fixtures técnicas del esquema y

@@ -9,6 +9,7 @@ from pathlib import Path
 import psycopg
 
 from app.config import settings
+from app.db_guard import UnsafeDatabaseError, connect_test_database
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 LOCK_KEY = 867420031
@@ -98,17 +99,20 @@ def main() -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--status", action="store_true", help="Mostrar estado sin modificar la base")
     modes.add_argument("--check", action="store_true", help="Fallar si hay pendientes o checksums modificados")
+    parser.add_argument("--target", choices=("dev", "test"), default="dev",
+                        help="dev usa DATABASE_URL; test usa TEST_DATABASE_URL y exige una base *_test")
     args = parser.parse_args()
     try:
         migrations = read_migrations()
-        if settings.database_url is None or not settings.database_url.get_secret_value():
-            raise MigrationError("DATABASE_URL no configurada")
-        with psycopg.connect(
-            settings.database_url.get_secret_value(),
-            connect_timeout=settings.db_connect_timeout,
-            autocommit=True,
-            options="-c lock_timeout=5000 -c statement_timeout=60000",
-        ) as connection:
+        options = {"connect_timeout": settings.db_connect_timeout, "autocommit": True,
+                   "options": "-c lock_timeout=5000 -c statement_timeout=60000"}
+        if args.target == "test":
+            connection_context = connect_test_database(**options)
+        else:
+            if settings.database_url is None or not settings.database_url.get_secret_value():
+                raise MigrationError("DATABASE_URL no configurada")
+            connection_context = psycopg.connect(settings.database_url.get_secret_value(), **options)
+        with connection_context as connection:
             if args.status or args.check:
                 applied = applied_migrations(connection)
                 validate_history(migrations, applied)
@@ -118,7 +122,7 @@ def main() -> int:
                 return int(args.check and len(applied) != len(migrations))
             apply(connection, migrations)
         return 0
-    except MigrationError as error:
+    except (MigrationError, UnsafeDatabaseError) as error:
         print(f"Migración detenida: {error}")
     except psycopg.Error as error:
         print(f"Migración fallida: {type(error).__name__}; SQLSTATE={error.sqlstate or 'n/a'}; transacción revertida")

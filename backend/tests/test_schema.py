@@ -1,4 +1,4 @@
-"""Integration checks against migrated PostgreSQL. Every fixture is rolled back."""
+"""Integration checks against migrated PostgreSQL (TEST_DATABASE_URL only). Every fixture is rolled back."""
 
 import hashlib
 import re
@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import psycopg
 
-from app.config import settings
+from app.db_guard import connect_test_database
 from migrate import LOCK_KEY, Migration, MigrationError, apply, read_migrations, validate_history
 
 
@@ -36,10 +36,8 @@ class MigrationFilesTests(unittest.TestCase):
 
 class SchemaTests(unittest.TestCase):
     def setUp(self):
-        if settings.database_url is None:
-            self.fail("DATABASE_URL must be configured for integration checks")
-        self.connection = psycopg.connect(
-            settings.database_url.get_secret_value(), connect_timeout=3,
+        self.connection = connect_test_database(
+            connect_timeout=3,
             options="-c statement_timeout=10000 -c lock_timeout=3000",
         )
         self.addCleanup(self.connection.close)
@@ -214,8 +212,8 @@ class SchemaTests(unittest.TestCase):
 
 class MigrationDatabaseTests(unittest.TestCase):
     def connect(self):
-        connection = psycopg.connect(
-            settings.database_url.get_secret_value(),connect_timeout=3,autocommit=True,
+        connection = connect_test_database(
+            connect_timeout=3,autocommit=True,
             options="-c statement_timeout=10000 -c lock_timeout=3000",
         )
         self.addCleanup(connection.close)

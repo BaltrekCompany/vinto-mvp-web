@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     cors_origins: list[str] = ["http://127.0.0.1:8787"]
     database_url: SecretStr | None = None
+    test_database_url: SecretStr | None = None
     db_connect_timeout: int = Field(default=3, ge=1, le=30)
     db_statement_timeout_ms: int = Field(default=2000, ge=1, le=30000)
 
