@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "entity": "shift",
+  "note": "Vigencia valid_from provisional (fecha técnica). La vigencia funcional real debe recibirse antes de producción. No se define valid_to.",
+  "shifts": [
+    {
+      "code": "DIA",
+      "name": "Día"
+    },
+    {
+      "code": "NOCHE",
+      "name": "Noche"
+    }
+  ],
+  "schedules": [
+    {
+      "shift": "DIA",
+      "sector": "BOBINAS",
+      "starts_at": "07:00",
+      "ends_at": "19:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    },
+    {
+      "shift": "NOCHE",
+      "sector": "BOBINAS",
+      "starts_at": "19:00",
+      "ends_at": "07:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    }
+  ]
+}

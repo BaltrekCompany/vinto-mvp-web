@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "bundle": "vinto-reference-bobinas-pilot",
+  "scope": {
+    "sector": "Bobinas",
+    "machines": [
+      "MP1",
+      "MP3"
+    ],
+    "first_form": "VINTO-P1-06"
+  },
+  "generated_from": [
+    {
+      "path": "app/page.tsx",
+      "sha256": "1f1381f8270acad30ef815bb31b66fcab502d743d2b96c428c13b3d089287ee0",
+      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,shift_night_rule"
+    },
+    {
+      "path": "lib/vinto/catalogs.ts",
+      "sha256": "4e9c192bd8ecdd4d0c55e7073aa5e85a730df5a700aac2d9a250715054c9a927"
+    },
+    {
+      "path": "lib/vinto/form-definitions.ts",
+      "sha256": "df4fd579915a39c71037e06c43f20183b67c778cd4f95f159cb293fa7ed7a06e"
+    },
+    {
+      "path": "lib/vinto/product-weights.ts",
+      "sha256": "8daf28722ce26a89084c0ad66f8d70f378e6797c35a76babcf0512f27613f4f3"
+    },
+    {
+      "path": "lib/vinto/recipes.ts",
+      "sha256": "2a2c36458eb7b1e73a93743b3c8381d4cdce19dcb2d39f526cb7ae6ece82528d"
+    }
+  ],
+  "files": [
+    {
+      "path": "article_machines.json",
+      "sha256": "f73927c30fae62b597422c400de142a586d24bb60ebe36e860462f98bf108c43",
+      "bytes": 6956
+    },
+    {
+      "path": "articles.json",
+      "sha256": "f25f64d492d1f16f810ef32294dec55375956970c5ee8bd90059937d584268dc",
+      "bytes": 28898
+    },
+    {
+      "path": "forms/VINTO-P1-06.json",
+      "sha256": "c6a6eb97c981b39e68848d28c7a54eb07d2886ee5d69296e0a5d50ee25e7118e",
+      "bytes": 2118
+    },
+    {
+      "path": "machines.json",
+      "sha256": "40efa5298b0b1466df09040438573313d9ed9ed79eb94f9d05a2a3452f993587",
+      "bytes": 228
+    },
+    {
+      "path": "material_classes.json",
+      "sha256": "c96638166af440162a18c31d7518ef16bd4df2f1532bb73d74bb3e89d39111d8",
+      "bytes": 363
+    },
+    {
+      "path": "profiles.json",
+      "sha256": "195e49923be0070565fbca4a8cb0231f7b0596b8b3fd12795ce370ec693c3415",
+      "bytes": 402
+    },
+    {
+      "path": "sectors.json",
+      "sha256": "028bd49589857d4888327850826d1822670a9e16b97fbb28fb32543a44143af7",
+      "bytes": 127
+    },
+    {
+      "path": "shifts.json",
+      "sha256": "e5bc481b4a2401241fb7413fba81e9a2f21a66b99efedbdeb6acf5b6e8ed8c4c",
+      "bytes": 769
+    },
+    {
+      "path": "units.json",
+      "sha256": "80f54ca68a7d11f5b1b92871bcca6d19cd524811fe0c76e7990bd53e40c4c1f4",
+      "bytes": 169
+    },
+    {
+      "path": "workflows.json",
+      "sha256": "a6316252e7c6404cbc489acc9586c9783972aaa738c9ecaff499f53743bfc60a",
+      "bytes": 164
+    }
+  ],
+  "counts": {
+    "units": 2,
+    "material_classes": 4,
+    "sectors": 1,
+    "machines": 2,
+    "articles": 93,
+    "article_machines": 93,
+    "articles_also_material": 91,
+    "articles_with_nominal_weight": 0,
+    "profiles": 5,
+    "workflows": 1,
+    "shifts": 2,
+    "shift_schedules": 2,
+    "forms": 1,
+    "form_fields": 5,
+    "form_options": 5
+  },
+  "pending_forms": [
+    {
+      "code": "VINTO-P1-03",
+      "legacy_key": "form_3_registro_de_produccion_de_bobinas",
+      "name": "Registro de producción de bobinas",
+      "workflow": "production-standard",
+      "status": "canonical_definition_pending"
+    }
+  ],
+  "authority_rules": {
+    "article_description_and_unit": "PRODUCTS_BY_MACHINE",
+    "article_is_material_and_material_class": "MATERIALS",
+    "nominal_weight_kg": "product-weights.ts (null when absent)",
+    "sector_and_machines": "GROUPS in app/page.tsx",
+    "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)"
+  },
+  "warnings": [
+    {
+      "code": "ARTICLE_ALSO_MATERIAL",
+      "severity": "info",
+      "message": "Artículos del alcance que también figuran en MATERIALS (is_product e is_material)",
+      "count": 91
+    },
+    {
+      "code": "ARTICLE_NOT_IN_MATERIALS",
+      "severity": "info",
+      "message": "Artículos del alcance ausentes de MATERIALS: sin clase de material",
+      "count": 2
+    },
+    {
+      "code": "MACHINE_NAME_FROM_CODE",
+      "severity": "warning",
+      "message": "machine.name usa el código de la fuente (no existe otro nombre)",
+      "count": 2
+    },
+    {
+      "code": "NOMINAL_WEIGHT_MISSING",
+      "severity": "info",
+      "message": "Artículos sin peso nominal en product-weights.ts; nominal_weight_kg queda null (no se inventa)",
+      "count": 93
+    },
+    {
+      "code": "OUT_OF_SCOPE_FORMS",
+      "severity": "info",
+      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto; F3 (VINTO-P1-03) queda como definición pendiente",
+      "count": 24
+    },
+    {
+      "code": "OUT_OF_SCOPE_MACHINES",
+      "severity": "info",
+      "message": "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)",
+      "count": 16
+    },
+    {
+      "code": "OUT_OF_SCOPE_MATERIALS",
+      "severity": "info",
+      "message": "Entradas de MATERIALS que no son artículos del alcance",
+      "count": 363
+    },
+    {
+      "code": "OUT_OF_SCOPE_RECIPES",
+      "severity": "info",
+      "message": "Artículos del alcance con receta en recipes.ts; las recetas no se exportan en este piloto",
+      "count": 88
+    },
+    {
+      "code": "SHIFT_VALIDITY_PROVISIONAL",
+      "severity": "warning",
+      "message": "valid_from=2026-01-01 y timezone=America/La_Paz son datos técnicos provisionales; producción debe recibir la vigencia funcional real"
+    },
+    {
+      "code": "UNIT_LABEL_PLACEHOLDER",
+      "severity": "warning",
+      "message": "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla",
+      "count": 2
+    },
+    {
+      "code": "WORKFLOW_NAME_PLACEHOLDER",
+      "severity": "warning",
+      "message": "workflow_definition.name usa el código de la fuente (no existe nombre real)",
+      "count": 1
+    }
+  ]
+}

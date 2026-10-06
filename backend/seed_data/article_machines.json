@@ -1,0 +1,378 @@
+{
+  "schema_version": 1,
+  "entity": "article_machine",
+  "items": [
+    {
+      "article_code": "M1-1024",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1029",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1031",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1032",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1033",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1202",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1208",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1212",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1216",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1220",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1233",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1234",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1236",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1238",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1239",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1240",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1241",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1242",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1400",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1407",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1410",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1411",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1429",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1430",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1438",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1442",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1445",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1449",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1450",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1451",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1452",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1456",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1457",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1458",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1459",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1462",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1469",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1470",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1471",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1472",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1473",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1476",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1477",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1479",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1480",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1482",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1483",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1484",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1485",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1486",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1608",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1609",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1610",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1611",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M1-1612",
+      "machine_code": "MP1"
+    },
+    {
+      "article_code": "M3-3004",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3008",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3012",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3013",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3028",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3034",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3036",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3038",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3042",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3043",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3044",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3045",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3047",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3048",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3049",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3050",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3051",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3211",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3212",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3213",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3215",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3401",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3406",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3407",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3408",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3410",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3411",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3413",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3414",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3418",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3419",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3420",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3421",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3422",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3423",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3424",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "M3-3451",
+      "machine_code": "MP3"
+    },
+    {
+      "article_code": "TB-4001",
+      "machine_code": "MP3"
+    }
+  ]
+}

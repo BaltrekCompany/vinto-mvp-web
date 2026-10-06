@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "entity": "machine",
+  "items": [
+    {
+      "code": "MP1",
+      "name": "MP1",
+      "sector": "BOBINAS"
+    },
+    {
+      "code": "MP3",
+      "name": "MP3",
+      "sector": "BOBINAS"
+    }
+  ]
+}

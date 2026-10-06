@@ -68,7 +68,7 @@ al enviar/cerrar. Una captura enviada requiere creador/modificador.
 
 Para corregir una captura enviada, pasarla a draft con motivo auditado,
 editar sus detalles y volver a enviarla en una sola transacción. revision
-se incrementa al cambiar la cabecera. Una captura cerrada es inmutable.
+sigue la regla de 0003 (ver más abajo). Una captura cerrada es inmutable.
 La API futura deberá comprobar revision para evitar actualizaciones
 concurrentes perdidas y aplicar permisos/transiciones de negocio.
 
@@ -83,3 +83,48 @@ de roles, TLS y permisos restrictivos siguen pendientes.
 
 Consultas de inspección de tablas, claves, índices y auditoría:
 backend/verification.sql. Este archivo es de solo lectura.
+
+## 0002_auth.sql: dominio de autenticación
+
+Crea el esquema `vinto_auth` con tres tablas: `credential` (username,
+password_hash Argon2id, intentos fallidos, bloqueo), `session` (solo el
+SHA-256 del token opaco, nunca el token) y `auth_event` (eventos de seguridad
+append-only: login_ok, login_fail, logout, lockout, password_change).
+No contiene usuarios, contraseñas, hashes ni tokens.
+
+Reglas que deben respetar las migraciones y el código futuros:
+
+- Ninguna tabla de `vinto_auth` lleva el trigger `vinto_audit.record_change`:
+  copia la fila completa a `audit_event` y filtraría `password_hash` y
+  `token_hash`. Por eso el hash no se añadió a `vinto_master."user"`, que sí
+  está auditada. Los eventos de seguridad van a `auth_event`, que no tiene
+  columnas secretas.
+- `credential` reutiliza `touch_row` (tiene created_at/updated_at y
+  created_by/updated_by); `session` y `auth_event` no, porque su dueño ya es
+  `user_id` y un actor adicional sería artificial.
+- El username es único sin distinguir mayúsculas mediante un índice sobre
+  `lower(username)`, sin extensiones. La normalización a `[a-z0-9._-]` en
+  minúsculas es responsabilidad de la aplicación.
+- `auth_event` no guarda el username intentado a propósito: un usuario puede
+  escribir su contraseña en ese campo. `user_id` es NULL si el usuario no existe.
+- `auth_event` rechaza UPDATE, DELETE y TRUNCATE. Una sesión revocada no puede
+  reactivarse y su token_hash, dueño y fecha de creación no cambian.
+
+Se aplica a la base de pruebas con `python prepare_test_db.py` o
+`python migrate.py --target test`. La base de desarrollo sigue en la
+versión 1 hasta que se decida aplicarla con `python migrate.py`.
+
+## 0003_capture_revision_semantics.sql: semántica de revision
+
+Reemplaza únicamente la regla de `revision` de `vinto_txn.validate_capture()` (CREATE OR REPLACE FUNCTION; el
+trigger sigue asociado y las demás protecciones de 0001 no cambian):
+
+- INSERT: `revision = 1`, ignorando cualquier valor del cliente.
+- Mientras `OLD.status = 'draft'`, cualquier UPDATE conserva la revisión (`draft -> draft`, `draft -> submitted`,
+  `draft -> blocked`): editar un borrador no es una corrección.
+- Cualquier otro UPDATE (por ejemplo `submitted -> submitted` con `correction_reason` y `vinto.reason`, o reabrir
+  `submitted -> draft`): `revision + 1`.
+
+Una captura reabierta cuenta su corrección al reabrirse (y sigue exigiendo `correction_reason` y `vinto.reason`); sus
+`draft -> draft` y el `draft -> submitted` siguientes conservan esa revisión: una corrección, un incremento. No reescribe
+capturas existentes: las creadas antes de 0003 conservan su revision.

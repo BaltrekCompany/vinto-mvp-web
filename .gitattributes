@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Reference-data bundle: bytes must match the SHA-256 values in manifest.json.
+backend/seed_data/** text eol=lf

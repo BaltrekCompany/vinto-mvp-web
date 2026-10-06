@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "entity": "profile",
+  "items": [
+    {
+      "code": "JEFATURA",
+      "name": "Jefatura"
+    },
+    {
+      "code": "SUPERVISION",
+      "name": "Supervisión"
+    },
+    {
+      "code": "OPERACION",
+      "name": "Operación"
+    },
+    {
+      "code": "CALIDAD",
+      "name": "Calidad"
+    },
+    {
+      "code": "DATA_BALTREK",
+      "name": "Data Baltrek"
+    }
+  ]
+}

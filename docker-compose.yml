@@ -31,6 +31,8 @@ services:
       APP_ENV: local
       # Host "postgres" = servicio Docker. La contraseña debe ser URL-safe.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Base exclusiva de pruebas en el mismo PostgreSQL; la protección exige nombre *_test.
+      TEST_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/vinto_test
       CORS_ORIGINS: '["http://127.0.0.1:8787"]'
       DB_CONNECT_TIMEOUT: "3"
       DB_STATEMENT_TIMEOUT_MS: "2000"
