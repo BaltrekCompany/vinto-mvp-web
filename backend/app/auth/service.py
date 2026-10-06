@@ -119,9 +119,10 @@ def _lock_credential(connection, key):
     return None if row is None else dict(zip([column.name for column in cursor.description], row))
 
 
-def _attempt(connection, username, password, request_id):
+def attempt_authentication(connection, username, password, request_id):
     """Una sola transacción: contador, bloqueo y evento quedan atómicos. Devuelve el resultado o un AuthError
-    (que el llamador lanza DESPUÉS de confirmar la transacción, para no revertir los eventos)."""
+    (que el llamador lanza DESPUÉS de confirmar la transacción, para no revertir los eventos). Es pública para
+    que el login HTTP pueda componerla con la creación de la sesión en una transacción exterior."""
     try:
         key = normalize_username(username)
     except InvalidUsernameError:
@@ -167,7 +168,7 @@ def _attempt(connection, username, password, request_id):
 
 def authenticate(connection, username, password, *, request_id=None) -> AuthenticatedUser:
     """Verifica username + password. Lanza InvalidCredentialsError o AccountLockedError; no crea sesión."""
-    outcome = _attempt(connection, username, password, request_id)
+    outcome = attempt_authentication(connection, username, password, request_id)
     if isinstance(outcome, AuthError):
         raise outcome
     return outcome

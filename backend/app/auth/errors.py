@@ -42,3 +42,10 @@ class AccountLockedError(AuthError):
 
 class InvalidDisplayNameError(AuthError):
     """El nombre visible está vacío o es demasiado largo."""
+
+
+class InvalidSessionError(AuthError):
+    """Token inexistente, inválido, expirado, revocado o de un usuario inactivo (indistinguibles)."""
+
+    def __init__(self):
+        super().__init__("Sesión no válida")

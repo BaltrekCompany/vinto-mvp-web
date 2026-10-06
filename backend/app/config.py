@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = Field(default=2000, ge=1, le=30000)
     auth_max_failed_attempts: int = Field(default=5, ge=1, le=20)
     auth_lockout_minutes: int = Field(default=15, ge=1, le=1440)
+    auth_session_hours: int = Field(default=12, ge=1, le=72)
+    auth_cookie_name: str = Field(default="vinto_session", pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 settings = Settings()

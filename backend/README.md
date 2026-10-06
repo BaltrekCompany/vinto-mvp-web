@@ -196,9 +196,10 @@ docker compose exec backend python import_reference.py --target test --apply
 Pruebas (`tests/test_import_reference.py`): usan bases efímeras `*_test` creadas
 desde una plantilla migrada, así que no dependen de lo que contenga `vinto_test`.
 
-## Autenticación interna (sin endpoints todavía)
+## Autenticación interna
 
-`app/auth/` contiene el dominio de autenticación; aún no hay routers, sesiones ni cambios de CORS.
+`app/auth/` contiene el dominio de autenticación (service, passwords, permissions), las sesiones
+(`sessions.py`) y la capa HTTP (`router.py`, `schemas.py`, `dependencies.py`); ver "Sesiones y endpoints de autenticación".
 
 - `passwords.py`: Argon2id con `argon2-cffi` (parámetros por defecto: t=3, m=64 MiB, p=4).
   `hash_password`, `verify_password`, `validate_password_policy`. La contraseña debe tener de
@@ -229,6 +230,51 @@ docker compose exec backend python create_user.py --target test --username dev.j
 Para automatización existe `--password-env NOMBRE` (lee la contraseña de esa variable de entorno solo
 si se pide explícitamente). No hay opción para pasar la contraseña como argumento ni se guarda en
 `.env.example`.
+
+## Sesiones y endpoints de autenticación
+
+| Endpoint | Resultado |
+|---|---|
+| `POST /api/auth/login` `{"username","password"}` | 200 `{"user": {...}}` + cookie de sesión; 401 `{"detail":"Credenciales inválidas"}` |
+| `GET /api/auth/me` | 200 `{"user": {...}}`; 401 `{"detail":"No autenticado"}` |
+| `POST /api/auth/logout` | 204 y cookie borrada (idempotente); 503 `{"status":"error","database":"unavailable"}` con la cookie también borrada si PostgreSQL falla |
+
+`user` = `id`, `username`, `display_name`, `profiles` y `permissions` (ordenados alfabéticamente) y `must_change`.
+Credenciales inexistentes, incorrectas, cuenta bloqueada o usuario inactivo devuelven el MISMO 401 y el mismo
+cuerpo, sin `Retry-After` ni cookie. Los 422 de `/api/auth/*` no repiten la entrada. Un fallo de PostgreSQL da un
+503 sin URL, contraseña ni SQL.
+
+- **Token**: `secrets.token_urlsafe(32)` (256 bits). El cliente solo lo recibe en la cookie; PostgreSQL guarda
+  únicamente su SHA-256 (64 hex minúscula) y el token nunca se registra ni aparece en JSON, errores, logs,
+  `audit_event` ni `auth_event`.
+- **TTL fijo**: `AUTH_SESSION_HOURS` (12 por defecto, 1 a 72). `expires_at` no se extiende; resolver una sesión solo
+  actualiza `last_seen_at`. No hay refresh tokens. Se permiten varias sesiones por usuario.
+- **Cookie** (`AUTH_COOKIE_NAME`, `vinto_session`): `HttpOnly`, `SameSite=Lax`, `Path=/`, sin `Domain`,
+  `Max-Age` = TTL y `Secure` salvo con `APP_ENV=local`.
+- **Logout best-effort**: la cookie local se borra SIEMPRE. Sin cookie responde 204 sin consultar la base. Con cookie,
+  intenta revocar la sesión: si funciona, 204 y evento `logout`; si PostgreSQL falla, 503 con el cuerpo seguro de
+  "base no disponible" Y la cookie borrada. El 503 indica que la revocación en el servidor NO pudo confirmarse: no se
+  registra `logout` y **la sesión del servidor puede seguir viva hasta su `expires_at`** (limitación conocida: quien
+  conserve el token podría seguir usándolo hasta entonces). El cliente debe tratar el 503 como "sesión local cerrada,
+  revocación pendiente".
+- **Atomicidad del login**: autenticar y crear la sesión van en una transacción exterior. Con credenciales
+  inválidas se confirman los eventos y contadores y después se responde 401. Si falla la creación de la sesión se
+  revierte todo (incluido `login_ok`): no hay login ni cookie.
+- **request_id**: cada login y logout genera un UUID en el servidor; no se confía en `X-Request-ID`.
+- **Dependencias** (`app/auth/dependencies.py`): `current_user` (401 sin sesión válida) y
+  `require_permission("work_order.manage")` (401 sin sesión, 403 sin el permiso). Las usarán OT, asignaciones y
+  capturas.
+
+CORS: `allow_credentials=True`, métodos `GET` y `POST`, cabecera `Content-Type` y orígenes explícitos
+(`CORS_ORIGINS`, por defecto `http://127.0.0.1:8787`); nunca `*`. El frontend deberá usar `credentials: "include"`.
+
+CSRF: por ahora basta `SameSite=Lax` más orígenes CORS explícitos (un POST JSON entre sitios exige preflight).
+Antes de añadir acciones sensibles cross-site, subdominios distintos o formularios HTML hay que reevaluarlo
+(token CSRF o cabecera personalizada con verificación de `Origin`).
+
+Rate limiting: NO está implementado y es un requisito antes de producción: límite por origen/IP para
+`/api/auth/login` (preferiblemente también en Nginx). El bloqueo por cuenta no lo sustituye (un atacante puede
+bloquear cuentas ajenas). No se añadió un limitador en memoria porque fallaría con varios workers.
 
 # Primera integración: contador de capturas
 

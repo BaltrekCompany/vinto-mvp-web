@@ -1,20 +1,47 @@
-from fastapi import FastAPI
+import psycopg
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.auth.router import router as auth_router
 from app.config import settings
-from app.database import DatabaseUnavailable, check_database
+from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
 from app.captures import router as captures_router
 
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=[],
+    allow_credentials=True,  # cookie de sesión; los orígenes son explícitos, nunca "*"
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 app.include_router(captures_router)
+app.include_router(auth_router)
+
+UNAVAILABLE = UNAVAILABLE_BODY
+
+
+@app.exception_handler(DatabaseUnavailable)
+async def database_unavailable_handler(request: Request, error: DatabaseUnavailable):
+    return JSONResponse(status_code=503, content=UNAVAILABLE)
+
+
+@app.exception_handler(psycopg.Error)
+async def postgres_error_handler(request: Request, error: psycopg.Error):
+    # Solo el tipo: str(error) podría incluir SQL, la URL o datos de la consulta.
+    logger.warning("PostgreSQL: error durante %s (%s)", request.url.path, type(error).__name__)
+    return JSONResponse(status_code=503, content=UNAVAILABLE)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, error: RequestValidationError):
+    """Los 422 de /api/auth/* no repiten la entrada (podría contener una contraseña); el resto conserva el formato de FastAPI."""
+    if request.url.path.startswith("/api/auth/"):
+        return JSONResponse(status_code=422, content={"detail": "Solicitud inválida"})
+    return await request_validation_exception_handler(request, error)
 
 
 @app.get("/health")
