@@ -12,7 +12,8 @@
   "generated_from": [
     {
       "path": "app/page.tsx",
-      "sha256": "75a2c0a0f4a50b3c7b564b519520de64124b529339c12bd8fb114f875135a624"
+      "sha256": "1f1381f8270acad30ef815bb31b66fcab502d743d2b96c428c13b3d089287ee0",
+      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,shift_night_rule"
     },
     {
       "path": "lib/vinto/catalogs.ts",

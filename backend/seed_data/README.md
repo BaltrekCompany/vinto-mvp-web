@@ -23,6 +23,15 @@ conteos, advertencias), `units`, `material_classes`, `sectors`, `machines`,
 Los archivos usan UTF-8, LF y orden estable; `.gitattributes` fuerza LF para
 que los bytes coincidan con el manifest.
 
+## Procedencia (`generated_from`)
+
+Cada fuente TypeScript se registra con su SHA-256, salvo `app/page.tsx`: ese archivo mezcla interfaz y datos, así que
+se registra el SHA-256 de una representación canónica de los valores semánticos que el exportador consume
+(`GROUPS.Bobinas`, el override de F6, los selectores y opciones de `BobbinBales` y la regla de turno nocturno de
+`ctx()`), ya normalizados. Un cambio visual o de autenticación en la página no invalida el bundle; cambiar esos valores
+sí. La entrada lleva `scope: "semantic-extract:..."` para distinguirla. Catálogos, formularios, pesos y recetas siguen
+hasheándose completos.
+
 ## Reglas de autoridad
 
 | Atributo | Fuente autoritativa |

@@ -137,6 +137,26 @@ function f6Choices(page) {
   return choices;
 }
 
+// Fingerprint of app/page.tsx: SHA-256 of a canonical object with only the SEMANTIC values the exporter consumes
+// (already extracted and normalised), never of the raw file. Visual/authentication edits, whitespace or
+// formatting changes elsewhere in the page do not alter it; changing GROUPS.Bobinas, the F6 override or the
+// BobbinBales selectors/options does.
+export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,shift_night_rule";
+const NIGHT_RULE = /else if \(h < 7 \|\| h >= 19\)/;
+
+export function pageSemantics(page) {
+  return {
+    groups_bobinas: groupMachines(page, SECTOR_NAME),
+    f6_override: f6Override(page),
+    f6_choices: f6Choices(page),
+    shift_night_rule: NIGHT_RULE.test(page),
+  };
+}
+
+export function pageFingerprint(page) {
+  return sha256(canonical(pageSemantics(page)));
+}
+
 // ---- bundle construction ------------------------------------------------------------------------
 
 export function buildBundle(sources) {
@@ -284,7 +304,7 @@ export function buildBundle(sources) {
   if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3");
 
   // Shifts: declarative, cross-checked against ctx() in app/page.tsx
-  if (!/else if \(h < 7 \|\| h >= 19\)/.test(texts.page)) {
+  if (!NIGHT_RULE.test(texts.page)) {
     warn("SHIFT_SOURCE_CHANGED", "warning", "ctx() en app/page.tsx ya no define Noche como h<7 || h>=19; revisar los horarios declarativos de Bobinas");
   }
 
@@ -346,7 +366,9 @@ export function buildBundle(sources) {
     schema_version: SCHEMA_VERSION,
     bundle: "vinto-reference-bobinas-pilot",
     scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code },
-    generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => ({ path, sha256: sha256(texts[name]) })).sort((a, b) => cmp(a.path, b.path)),
+    generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
+      name === "page" ? { path, sha256: pageFingerprint(texts.page), scope: PAGE_FINGERPRINT_SCOPE } : { path, sha256: sha256(texts[name]) }
+    )).sort((a, b) => cmp(a.path, b.path)),
     files: [...files].sort((a, b) => cmp(a[0], b[0])).map(([path, text]) => ({ path, sha256: sha256(text), bytes: Buffer.byteLength(text, "utf8") })),
     counts,
     pending_forms: [{ code: NEXT_FORM.code, legacy_key: f3.id, name: f3.name, workflow: f3.workflowId, status: "canonical_definition_pending" }],
