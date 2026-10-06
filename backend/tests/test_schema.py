@@ -173,7 +173,7 @@ class SchemaTests(unittest.TestCase):
         self.connection.execute("UPDATE vinto_txn.capture SET status='submitted',submitted_at=clock_timestamp() WHERE id=%s",(capture,))
         self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
         row = self.connection.execute("SELECT revision,created_by,updated_by FROM vinto_txn.capture WHERE id=%s",(capture,)).fetchone()
-        self.assertEqual(row,(2,self.user,self.user))
+        self.assertEqual(row,(1,self.user,self.user))  # 0003: draft -> submitted keeps revision 1 (0001 used to give 2)
         event = self.connection.execute("SELECT actor_id,old_data->>'status',new_data->>'status' FROM vinto_audit.audit_event WHERE entity_table='capture' AND action='UPDATE' ORDER BY id DESC LIMIT 1").fetchone()
         self.assertEqual(event,(self.user,"draft","submitted"))
         self.reject(lambda: self.connection.execute("UPDATE vinto_txn.capture_detail SET value_decimal=1 WHERE capture_id=%s",(capture,)))

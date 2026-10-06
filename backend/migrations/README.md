@@ -68,7 +68,7 @@ al enviar/cerrar. Una captura enviada requiere creador/modificador.
 
 Para corregir una captura enviada, pasarla a draft con motivo auditado,
 editar sus detalles y volver a enviarla en una sola transacción. revision
-se incrementa al cambiar la cabecera. Una captura cerrada es inmutable.
+sigue la regla de 0003 (ver más abajo). Una captura cerrada es inmutable.
 La API futura deberá comprobar revision para evitar actualizaciones
 concurrentes perdidas y aplicar permisos/transiciones de negocio.
 
@@ -113,3 +113,18 @@ Reglas que deben respetar las migraciones y el código futuros:
 Se aplica a la base de pruebas con `python prepare_test_db.py` o
 `python migrate.py --target test`. La base de desarrollo sigue en la
 versión 1 hasta que se decida aplicarla con `python migrate.py`.
+
+## 0003_capture_revision_semantics.sql: semántica de revision
+
+Reemplaza únicamente la regla de `revision` de `vinto_txn.validate_capture()` (CREATE OR REPLACE FUNCTION; el
+trigger sigue asociado y las demás protecciones de 0001 no cambian):
+
+- INSERT: `revision = 1`, ignorando cualquier valor del cliente.
+- Mientras `OLD.status = 'draft'`, cualquier UPDATE conserva la revisión (`draft -> draft`, `draft -> submitted`,
+  `draft -> blocked`): editar un borrador no es una corrección.
+- Cualquier otro UPDATE (por ejemplo `submitted -> submitted` con `correction_reason` y `vinto.reason`, o reabrir
+  `submitted -> draft`): `revision + 1`.
+
+Una captura reabierta cuenta su corrección al reabrirse (y sigue exigiendo `correction_reason` y `vinto.reason`); sus
+`draft -> draft` y el `draft -> submitted` siguientes conservan esa revisión: una corrección, un incremento. No reescribe
+capturas existentes: las creadas antes de 0003 conservan su revision.
