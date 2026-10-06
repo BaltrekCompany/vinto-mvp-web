@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "entity": "material_class",
+  "items": [
+    {
+      "code": "BOBINA_BLANCO",
+      "name": "BOBINA BLANCO"
+    },
+    {
+      "code": "BOBINA_SERVILLETA",
+      "name": "BOBINA SERVILLETA"
+    },
+    {
+      "code": "BOBINA_TOALLA",
+      "name": "BOBINA TOALLA"
+    },
+    {
+      "code": "TUBETE",
+      "name": "TUBETE"
+    }
+  ]
+}

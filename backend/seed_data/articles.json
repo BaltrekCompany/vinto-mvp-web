@@ -1,0 +1,1122 @@
+{
+  "schema_version": 1,
+  "entity": "article",
+  "items": [
+    {
+      "code": "M1-1024",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA PH G-22 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1029",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA PH G-19 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1031",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA PH G-15.5 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1032",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA PH G-21 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1033",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA PH G-21 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1202",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-17 CR-8% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1208",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-19 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1212",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-17 CR-12% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1216",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-21 CR-14% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1220",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-19 CR-12% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1233",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-18 CR-8% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1234",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-18 CR-14% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1236",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-19 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1238",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-22 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1239",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-23 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1240",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-21 CR-12% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1241",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-18 CR-12% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1242",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA SERVILLETA G-19 CR-16% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1400",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-36 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1407",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-17 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1410",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-22 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1411",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-21 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1429",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-18 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1430",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-18 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1438",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-21 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1442",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-20 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1445",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-34 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1449",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-16 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1450",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-22 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1451",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-23 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1452",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-19 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1456",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-17 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1457",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-18 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1458",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-17 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1459",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-21 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1462",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-22 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1469",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-20 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1470",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-36 CR-30% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1471",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-16 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1472",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-23 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1473",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-21 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1476",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-17 CR-15% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1477",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-28 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1479",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-34 CR-30% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1480",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-16 CR-20% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1482",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-23 CR-18% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1483",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-32 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1484",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-16 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1485",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-30 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1486",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA G-23 CR-28% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1608",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA ECOLOGICO G-36 CR-30% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1609",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA ECOLOGICO G-34 CR-30% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1610",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA ECOLOGICO G-32 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1611",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA ECOLOGICO G-21 CR-25% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M1-1612",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M1-BOBINA TOALLA ECOLOGICO G-21 CR-22% R-540640",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3004",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-18 CR-15% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3008",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-18 CR-20% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3012",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-15 CR-26% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3013",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-17 CR-20% R-9010",
+        "unit": "KG",
+        "material_class": null,
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3028",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-15 CR-22% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3034",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-20 CR-25% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3036",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-16 CR-25% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3038",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-14 CR-17% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3042",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-13 CR-17% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3043",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-17 CR-19% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3044",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-14,5 CR-13% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3045",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-14 CR-25% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3047",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-14 CR-22% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3048",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-13 CR-17% R-8812",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3049",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-14.5 CR-19% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3050",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-16 CR-20% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3051",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA PH G-16 CR-21% R-9109",
+        "unit": "KG",
+        "material_class": "BOBINA_BLANCO",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3211",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA SERVILLETA G-19 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3212",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA SERVILLETA G-16 CR-20% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3213",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA SERVILLETA G-17 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3215",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA SERVILLETA G-18 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_SERVILLETA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3401",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-17 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3406",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-21 CR-18% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3407",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-21 CR-22% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3408",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-22 CR-25% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3410",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-21 CR-25% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3411",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-17 CR-11% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3413",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-32.5 CR-11% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3414",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-24 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3418",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-23 CR-25% R-9010",
+        "unit": "KG",
+        "material_class": null,
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3419",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-19,5 CR-11% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3420",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-22 CR-20% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3421",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-17 CR-15% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3422",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-16 CR-15% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3423",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-18 CR-18% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3424",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA TOALLA G-18 CR-12% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "M3-3451",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "M3-BOBINA FACIAL G-14 CR-18% R-9010",
+        "unit": "KG",
+        "material_class": "BOBINA_TOALLA",
+        "nominal_weight_kg": null
+      }
+    },
+    {
+      "code": "TB-4001",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "TB-TUBETE Ø 75 MM FORMATO 2730 MM",
+        "unit": "UN",
+        "material_class": "TUBETE",
+        "nominal_weight_kg": null
+      }
+    }
+  ]
+}

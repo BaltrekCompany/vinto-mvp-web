@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "entity": "unit",
+  "items": [
+    {
+      "code": "KG",
+      "label": "KG"
+    },
+    {
+      "code": "UN",
+      "label": "UN"
+    }
+  ]
+}

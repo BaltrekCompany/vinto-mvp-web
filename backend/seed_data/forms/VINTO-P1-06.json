@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_6_registro_de_control_de_fardos",
+  "code": "VINTO-P1-06",
+  "legacy_number": 6,
+  "name": "Registro de control de fardos",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "cantidad_fardos",
+      "label": "Cantidad de fardos",
+      "value_type": "integer",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "punto_merma",
+      "label": "Punto de merma",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2,
+      "options": [
+        {
+          "option_key": "bobina_rechazada",
+          "label": "Bobina rechazada",
+          "display_order": 1
+        },
+        {
+          "option_key": "recorte_maquina",
+          "label": "Recorte de máquina",
+          "display_order": 2
+        }
+      ]
+    },
+    {
+      "key": "tipo_producto",
+      "label": "Tipo de producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3,
+      "options": [
+        {
+          "option_key": "servilleta",
+          "label": "Servilleta",
+          "display_order": 1
+        },
+        {
+          "option_key": "hoja_doble",
+          "label": "Hoja doble",
+          "display_order": 2
+        },
+        {
+          "option_key": "hoja_simple",
+          "label": "Hoja simple",
+          "display_order": 3
+        }
+      ]
+    },
+    {
+      "key": "peso_kg",
+      "label": "Peso real total",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 4
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 5
+    }
+  ],
+  "definition_checksum": "fe0bf83fb71057d8debbd014d20bfd3cd13aa4a6310c2b94be56ce2d2eb4f45f"
+}
