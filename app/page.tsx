@@ -8,12 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AuthChecking, AuthUnavailable } from "@/components/vinto/auth-status";
+import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
 import { Brand } from "@/components/vinto/brand";
+import { CentralStatus } from "@/components/vinto/central-status";
+import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
 import { CaptureCount } from "@/components/vinto/capture-count";
 import { Login } from "@/components/vinto/login";
+import { Panel, Select, Text } from "@/components/vinto/panels";
 import { TechnicalView } from "@/components/vinto/technical-view";
 import { logout } from "@/lib/vinto/auth-api";
 import { INITIAL_VIEW, ROLE_LABELS, activeRole, hasPermission, operationalRolesFromProfiles, type OperationalRole } from "@/lib/vinto/auth";
+import { CONTEXT_MESSAGES, contextFromActive, failureMessage, toDisplayAssignment, toDisplayOt, usesCentralAssignment, type CaptureContext, type ContextCheck } from "@/lib/vinto/orders";
+import { useActiveAssignment, useAssignments, useWorkOrders } from "@/lib/vinto/use-central";
 import { useSession } from "@/lib/vinto/use-session";
 import { FORM_DEFINITIONS, REPORT_DEFINITIONS } from "@/lib/vinto/form-definitions";
 import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
@@ -128,6 +134,8 @@ function demoSeedData(): {
         Exclude<Front, "Calidad">,
         string[]
     ][]) {
+        if (sector === "Bobinas")
+            continue; // Bobinas es CENTRAL (PostgreSQL): nunca hay OT-PRUEBA ni ASG-PRUEBA para MP1/MP3
         for (const machine of machines) {
             const product = products(machine)[0];
             if (!product)
@@ -152,12 +160,22 @@ function ensureDemoCoverage(savedOts: OT[], savedAsg: Assignment[]) {
     }
     return { ots, asg };
 }
+// vinto-ot / vinto-asg SOLO alimentan los fronts locales (Rebobinado y Conversión). Cualquier OT o asignación de Bobinas
+// que quedara de la demo anterior se ignora: Bobinas no lee ni escribe esas claves.
 function loadCoverage() {
     const demo = demoSeedData();
-    return ensureDemoCoverage(read("vinto-ot", demo.ots), read("vinto-asg", demo.asg));
+    const bobinas = GROUPS.Bobinas;
+    return ensureDemoCoverage(read<OT[]>("vinto-ot", demo.ots).filter(o => o.sector !== "Bobinas"), read<Assignment[]>("vinto-asg", demo.asg).filter(a => !bobinas.includes(a.machine)));
+}
+// Contexto de captura de los fronts locales (misma lógica de siempre, sobre el estado demo local).
+function localContext(asg: Assignment[], ots: OT[], machine: string): ContextCheck {
+    const active = asg.find(a => a.machine === machine && a.status === "Activa"), ot = ots.find(o => o.id === active?.ot), line = ot?.lines.find(l => l.id === active?.line);
+    if (!active || !ot || !line)
+        return { ok: false, reason: "none", assignment: null };
+    return { ok: true, context: { assignmentId: active.id, workOrderId: ot.id, otId: ot.id, lineId: line.id, pv: line.pv, productCode: line.productCode, productName: line.productName, machine, shift: active.shift, date: active.date } };
 }
 export default function Home() {
-    const [frontChoice, setFrontChoice] = useState<Front | null>(null), [moduleChoice, setModuleChoice] = useState<Module | null>(null), [roleChoice, setRoleChoice] = useState<Role | null>(null), [loggingOut, setLoggingOut] = useState(false), [logoutNotice, setLogoutNotice] = useState(false), [machine, setMachine] = useState("MP1"), [query, setQuery] = useState(""), [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine), [selected, setSelected] = useState<FormDefinition | null>(null), [ots, setOts] = useState<OT[]>(() => loadCoverage().ots), [asg, setAsg] = useState<Assignment[]>(() => loadCoverage().asg), [records, setRecords] = useState<CaptureRecord[]>(() => read("vinto-p1-records", [])), [releases, setReleases] = useState<Release[]>([{ bobbin: "BM-2609-001", machine: "MP1", ot: "OT-2026-001", line: "L1", status: "Pendiente" }]);
+    const [frontChoice, setFrontChoice] = useState<Front | null>(null), [moduleChoice, setModuleChoice] = useState<Module | null>(null), [roleChoice, setRoleChoice] = useState<Role | null>(null), [loggingOut, setLoggingOut] = useState(false), [logoutNotice, setLogoutNotice] = useState(false), [machine, setMachine] = useState("MP1"), [query, setQuery] = useState(""), [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine), [selected, setSelected] = useState<FormDefinition | null>(null), [captureContext, setCaptureContext] = useState<CaptureContext | null>(null), [ots, setOts] = useState<OT[]>(() => loadCoverage().ots), [asg, setAsg] = useState<Assignment[]>(() => loadCoverage().asg), [records, setRecords] = useState<CaptureRecord[]>(() => read("vinto-p1-records", [])), [releases, setReleases] = useState<Release[]>([{ bobbin: "BM-2609-001", machine: "MP1", ot: "OT-2026-001", line: "L1", status: "Pendiente" }]);
     // Autenticación: la autoridad es GET /api/auth/me (cookie HttpOnly). Nada de esto se persiste en el navegador.
     const { view, retry, setSession } = useSession();
     const user = view.status === "authenticated" ? view.user : null;
@@ -169,10 +187,23 @@ export default function Home() {
     // Gating visual por permisos del backend (UX; la autorización real vivirá en los endpoints).
     const canManageOrders = hasPermission(user, "work_order.manage"), canManageAssignments = hasPermission(user, "assignment.manage"), canRelease = hasPermission(user, "quality.release");
     const canCapture = hasPermission(user, front === "Calidad" ? "quality.capture" : "production.capture");
+    // Sesión perdida (401 de una API central): vuelve al Login por el mecanismo de autenticación existente.
+    function sessionLost() {
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null);
+        setLogoutNotice(false);
+        setSession({ status: "anonymous" });
+    }
+    // Datos CENTRALES de Bobinas (MP1/MP3): sin polling; se cargan al habilitarse y se reconcilian con GET después de cada mutación.
+    const authenticated = user !== null && role !== null, bobinasFront = front === "Bobinas";
+    const canReadOrders = hasPermission(user, "work_order.read"), canReadAssignments = hasPermission(user, "assignment.read");
+    const workOrders = useWorkOrders(authenticated && bobinasFront && canReadOrders && (activeModule === "programacion" || activeModule === "seguimiento"), sessionLost);
+    const centralAssignments = useAssignments(authenticated && bobinasFront && canReadAssignments && activeModule === "seguimiento", sessionLost);
+    const activeAssignment = useActiveAssignment(machine, authenticated && canReadAssignments && usesCentralAssignment(front, activeModule), sessionLost); // solo Bobinas / Ejecución de producción; Calidad no la consulta
+    const refreshCentral = () => { workOrders.refresh(); centralAssignments.refresh(); activeAssignment.refresh(); };
     async function endSession() {
         setLoggingOut(true);
         const result = await logout();
-        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null);
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null);
         setLogoutNotice(!result.confirmed);
         setSession({ status: "anonymous" });
         setLoggingOut(false);
@@ -196,9 +227,39 @@ export default function Home() {
         return <Login notice={logoutNotice ? "No se pudo confirmar la revocación central de la sesión." : undefined} onAuthenticated={u => { setLogoutNotice(false); setSession({ status: "authenticated", user: u }); }}/>;
     if (!role)
         return <TechnicalView user={user} onLogout={endSession}/>;
+    // Estado del punto de captura: SOLO la ejecución de producción de Bobinas usa la asignación CENTRAL. Calidad y los demás fronts
+    // conservan su lógica local previa (Calidad queda fuera del flujo central hasta el bloque de genealogía/liberación).
+    let execState: ExecState;
+    if (bobinasFront) {
+        const resource = activeAssignment.view;
+        if (resource.status === "ready")
+            execState = { kind: "check", check: contextFromActive(resource.data) };
+        else if (resource.status === "error")
+            execState = { kind: "error", message: resource.kind === "forbidden" ? "Acceso no permitido." : failureMessage(resource.kind), retry: activeAssignment.refresh };
+        else
+            execState = { kind: "loading" };
+    }
+    else
+        execState = { kind: "check", check: localContext(asg, ots, machine) };
+    const handleSelect = (f: FormDefinition) => {
+        if (front === "Calidad") {
+            // Como antes del checkpoint: Calidad abre el formulario; el contexto (si lo hay) sale de la lógica local previa, nunca de la asignación central.
+            setCaptureContext(execState.kind === "check" && execState.check.ok ? execState.check.context : null);
+            return void setSelected(f);
+        }
+        if (execState.kind !== "check")
+            return void toast.error("Aún se está consultando la asignación activa");
+        if (!execState.check.ok)
+            return void toast.error(CONTEXT_MESSAGES[execState.check.reason]);
+        setCaptureContext(execState.check.context);
+        setSelected(f);
+    };
     if (selected)
-        return <Capture form={selected} front={front} machine={machine} ots={ots} asg={asg} online={online} back={() => setSelected(null)} save={r => { setRecords(x => [r, ...x]); setSelected(null); toast.success("Registro guardado con vínculo OT–PV–producto"); }}/>;
-    return <main className="min-h-screen bg-[#f3f6f4] text-slate-950"><Toaster richColors/><header className="sticky top-0 z-30 border-b bg-white/95"><div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4"><Brand /><div className="flex items-center gap-2"><span className="hidden text-right text-sm md:block"><b>{user.display_name}</b><br /><span className="text-slate-600">{ROLE_LABELS[role]}</span></span><Badge variant="outline" className={online ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-amber-300 bg-amber-50 text-amber-950"}>{online ? <Wifi className="mr-1 h-3.5 w-3.5"/> : <CloudOff className="mr-1 h-3.5 w-3.5"/>}{online ? "En línea" : "Offline"}</Badge><Button variant="ghost" size="icon" aria-label="Cerrar sesión" onClick={endSession}><LogOut className="h-4 w-4"/></Button></div></div></header><div className="mx-auto grid max-w-[1600px] lg:grid-cols-[270px_1fr]"><aside className="hidden min-h-[calc(100vh-64px)] bg-[#123f32] p-5 text-white lg:block"><SideTitle>Front operativo</SideTitle>{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Nav key={x} label={x} active={front === x} click={() => changeFront(x)}/>)}<SideTitle>Módulos</SideTitle><Nav label="Programación" active={activeModule === "programacion"} click={() => setModuleChoice("programacion")} icon={<ClipboardList />}/><Nav label="Ejecución" active={activeModule === "ejecucion"} click={() => setModuleChoice("ejecucion")} icon={<PlayCircle />}/><Nav label="Seguimiento" active={activeModule === "seguimiento"} click={() => setModuleChoice("seguimiento")} icon={<BarChart3 />}/><div className="mt-8 rounded-xl border border-white/15 bg-white/10 p-4 text-sm"><p className="text-emerald-100">Perfil</p><p className="font-bold">{ROLE_LABELS[role]}</p>{roles.length > 1 && <div className="mt-2 flex flex-wrap gap-1">{roles.map(r => <Button key={r} size="sm" variant={r === role ? "default" : "outline"} className="h-7 px-2 text-xs text-slate-950" onClick={() => { setRoleChoice(r); setFrontChoice(null); setModuleChoice(null); }}>{ROLE_LABELS[r]}</Button>)}</div>}<p className="mt-3 text-xs text-emerald-100">Sin Monday Producción. Expertus queda como integración futura.</p></div></aside><section className="p-4 md:p-8"><Badge className="bg-[#146b4f]">MVP To-Be actualizado</Badge><h1 className="mt-3 text-3xl font-black">{front} · {activeModule[0].toUpperCase() + activeModule.slice(1)}</h1><p className="mt-1 text-slate-700">PV → OT multiproducto → línea base → gestión operativa → ejecución → calidad → seguimiento.</p><div className="mt-5 flex gap-2 overflow-x-auto lg:hidden">{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Button key={x} variant={front === x ? "default" : "outline"} onClick={() => changeFront(x)}>{x}</Button>)}</div><div className="mt-2 flex gap-2 lg:hidden">{(["programacion", "ejecucion", "seguimiento"] as Module[]).map(x => <Button key={x} variant={activeModule === x ? "default" : "outline"} onClick={() => setModuleChoice(x)} className="capitalize">{x}</Button>)}</div><div className="mt-6">{activeModule === "programacion" && <Programming front={front} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments} ots={ots} setOts={setOts} asg={asg} setAsg={setAsg} releases={releases}/>} {activeModule === "ejecucion" && <Execution front={front} machine={machine} setMachine={setMachine} forms={forms} query={query} setQuery={setQuery} asg={asg} ots={ots} releases={releases} setReleases={setReleases} select={setSelected} canCapture={canCapture} canRelease={canRelease}/>} {activeModule === "seguimiento" && <Tracking front={front} ots={ots} asg={asg} records={records} releases={releases}/>}</div></section></div></main>;
+        return <Capture form={selected} front={front} machine={machine} context={captureContext} online={online} back={() => { setSelected(null); setCaptureContext(null); }} save={r => { setRecords(x => [r, ...x]); setSelected(null); setCaptureContext(null); toast.success("Registro guardado con vínculo OT–PV–producto"); }}/>;
+    return <main className="min-h-screen bg-[#f3f6f4] text-slate-950"><Toaster richColors/><header className="sticky top-0 z-30 border-b bg-white/95"><div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4"><Brand /><div className="flex items-center gap-2"><span className="hidden text-right text-sm md:block"><b>{user.display_name}</b><br /><span className="text-slate-600">{ROLE_LABELS[role]}</span></span><Badge variant="outline" className={online ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-amber-300 bg-amber-50 text-amber-950"}>{online ? <Wifi className="mr-1 h-3.5 w-3.5"/> : <CloudOff className="mr-1 h-3.5 w-3.5"/>}{online ? "En línea" : "Offline"}</Badge><Button variant="ghost" size="icon" aria-label="Cerrar sesión" onClick={endSession}><LogOut className="h-4 w-4"/></Button></div></div></header><div className="mx-auto grid max-w-[1600px] lg:grid-cols-[270px_1fr]"><aside className="hidden min-h-[calc(100vh-64px)] bg-[#123f32] p-5 text-white lg:block"><SideTitle>Front operativo</SideTitle>{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Nav key={x} label={x} active={front === x} click={() => changeFront(x)}/>)}<SideTitle>Módulos</SideTitle><Nav label="Programación" active={activeModule === "programacion"} click={() => setModuleChoice("programacion")} icon={<ClipboardList />}/><Nav label="Ejecución" active={activeModule === "ejecucion"} click={() => setModuleChoice("ejecucion")} icon={<PlayCircle />}/><Nav label="Seguimiento" active={activeModule === "seguimiento"} click={() => setModuleChoice("seguimiento")} icon={<BarChart3 />}/><div className="mt-8 rounded-xl border border-white/15 bg-white/10 p-4 text-sm"><p className="text-emerald-100">Perfil</p><p className="font-bold">{ROLE_LABELS[role]}</p>{roles.length > 1 && <div className="mt-2 flex flex-wrap gap-1">{roles.map(r => <Button key={r} size="sm" variant={r === role ? "default" : "outline"} className="h-7 px-2 text-xs text-slate-950" onClick={() => { setRoleChoice(r); setFrontChoice(null); setModuleChoice(null); }}>{ROLE_LABELS[r]}</Button>)}</div>}<p className="mt-3 text-xs text-emerald-100">Sin Monday Producción. Expertus queda como integración futura.</p></div></aside><section className="p-4 md:p-8"><Badge className="bg-[#146b4f]">MVP To-Be actualizado</Badge><h1 className="mt-3 text-3xl font-black">{front} · {activeModule[0].toUpperCase() + activeModule.slice(1)}</h1><p className="mt-1 text-slate-700">PV → OT multiproducto → línea base → gestión operativa → ejecución → calidad → seguimiento.</p><div className="mt-5 flex gap-2 overflow-x-auto lg:hidden">{(["Bobinas", "Rebobinado", "Conversión", "Calidad"] as Front[]).map(x => <Button key={x} variant={front === x ? "default" : "outline"} onClick={() => changeFront(x)}>{x}</Button>)}</div><div className="mt-2 flex gap-2 lg:hidden">{(["programacion", "ejecucion", "seguimiento"] as Module[]).map(x => <Button key={x} variant={activeModule === x ? "default" : "outline"} onClick={() => setModuleChoice(x)} className="capitalize">{x}</Button>)}</div><div className="mt-6">{activeModule === "programacion" && (bobinasFront ? <BobbinasProgramming machines={GROUPS.Bobinas} workOrders={workOrders.view} onChanged={refreshCentral} onSessionLost={sessionLost} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/> : <Programming front={front} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments} ots={ots} setOts={setOts} asg={asg} setAsg={setAsg} releases={releases}/>)} {activeModule === "ejecucion" && <Execution front={front} machine={machine} setMachine={setMachine} forms={forms} query={query} setQuery={setQuery} releases={releases} setReleases={setReleases} select={handleSelect} canCapture={canCapture} canRelease={canRelease} banner={<ContextBanner state={execState} machine={machine}/>}/>} {activeModule === "seguimiento" && (bobinasFront ? (workOrders.view.status === "ready" && centralAssignments.view.status === "ready"
+                ? <Tracking front={front} ots={workOrders.view.data.map(toDisplayOt)} asg={centralAssignments.view.data.map(toDisplayAssignment)} records={records} releases={releases}/>
+                : <CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : centralAssignments.view} onRetry={refreshCentral}/>)
+            : <Tracking front={front} ots={ots} asg={asg} records={records} releases={releases}/>)}</div></section></div></main>;
 }
 function Programming({ front, ots, setOts, asg, setAsg, releases, canManageOrders, canManageAssignments }: {
     front: Front;
@@ -217,36 +278,34 @@ else
     setOts([{ id: `OT-${new Date().getFullYear()}-${String(ots.length + 1).padStart(3, "0")}`, sector: front, machine, status: "Borrador", baseline: 1, lines: [line] }, ...ots]); toast.success(ot ? "Línea añadida a la misma OT" : "OT creada"); } ; function activate(ot: OT, l: Line) { if (!canManageAssignments)
     return toast.error("Tu perfil no puede asignar OT"); const c = ctx(front); setAsg(asg.map(a => a.machine === ot.machine && a.status === "Activa" ? { ...a, status: "Finalizada" as const } : a).concat({ id: crypto.randomUUID(), ot: ot.id, line: l.id, machine: ot.machine, shift: c.shift, date: c.date, status: "Activa", by: "Supervisión" })); setOts(ots.map(o => o.id === ot.id ? { ...o, status: "En ejecución" } : o)); toast.success("OT, línea y producto enviados al punto de captura"); } ; if (front === "Calidad")
     return <Panel title="Priorización de liberaciones" note="Calidad recibe bobinas completas pendientes; no existe liberación parcial."><ReleaseCards releases={releases}/></Panel>; return <div className="space-y-5">{canManageOrders ? <Panel title="Programa base de Jefatura" note="Una OT puede contener productos de varios PV. Supervisión opera una copia sin sobrescribir la línea base."><div className="grid gap-4 md:grid-cols-5"><Select label="Máquina" value={machine} set={v => { setMachine(v); setCode(""); }} options={machines}/><Text label="PV" value={pv} set={setPv}/><Select label="Producto" value={code} set={setCode} options={catalog.map(p => p.code)} render={v => { const p = catalog.find(x => x.code === v); return p ? `${p.code} · ${p.name}` : v; }}/><Text label="Cantidad" value={qty} set={setQty} type="number"/><Text label="Entrega" value={date} set={setDate} type="date"/></div><Button className="mt-5 bg-[#146b4f]" onClick={() => add()}>Crear OT inicial</Button></Panel> : <Panel title="Programa base" note="Tu perfil puede consultar las OT; su creación y publicación corresponden a Jefatura."><p className="text-sm text-slate-700">Solo lectura.</p></Panel>}{relevant.map(ot => <div key={ot.id} className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{ot.id} · {ot.machine}</h3><p className="text-sm text-slate-600">Base v{ot.baseline} · {ot.lines.length} producto(s) · {new Set(ot.lines.map(l => l.pv)).size} PV</p></div><div className="flex gap-2"><Badge>{ot.status}</Badge>{canManageOrders && ot.status === "Borrador" && <Button size="sm" variant="outline" onClick={() => setOts(ots.map(o => o.id === ot.id ? { ...o, status: "Publicada" } : o))}>Publicar base</Button>}{canManageOrders && <Button size="sm" variant="outline" onClick={() => add(ot)}>Añadir línea actual</Button>}</div></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{ot.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.id}</td><td className="p-3">{l.pv}</td><td className="p-3"><b>{l.productCode}</b><br />{l.productName}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.dueDate}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={ot.status === "Borrador"} onClick={() => activate(ot, l)}>Activar</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div></div>)}</div>; }
-function Execution({ front, machine, setMachine, forms, query, setQuery, asg, ots, releases, setReleases, select, canCapture, canRelease }: {
+function Execution({ front, machine, setMachine, forms, query, setQuery, releases, setReleases, select, canCapture, canRelease, banner }: {
     front: Front;
     machine: string;
     setMachine: (x: string) => void;
     forms: FormDefinition[];
     query: string;
     setQuery: (x: string) => void;
-    asg: Assignment[];
-    ots: OT[];
     releases: Release[];
     setReleases: (x: Release[]) => void;
     select: (x: FormDefinition) => void;
     canCapture: boolean;
     canRelease: boolean;
+    banner: React.ReactNode;
 }) { const deny = () => { toast.error("Tu perfil no tiene permiso para capturar en este frente"); }; const notice = !canCapture && <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Tu perfil puede consultar este frente, pero no capturar en él.</div>; if (front === "Calidad")
-    return <div className="space-y-5"><Panel title="Compuerta de liberación completa" note="La bobina queda bloqueada hasta finalizar ensayos y aprobarla completa."><ReleaseCards releases={releases} action={canRelease ? (bobbin, status) => setReleases(releases.map(r => r.bobbin === bobbin ? { ...r, status } : r)) : undefined}/></Panel>{notice}<Cards forms={forms} select={canCapture ? select : deny}/></div>; const active = asg.find(a => a.machine === machine && a.status === "Activa"), ot = ots.find(o => o.id === active?.ot), line = ot?.lines.find(l => l.id === active?.line); return <><Panel title="Punto de captura" note="Máquina fija por equipo; OT y producto llegan desde Supervisión."><div className="flex flex-wrap gap-2">{GROUPS[front].map(m => <Button key={m} size="sm" variant={machine === m ? "default" : "outline"} className={machine === m ? "bg-[#146b4f]" : ""} onClick={() => setMachine(m)}>{m}</Button>)}</div></Panel><div className={`mt-5 rounded-2xl border p-5 ${active ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}><p className="font-black">{active ? `${active.ot} · ${active.line} · ${line?.productName}` : "Sin asignación operativa activa"}</p><p className="mt-1 text-sm">{active ? `${line?.pv} · ${machine} · ${active.shift} · ${active.date}` : "Supervisión debe activar una línea de OT."}</p></div><div className="relative mt-5"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-500"/><Input className="pl-9 text-slate-950" placeholder="Buscar formato" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="mt-5">{notice}<Cards forms={forms} select={f => !canCapture ? deny() : active ? select(f) : toast.error("No hay OT/producto activo")}/></div></>; }
+    return <div className="space-y-5"><Panel title="Compuerta de liberación completa" note="La bobina queda bloqueada hasta finalizar ensayos y aprobarla completa."><ReleaseCards releases={releases} action={canRelease ? (bobbin, status) => setReleases(releases.map(r => r.bobbin === bobbin ? { ...r, status } : r)) : undefined}/></Panel>{notice}<Cards forms={forms} select={canCapture ? select : deny}/></div>; return <><Panel title="Punto de captura" note="Máquina fija por equipo; OT y producto llegan desde Supervisión."><div className="flex flex-wrap gap-2">{GROUPS[front].map(m => <Button key={m} size="sm" variant={machine === m ? "default" : "outline"} className={machine === m ? "bg-[#146b4f]" : ""} onClick={() => setMachine(m)}>{m}</Button>)}</div></Panel>{banner}<div className="relative mt-5"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-500"/><Input className="pl-9 text-slate-950" placeholder="Buscar formato" value={query} onChange={e => setQuery(e.target.value)}/></div><div className="mt-5">{notice}<Cards forms={forms} select={canCapture ? select : deny}/></div></>; }
 function Cards({ forms, select }: {
     forms: FormDefinition[];
     select: (f: FormDefinition) => void;
 }) { return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{forms.map(f => <button key={f.id} onClick={() => select(f)} className="rounded-2xl border bg-white p-5 text-left shadow-sm hover:border-emerald-400"><Badge variant="outline" className="border-emerald-300 text-emerald-900">{FLOW[f.id]?.[1] || "Paso operativo"}</Badge><h3 className="mt-4 font-black">{f.name}</h3><p className="mt-2 text-sm text-slate-700">{f.machineLabel}</p><p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">Contexto OT–PV–producto heredado</p></button>)}</div>; }
-function Capture({ form, front, machine, ots, asg, online, back, save }: {
+function Capture({ form, front, machine, context, online, back, save }: {
     form: FormDefinition;
     front: Front;
     machine: string;
-    ots: OT[];
-    asg: Assignment[];
+    context: CaptureContext | null;
     online: boolean;
     back: () => void;
     save: (r: CaptureRecord) => void;
-}) { const [v, setV] = useState<Record<string, string | number | boolean>>({}); const active = asg.find(a => a.machine === machine && a.status === "Activa"), ot = ots.find(o => o.id === active?.ot), line = ot?.lines.find(l => l.id === active?.line), c = ctx(front), recipe = line ? RECIPES_BY_PRODUCT[line.productCode] || [] : [], nominalWeight=line?NOMINAL_WEIGHT_BY_PRODUCT[line.productCode]:undefined, chemical = form.id === "form_31_consumo_de_quimicos", fiber = form.id === "form_4_registro_de_consumo_de_fibra", humidity = form.id === "form_19_control_de_humedad", recipeGap = !!line && RECIPE_GAPS.has(line.productCode); function set(k: string, x: string | number) { setV(old => { const n = { ...old, [k]: x }; if (humidity) {
+}) { const [v, setV] = useState<Record<string, string | number | boolean>>({}); const active = context ? { id: context.assignmentId, date: context.date, shift: context.shift } : undefined, ot = context ? { id: context.otId } : undefined, line = context ? { id: context.lineId, pv: context.pv, productCode: context.productCode, productName: context.productName } : undefined, c = ctx(front), recipe = line ? RECIPES_BY_PRODUCT[line.productCode] || [] : [], nominalWeight=line?NOMINAL_WEIGHT_BY_PRODUCT[line.productCode]:undefined, chemical = form.id === "form_31_consumo_de_quimicos", fiber = form.id === "form_4_registro_de_consumo_de_fibra", humidity = form.id === "form_19_control_de_humedad", recipeGap = !!line && RECIPE_GAPS.has(line.productCode); function set(k: string, x: string | number) { setV(old => { const n = { ...old, [k]: x }; if (humidity) {
     ["comando", "medio", "transversal"].forEach(p => { const w = Number(n[`peso_humedo_${p}`]), d = Number(n[`peso_seco_${p}`]); n[`humedad_${p}`] = w > 0 ? Number((((w - d) / w) * 100).toFixed(2)) : 0; });
     n.promedio_humedad = Number((["comando", "medio", "transversal"].reduce((s, p) => s + Number(n[`humedad_${p}`] || 0), 0) / 3).toFixed(2));
 } return n; }); } function submit() { if (!active || !line)
@@ -301,11 +360,6 @@ function ReleaseCards({ releases, action }: {
     releases: Release[];
     action?: (b: string, s: "Liberada" | "Rechazada") => void;
 }) { return <div className="mt-4 grid gap-3 md:grid-cols-3">{releases.map(r => <div key={r.bobbin} className="rounded-xl border p-4"><p className="font-bold">{r.bobbin}</p><p className="text-sm text-slate-600">{r.ot} · {r.machine}</p><Badge className="mt-3" variant="outline">{r.status}</Badge>{action && <div className="mt-3 flex gap-2"><Button size="sm" className="bg-[#146b4f]" onClick={() => action(r.bobbin, "Liberada")}>Liberar</Button><Button size="sm" variant="destructive" onClick={() => action(r.bobbin, "Rechazada")}>Rechazar</Button></div>}</div>)}</div>; }
-function Panel({ title, note, children }: {
-    title: string;
-    note: string;
-    children: React.ReactNode;
-}) { return <div className="rounded-2xl border bg-white p-6 shadow-sm"><h2 className="text-xl font-black">{title}</h2><p className="mb-5 mt-1 text-sm text-slate-700">{note}</p>{children}</div>; }
 function applies(f: FormDefinition, m: string) { const s = norm(f.machineLabel).replace("tubertera", "tubetera"); return s.includes(norm(m)) || s.includes("todas") || s.includes("por definir") || s.includes("todas las rebobinadoras"); }
 function read<T>(k: string, f: T): T { try {
     const v = localStorage.getItem(k);
@@ -323,19 +377,6 @@ function Nav({ label, active, click, icon }: {
     click: () => void;
     icon?: React.ReactNode;
 }) { return <button onClick={click} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold ${active ? "bg-white text-[#123f32]" : "text-emerald-50 hover:bg-white/10"}`}><span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>{label}</button>; }
-function Select({ label, value, set, options, render }: {
-    label: string;
-    value: string;
-    set: (x: string) => void;
-    options: string[];
-    render?: (x: string) => string;
-}) { return <div><Label>{label}</Label><select className="mt-2 h-10 w-full rounded-md border bg-white px-3 text-sm text-slate-950" value={value} onChange={e => set(e.target.value)}><option value="">Seleccionar…</option>{options.map(x => <option key={x} value={x}>{render ? render(x) : x}</option>)}</select></div>; }
-function Text({ label, value, set, type = "text" }: {
-    label: string;
-    value: string;
-    set: (x: string) => void;
-    type?: string;
-}) { return <div><Label>{label}</Label><Input className="mt-2 text-slate-950" type={type} value={value} onChange={e => set(e.target.value)}/></div>; }
 function Auto({ label, value }: {
     label: string;
     value: string;
