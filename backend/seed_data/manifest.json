@@ -7,7 +7,11 @@
       "MP1",
       "MP3"
     ],
-    "first_form": "VINTO-P1-06"
+    "first_form": "VINTO-P1-06",
+    "forms": [
+      "VINTO-P1-06",
+      "VINTO-P1-03"
+    ]
   },
   "generated_from": [
     {
@@ -40,8 +44,13 @@
     },
     {
       "path": "articles.json",
-      "sha256": "f25f64d492d1f16f810ef32294dec55375956970c5ee8bd90059937d584268dc",
-      "bytes": 28898
+      "sha256": "1217fabb9ef362a437f48eb49131115b4d5124bdbcb43fc10a9c0d53c5698585",
+      "bytes": 31607
+    },
+    {
+      "path": "forms/VINTO-P1-03.json",
+      "sha256": "9b756fd914d0d56529e09328eecb1c7e664e22b3c042fc50348b61456998eea4",
+      "bytes": 1605
     },
     {
       "path": "forms/VINTO-P1-06.json",
@@ -75,8 +84,8 @@
     },
     {
       "path": "units.json",
-      "sha256": "80f54ca68a7d11f5b1b92871bcca6d19cd524811fe0c76e7990bd53e40c4c1f4",
-      "bytes": 169
+      "sha256": "868f814798223947ba547d3c2bd7b8489982ec7d5db0f2831f7808b8b0fae32c",
+      "bytes": 222
     },
     {
       "path": "workflows.json",
@@ -85,7 +94,7 @@
     }
   ],
   "counts": {
-    "units": 2,
+    "units": 3,
     "material_classes": 4,
     "sectors": 1,
     "machines": 2,
@@ -93,29 +102,23 @@
     "article_machines": 93,
     "articles_also_material": 91,
     "articles_with_nominal_weight": 0,
+    "articles_with_grammage": 92,
     "profiles": 5,
     "workflows": 1,
     "shifts": 2,
     "shift_schedules": 2,
-    "forms": 1,
-    "form_fields": 5,
+    "forms": 2,
+    "form_fields": 11,
     "form_options": 5
   },
-  "pending_forms": [
-    {
-      "code": "VINTO-P1-03",
-      "legacy_key": "form_3_registro_de_produccion_de_bobinas",
-      "name": "Registro de producción de bobinas",
-      "workflow": "production-standard",
-      "status": "canonical_definition_pending"
-    }
-  ],
   "authority_rules": {
     "article_description_and_unit": "PRODUCTS_BY_MACHINE",
     "article_is_material_and_material_class": "MATERIALS",
     "nominal_weight_kg": "product-weights.ts (null when absent)",
     "sector_and_machines": "GROUPS in app/page.tsx",
-    "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)"
+    "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)",
+    "f3_labels_units": "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
+    "grammage_g_m2": "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent"
   },
   "warnings": [
     {
@@ -129,6 +132,12 @@
       "severity": "info",
       "message": "Artículos del alcance ausentes de MATERIALS: sin clase de material",
       "count": 2
+    },
+    {
+      "code": "GRAMMAGE_MISSING",
+      "severity": "info",
+      "message": "Artículos sin gramaje en la descripción oficial (sin G-<número>, p. ej. tubetes o SEGUNDA); grammage_g_m2 queda null y no bloquea F3",
+      "count": 1
     },
     {
       "code": "MACHINE_NAME_FROM_CODE",
@@ -145,8 +154,8 @@
     {
       "code": "OUT_OF_SCOPE_FORMS",
       "severity": "info",
-      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto; F3 (VINTO-P1-03) queda como definición pendiente",
-      "count": 24
+      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto (F6 y F3 sí se exportan)",
+      "count": 23
     },
     {
       "code": "OUT_OF_SCOPE_MACHINES",
@@ -175,7 +184,7 @@
       "code": "UNIT_LABEL_PLACEHOLDER",
       "severity": "warning",
       "message": "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla",
-      "count": 2
+      "count": 3
     },
     {
       "code": "WORKFLOW_NAME_PLACEHOLDER",

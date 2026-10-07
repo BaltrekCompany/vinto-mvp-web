@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_OUT, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, loadSources, pageFingerprint, pageSemantics, validateBundle, writeBundle } from "./export-seed-data.mjs";
+import { DEFAULT_OUT, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageSemantics, validateBundle, writeBundle } from "./export-seed-data.mjs";
 
 const sources = await loadSources();
 const clone = (value) => structuredClone(value);
@@ -39,8 +39,55 @@ test("manifest is consistent with the files", () => {
   const { files, manifest } = buildBundle(sources);
   assert.deepEqual(manifest.files.map((f) => f.path), [...files.keys()].filter((n) => n !== "manifest.json").sort());
   assert.equal(manifest.counts.articles, JSON.parse(files.get("articles.json")).items.length);
-  assert.equal(manifest.counts.form_fields, 5);
+  assert.equal(manifest.counts.forms, 2);
+  assert.equal(manifest.counts.form_fields, 11);
   assert.equal(manifest.counts.form_options, 5);
+  assert.equal(manifest.pending_forms, undefined);
+});
+
+test("grammage is derived from the official description with a narrow G-<number> rule", () => {
+  assert.equal(grammageFromDescription("M1-BOBINA PH G-17 CR-25% R-540640"), 17);
+  assert.equal(grammageFromDescription("M1-BOBINA PH G-15.5 CR-22% R-540640"), 15.5);
+  assert.equal(grammageFromDescription("M3-BOBINA PH G-14,5 CR-13% R-9109"), 14.5);
+  assert.equal(grammageFromDescription("M3-BOBINA TOALLA G-19,5 CR-11%"), 19.5);
+  assert.equal(grammageFromDescription("TB-TUBETE Ø 75 MM FORMATO 2730 MM"), null);
+  assert.equal(grammageFromDescription("M1-BOBINA SEGUNDA"), null);
+  assert.equal(grammageFromDescription("CR-25% R-540640"), null);   // not a G-<number>
+  assert.equal(grammageFromDescription("PAG-17 BOBINA"), null);     // glued to a letter
+  assert.equal(grammageFromDescription("BOBINA G-"), null);
+  assert.equal(grammageFromDescription("BOBINA G-0"), null);
+});
+
+test("articles carry the derived grammage (null when absent) and the counts agree", () => {
+  const { files, manifest } = buildBundle(sources);
+  const items = JSON.parse(files.get("articles.json")).items;
+  for (const a of items) assert.equal(a.version.grammage_g_m2, grammageFromDescription(a.version.description), a.code);
+  assert.equal(manifest.counts.articles_with_grammage, items.filter((a) => a.version.grammage_g_m2 !== null).length);
+  assert.ok(items.some((a) => a.version.grammage_g_m2 === null), "at least one article has no grammage");
+  assert.ok(items.some((a) => a.version.grammage_g_m2 === 15.5));
+});
+
+test("F3 is published in the bundle with only the six manual fields and the MM unit", () => {
+  const { files, manifest } = buildBundle(sources);
+  const form = JSON.parse(files.get("forms/VINTO-P1-03.json"));
+  assert.equal(form.code, "VINTO-P1-03");
+  assert.deepEqual(form.machines, ["MP1", "MP3"]);
+  assert.deepEqual(form.fields.map((f) => [f.key, f.value_type, f.required, f.unit, f.source]), [
+    ["hora_inicio", "time", true, null, "manual"],
+    ["hora_fin", "time", true, null, "manual"],
+    ["diametro", "decimal", true, "MM", "manual"],
+    ["peso_kg", "decimal", true, "KG", "manual"],
+    ["numero_de_cortes", "text", true, null, "manual"],
+    ["observaciones", "textarea", false, null, "manual"],
+  ]);
+  assert.ok(JSON.parse(files.get("units.json")).items.some((u) => u.code === "MM"));
+  assert.ok(manifest.files.some((f) => f.path === "forms/VINTO-P1-03.json"));
+});
+
+test("fails when F3 changes the type or unit of a canonical field in the source", () => {
+  failsWith((s) => { s.formDefinitions.find((f) => f.legacyNumber === 3).fields.find((f) => f.key === "diametro").type = "text"; }, /F3: diametro/);
+  failsWith((s) => { s.formDefinitions.find((f) => f.legacyNumber === 3).fields.find((f) => f.key === "peso_kg").unit = "g"; }, /F3: la unidad de peso_kg/);
+  failsWith((s) => { s.formDefinitions.find((f) => f.legacyNumber === 3).fields = s.formDefinitions.find((f) => f.legacyNumber === 3).fields.filter((f) => f.key !== "numero_de_cortes"); }, /F3: FORM_DEFINITIONS ya no define numero_de_cortes/);
 });
 
 test("fails clearly when MP1 or MP3 is missing", () => {

@@ -425,3 +425,27 @@ Get-Content -Raw -Encoding UTF8 .\backend\verification_f6.sql | docker compose e
 ```
 
 Muestra las últimas capturas F6 (estado, revisión, OT/línea/asignación, operador), sus valores tipados, la auditoría y los totales. No modifica datos.
+
+## Producción de bobinas F3 (VINTO-P1-03, Bobinas)
+
+F3 ya no está pendiente: es un formulario publicado del bundle (`backend/seed_data/forms/VINTO-P1-03.json`) y tiene su propio comando,
+que no altera el contrato HTTP de F6.
+
+`POST /api/bobbins` (permiso `production.capture`, solo OPERACION). Payload:
+`{capture_id (UUIDv4), assignment_id, device_key, values{hora_inicio, hora_fin, diametro, peso_kg, numero_de_cortes, observaciones?}}`.
+Esquema cerrado: fecha, turno, máquina, operador, código de bobina, artículo, descripción, gramaje, OT/PV/línea, `operating_date`, revisión y estado
+los deriva el backend. `hora_inicio` y `hora_fin` son AMBAS manuales (sin relación con la bobina anterior ni orden entre sí: puede cruzar medianoche).
+`numero_de_cortes` sigue siendo texto. La respuesta trae `capture.id`, `bobbin.id`, `bobbin.code` y `bobbin.quality_status = "pending"`;
+`GET /api/bobbins/{id}` devuelve la bobina.
+
+- **Una transacción**: asignación -> turno/fecha -> artículo -> gramaje -> valores -> dispositivo -> correlativo -> `capture` (revisión 1) ->
+  `capture_detail` (solo los 6 campos manuales) -> `vinto_txn.bobbin` -> `vinto_txn.quality_release` `pending`. Un fallo revierte todo, incluido el correlativo.
+- **Correlativo**: independiente POR MÁQUINA y por GESTIÓN (01/04 -> 31/03, año de inicio derivado de la fecha operativa central con
+  `vinto_txn.management_start_year`). Empieza en 1, el código visible es el número ("1", "2", ...), sin prefijo, año ni máquina. Se reserva en
+  `vinto_txn.bobbin_sequence` con `INSERT .. ON CONFLICT DO UPDATE .. RETURNING` dentro de la transacción (lock de fila + lock de máquina); un
+  retry idempotente no lo toca. Unicidad: `(machine_id, management_start_year, sequence_number)`.
+- **Gramaje**: el exportador lo deriva y normaliza de la descripción oficial del maestro (`G-17`, `G-15.5`, `G-14,5`; regex acotada, "." o ","),
+  lo guarda en `vinto_master.article_version_spec` (tabla hermana de `article_version`, que sigue inmutable) y F3 lo hereda como snapshot en la bobina.
+  Productos sin `G-<número>` quedan con gramaje `NULL` y no bloquean F3. Nunca se parsea la descripción durante un POST.
+- **Idempotencia**: igual que F6 (mismo `capture_id` y contenido -> 200 con la misma bobina; otro contenido -> 409 `CAPTURE_IDEMPOTENCY_CONFLICT`).
+- La bandeja de Calidad se basará en `quality_release` pendiente por bobina, no en la asignación activa. Aún no hay decisiones released/rejected.

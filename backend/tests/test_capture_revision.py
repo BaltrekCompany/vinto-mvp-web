@@ -276,7 +276,7 @@ class CommittedFlowTests(unittest.TestCase):
         before = self.connection.execute("SELECT prosrc FROM pg_proc WHERE proname='validate_capture'").fetchone()[0]
         self.assertNotIn("NEW.revision := OLD.revision;", before)
         self.migrate()
-        self.assertEqual([row[0] for row in applied_migrations(self.connection)], [1, 2, 3])
+        self.assertEqual([row[0] for row in applied_migrations(self.connection)], [1, 2, 3, 4])
         after = self.connection.execute("SELECT prosrc FROM pg_proc WHERE proname='validate_capture'").fetchone()[0]
         self.assertIn("NEW.revision := OLD.revision;", after)
         self.assertEqual(self.revision(legacy), (2, "submitted"))  # existing captures are not rewritten
@@ -284,6 +284,16 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(self.revision(new), (1, "submitted"))
         self.assertEqual(self.connection.execute(
             "SELECT count(*) FROM pg_trigger WHERE tgname='validate_capture' AND tgrelid='vinto_txn.capture'::regclass").fetchone()[0], 1)  # the trigger was not recreated
+
+    def test_0004_preserves_historical_bobbins_and_replaces_the_global_code_unique(self):
+        self.migrate(upto=3)
+        self.connection.execute("INSERT INTO vinto_txn.bobbin (code, weight_kg) VALUES ('OLD-1', 12.5)")
+        self.migrate()
+        row = self.connection.execute(
+            "SELECT code, weight_kg, machine_id, management_start_year, sequence_number, start_time, diameter_mm, grammage_g_m2, number_of_cuts FROM vinto_txn.bobbin").fetchall()
+        self.assertEqual(row, [("OLD-1", 12.5, None, None, None, None, None, None, None)])
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM pg_constraint WHERE conname='bobbin_code_key'").fetchone()[0], 0)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM vinto_audit.audit_event WHERE entity_table='bobbin' AND action IN ('UPDATE','DELETE')").fetchone()[0], 0)
 
     def test_0001_and_0002_are_untouched(self):
         migrations = read_migrations()

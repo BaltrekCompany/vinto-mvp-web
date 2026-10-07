@@ -128,3 +128,19 @@ trigger sigue asociado y las demás protecciones de 0001 no cambian):
 Una captura reabierta cuenta su corrección al reabrirse (y sigue exigiendo `correction_reason` y `vinto.reason`); sus
 `draft -> draft` y el `draft -> submitted` siguientes conservan esa revisión: una corrección, un incremento. No reescribe
 capturas existentes: las creadas antes de 0003 conservan su revision.
+
+## 0004_bobbin_production.sql: F3, correlativo y gramaje
+
+Solo hacia adelante y sin borrar ni reescribir filas:
+
+- `vinto_master.article_version_spec`: especificación estructurada por `article_version` (gramaje `grammage_g_m2`, NULL si el artículo no lo tiene).
+  Tabla hermana inmutable: `article_version` no se toca. Se puebla desde el bundle (el exportador deriva el gramaje de la descripción oficial).
+- `vinto_txn.management_start_year(date)`: la gestión va del 01/04 al 31/03 y se identifica por su año de inicio.
+- `vinto_txn.bobbin_sequence`: contador por (máquina, gestión); solo avanza de uno en uno y no se borra.
+- `vinto_txn.bobbin` (ya existía desde 0001) se amplía con `machine_id`, `management_start_year`, `sequence_number`, `start_time`, `end_time`,
+  `diameter_mm`, `grammage_g_m2`, `number_of_cuts` (texto) y `notes`. Las filas históricas (todas esas columnas NULL) se conservan; los CHECK nuevos
+  solo obligan a las filas con `sequence_number`. OT/PV/turno/operador no se duplican: salen de `source_capture_id -> assignment`.
+- El UNIQUE global de `code` se elimina (el "1" existe en cada máquina y gestión) y se reemplaza por `UNIQUE (machine_id, management_start_year,
+  sequence_number)`, `UNIQUE (source_capture_id)` para filas nuevas y la unicidad global de `code` solo entre filas históricas.
+- Triggers: coherencia máquina/gestión/artículo de la bobina con su captura, identidad inmutable, y un constraint trigger diferido que exige la
+  fila `quality_release` antes del COMMIT.

@@ -116,14 +116,14 @@ class SchemaTests(unittest.TestCase):
                 self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
     def test_all_tables_have_primary_keys_and_valid_constraints(self):
-        expected = set(re.findall(r'CREATE TABLE (vinto_\w+)\."(\w+)"', read_migrations()[0].sql))
+        expected = set(re.findall(r'CREATE TABLE (vinto_(?:master|config|txn|audit))\."(\w+)"', "\n".join(m.sql for m in read_migrations())))
         actual = set(self.connection.execute("""
             SELECT table_schema,table_name FROM information_schema.tables
             WHERE table_schema IN ('vinto_master','vinto_config','vinto_txn','vinto_audit')
               AND table_type='BASE TABLE'
         """).fetchall())
         self.assertEqual(expected,actual)
-        self.assertEqual(len(actual),39)
+        self.assertEqual(len(actual),41)  # 39 from 0001 + article_version_spec and bobbin_sequence from 0004
         missing = self.connection.execute("""
             SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname IN ('vinto_master','vinto_config','vinto_txn','vinto_audit') AND c.relkind='r'

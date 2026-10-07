@@ -19,7 +19,7 @@ asignaciones ni capturas.
 `manifest.json` (versión, fuentes con SHA-256, archivos con SHA-256 y tamaño,
 conteos, advertencias), `units`, `material_classes`, `sectors`, `machines`,
 `articles` (con su versión 1), `article_machines`, `profiles`, `workflows`,
-`shifts` y `forms/VINTO-P1-06.json` (Formulario 6, 5 campos y 5 opciones).
+`shifts`, `forms/VINTO-P1-06.json` (Formulario 6, 5 campos y 5 opciones) y `forms/VINTO-P1-03.json` (Formulario 3, 6 campos manuales; ya no está pendiente). Cada artículo lleva `grammage_g_m2`, derivado de su descripción oficial con la regla acotada `G-<número>` ("." o "," decimal); `null` si no existe.
 Los archivos usan UTF-8, LF y orden estable; `.gitattributes` fuerza LF para
 que los bytes coincidan con el manifest.
 
@@ -41,6 +41,8 @@ hasheándose completos.
 | `nominal_weight_kg` | `product-weights.ts` (null si no existe) |
 | sector y máquinas | `GROUPS` en `app/page.tsx` |
 | etiquetas, unidad y opciones del F6 | `app/page.tsx` (override y `BobbinBales`) |
+| etiquetas, tipos y unidades del F3 (6 campos manuales) | `form-definitions.ts` |
+| `grammage_g_m2` | descripción oficial (`PRODUCTS_BY_MACHINE`), `G-<número>`; null si no existe |
 
 Si `MATERIALS` y `PRODUCTS_BY_MACHINE` discrepan en nombre o unidad, se conserva
 `PRODUCTS_BY_MACHINE` y el manifest registra `MATERIAL_CONFLICT`. Un código de
