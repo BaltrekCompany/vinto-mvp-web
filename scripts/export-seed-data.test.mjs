@@ -111,7 +111,7 @@ test("fails when a machine does not belong to Bobinas", () => {
 test("fails when F6 deviates from the canonical contract", () => {
   failsWith((s) => { s.texts.page = s.texts.page.replace('options={["Bobina rechazada","Recorte de máquina"]}', 'options={["Bobina rechazada","Recorte de máquina","Otro"]}'); }, /opciones/);
   failsWith((s) => { s.texts.page = s.texts.page.replace('options={["Bobina rechazada","Recorte de máquina"]}', 'options={["Bobina rechazada","Bobina rechazada"]}'); }, /distintas|duplicadas/);
-  failsWith((s) => { s.texts.page = s.texts.page.replace('fld("observaciones", "Observaciones", "textarea", false)', 'fld("observaciones", "Observaciones", "textarea", false), fld("extra", "Extra", "text")'); }, /fuera del contrato/);
+  failsWith((s) => { s.texts.page = s.texts.page.replaceAll('fld("observaciones", "Observaciones", "textarea", false)', 'fld("observaciones", "Observaciones", "textarea", false), fld("extra", "Extra", "text")'); }, /fuera del contrato/); // replaceAll: el override de F3 en page.tsx usa el mismo literal y aparece antes que el de F6
   failsWith((s) => { s.formDefinitions.find((f) => f.legacyNumber === 6).code = "VINTO-P1-99"; }, /se esperaba/);
 });
 
