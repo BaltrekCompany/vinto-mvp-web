@@ -27,7 +27,7 @@ from app.seed.bundle import Bundle
 SOURCE = "vinto-reference-bobinas"
 REASON = f"reference import: {SOURCE}"
 ENTITY_ORDER = (
-    "unit", "material_class", "sector", "machine", "profile", "article", "article_version", "article_machine",
+    "unit", "material_class", "sector", "machine", "profile", "article", "article_version", "article_version_spec", "article_machine",
     "shift", "shift_schedule", "workflow", "form", "form_version", "form_version_machine", "field", "option",
 )
 
@@ -187,7 +187,7 @@ class _Run:
                     WHERE v.article_id=%s AND v.version_number=%s""", (article_id, version["version_number"]))
             weight = None if version["nominal_weight_kg"] is None else Decimal(str(version["nominal_weight_kg"]))
             class_id = None if version["material_class"] is None else self.ids[("material_class", version["material_class"])]
-            self.resolve(
+            version_id = self.resolve(
                 "article_version", f"article_version:{code}:{version['version_number']}", "vinto_master", "article_version",
                 {"article_code": code, **version}, existing,
                 {"description": version["description"], "unit": version["unit"],
@@ -197,6 +197,18 @@ class _Run:
                    VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (article_id, version["version_number"], version["description"], self.ids[("unit", version["unit"])],
                  class_id, weight, self.batch_id))
+            # Structured specification of the (immutable) version. A missing grammage is stored as NULL, never guessed.
+            grammage = None if version["grammage_g_m2"] is None else Decimal(str(version["grammage_g_m2"]))
+            spec = None
+            if version_id is not None:
+                spec = self.one("SELECT article_version_id AS id, grammage_g_m2 FROM vinto_master.article_version_spec WHERE article_version_id=%s",
+                                (version_id,))
+            self.resolve(
+                "article_version_spec", f"article_version_spec:{code}:{version['version_number']}", "vinto_master", "article_version_spec",
+                {"article_code": code, "version_number": version["version_number"], "grammage_g_m2": version["grammage_g_m2"]}, spec,
+                {"grammage_g_m2": grammage},
+                "INSERT INTO vinto_master.article_version_spec (article_version_id,grammage_g_m2,source_batch_id) VALUES (%s,%s,%s) RETURNING article_version_id",
+                (version_id, grammage, self.batch_id))
         for r in self.bundle.article_machines:
             article_id = self.ids[("article", r["article_code"])]
             machine_id = self.ids[("machine", r["machine_code"])]

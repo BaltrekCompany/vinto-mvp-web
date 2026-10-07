@@ -53,7 +53,30 @@ const F6_FIELDS = [
   { key: "observaciones", value_type: "textarea", required: false },
 ];
 
+// Canonical F3 contract (project decision, confirmed with VINTO): ONLY what Operación types. Date, shift, machine, operator,
+// bobbin code, article data, grammage and OT/PV/line are derived by the backend and never become fields. The source
+// definition (form-definitions.ts) supplies label, type, required and unit, which are cross-checked here. Its "source"
+// column is NOT checked: it still lists hora_inicio/hora_fin as automatic, and the confirmed contract makes both manual.
+const F3_FIELDS = [
+  { key: "hora_inicio", value_type: "time", required: true },
+  { key: "hora_fin", value_type: "time", required: true },
+  { key: "diametro", value_type: "decimal", required: true, unit: "MM" },
+  { key: "peso_kg", value_type: "decimal", required: true, unit: "KG" },
+  { key: "numero_de_cortes", value_type: "text", required: true },
+  { key: "observaciones", value_type: "textarea", required: false },
+];
+
 export class SeedExportError extends Error {}
+
+// Grammage of a bobbin is encoded in the official description ("... G-17 ...", "G-15.5", "G-14,5"). Deliberately narrow:
+// only G-<number>, "." or "," as decimal separator, not glued to a preceding letter/digit. No match -> null (e.g. SEGUNDA).
+const GRAMMAGE = /(?<![A-Za-z0-9])G-(\d+(?:[.,]\d+)?)(?!\d)/;
+export function grammageFromDescription(description) {
+  const match = GRAMMAGE.exec(description);
+  if (!match) return null;
+  const value = Number(match[1].replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
 
 const fail = (message) => { throw new SeedExportError(message); };
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -207,9 +230,9 @@ export function buildBundle(sources) {
     }
   }
 
-  const unitCodes = [...new Set([...articles.values()].map((a) => a.unit))].sort(cmp);
+  const unitCodes = [...new Set([...[...articles.values()].map((a) => a.unit), ...F3_FIELDS.flatMap((f) => (f.unit ? [f.unit] : []))])].sort(cmp);
   const classNames = new Map(); // slug -> className
-  let alsoMaterial = 0, withoutMaterial = 0, withWeight = 0;
+  let alsoMaterial = 0, withoutMaterial = 0, withWeight = 0, withGrammage = 0;
   const articleItems = [...articles.values()].sort((a, b) => cmp(a.code, b.code)).map((a) => {
     const material = materialByCode.get(a.code) ?? null;
     if (material) {
@@ -230,6 +253,8 @@ export function buildBundle(sources) {
     const weight = nominalWeights?.[a.code];
     if (weight !== undefined && !(typeof weight === "number" && weight >= 0)) fail(`${a.code}: peso nominal inválido`);
     if (weight !== undefined) withWeight++;
+    const grammage = grammageFromDescription(a.name);
+    if (grammage !== null) withGrammage++;
     return {
       code: a.code,
       is_product: true,
@@ -240,6 +265,7 @@ export function buildBundle(sources) {
         unit: a.unit,
         material_class: classCode,
         nominal_weight_kg: weight ?? null,
+        grammage_g_m2: grammage,
       },
     };
   });
@@ -299,6 +325,33 @@ export function buildBundle(sources) {
   };
   const form = { schema_version: SCHEMA_VERSION, ...definition, definition_checksum: sha256(canonical(definition)) };
 
+  // F3 (VINTO-P1-03): only the six manual fields Operación types.
+  if (f3.area !== "production") fail(`F3 debe tener area production y tiene ${f3.area}`);
+  const f3Allowed = new Set(f3.allowedMachineIds.map((m) => m.toLowerCase()));
+  for (const machine of MACHINES) if (!f3Allowed.has(machine.toLowerCase())) fail(`F3 no admite la máquina ${machine} en allowedMachineIds`);
+  const f3Fields = F3_FIELDS.map((spec, index) => {
+    const source = f3.fields.find((f) => f.key === spec.key);
+    if (!source) fail(`F3: FORM_DEFINITIONS ya no define ${spec.key}`);
+    if (source.type !== spec.value_type) fail(`F3: ${spec.key} es ${source.type} en FORM_DEFINITIONS y el contrato canónico espera ${spec.value_type}`);
+    if (source.required !== spec.required) fail(`F3: ${spec.key} cambió su obligatoriedad en FORM_DEFINITIONS`);
+    if ((source.unit ? source.unit.toUpperCase() : null) !== (spec.unit ?? null)) fail(`F3: la unidad de ${spec.key} en FORM_DEFINITIONS es ${JSON.stringify(source.unit)}, se esperaba ${spec.unit ?? null}`);
+    if (!source.label) fail(`F3: ${spec.key} no tiene etiqueta en FORM_DEFINITIONS`);
+    return { key: spec.key, label: source.label, value_type: spec.value_type, source: "manual", required: spec.required, unit: spec.unit ?? null, display_order: index + 1 };
+  });
+  const f3Definition = {
+    legacy_key: f3.id,
+    code: f3.code,
+    legacy_number: f3.legacyNumber,
+    name: f3.name,
+    area: "production",
+    workflow: f3.workflowId,
+    version_number: 1,
+    machines: [...MACHINES],
+    groups: [],
+    fields: f3Fields,
+  };
+  const f3Form = { schema_version: SCHEMA_VERSION, ...f3Definition, definition_checksum: sha256(canonical(f3Definition)) };
+
   // Workflows used by F6/F3 only
   const workflowCodes = [...new Set([f6.workflowId, f3.workflowId])].sort(cmp);
   if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3");
@@ -329,18 +382,20 @@ export function buildBundle(sources) {
     })),
   }));
   files.set(`forms/${PILOT_FORM.code}.json`, json(form));
+  files.set(`forms/${NEXT_FORM.code}.json`, json(f3Form));
 
   // ---- warnings and out-of-scope information ----
   if (alsoMaterial) warn("ARTICLE_ALSO_MATERIAL", "info", "Artículos del alcance que también figuran en MATERIALS (is_product e is_material)", alsoMaterial);
   if (withoutMaterial) warn("ARTICLE_NOT_IN_MATERIALS", "info", "Artículos del alcance ausentes de MATERIALS: sin clase de material", withoutMaterial);
   if (articleItems.length - withWeight) warn("NOMINAL_WEIGHT_MISSING", "info", "Artículos sin peso nominal en product-weights.ts; nominal_weight_kg queda null (no se inventa)", articleItems.length - withWeight);
+  if (articleItems.length - withGrammage) warn("GRAMMAGE_MISSING", "info", "Artículos sin gramaje en la descripción oficial (sin G-<número>, p. ej. tubetes o SEGUNDA); grammage_g_m2 queda null y no bloquea F3", articleItems.length - withGrammage);
   warn("UNIT_LABEL_PLACEHOLDER", "warning", "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla", unitCodes.length);
   warn("MACHINE_NAME_FROM_CODE", "warning", "machine.name usa el código de la fuente (no existe otro nombre)", MACHINES.length);
   warn("WORKFLOW_NAME_PLACEHOLDER", "warning", "workflow_definition.name usa el código de la fuente (no existe nombre real)", workflowCodes.length);
   warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${SHIFT_VALID_FROM} y timezone=${SHIFT_TIMEZONE} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
   const otherMachines = Object.keys(productsByMachine).filter((m) => !MACHINES.includes(m));
   warn("OUT_OF_SCOPE_MACHINES", "info", "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)", otherMachines.length);
-  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto; F3 (${NEXT_FORM.code}) queda como definición pendiente`, formDefinitions.length - 1);
+  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6 y F3 sí se exportan)`, formDefinitions.length - 2);
   warn("OUT_OF_SCOPE_RECIPES", "info", "Artículos del alcance con receta en recipes.ts; las recetas no se exportan en este piloto", articleItems.filter((a) => recipes?.[a.code]).length);
   warn("OUT_OF_SCOPE_MATERIALS", "info", "Entradas de MATERIALS que no son artículos del alcance", materials.length - alsoMaterial);
   warnings.sort((a, b) => cmp(a.code, b.code) || cmp(a.message, b.message));
@@ -354,30 +409,32 @@ export function buildBundle(sources) {
     article_machines: relations.length,
     articles_also_material: alsoMaterial,
     articles_with_nominal_weight: withWeight,
+    articles_with_grammage: withGrammage,
     profiles: PROFILES.length,
     workflows: workflowCodes.length,
     shifts: SHIFTS.length,
     shift_schedules: SHIFTS.length,
-    forms: 1,
-    form_fields: fields.length,
-    form_options: fields.reduce((n, f) => n + (f.options?.length ?? 0), 0),
+    forms: 2,
+    form_fields: fields.length + f3Fields.length,
+    form_options: [...fields, ...f3Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
   };
   const manifest = {
     schema_version: SCHEMA_VERSION,
     bundle: "vinto-reference-bobinas-pilot",
-    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code },
+    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code] },
     generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
       name === "page" ? { path, sha256: pageFingerprint(texts.page), scope: PAGE_FINGERPRINT_SCOPE } : { path, sha256: sha256(texts[name]) }
     )).sort((a, b) => cmp(a.path, b.path)),
     files: [...files].sort((a, b) => cmp(a[0], b[0])).map(([path, text]) => ({ path, sha256: sha256(text), bytes: Buffer.byteLength(text, "utf8") })),
     counts,
-    pending_forms: [{ code: NEXT_FORM.code, legacy_key: f3.id, name: f3.name, workflow: f3.workflowId, status: "canonical_definition_pending" }],
     authority_rules: {
       article_description_and_unit: "PRODUCTS_BY_MACHINE",
       article_is_material_and_material_class: "MATERIALS",
       nominal_weight_kg: "product-weights.ts (null when absent)",
       sector_and_machines: "GROUPS in app/page.tsx",
       f6_labels_units_and_options: "app/page.tsx (effectiveForms override and BobbinBales)",
+      f3_labels_units: "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
+      grammage_g_m2: "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent",
     },
     warnings,
   };
@@ -404,10 +461,17 @@ export function validateBundle({ files, manifest }) {
   }
   const unitCodes = new Set(read("units.json").items.map((u) => u.code));
   for (const a of articles) if (!unitCodes.has(a.version.unit)) fail(`Unidad no declarada: ${a.version.unit}`);
-  const form = JSON.parse(files.get(`forms/${PILOT_FORM.code}.json`));
-  for (const f of form.fields) {
-    const keys = (f.options ?? []).map((o) => o.option_key);
-    if (new Set(keys).size !== keys.length) fail(`Opciones duplicadas en ${f.key}`);
+  for (const a of articles) {
+    const g = a.version.grammage_g_m2;
+    if (g === undefined || (g !== null && !(typeof g === "number" && g > 0))) fail(`Gramaje inválido en ${a.code}`);
+  }
+  for (const spec of [PILOT_FORM, NEXT_FORM]) {
+    const form = JSON.parse(files.get(`forms/${spec.code}.json`));
+    for (const f of form.fields) {
+      const keys = (f.options ?? []).map((o) => o.option_key);
+      if (new Set(keys).size !== keys.length) fail(`Opciones duplicadas en ${f.key}`);
+      if (f.unit !== null && !unitCodes.has(f.unit)) fail(`Unidad no declarada: ${f.unit}`);
+    }
   }
   if (manifest) {
     for (const f of manifest.files) if (sha256(files.get(f.path)) !== f.sha256) fail(`Checksum inconsistente en el manifest: ${f.path}`);

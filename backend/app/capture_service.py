@@ -310,6 +310,58 @@ def _existing_matches(connection, existing, *, actor_id, form_code, assignment_i
     return incoming == _stored_values(connection, capture_id)
 
 
+@dataclass(frozen=True)
+class ActiveContext:
+    """Contexto que la asignación vigente impone a una captura (el cliente no decide nada de esto)."""
+    machine_id: uuid.UUID
+    shift_schedule_id: uuid.UUID
+    operating_date: date
+    article_version_id: uuid.UUID
+    now: datetime
+
+
+def lock_active_assignment(connection, assignment_id) -> ActiveContext:
+    """Toma el lock de máquina y valida que la asignación siga activa y vigente para el turno/fecha actuales.
+
+    Compartido por F6 y F3: AssignmentNotFoundError, AssignmentNotActiveError y AssignmentStaleError (más los errores de
+    resolución de turno) mantienen exactamente su semántica. Debe llamarse dentro de la transacción de la captura.
+    """
+    head = connection.execute(
+        """SELECT a.machine_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
+           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(ALLOWED_SECTOR_CODES))).fetchone()
+    if head is None:
+        raise AssignmentNotFoundError()
+    _machine_lock(connection, head[0])  # serializa con activate/finish de la misma máquina
+    now = _now(connection)  # tras obtener el lock: el instante refleja el estado que se valida
+    row = connection.execute(
+        """SELECT a.status, a.machine_id, a.shift_schedule_id, a.operating_date, m.active, s.id, v.kind, wo.status, l.article_version_id
+           FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
+           JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
+           JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id WHERE a.id = %s FOR SHARE OF a""", (assignment_id,)).fetchone()
+    status, machine_id, schedule_id, operating_date, machine_active, sector_id, version_kind, order_status, article_version_id = row
+    if status != "active" or not machine_active or version_kind != "operational" or order_status == "closed":
+        raise AssignmentNotActiveError()
+    shift = resolve_shift(connection, now, sector_id=sector_id)  # SHIFT_NOT_CONFIGURED / SHIFT_AMBIGUOUS siguen su manejo seguro
+    if (shift.shift_schedule_id, shift.operating_date) != (schedule_id, operating_date):
+        raise AssignmentStaleError()
+    return ActiveContext(machine_id, schedule_id, operating_date, article_version_id, now)
+
+
+def published_form_version(connection, form_code: str, machine_id) -> uuid.UUID:
+    """Versión publicada más alta del formulario (área production) y habilitada para la máquina; si no, FormNotAvailableError."""
+    version = connection.execute(
+        """SELECT fv.id FROM vinto_config.form f JOIN vinto_config.form_version fv ON fv.form_id = f.id
+           WHERE f.code = %s AND f.active AND fv.status = 'published' AND fv.area = 'production' ORDER BY fv.version_number DESC LIMIT 1""",
+        (form_code,)).fetchone()
+    if version is None:
+        raise FormNotAvailableError()
+    allowed = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s",
+                                 (version[0], machine_id)).fetchone()
+    if allowed is None:
+        raise FormNotAvailableError()
+    return version[0]
+
+
 def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None) -> CaptureResult:
     """Crea y envía una captura F6 de forma atómica e idempotente (capture.id = capture_id del cliente)."""
     if form_code != FORM_CODE:
@@ -330,38 +382,12 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
                 return CaptureResult(get_capture(connection, capture_id), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
-        head = connection.execute(
-            """SELECT a.machine_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
-               JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(ALLOWED_SECTOR_CODES))).fetchone()
-        if head is None:
-            raise AssignmentNotFoundError()
-        _machine_lock(connection, head[0])  # serializa con activate/finish de la misma máquina
-        now = _now(connection)  # tras obtener el lock: el instante refleja el estado que se valida
-        row = connection.execute(
-            """SELECT a.status, a.machine_id, a.shift_schedule_id, a.operating_date, m.active, s.id, v.kind, wo.status
-               FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
-               JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
-               JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id WHERE a.id = %s FOR SHARE OF a""", (assignment_id,)).fetchone()
-        status, machine_id, schedule_id, operating_date, machine_active, sector_id, version_kind, order_status = row
-        if status != "active" or not machine_active or version_kind != "operational" or order_status == "closed":
-            raise AssignmentNotActiveError()
-        shift = resolve_shift(connection, now, sector_id=sector_id)  # SHIFT_NOT_CONFIGURED / SHIFT_AMBIGUOUS siguen su manejo seguro
-        if (shift.shift_schedule_id, shift.operating_date) != (schedule_id, operating_date):
-            raise AssignmentStaleError()
+        context = lock_active_assignment(connection, assignment_id)
+        machine_id, schedule_id, operating_date, now = context.machine_id, context.shift_schedule_id, context.operating_date, context.now
 
         device_id = _resolve_device(connection, device_key, machine_id)
 
-        version = connection.execute(
-            """SELECT fv.id FROM vinto_config.form f JOIN vinto_config.form_version fv ON fv.form_id = f.id
-               WHERE f.code = %s AND f.active AND fv.status = 'published' AND fv.area = 'production' ORDER BY fv.version_number DESC LIMIT 1""",
-            (form_code,)).fetchone()
-        if version is None:
-            raise FormNotAvailableError()
-        form_version_id = version[0]
-        allowed = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s",
-                                     (form_version_id, machine_id)).fetchone()
-        if allowed is None:
-            raise FormNotAvailableError()
+        form_version_id = published_form_version(connection, form_code, machine_id)
         fields = load_fields(connection, form_version_id)
         clean = validate_values(fields, values)
 

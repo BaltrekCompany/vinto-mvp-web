@@ -9,6 +9,7 @@ from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
 from app.assignments.router import router as assignments_router
+from app.bobbins.router import router as bobbins_router
 from app.captures import router as captures_router
 from app.shifts import SHIFT_AMBIGUOUS, SHIFT_NOT_CONFIGURED, ShiftResolutionError
 from app.work_orders.errors import WorkOrderError
@@ -23,6 +24,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 app.include_router(captures_router)
+app.include_router(bobbins_router)
 app.include_router(auth_router)
 app.include_router(work_orders_router)
 app.include_router(assignments_router)

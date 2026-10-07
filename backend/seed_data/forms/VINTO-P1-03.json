@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_3_registro_de_produccion_de_bobinas",
+  "code": "VINTO-P1-03",
+  "legacy_number": 3,
+  "name": "Registro de producción de bobinas",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "diametro",
+      "label": "Diámetro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "MM",
+      "display_order": 3
+    },
+    {
+      "key": "peso_kg",
+      "label": "Peso kg",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 4
+    },
+    {
+      "key": "numero_de_cortes",
+      "label": "Número de cortes",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 6
+    }
+  ],
+  "definition_checksum": "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13"
+}

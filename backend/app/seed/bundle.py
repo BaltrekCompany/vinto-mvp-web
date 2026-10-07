@@ -180,6 +180,7 @@ def _validate_counts(bundle: Bundle) -> None:
         "article_machines": len(bundle.article_machines),
         "articles_also_material": sum(1 for a in bundle.articles if a["is_material"]),
         "articles_with_nominal_weight": sum(1 for a in bundle.articles if a["version"]["nominal_weight_kg"] is not None),
+        "articles_with_grammage": sum(1 for a in bundle.articles if a["version"].get("grammage_g_m2") is not None),
         "profiles": len(bundle.profiles),
         "workflows": len(bundle.workflows),
         "shifts": len(bundle.shifts),
@@ -213,6 +214,10 @@ def _validate_content(bundle: Bundle) -> None:
         _require(version["material_class"] is None or version["material_class"] in classes,
                  f"article {article['code']}: clase inexistente {version['material_class']}")
         _require(article["is_product"] or article["is_material"], f"article {article['code']}: debe ser producto o material")
+        _require("grammage_g_m2" in version, f"article {article['code']}: falta grammage_g_m2 (null cuando no existe)")
+        grammage = version["grammage_g_m2"]
+        _require(grammage is None or (isinstance(grammage, (int, float)) and not isinstance(grammage, bool) and grammage > 0),
+                 f"article {article['code']}: grammage_g_m2 inválido")
     pairs = [(r["article_code"], r["machine_code"]) for r in bundle.article_machines]
     _require(len(pairs) == len(set(pairs)), "article_machines: relaciones duplicadas")
     for article_code, machine_code in pairs:

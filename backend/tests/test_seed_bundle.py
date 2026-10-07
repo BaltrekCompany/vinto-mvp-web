@@ -94,7 +94,7 @@ class ReferenceDataTests(unittest.TestCase):
                 self.assertTrue(article["is_material"])
             if version["nominal_weight_kg"] is not None:
                 self.assertGreaterEqual(version["nominal_weight_kg"], 0)
-        self.assertEqual(units, {a["version"]["unit"] for a in articles})
+        self.assertEqual(units, {a["version"]["unit"] for a in articles} | {"MM"})  # MM comes from the F3 diameter field
         self.assertEqual(classes, {a["version"]["material_class"] for a in articles} - {None})
 
     def test_article_machine_relations_are_valid(self):
@@ -180,6 +180,33 @@ class NoSecretsTests(unittest.TestCase):
         manifest_text = read_text("manifest.json")
         for forbidden in ("OT-PRUEBA", "ASG-PRUEBA", "password", "secret", "usuario-demo"):
             self.assertNotIn(forbidden, manifest_text)
+
+class GrammageAndF3Tests(unittest.TestCase):
+    def test_every_article_carries_grammage_derived_from_its_description(self):
+        pattern = re.compile(r"(?<![A-Za-z0-9])G-(\d+(?:[.,]\d+)?)(?!\d)")
+        for article in read("articles.json")["items"]:
+            version = article["version"]
+            match = pattern.search(version["description"])
+            expected = None if match is None else float(match.group(1).replace(",", "."))
+            self.assertEqual(version["grammage_g_m2"], expected, article["code"])
+
+    def test_grammage_examples_and_nulls(self):
+        by_description = {a["version"]["description"]: a["version"]["grammage_g_m2"] for a in read("articles.json")["items"]}
+        self.assertEqual(by_description["M1-BOBINA PH G-22 CR-25% R-540640"], 22)
+        self.assertEqual(by_description["M1-BOBINA PH G-15.5 CR-22% R-540640"], 15.5)
+        self.assertEqual(by_description["M3-BOBINA PH G-14,5 CR-13% R-9109"], 14.5)
+        self.assertIn(None, by_description.values())
+        self.assertEqual(read("manifest.json")["counts"]["articles_with_grammage"], sum(v is not None for v in by_description.values()))
+
+    def test_f3_is_published_in_the_bundle_with_only_operator_fields(self):
+        form = read("forms/VINTO-P1-03.json")
+        self.assertEqual((form["code"], form["area"], form["machines"], form["groups"]), ("VINTO-P1-03", "production", ["MP1", "MP3"], []))
+        self.assertEqual([(f["key"], f["value_type"], f["required"], f["unit"]) for f in form["fields"]], [
+            ("hora_inicio", "time", True, None), ("hora_fin", "time", True, None), ("diametro", "decimal", True, "MM"),
+            ("peso_kg", "decimal", True, "KG"), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
+        self.assertEqual({f["source"] for f in form["fields"]}, {"manual"})
+        self.assertNotIn("pending_forms", read("manifest.json"))
+        self.assertIn("MM", {u["code"] for u in read("units.json")["items"]})
 
 
 if __name__ == "__main__":
