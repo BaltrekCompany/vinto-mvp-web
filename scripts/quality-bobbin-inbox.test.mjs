@@ -136,9 +136,10 @@ test("the inbox code never touches browser storage or local records", () => {
   }
 });
 
-test("the component is read-only: no release/reject, no actions or selection", () => {
+test("the component lists read-only; its only actions are refresh and opening the humidity control of that bobbin", () => {
   assert.equal(/Liberar|Rechazar|liberar|rechazar/.test(component), false);
-  assert.equal(/onClick=\{(?!refresh)/.test(component), false, "the only click is the refresh");
+  const clicks = [...component.matchAll(/onClick=\{([^}]*)\}/g)].map((m) => m[1].trim());
+  assert.deepEqual(clicks.sort(), ["() => onRegisterHumidity(i)", "refresh"]);
   assert.equal(/<input|checkbox|<select|<textarea|<Textarea|<Input/.test(component), false);
   assert.equal(/setReleases|useState|fetch\(/.test(component), false);
   assert.match(component, /Bobinas pendientes de Calidad/);
@@ -160,7 +161,7 @@ test("Calidad Execution renders the central inbox and no longer the demo Release
   const quality = executionBody.slice(executionBody.indexOf('if (front === "Calidad")'), executionBody.indexOf("return <><Panel"));
   assert.match(quality, /\{qualityInbox\}/);
   assert.equal(/ReleaseCards|releases|setReleases|Compuerta de liberación/.test(quality), false);
-  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\}\/>/);
+  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=/);
   assert.equal(/Execution\(\{[^}]*\b(releases|setReleases|canRelease)\b/.test(executionBody), false);
   assert.equal(/<Execution [^>]*(releases=|setReleases=|canRelease=)/.test(page), false);
 });
@@ -187,4 +188,21 @@ test("the resource is enabled only for Calidad + quality.capture in Ejecución, 
   assert.match(page, /canReadQualityInbox = hasPermission\(user, "quality\.capture"\)/);
   assert.equal(/activeAssignment|useActiveAssignment/.test(declaration), false);
   assert.match(page, /usesCentralAssignment\(front, activeModule\)/); // Calidad sigue sin consultar la asignación activa
+});
+
+test("layout: the main grid column can shrink so only the table scrolls horizontally", () => {
+  assert.match(page, /lg:grid-cols-\[270px_minmax\(0,1fr\)\]/);
+  assert.equal(page.includes("lg:grid-cols-[270px_1fr]"), false, "1fr = minmax(auto,1fr) lets a wide table push the whole page");
+  assert.match(page, /<section className="min-w-0 p-4 md:p-8">/);
+  assert.match(component, /min-w-0 max-w-full rounded-2xl/);
+  assert.match(component, /max-w-full overflow-x-auto/);
+  assert.match(component, /min-w-\[1320px\]/); // la tabla conserva su ancho mínimo: no se comprimen ni truncan las columnas
+  assert.equal(/truncate|text-ellipsis|overflow-hidden|line-clamp/.test(component), false);
+  assert.equal(/overflow-x-hidden/.test(page), false, "no se oculta el desborde de la página como parche");
+  const globals = ["../app/globals.css", "../app/layout.tsx"].map((f) => { try { return read(f); } catch { return ""; } }).join("\n");
+  assert.equal(/overflow-x:\s*hidden|overflow-x-hidden/.test(globals), false);
+  assert.equal((component.match(/<th /g) ?? []).length, 1); // las columnas salen de HEADERS.map
+  const headers = component.match(/const HEADERS = \[([^\]]*)\]/)[1].split(",").map((h) => h.trim()).filter(Boolean);
+  assert.equal(headers.length, 16);
+  assert.match(component, /Registrar humedad/);
 });

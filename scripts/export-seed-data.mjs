@@ -31,6 +31,7 @@ const SECTOR_NAME = "Bobinas";
 const SECTOR_CODE = "BOBINAS";
 const MACHINES = ["MP1", "MP3"];
 const PILOT_FORM = { legacyNumber: 6, legacyKey: "form_6_registro_de_control_de_fardos", code: "VINTO-P1-06" };
+const QUALITY_FORM = { legacyNumber: 19, legacyKey: "form_19_control_de_humedad", code: "VINTO-P1-19" };
 const NEXT_FORM = { legacyNumber: 3, legacyKey: "form_3_registro_de_produccion_de_bobinas", code: "VINTO-P1-03" };
 const PROFILES = [
   ["JEFATURA", "Jefatura"],
@@ -63,6 +64,18 @@ const F3_FIELDS = [
   { key: "diametro", value_type: "decimal", required: true, unit: "MM" },
   { key: "peso_kg", value_type: "decimal", required: true, unit: "KG" },
   { key: "numero_de_cortes", value_type: "text", required: true },
+  { key: "observaciones", value_type: "textarea", required: false },
+];
+
+// Canonical VINTO-P1-19 (Control de humedad, Calidad): ONLY the manual SOURCE data. The derived values (humedad por posición y
+// promedio_humedad) and the automatic ones (fecha, hora, máquina, número de bobina, responsable) are central context or are
+// recomputed from these weights, so they are NOT fields. Labels/units are read from the override in app/page.tsx.
+const Q19_POSITIONS = ["comando", "medio", "transversal"];
+const Q19_FIELDS = [
+  ...Q19_POSITIONS.flatMap((position) => [
+    { key: `peso_humedo_${position}`, value_type: "decimal", required: true, unit: "KG" },
+    { key: `peso_seco_${position}`, value_type: "decimal", required: true, unit: "KG" },
+  ]),
   { key: "observaciones", value_type: "textarea", required: false },
 ];
 
@@ -134,9 +147,9 @@ function functionBody(page, name) {
   return page.slice(start, next < 0 ? undefined : next);
 }
 
-function f6Override(page) {
-  const start = page.indexOf(`f.id === "${PILOT_FORM.legacyKey}"`);
-  if (start < 0) fail("F6: no se encontró su override en effectiveForms() de app/page.tsx");
+function formOverride(page, legacyKey, label) {
+  const start = page.indexOf(`f.id === "${legacyKey}"`);
+  if (start < 0) fail(`${label}: no se encontró su override en effectiveForms() de app/page.tsx`);
   const next = page.indexOf("if (f.id", start + 10);
   const block = page.slice(start, next < 0 ? undefined : next);
   const fields = {};
@@ -145,6 +158,9 @@ function f6Override(page) {
   }
   return fields;
 }
+
+const f6Override = (page) => formOverride(page, PILOT_FORM.legacyKey, "F6");
+const q19Override = (page) => formOverride(page, QUALITY_FORM.legacyKey, "P1-19");
 
 function f6Choices(page) {
   const body = functionBody(page, "BobbinBales");
@@ -164,13 +180,14 @@ function f6Choices(page) {
 // (already extracted and normalised), never of the raw file. Visual/authentication edits, whitespace or
 // formatting changes elsewhere in the page do not alter it; changing GROUPS.Bobinas, the F6 override or the
 // BobbinBales selectors/options does.
-export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,shift_night_rule";
+export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,shift_night_rule";
 const NIGHT_RULE = /else if \(h < 7 \|\| h >= 19\)/;
 
 export function pageSemantics(page) {
   return {
     groups_bobinas: groupMachines(page, SECTOR_NAME),
     f6_override: f6Override(page),
+    q19_override: q19Override(page),
     f6_choices: f6Choices(page),
     shift_night_rule: NIGHT_RULE.test(page),
   };
@@ -352,9 +369,33 @@ export function buildBundle(sources) {
   };
   const f3Form = { schema_version: SCHEMA_VERSION, ...f3Definition, definition_checksum: sha256(canonical(f3Definition)) };
 
-  // Workflows used by F6/F3 only
-  const workflowCodes = [...new Set([f6.workflowId, f3.workflowId])].sort(cmp);
-  if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3");
+  // VINTO-P1-19 (Calidad · Control de humedad): only the seven manual source fields.
+  const q19 = find(QUALITY_FORM);
+  if (q19.area !== "quality") fail(`P1-19 debe tener area quality y tiene ${q19.area}`);
+  const q19Allowed = new Set(q19.allowedMachineIds.map((m) => m.toLowerCase()));
+  for (const machine of MACHINES) if (!q19Allowed.has(machine.toLowerCase())) fail(`P1-19 no admite la máquina ${machine} en allowedMachineIds`);
+  const q19Source = q19Override(texts.page);
+  const q19Extra = Object.keys(q19Source).filter((k) => !Q19_FIELDS.some((f) => f.key === k));
+  if (q19Extra.length) fail(`P1-19: app/page.tsx define campos fuera del contrato canónico: ${q19Extra}`);
+  const q19Fields = Q19_FIELDS.map((spec, index) => {
+    const source = q19Source[spec.key];
+    if (!source) fail(`P1-19: el override de app/page.tsx ya no define ${spec.key}`);
+    if (source.type !== spec.value_type) fail(`P1-19: ${spec.key} es ${source.type} en app/page.tsx y el contrato canónico espera ${spec.value_type}`);
+    if (source.required !== spec.required) fail(`P1-19: ${spec.key} cambió su obligatoriedad en app/page.tsx`);
+    if ((source.unit ? source.unit.toUpperCase() : null) !== (spec.unit ?? null)) fail(`P1-19: la unidad de ${spec.key} en app/page.tsx es ${JSON.stringify(source.unit)}, se esperaba ${spec.unit ?? null}`);
+    if (spec.unit && !unitCodes.includes(spec.unit)) fail(`P1-19: la unidad ${spec.unit} no está entre las unidades del alcance (${unitCodes})`);
+    return { key: spec.key, label: source.label, value_type: spec.value_type, source: "manual", required: spec.required, unit: spec.unit ?? null, display_order: index + 1 };
+  });
+  if (q19Fields.length !== 7) fail("P1-19 debe tener exactamente 7 campos manuales");
+  const q19Definition = {
+    legacy_key: q19.id, code: q19.code, legacy_number: q19.legacyNumber, name: q19.name, area: "quality", workflow: q19.workflowId, version_number: 1,
+    machines: [...MACHINES], groups: [], fields: q19Fields,
+  };
+  const q19Form = { schema_version: SCHEMA_VERSION, ...q19Definition, definition_checksum: sha256(canonical(q19Definition)) };
+
+  // Workflows used by F6/F3/P1-19 only
+  const workflowCodes = [...new Set([f6.workflowId, f3.workflowId, q19.workflowId])].sort(cmp);
+  if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3/P1-19");
 
   // Shifts: declarative, cross-checked against ctx() in app/page.tsx
   if (!NIGHT_RULE.test(texts.page)) {
@@ -383,6 +424,7 @@ export function buildBundle(sources) {
   }));
   files.set(`forms/${PILOT_FORM.code}.json`, json(form));
   files.set(`forms/${NEXT_FORM.code}.json`, json(f3Form));
+  files.set(`forms/${QUALITY_FORM.code}.json`, json(q19Form));
 
   // ---- warnings and out-of-scope information ----
   if (alsoMaterial) warn("ARTICLE_ALSO_MATERIAL", "info", "Artículos del alcance que también figuran en MATERIALS (is_product e is_material)", alsoMaterial);
@@ -395,7 +437,7 @@ export function buildBundle(sources) {
   warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${SHIFT_VALID_FROM} y timezone=${SHIFT_TIMEZONE} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
   const otherMachines = Object.keys(productsByMachine).filter((m) => !MACHINES.includes(m));
   warn("OUT_OF_SCOPE_MACHINES", "info", "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)", otherMachines.length);
-  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6 y F3 sí se exportan)`, formDefinitions.length - 2);
+  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3 y P1-19 sí se exportan)`, formDefinitions.length - 3);
   warn("OUT_OF_SCOPE_RECIPES", "info", "Artículos del alcance con receta en recipes.ts; las recetas no se exportan en este piloto", articleItems.filter((a) => recipes?.[a.code]).length);
   warn("OUT_OF_SCOPE_MATERIALS", "info", "Entradas de MATERIALS que no son artículos del alcance", materials.length - alsoMaterial);
   warnings.sort((a, b) => cmp(a.code, b.code) || cmp(a.message, b.message));
@@ -414,14 +456,14 @@ export function buildBundle(sources) {
     workflows: workflowCodes.length,
     shifts: SHIFTS.length,
     shift_schedules: SHIFTS.length,
-    forms: 2,
-    form_fields: fields.length + f3Fields.length,
-    form_options: [...fields, ...f3Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
+    forms: 3,
+    form_fields: fields.length + f3Fields.length + q19Fields.length,
+    form_options: [...fields, ...f3Fields, ...q19Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
   };
   const manifest = {
     schema_version: SCHEMA_VERSION,
     bundle: "vinto-reference-bobinas-pilot",
-    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code] },
+    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code] },
     generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
       name === "page" ? { path, sha256: pageFingerprint(texts.page), scope: PAGE_FINGERPRINT_SCOPE } : { path, sha256: sha256(texts[name]) }
     )).sort((a, b) => cmp(a.path, b.path)),
@@ -434,6 +476,7 @@ export function buildBundle(sources) {
       sector_and_machines: "GROUPS in app/page.tsx",
       f6_labels_units_and_options: "app/page.tsx (effectiveForms override and BobbinBales)",
       f3_labels_units: "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
+      p1_19_labels_units: "app/page.tsx (effectiveForms override of form_19_control_de_humedad); only the 7 manual source fields, derived humidity is recomputed",
       grammage_g_m2: "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent",
     },
     warnings,
@@ -465,7 +508,7 @@ export function validateBundle({ files, manifest }) {
     const g = a.version.grammage_g_m2;
     if (g === undefined || (g !== null && !(typeof g === "number" && g > 0))) fail(`Gramaje inválido en ${a.code}`);
   }
-  for (const spec of [PILOT_FORM, NEXT_FORM]) {
+  for (const spec of [PILOT_FORM, NEXT_FORM, QUALITY_FORM]) {
     const form = JSON.parse(files.get(`forms/${spec.code}.json`));
     for (const f of form.fields) {
       const keys = (f.options ?? []).map((o) => o.option_key);
