@@ -276,7 +276,7 @@ class CommittedFlowTests(unittest.TestCase):
         before = self.connection.execute("SELECT prosrc FROM pg_proc WHERE proname='validate_capture'").fetchone()[0]
         self.assertNotIn("NEW.revision := OLD.revision;", before)
         self.migrate()
-        self.assertEqual([row[0] for row in applied_migrations(self.connection)], [1, 2, 3, 4])
+        self.assertEqual([row[0] for row in applied_migrations(self.connection)], [1, 2, 3, 4, 5])
         after = self.connection.execute("SELECT prosrc FROM pg_proc WHERE proname='validate_capture'").fetchone()[0]
         self.assertIn("NEW.revision := OLD.revision;", after)
         self.assertEqual(self.revision(legacy), (2, "submitted"))  # existing captures are not rewritten
