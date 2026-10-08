@@ -144,3 +144,13 @@ Solo hacia adelante y sin borrar ni reescribir filas:
   sequence_number)`, `UNIQUE (source_capture_id)` para filas nuevas y la unicidad global de `code` solo entre filas históricas.
 - Triggers: coherencia máquina/gestión/artículo de la bobina con su captura, identidad inmutable, y un constraint trigger diferido que exige la
   fila `quality_release` antes del COMMIT.
+
+## 0005_quality_capture_bobbin.sql: capturas de Calidad ligadas a una Bobina
+
+Solo hacia adelante, sin backfill: las capturas existentes (F3, F6) quedan con `bobbin_id IS NULL`.
+
+- `vinto_txn.capture.bobbin_id` (nullable) -> `vinto_txn.bobbin(id)` ON DELETE RESTRICT, con índice normal (NO único: una
+  Bobina puede tener varias capturas de Calidad; la cardinalidad no está confirmada).
+- Trigger `guard_capture_bobbin`: una captura con `bobbin_id` debe usar una versión de formulario `quality` y llevar
+  exactamente el contexto productivo de la F3 de origen de esa Bobina (máquina, turno, fecha operativa y asignación);
+  `bobbin_id` no puede cambiar después. `validate_capture()` no se reemplaza.

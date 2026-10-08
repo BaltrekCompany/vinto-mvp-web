@@ -347,12 +347,13 @@ def lock_active_assignment(connection, assignment_id) -> ActiveContext:
     return ActiveContext(machine_id, schedule_id, operating_date, article_version_id, now)
 
 
-def published_form_version(connection, form_code: str, machine_id) -> uuid.UUID:
-    """Versión publicada más alta del formulario (área production) y habilitada para la máquina; si no, FormNotAvailableError."""
+def published_form_version(connection, form_code: str, machine_id, *, area: str = "production") -> uuid.UUID:
+    """Versión publicada más alta del formulario en `area` (production por defecto: F6/F3 no cambian; Calidad pasa 'quality') y
+    habilitada para la máquina; si no, FormNotAvailableError."""
     version = connection.execute(
         """SELECT fv.id FROM vinto_config.form f JOIN vinto_config.form_version fv ON fv.form_id = f.id
-           WHERE f.code = %s AND f.active AND fv.status = 'published' AND fv.area = 'production' ORDER BY fv.version_number DESC LIMIT 1""",
-        (form_code,)).fetchone()
+           WHERE f.code = %s AND f.active AND fv.status = 'published' AND fv.area = %s ORDER BY fv.version_number DESC LIMIT 1""",
+        (form_code, area)).fetchone()
     if version is None:
         raise FormNotAvailableError()
     allowed = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s",
