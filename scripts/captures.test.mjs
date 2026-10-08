@@ -216,7 +216,7 @@ test("only the F6 form id is centralized", () => {
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("the page routes F6 to the central component and keeps the other forms on local save()", () => {
-  const f6 = page.slice(page.indexOf("if (selected && selected.id === F6_FORM_ID"), page.indexOf("    // F3 tampoco usa Capture/save()")); // la rama F3 tiene su propio test en bobbins.test.mjs
+  const f6 = page.slice(page.indexOf("if (selected && selected.id === F6_FORM_ID"), page.indexOf("    // Calidad · VINTO-P1-19 (central)")); // la rama F3 tiene su propio test en bobbins.test.mjs
   assert.ok(f6.includes("<F6Capture"));
   assert.equal(/save\(|setRecords|vinto-p1-records/.test(f6), false);
   assert.match(page, /if \(selected\)\n\s+return <Capture form=\{selected\}[^\n]*save=\{r => \{ setRecords\(x => \[r, \.\.\.x\]\)/); // los demás formularios siguen locales

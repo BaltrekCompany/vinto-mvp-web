@@ -10,14 +10,15 @@
     "first_form": "VINTO-P1-06",
     "forms": [
       "VINTO-P1-06",
-      "VINTO-P1-03"
+      "VINTO-P1-03",
+      "VINTO-P1-19"
     ]
   },
   "generated_from": [
     {
       "path": "app/page.tsx",
-      "sha256": "1f1381f8270acad30ef815bb31b66fcab502d743d2b96c428c13b3d089287ee0",
-      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,shift_night_rule"
+      "sha256": "ae8d9b80e2ffd698e6a5a1bf7d8d5257ef5b9c12a969032beecda6f8e486dc4b",
+      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,shift_night_rule"
     },
     {
       "path": "lib/vinto/catalogs.ts",
@@ -58,6 +59,11 @@
       "bytes": 2118
     },
     {
+      "path": "forms/VINTO-P1-19.json",
+      "sha256": "df14cba9c8baf4fc16d038b22b15464d162bbe1d24b58f1c94c4915fb0dea9ec",
+      "bytes": 1896
+    },
+    {
       "path": "machines.json",
       "sha256": "40efa5298b0b1466df09040438573313d9ed9ed79eb94f9d05a2a3452f993587",
       "bytes": 228
@@ -89,8 +95,8 @@
     },
     {
       "path": "workflows.json",
-      "sha256": "a6316252e7c6404cbc489acc9586c9783972aaa738c9ecaff499f53743bfc60a",
-      "bytes": 164
+      "sha256": "3779607893c480073de5378c0a30869a9ee3acf3c91f09e8e7a5507d594ff0d7",
+      "bytes": 242
     }
   ],
   "counts": {
@@ -104,11 +110,11 @@
     "articles_with_nominal_weight": 0,
     "articles_with_grammage": 92,
     "profiles": 5,
-    "workflows": 1,
+    "workflows": 2,
     "shifts": 2,
     "shift_schedules": 2,
-    "forms": 2,
-    "form_fields": 11,
+    "forms": 3,
+    "form_fields": 18,
     "form_options": 5
   },
   "authority_rules": {
@@ -118,6 +124,7 @@
     "sector_and_machines": "GROUPS in app/page.tsx",
     "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)",
     "f3_labels_units": "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
+    "p1_19_labels_units": "app/page.tsx (effectiveForms override of form_19_control_de_humedad); only the 7 manual source fields, derived humidity is recomputed",
     "grammage_g_m2": "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent"
   },
   "warnings": [
@@ -154,8 +161,8 @@
     {
       "code": "OUT_OF_SCOPE_FORMS",
       "severity": "info",
-      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto (F6 y F3 sí se exportan)",
-      "count": 23
+      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3 y P1-19 sí se exportan)",
+      "count": 22
     },
     {
       "code": "OUT_OF_SCOPE_MACHINES",
@@ -190,7 +197,7 @@
       "code": "WORKFLOW_NAME_PLACEHOLDER",
       "severity": "warning",
       "message": "workflow_definition.name usa el código de la fuente (no existe nombre real)",
-      "count": 1
+      "count": 2
     }
   ]
 }

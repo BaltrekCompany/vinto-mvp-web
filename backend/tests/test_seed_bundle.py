@@ -116,7 +116,7 @@ class ReferenceDataTests(unittest.TestCase):
 
     def test_workflows_cover_the_forms(self):
         workflows = {w["code"] for w in read("workflows.json")["items"]}
-        self.assertEqual(workflows, {"production-standard"})
+        self.assertEqual(workflows, {"production-standard", "quality-release"})
         self.assertIn(read(FORM_FILE)["workflow"], workflows)
 
     def test_shifts_are_declarative_and_open_ended(self):
@@ -207,6 +207,29 @@ class GrammageAndF3Tests(unittest.TestCase):
         self.assertEqual({f["source"] for f in form["fields"]}, {"manual"})
         self.assertNotIn("pending_forms", read("manifest.json"))
         self.assertIn("MM", {u["code"] for u in read("units.json")["items"]})
+
+class QualityP119Tests(unittest.TestCase):
+    def test_p1_19_is_published_with_the_seven_manual_source_fields(self):
+        form = read("forms/VINTO-P1-19.json")
+        self.assertEqual((form["code"], form["name"], form["area"], form["workflow"], form["version_number"], form["machines"], form["groups"]),
+                         ("VINTO-P1-19", "Control de humedad", "quality", "quality-release", 1, ["MP1", "MP3"], []))
+        self.assertEqual([(f["key"], f["value_type"], f["required"], f["unit"], f["source"]) for f in form["fields"]], [
+            ("peso_humedo_comando", "decimal", True, "KG", "manual"), ("peso_seco_comando", "decimal", True, "KG", "manual"),
+            ("peso_humedo_medio", "decimal", True, "KG", "manual"), ("peso_seco_medio", "decimal", True, "KG", "manual"),
+            ("peso_humedo_transversal", "decimal", True, "KG", "manual"), ("peso_seco_transversal", "decimal", True, "KG", "manual"),
+            ("observaciones", "textarea", False, None, "manual")])
+        self.assertEqual([f["display_order"] for f in form["fields"]], [1, 2, 3, 4, 5, 6, 7])
+
+    def test_derived_and_automatic_values_are_not_central_fields(self):
+        text = json.dumps(read("forms/VINTO-P1-19.json"))
+        for forbidden in ("humedad_comando", "humedad_medio", "humedad_transversal", "promedio_humedad", "muestra_", "calculated", "automatic",
+                          "numero_de_bobina", "responsable", "maquina", "fecha", '"hora"'):
+            self.assertNotIn(forbidden, text, forbidden)
+
+    def test_manifest_counts_cover_the_three_forms(self):
+        counts = read("manifest.json")["counts"]
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (3, 18, 5, 2))
+        self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 
 if __name__ == "__main__":

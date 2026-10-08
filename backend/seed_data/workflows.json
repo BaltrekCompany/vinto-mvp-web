@@ -5,6 +5,10 @@
     {
       "code": "production-standard",
       "name": "production-standard"
+    },
+    {
+      "code": "quality-release",
+      "name": "quality-release"
     }
   ]
 }

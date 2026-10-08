@@ -39,8 +39,8 @@ test("manifest is consistent with the files", () => {
   const { files, manifest } = buildBundle(sources);
   assert.deepEqual(manifest.files.map((f) => f.path), [...files.keys()].filter((n) => n !== "manifest.json").sort());
   assert.equal(manifest.counts.articles, JSON.parse(files.get("articles.json")).items.length);
-  assert.equal(manifest.counts.forms, 2);
-  assert.equal(manifest.counts.form_fields, 11);
+  assert.equal(manifest.counts.forms, 3);
+  assert.equal(manifest.counts.form_fields, 18);
   assert.equal(manifest.counts.form_options, 5);
   assert.equal(manifest.pending_forms, undefined);
 });
@@ -149,7 +149,7 @@ test("the manifest fingerprints app/page.tsx semantically, not by file hash", ()
   assert.equal(entry.sha256, fingerprint(PAGE));
   assert.equal(entry.scope, PAGE_FINGERPRINT_SCOPE);
   assert.notEqual(entry.sha256, createHash("sha256").update(PAGE).digest("hex"));
-  assert.deepEqual(Object.keys(pageSemantics(PAGE)).sort(), ["f6_choices", "f6_override", "groups_bobinas", "shift_night_rule"]);
+  assert.deepEqual(Object.keys(pageSemantics(PAGE)).sort(), ["f6_choices", "f6_override", "groups_bobinas", "q19_override", "shift_night_rule"]);
   for (const other of manifest.generated_from.filter((e) => e.path !== "app/page.tsx")) assert.equal(other.scope, undefined);
 });
 
@@ -227,4 +227,26 @@ test("business data of the bundle does not depend on how page.tsx is fingerprint
   const form = JSON.parse(bundle.files.get("forms/VINTO-P1-06.json"));
   assert.equal(form.definition_checksum, "fe0bf83fb710" + form.definition_checksum.slice(12));
   assert.equal(form.fields.length, 5);
+});
+
+test("VINTO-P1-19 is published in the bundle with only the seven manual source fields", () => {
+  const { files, manifest } = buildBundle(sources);
+  const form = JSON.parse(files.get("forms/VINTO-P1-19.json"));
+  assert.deepEqual([form.code, form.name, form.area, form.workflow, form.version_number, form.machines, form.groups], ["VINTO-P1-19", "Control de humedad", "quality", "quality-release", 1, ["MP1", "MP3"], []]);
+  assert.deepEqual(form.fields.map((f) => [f.key, f.value_type, f.required, f.unit, f.source]), [
+    ["peso_humedo_comando", "decimal", true, "KG", "manual"], ["peso_seco_comando", "decimal", true, "KG", "manual"],
+    ["peso_humedo_medio", "decimal", true, "KG", "manual"], ["peso_seco_medio", "decimal", true, "KG", "manual"],
+    ["peso_humedo_transversal", "decimal", true, "KG", "manual"], ["peso_seco_transversal", "decimal", true, "KG", "manual"],
+    ["observaciones", "textarea", false, null, "manual"],
+  ]);
+  const text = JSON.stringify(form);
+  for (const derived of ["humedad_comando", "humedad_medio", "humedad_transversal", "promedio_humedad", "muestra_", "calculated", "automatic", "numero_de_bobina", "responsable", "maquina"]) assert.equal(text.includes(derived), false, derived);
+  assert.ok(manifest.files.some((f) => f.path === "forms/VINTO-P1-19.json"));
+  assert.ok(JSON.parse(files.get("workflows.json")).items.some((w) => w.code === "quality-release"));
+});
+
+test("fails when the P1-19 override in the page changes the canonical contract", () => {
+  failsWith((s) => { s.texts.page = s.texts.page.replace('fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "kg")', 'fld("peso_seco_medio", "Peso seco · Medio", "text", true, "kg")'); }, /P1-19: peso_seco_medio/);
+  failsWith((s) => { s.texts.page = s.texts.page.replace('fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "kg")', 'fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "g")'); }, /P1-19: la unidad de peso_seco_medio/);
+  failsWith((s) => { s.texts.page = s.texts.page.replaceAll('fld("observaciones", "Observaciones", "textarea", false)', 'fld("observaciones", "Observaciones", "textarea", false), fld("extra", "Extra", "text")'); }, /fuera del contrato/); // replaceAll: el literal se repite en los overrides de F3, F6 y P1-19
 });

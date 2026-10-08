@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_19_control_de_humedad",
+  "code": "VINTO-P1-19",
+  "legacy_number": 19,
+  "name": "Control de humedad",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "peso_humedo_comando",
+      "label": "Peso húmedo · Comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 1
+    },
+    {
+      "key": "peso_seco_comando",
+      "label": "Peso seco · Comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 2
+    },
+    {
+      "key": "peso_humedo_medio",
+      "label": "Peso húmedo · Medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 3
+    },
+    {
+      "key": "peso_seco_medio",
+      "label": "Peso seco · Medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 4
+    },
+    {
+      "key": "peso_humedo_transversal",
+      "label": "Peso húmedo · Transversal",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 5
+    },
+    {
+      "key": "peso_seco_transversal",
+      "label": "Peso seco · Transversal",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "KG",
+      "display_order": 6
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 7
+    }
+  ],
+  "definition_checksum": "682908dee7878ce55313011a9a62ef9c0b82dbae404ed129bacaf2366c8a22ff"
+}
