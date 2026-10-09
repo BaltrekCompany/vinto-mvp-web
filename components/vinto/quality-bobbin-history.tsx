@@ -3,7 +3,8 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { POSITIONS, POSITION_LABELS, computeHumidity, formatHumidity, type QualityCapture } from "@/lib/vinto/quality-captures";
-import { qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
+import { grammageLabel, qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
+import { PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, physicalAverages, seriesKeys, type PhysicalCapture } from "@/lib/vinto/quality-physical";
 import {
     HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin,
     type QualityHistoryEntry, type QualityHistoryLoad, type QualityHistoryMeta,
@@ -12,7 +13,8 @@ import type { Resource } from "@/lib/vinto/use-central";
 
 // Historial de controles de Calidad de UNA Bobina (GET /api/quality/bobbins/{id}/captures, PostgreSQL). SOLO lectura: no envía, no edita,
 // no libera ni rechaza y no escribe en el navegador. El encabezado sale del item del inbox (Bobina seleccionada); los controles, en el orden
-// del backend. La humedad de P1-19 se calcula con computeHumidity de Q2 SOLO para mostrarla. Nunca se muestran datos demo ni locales.
+// del backend. La humedad de P1-19 (computeHumidity de Q2) y los promedios de P1-20 (physicalAverages de Q3.2-B) se calculan SOLO para
+// mostrarlos. Nunca se muestran datos demo ni locales.
 
 type Props = {
     item: QualityBobbinInboxItem; // Bobina seleccionada en el inbox
@@ -48,6 +50,27 @@ function HumidityDetail({ capture }: { capture: QualityCapture }) {
     </div>;
 }
 
+const withUnit = (value: string, unit: string | undefined): string => (unit ? `${value} ${unit}` : value);
+
+// P1-20: las once mediciones tal como llegan (texto exacto), agrupadas como en la captura, y los promedios con physicalAverages/averageLabel
+// de Q3.2-B (misma aritmética decimal y representación; solo visuales). Unidades visuales provisionales de PHYSICAL_UNITS.
+function PhysicalDetail({ capture }: { capture: PhysicalCapture }) {
+    const values = capture.values;
+    const averages = physicalAverages(values);
+    const notes = values.observaciones;
+    return <div className="mt-4 space-y-4">
+        {PHYSICAL_GROUPS.map(group => <section key={group.title} aria-label={group.title}><h4 className="text-xs font-black uppercase text-slate-600">{group.title}</h4>
+            <dl className="mt-1 grid gap-3 sm:grid-cols-3">{group.keys.map(key => <Meta key={key} label={PHYSICAL_LABELS[key]} value={withUnit(values[key], PHYSICAL_UNITS[key])}/>)}</dl></section>)}
+        <section aria-label="Promedios"><h4 className="text-xs font-black uppercase text-slate-600">Promedios (solo visualización)</h4>
+            <dl className="mt-1 grid gap-3 sm:grid-cols-3">{PHYSICAL_SERIES.map(series => {
+                const view = averages[series];
+                return <Meta key={series} label={`Promedio ${SERIES_LABELS[series].toLowerCase()}`} value={withUnit(averageLabel(view), view.kind === "incomplete" ? undefined : PHYSICAL_UNITS[seriesKeys(series)[0]])}/>;
+            })}</dl>
+            <p className="mt-2 text-xs text-slate-600">Media aritmética de Comando, Medio y Extremo; «≈» indica un valor aproximado con dos decimales más que las mediciones. Promedios, unidades y su presentación son provisionales y solo informativos: no se guardan ni constituyen una decisión de liberación.</p></section>
+        {notes !== undefined && notes !== "" && <div><p className="text-xs font-semibold text-slate-600">Observaciones</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{notes}</p></div>}
+    </div>;
+}
+
 function EntryCard({ entry, index, total }: { entry: QualityHistoryEntry; index: number; total: number }) {
     const meta: QualityHistoryMeta = entry.meta;
     const headingId = `quality-control-${meta.id}`;
@@ -61,6 +84,7 @@ function EntryCard({ entry, index, total }: { entry: QualityHistoryEntry; index:
             <Meta label="Envío (hora de planta)" value={meta.submitted_at === null ? HISTORY_MESSAGES.noSubmitted : formatPlantInstant(meta.submitted_at)}/>
         </dl>
         {entry.kind === "humidity" && <HumidityDetail capture={entry.capture}/>}
+        {entry.kind === "physical" && <PhysicalDetail capture={entry.capture}/>}
         {entry.kind === "unsupported" && <p className="mt-3 rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">{HISTORY_MESSAGES.unsupported}</p>}
         {entry.kind === "invalid" && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{HISTORY_MESSAGES.invalidEntry}</p>}
         <p className="mt-3 break-all text-xs text-slate-500">ID de captura: {meta.id}</p>
@@ -91,6 +115,7 @@ export function QualityBobbinHistory({ item, resource, refresh, back }: Props) {
             <dl className="grid gap-3 border-b bg-emerald-50 p-5 sm:grid-cols-2 md:grid-cols-4">
                 <Fact label="Bobina" value={bobbin.code}/><Fact label="Máquina" value={bobbin.machine.code}/><Fact label="OT" value={production.work_order.number}/><Fact label="Línea / PV" value={`${production.line.line_code} / ${production.line.pv_reference}`}/>
                 <Fact label="Artículo" value={`${production.line.article.code} · ${production.line.article.description}`}/><Fact label="Fecha operativa" value={production.operating_date}/><Fact label="Turno" value={production.shift.name}/><Fact label="Estado de Calidad (inbox)" value={qualityStatusLabel(quality.status)}/>
+                <Fact label="Gramaje nominal de Producción" value={grammageLabel(bobbin.grammage_g_m2)}/>
             </dl>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
                 <div><h2 className="font-black">Controles registrados{count !== null && `: ${count}`}</h2><p className="mt-1 text-sm text-slate-700">Del más reciente al más antiguo. Horas de ensayo y envío en hora de planta ({PLANT_TIME_ZONE}).</p></div>

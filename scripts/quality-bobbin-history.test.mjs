@@ -1,6 +1,6 @@
 // node --test scripts/quality-bobbin-history.test.mjs
-// Q3.1 · Historial de controles de Calidad por Bobina (solo lectura): parser del historial (estructura común, identidad de la Bobina,
-// formularios sin visor, P1-19 por su parser estricto de Q2), clasificación de errores HTTP, guarda contra respuestas tardías de otra
+// Q3.1 / Q3.2-C · Historial de controles de Calidad por Bobina (solo lectura): parser del historial (estructura común, identidad de la Bobina,
+// formularios sin visor, P1-19 y P1-20 por sus parsers estrictos de Q2 y Q3.2-B), clasificación de errores HTTP, guarda contra respuestas tardías de otra
 // Bobina, hora de planta, cálculo visual de humedad de Q2 y comprobaciones estructurales de la integración (sin escrituras, sin
 // liberar/rechazar, sin tocar el intento pendiente de humedad). No hay entorno de renderizado React en Node: la UI se verifica por estructura.
 import assert from "node:assert/strict";
@@ -11,15 +11,19 @@ import {
   Q19_FORM_CODE, WEIGHT_KEYS, captureMatchesHumidityAttempt, computeHumidity, createHumidityAttempt, formatHumidity, parseQualityCapture, EMPTY_HUMIDITY_DRAFT,
 } from "../lib/vinto/quality-captures.ts";
 import {
-  HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin, parseHistoryMeta, parseQualityBobbinHistory, qualityHistoryLoad,
+  HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin, humidityViewer, parseHistoryMeta, parseQualityBobbinHistory,
+  physicalViewer, qualityHistoryLoad,
 } from "../lib/vinto/quality-history.ts";
+import {
+  EMPTY_PHYSICAL_DRAFT, PHYSICAL_KEYS, Q20_FORM_CODE, averageLabel, averageOf, captureMatchesPhysicalAttempt, createPhysicalAttempt, parsePhysicalCapture, physicalAverages, seriesKeys,
+} from "../lib/vinto/quality-physical.ts";
 
 // Evidencia DEV (prueba sintética de Q2): solo como fixture; aquí no se lee ni se escribe la base.
 const BOBBIN_ID = "f96d57a1-ab3d-4d5d-93c0-a1af2a18408b";
 const CAPTURE_ID = "e75e35b2-de12-414d-80c9-15041cc3a9be";
 const OTHER_BOBBIN_ID = "12121212-1212-4212-8212-121212121212";
 const BOBBIN = { id: BOBBIN_ID, code: "1" };
-const VIEWERS = { [Q19_FORM_CODE]: parseQualityCapture }; // el mismo registro que usa lib/vinto/quality-history-api.ts
+const VIEWERS = { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture) }; // el mismo registro que lib/vinto/quality-history-api.ts
 const DEV_VALUES = { peso_humedo_comando: "0.100", peso_seco_comando: "0.094", peso_humedo_medio: "0.101", peso_seco_medio: "0.095", peso_humedo_transversal: "0.099", peso_seco_transversal: "0.093" };
 
 const capture = (o = {}) => ({
@@ -29,7 +33,9 @@ const capture = (o = {}) => ({
   line: { id: "55555555-5555-4555-8555-555555555555", line_code: "L1", pv_reference: "PV-DEV-001", article: { code: "M1-1031", description: "M1-BOBINA PH G-15.5" } },
   values: { ...DEV_VALUES }, ...o,
 });
-const other = (o = {}) => capture({ id: "33333333-3333-4333-8333-333333333333", form: { code: "VINTO-P1-20", version_number: 2, name: "Otro control" }, values: { gramaje: "15.5", peso_humedo_comando: "1" }, ...o });
+// Formulario REALMENTE desconocido (sin visor registrado). Lleva claves de P1-19 y P1-20 para comprobar que nunca se interpretan.
+const UNKNOWN_FORM = "VINTO-QA-99";
+const other = (o = {}) => capture({ id: "33333333-3333-4333-8333-333333333333", form: { code: UNKNOWN_FORM, version_number: 2, name: "Otro control" }, values: { gramaje: "15.5", peso_humedo_comando: "1" }, ...o });
 const parse = (list, expected = BOBBIN) => parseQualityBobbinHistory(list, expected, VIEWERS);
 const ready = (data, refreshing = false) => ({ status: "ready", data, refreshing });
 
@@ -101,7 +107,7 @@ test("an unknown form is shown with metadata only: its values are never interpre
   const history = parse([other()]);
   const [entry] = history.entries;
   assert.equal(entry.kind, "unsupported");
-  assert.deepEqual([entry.meta.form.code, entry.meta.form.name, entry.meta.form.version_number], ["VINTO-P1-20", "Otro control", 2]);
+  assert.deepEqual([entry.meta.form.code, entry.meta.form.name, entry.meta.form.version_number], [UNKNOWN_FORM, "Otro control", 2]);
   assert.equal("capture" in entry, false);
   assert.equal("values" in entry.meta, false);
   assert.equal(JSON.stringify(history).includes("gramaje"), false);
@@ -230,7 +236,8 @@ test("the API only GETs the existing endpoint through requestJson, with cancella
   assert.equal(/method:|POST|PATCH|PUT|DELETE/.test(api), false);
   assert.equal(/fetch\(|Authorization|document\.cookie|localStorage|sessionStorage|indexedDB/.test(api), false);
   assert.match(api, /AbortSignal\.any\(\[signal, AbortSignal\.timeout\(GET_TIMEOUT_MS\)\]\)/);
-  assert.match(api, /\[Q19_FORM_CODE\]: parseQualityCapture/, "P1-19 goes through the strict Q2 parser");
+  assert.match(api, /const VIEWERS: HistoryViewers = \{ \[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\) \};/,
+    "P1-19 and P1-20 go through their strict parsers (Q2 / Q3.2-B)");
   assert.match(api, /if \(!result\.ok && result\.kind === "session"\) return result;/, "401 reaches the existing session-lost flow");
   assert.equal(/\/api\/quality\/(?!bobbins\/\$\{)/.test(api), false, "no other endpoint");
 });
@@ -320,4 +327,146 @@ test("page: the history never touches the pending humidity attempt or the humidi
   assert.ok(page.indexOf("if (selectedQualityBobbin)") < page.indexOf("if (qualityHistory && canReadQualityInbox)"));
   assert.match(page, /onRegisterHumidity=\{item => setSelectedQualityBobbin\(humidityAttempt \? humidityAttempt\.bobbin : item\)\}/);
   assert.match(page, /<QualityHumidityCapture item=\{selectedQualityBobbin\} online=\{online\} attempt=\{humidityAttempt\} setAttempt=\{setHumidityAttempt\}/);
+});
+
+// ---- Q3.2-C · VINTO-P1-20 con visor específico ------------------------------------------------------------------------------
+
+const P120_ID = "77777777-7777-4777-8777-777777777777";
+const P120_VALUES = {
+  crepado: "15.500", gramaje: "18.250", resistencia_longitudinal_centro: "0.1180", resistencia_longitudinal_medio: "0.1200", resistencia_longitudinal_extremo: "0.1190",
+  resistencia_transversal_centro: "0.0700", resistencia_transversal_medio: "0.0710", resistencia_transversal_extremo: "0.0690",
+  espesor_centro: "0.100", espesor_medio: "0.101", espesor_extremo: "0.099",
+};
+const physical = (o = {}) => capture({ id: P120_ID, form: { code: "VINTO-P1-20", version_number: 1, name: "Propiedades físicas de bobina" }, values: { ...P120_VALUES }, ...o });
+
+test("history with only P1-20: a 'physical' entry with the strict P1-20 capture and its bobbin identity", () => {
+  const history = parse([physical()]);
+  assert.equal(history.entries.length, 1);
+  const [entry] = history.entries;
+  assert.equal(entry.kind, "physical");
+  assert.deepEqual([entry.meta.id, entry.capture.id, entry.meta.form.code, entry.capture.form.code, entry.capture.bobbin.id, entry.capture.bobbin.code], [P120_ID, P120_ID, "VINTO-P1-20", "VINTO-P1-20", BOBBIN_ID, "1"]);
+  assert.equal("peso_humedo_comando" in entry.capture.values, false);
+});
+
+test("history with only P1-19 keeps its 'humidity' entry", () => {
+  assert.deepEqual(parse([capture()]).entries.map((e) => e.kind), ["humidity"]);
+});
+
+test("mixed P1-19 / P1-20 / unknown history keeps the backend order and each entry its own kind and structure", () => {
+  const list = [physical({ captured_at: "2026-10-08T16:00:00Z" }), other({ captured_at: "2026-10-08T15:00:00Z" }), capture({ captured_at: "2026-10-08T14:00:00Z" })];
+  const history = parse(list);
+  assert.deepEqual(history.entries.map((e) => [e.kind, e.meta.id]), [["physical", P120_ID], ["unsupported", "33333333-3333-4333-8333-333333333333"], ["humidity", CAPTURE_ID]]);
+  assert.deepEqual(Object.keys(history.entries[0].capture.values).sort(), [...PHYSICAL_KEYS].sort());
+  assert.deepEqual(Object.keys(history.entries[2].capture.values).sort(), [...WEIGHT_KEYS].sort());
+  assert.deepEqual(parse([...list].reverse()).entries.map((e) => e.kind), ["humidity", "unsupported", "physical"], "order is never re-sorted");
+});
+
+test("the eleven P1-20 decimals are preserved exactly as text ('0.1180' stays '0.1180')", () => {
+  const { capture: c } = parse([physical()]).entries[0];
+  assert.deepEqual(c.values, P120_VALUES);
+  for (const key of PHYSICAL_KEYS) assert.equal(typeof c.values[key], "string", key);
+  assert.equal(c.values.resistencia_longitudinal_centro, "0.1180");
+  const long = "12345678901234567890.123456789";
+  assert.equal(parse([physical({ values: { ...P120_VALUES, gramaje: long } })]).entries[0].capture.values.gramaje, long);
+});
+
+test("P1-20 observaciones are optional and kept verbatim (spaces, line breaks, special characters)", () => {
+  assert.equal(Object.prototype.hasOwnProperty.call(parse([physical()]).entries[0].capture.values, "observaciones"), false);
+  const text = "  Borde <b>húmedo</b> & \"tensión\"\n\tsegunda línea  ";
+  assert.equal(parse([physical({ values: { ...P120_VALUES, observaciones: text } })]).entries[0].capture.values.observaciones, text);
+});
+
+test("P1-20 averages in the history are exactly the Q3.2-B ones (same function, same representation)", () => {
+  const { capture: c } = parse([physical()]).entries[0];
+  const averages = physicalAverages(c.values);
+  assert.deepEqual(averages, { resistencia_longitudinal: { kind: "exact", text: "0.1190" }, resistencia_transversal: { kind: "exact", text: "0.0700" }, espesor: { kind: "exact", text: "0.100" } });
+  for (const series of Object.keys(averages)) assert.deepEqual(averages[series], averageOf(seriesKeys(series).map((k) => c.values[k])), series);
+  const inexact = parse([physical({ values: { ...P120_VALUES, resistencia_transversal_centro: "410.0", resistencia_transversal_medio: "398", resistencia_transversal_extremo: "402.25" } })]).entries[0];
+  assert.equal(averageLabel(physicalAverages(inexact.capture.values).resistencia_transversal), "≈ 403.4167");
+  assert.equal(JSON.stringify(inexact.capture.values).includes("promedio"), false, "averages are never part of the source values");
+});
+
+test("an invalid P1-20 is 'invalid' (never 'unsupported', never shown with measurements)", () => {
+  const missing = { ...P120_VALUES }; delete missing.espesor_medio;
+  for (const bad of [{ ...P120_VALUES, gramaje: 18.25 }, { ...P120_VALUES, espesor_medio: "abc" }, missing, { ...P120_VALUES, observaciones: 5 }, { ...P120_VALUES, promedio_espesor: "0.100" },
+    { ...P120_VALUES, peso_humedo_comando: "1" }, {}]) {
+    const history = parse([physical({ values: bad })]);
+    assert.ok(history, "the history itself stays readable");
+    assert.equal(history.entries[0].kind, "invalid", JSON.stringify(bad));
+    assert.equal("capture" in history.entries[0], false);
+  }
+});
+
+test("P1-20 is never read as P1-19 and vice versa, and the humidity parser is not relaxed", () => {
+  assert.equal(parseQualityCapture(physical()), null);
+  assert.equal(parsePhysicalCapture(capture()), null);
+  // aunque el registro se configurara mal, un formulario nunca pasa por el visor del otro: queda 'invalid'
+  const crossed = { [Q19_FORM_CODE]: physicalViewer(parsePhysicalCapture), [Q20_FORM_CODE]: humidityViewer(parseQualityCapture) };
+  assert.deepEqual(parseQualityBobbinHistory([capture(), physical()], BOBBIN, crossed).entries.map((e) => e.kind), ["invalid", "invalid"]);
+  // P1-19 conserva su comportamiento de Q2 (sin cambios aquí): una clave ajena NO se propaga (el parser copia solo los seis pesos y
+  // observaciones), y un peso numérico o ausente sigue siendo inválido. (El parser de P1-20 es más estricto: rechaza claves ajenas.)
+  const extra = parse([capture({ values: { ...DEV_VALUES, crepado: "1" } })]).entries[0];
+  assert.equal(extra.kind, "humidity");
+  assert.equal("crepado" in extra.capture.values, false);
+  assert.deepEqual(Object.keys(extra.capture.values).sort(), [...WEIGHT_KEYS].sort());
+  assert.equal(parse([capture({ values: { ...DEV_VALUES, peso_seco_medio: 0.095 } })]).entries[0].kind, "invalid");
+  const noWeight = { ...DEV_VALUES }; delete noWeight.peso_humedo_medio;
+  assert.equal(parse([capture({ values: noWeight })]).entries[0].kind, "invalid");
+});
+
+test("the identity returned by a specific parser must match the common metadata and the requested bobbin", () => {
+  const liar = (patch) => ({ [Q20_FORM_CODE]: (raw) => { const c = parsePhysicalCapture(raw); return c && { kind: "physical", capture: { ...c, ...patch } }; } });
+  for (const patch of [{ id: "88888888-8888-4888-8888-888888888888" }, { bobbin: { id: OTHER_BOBBIN_ID, code: "1" } }, { bobbin: { id: BOBBIN_ID, code: "2" } },
+    { form: { code: "VINTO-P1-20", version_number: 2, name: "x" } }]) {
+    assert.equal(parseQualityBobbinHistory([physical()], BOBBIN, liar(patch)).entries[0].kind, "invalid", JSON.stringify(patch));
+  }
+  assert.equal(parseQualityBobbinHistory([physical()], BOBBIN, liar({})).entries[0].kind, "physical");
+});
+
+test("P1-20 of ANOTHER bobbin or a duplicated id across forms rejects the whole response", () => {
+  assert.equal(parse([capture(), physical({ bobbin: { id: OTHER_BOBBIN_ID, code: "1" } })]), null);
+  assert.equal(parse([physical({ bobbin: { id: BOBBIN_ID, code: "9" } })]), null);
+  assert.equal(parse([physical(), physical()]), null);
+  assert.equal(parse([capture({ id: P120_ID }), physical()]), null, "same id in a P1-19 and a P1-20 entry");
+  assert.equal(parse([physical({ captured_at: "2026-10-08T14:05:09" })]), null, "instant without time zone");
+  const lateFromOther = qualityHistoryLoad(OTHER_BOBBIN_ID, { ok: true, status: 200, data: parse([physical({ bobbin: { id: OTHER_BOBBIN_ID, code: "7" } })], { id: OTHER_BOBBIN_ID, code: "7" }) });
+  assert.deepEqual(historyForBobbin(ready(lateFromOther), BOBBIN_ID), { status: "loading" });
+});
+
+test("a P1-20 entry keeps the historical operating date and shows test/submission instants in plant time", () => {
+  const meta = parse([physical({ captured_at: "2026-10-08T02:30:00Z", operating_date: "2026-10-08" })]).entries[0].meta;
+  assert.equal(meta.operating_date, "2026-10-08");
+  assert.equal(formatPlantInstant(meta.captured_at), "07/10/2026 22:30:00");
+});
+
+test("reading P1-20 history does not touch a pending P1-20 attempt", () => {
+  const item = { bobbin: { id: BOBBIN_ID, code: "1", machine: { code: "MP1", name: "MP1" } }, production: { work_order: { number: "OT-2026-0001" } }, quality: { status: "pending" } };
+  const made = createPhysicalAttempt({ ...EMPTY_PHYSICAL_DRAFT, ...P120_VALUES }, item, "99999999-9999-4999-8999-999999999999", () => P120_ID);
+  assert.ok(made.ok);
+  const before = JSON.stringify(made.attempt);
+  const history = parse([physical()]);
+  assert.equal(JSON.stringify(made.attempt), before);
+  assert.ok(Object.isFrozen(made.attempt.payload.values));
+  assert.equal(captureMatchesPhysicalAttempt(history.entries[0].capture, made.attempt), true); // la reconciliación de Q3.2-B la sigue reconociendo
+});
+
+test("the P1-20 detail reuses the Q3.2-B constants and functions, shows exact text with provisional units, and is read-only", () => {
+  const body = component.slice(component.indexOf("function PhysicalDetail("), component.indexOf("function EntryCard("));
+  assert.ok(body.length > 0);
+  assert.match(body, /PHYSICAL_GROUPS\.map\(group =>/);
+  assert.match(body, /label=\{PHYSICAL_LABELS\[key\]\} value=\{withUnit\(values\[key\], PHYSICAL_UNITS\[key\]\)\}/);
+  assert.match(body, /const averages = physicalAverages\(values\);/);
+  assert.match(body, /PHYSICAL_SERIES\.map\(series =>/);
+  assert.match(body, /SERIES_LABELS\[series\]/);
+  assert.match(body, /averageLabel\(view\)/);
+  assert.match(body, /PHYSICAL_UNITS\[seriesKeys\(series\)\[0\]\]/);
+  assert.match(body, /provisionales y solo informativos/);
+  assert.match(body, /no se guardan ni constituyen una decisión de liberación/);
+  assert.match(body, /whitespace-pre-wrap break-words text-sm">\{notes\}/);
+  assert.match(body, /notes !== undefined && notes !== ""/);
+  assert.equal(/BigInt|Number\(|parseFloat|toFixed|dangerouslySetInnerHTML|"g\/m²"|"mm"|"Comando"|onClick|<Input|<Textarea/.test(body), false, "no second arithmetic, no inline units/labels, no HTML, no actions");
+  assert.match(component, /\{entry\.kind === "physical" && <PhysicalDetail capture=\{entry\.capture\}\/>\}/);
+  assert.match(component, /\{entry\.kind === "humidity" && <HumidityDetail capture=\{entry\.capture\}\/>\}/);
+  assert.match(component, /<Fact label="Gramaje nominal de Producción" value=\{grammageLabel\(bobbin\.grammage_g_m2\)\}\/>/);
+  assert.equal(/dangerouslySetInnerHTML|indexedDB/.test(component), false);
 });

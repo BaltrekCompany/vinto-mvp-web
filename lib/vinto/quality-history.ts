@@ -1,23 +1,44 @@
 // Historial de controles de Calidad de UNA Bobina física (GET /api/quality/bobbins/{id}/captures). SOLO lectura. PURO (sin red, sin DOM,
-// sin imports en tiempo de ejecución) para probarlo con Node: el parser estricto de P1-19 (parseQualityCapture) entra inyectado y NO se
-// relaja ni se reemplaza. El backend es la autoridad del orden (captured_at DESC, id DESC): aquí no se reordena, no se filtra ni se calcula
-// nada que se guarde. Si un registro no se puede identificar o pertenece a otra Bobina, se rechaza la respuesta COMPLETA (nunca se oculta
-// en silencio un control). Un formulario sin visor específico se muestra solo con sus metadatos; sus valores no se interpretan.
+// sin imports en tiempo de ejecución) para probarlo con Node: los parsers ESTRICTOS de cada formulario (P1-19 parseQualityCapture, P1-20
+// parsePhysicalCapture) entran inyectados y NO se relajan ni se reemplazan. El backend es la autoridad del orden (captured_at DESC, id DESC):
+// aquí no se reordena, no se filtra ni se calcula nada que se guarde. Si un registro no se puede identificar o pertenece a otra Bobina, se
+// rechaza la respuesta COMPLETA (nunca se oculta en silencio un control). Un formulario sin visor específico se muestra solo con sus
+// metadatos; sus valores no se interpretan.
 
 import type { QualityApiLike, QualityCapture } from "./quality-captures.ts"; // solo tipos: se borran al compilar
+import type { PhysicalCapture } from "./quality-physical.ts";
 import type { Resource } from "./use-central.ts";
 
 export const PLANT_TIME_ZONE = "America/La_Paz";
 
 export type QualityHistoryMeta = Omit<QualityCapture, "values">;
+// Detalle que produce el visor de un formulario: unión DISCRIMINADA, cada variante con su propio tipo de captura (nunca se mezclan).
+export type HistoryDetail = { kind: "humidity"; capture: QualityCapture } | { kind: "physical"; capture: PhysicalCapture };
 export type QualityHistoryEntry =
     | { kind: "humidity"; meta: QualityHistoryMeta; capture: QualityCapture } // P1-19 que pasó su validación estricta
+    | { kind: "physical"; meta: QualityHistoryMeta; capture: PhysicalCapture } // P1-20 que pasó su validación estricta
     | { kind: "invalid"; meta: QualityHistoryMeta } // formulario con visor cuyos datos NO pasan su validación: error seguro, sin mediciones
     | { kind: "unsupported"; meta: QualityHistoryMeta }; // formulario todavía sin visor: solo metadatos
 export type QualityBobbinHistory = { bobbinId: string; entries: QualityHistoryEntry[] };
 export type ExpectedBobbin = { id: string; code: string };
-// Formularios con visor específico: código -> parser ESTRICTO de ese formulario. Hoy solo P1-19 ({ [Q19_FORM_CODE]: parseQualityCapture }).
-export type HistoryViewers = Readonly<Record<string, (raw: unknown) => QualityCapture | null>>;
+// Formularios con visor específico: código -> visor (parser ESTRICTO de ese formulario + su variante). Registro real en quality-history-api.ts:
+// { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture) }.
+export type HistoryViewer = (raw: unknown) => HistoryDetail | null;
+export type HistoryViewers = Readonly<Record<string, HistoryViewer>>;
+
+export const humidityViewer = (parse: (raw: unknown) => QualityCapture | null): HistoryViewer => (raw) => {
+    const capture = parse(raw);
+    return capture ? { kind: "humidity", capture } : null;
+};
+export const physicalViewer = (parse: (raw: unknown) => PhysicalCapture | null): HistoryViewer => (raw) => {
+    const capture = parse(raw);
+    return capture ? { kind: "physical", capture } : null;
+};
+
+// La identidad que devuelve el parser específico debe ser la MISMA que la de los metadatos comunes y la de la Bobina consultada.
+const sameIdentity = (detail: HistoryDetail, meta: QualityHistoryMeta, expected: ExpectedBobbin): boolean =>
+    detail.capture.id === meta.id && detail.capture.form.code === meta.form.code && detail.capture.form.version_number === meta.form.version_number
+    && detail.capture.bobbin.id === expected.id && detail.capture.bobbin.code === expected.code;
 
 type Rec = Record<string, unknown>;
 const isRec = (value: unknown): value is Rec => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -59,8 +80,8 @@ export function parseQualityBobbinHistory(value: unknown, expected: ExpectedBobb
         seen.add(meta.id);
         const viewer = Object.prototype.hasOwnProperty.call(viewers, meta.form.code) ? viewers[meta.form.code] : null;
         if (!viewer) { entries.push({ kind: "unsupported", meta }); continue; }
-        const capture = viewer(raw); // validación ESTRICTA existente (P1-19: la de Q2); un registro inválido nunca pasa como otro formulario
-        entries.push(capture && capture.id === meta.id && capture.bobbin.id === expected.id ? { kind: "humidity", meta, capture } : { kind: "invalid", meta });
+        const detail = viewer(raw); // validación ESTRICTA existente del formulario; un registro inválido nunca pasa como otro formulario
+        entries.push(detail && sameIdentity(detail, meta, expected) ? { ...detail, meta } : { kind: "invalid", meta });
     }
     return { bobbinId: expected.id, entries };
 }

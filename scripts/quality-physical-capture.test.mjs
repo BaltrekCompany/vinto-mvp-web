@@ -12,7 +12,7 @@ import {
   parsePhysicalCaptureSubmission, physicalAverages, physicalBobbinToShow, physicalDecimalText, physicalPendingNotice, physicalRejectionFor, submitPhysicalAttempt,
 } from "../lib/vinto/quality-physical.ts";
 import { Q19_FORM_CODE, decimalText, parseQualityCapture, parseQualityCaptureSubmission } from "../lib/vinto/quality-captures.ts";
-import { parseQualityBobbinHistory } from "../lib/vinto/quality-history.ts";
+import { humidityViewer, parseQualityBobbinHistory, physicalViewer } from "../lib/vinto/quality-history.ts";
 
 const BOBBIN_ID = "f96d57a1-ab3d-4d5d-93c0-a1af2a18408b";
 const OTHER_BOBBIN_ID = "12121212-1212-4212-8212-121212121212";
@@ -325,13 +325,17 @@ test("definitive answers: 401 session, 403, 404, 422, 409 FORM_NOT_AVAILABLE / C
   assert.equal((await submitPhysicalAttempt(attempt(), net.deps)).kind, "session");
 });
 
-// ---- Q3.1: el historial sigue tratando P1-20 como formulario sin visor -------------------------------------------------------
+// ---- Q3.2-C: el historial muestra P1-20 con su visor, siempre a través del parser estricto de esta captura -------------------
 
-test("the Q3.1 history still shows a P1-20 capture as a form without a specific viewer (metadata only)", () => {
-  const history = parseQualityBobbinHistory([capture({ captured_at: "2026-10-08T10:00:00Z" })], { id: BOBBIN_ID, code: "1" }, { [Q19_FORM_CODE]: parseQualityCapture });
-  assert.equal(history.entries.length, 1);
-  assert.equal(history.entries[0].kind, "unsupported");
-  assert.equal("capture" in history.entries[0], false);
+test("the history shows a P1-20 capture with its specific viewer, parsed by the strict P1-20 parser", () => {
+  const viewers = { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture) };
+  const history = parseQualityBobbinHistory([capture({ captured_at: "2026-10-08T10:00:00Z" })], { id: BOBBIN_ID, code: "1" }, viewers);
+  assert.equal(history.entries[0].kind, "physical");
+  assert.deepEqual(history.entries[0].capture, parsePhysicalCapture(capture()));
+  const invalid = parseQualityBobbinHistory([capture({ values: { ...SPEC_VALUES, gramaje: 18.25 } })], { id: BOBBIN_ID, code: "1" }, viewers);
+  assert.equal(invalid.entries[0].kind, "invalid");
+  // sin visor registrado P1-20 vuelve a ser solo metadatos (el registro es la única puerta)
+  assert.equal(parseQualityBobbinHistory([capture()], { id: BOBBIN_ID, code: "1" }, { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture) }).entries[0].kind, "unsupported");
 });
 
 // ---- estructura ----------------------------------------------------------------------------------------------------------------
@@ -411,7 +415,7 @@ test("the legacy local P1-20 card is excluded from the Calidad cards; other fron
   assert.match(page, /f\.id === "form_20_propiedades_fisicas_de_bobina"/); // la definición legacy sigue existiendo (no se borra)
 });
 
-test("Q3.1 history remains read-only and its viewer registry is still P1-19 only", () => {
-  assert.match(historyApi, /const VIEWERS: HistoryViewers = \{ \[Q19_FORM_CODE\]: parseQualityCapture \};/);
-  assert.equal(/Physical|P1-20|Q20/.test(historyApi), false);
+test("the history API stays a read-only GET; its viewer registry maps P1-19 and P1-20 to their own strict parsers", () => {
+  assert.match(historyApi, /const VIEWERS: HistoryViewers = \{ \[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\) \};/);
+  assert.equal(/method:|POST|PATCH|PUT|DELETE|localStorage|sessionStorage|submitPhysical|createPhysicalAttempt/.test(historyApi), false);
 });
