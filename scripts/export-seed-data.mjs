@@ -32,6 +32,7 @@ const SECTOR_CODE = "BOBINAS";
 const MACHINES = ["MP1", "MP3"];
 const PILOT_FORM = { legacyNumber: 6, legacyKey: "form_6_registro_de_control_de_fardos", code: "VINTO-P1-06" };
 const QUALITY_FORM = { legacyNumber: 19, legacyKey: "form_19_control_de_humedad", code: "VINTO-P1-19" };
+const PROPERTIES_FORM = { legacyNumber: 20, legacyKey: "form_20_propiedades_fisicas_de_bobina", code: "VINTO-P1-20" };
 const NEXT_FORM = { legacyNumber: 3, legacyKey: "form_3_registro_de_produccion_de_bobinas", code: "VINTO-P1-03" };
 const PROFILES = [
   ["JEFATURA", "Jefatura"],
@@ -78,6 +79,32 @@ const Q19_FIELDS = [
   ]),
   { key: "observaciones", value_type: "textarea", required: false },
 ];
+
+// Canonical VINTO-P1-20 (Propiedades físicas de bobina, Calidad) — PROVISIONAL contract (project decision): ONLY the eleven manual
+// measurements plus optional observaciones. Type and requirement come from FORM_DEFINITIONS and are cross-checked here; the label is the
+// source label after the visible relabelling of the effectiveForms override in app/page.tsx ("centro" -> "comando", provisional until
+// VINTO validates it), reproduced by q20Label().
+// Units are provisional (current MVP representation, not a laboratory homologation): `unit` is the catalog code that is published,
+// `sourceUnit` is what FORM_DEFINITIONS declares today. espesor_* declares "kg" in the source and the effectiveForms override in
+// app/page.tsx corrects it to "mm" (cross-checked and fingerprinted); gramaje declares "g/m²", which has no catalog code yet, so it is
+// published with unit null (none is invented). The technical *_centro keys are never renamed: only their visible label changes.
+const Q20_POSITIONS = ["centro", "medio", "extremo"];
+const Q20_FIELDS = [
+  { key: "crepado", value_type: "decimal", required: true, unit: null, sourceUnit: null },
+  { key: "gramaje", value_type: "decimal", required: true, unit: null, sourceUnit: "g/m²" },
+  ...Q20_POSITIONS.map((p) => ({ key: `resistencia_longitudinal_${p}`, value_type: "decimal", required: true, unit: null, sourceUnit: null })),
+  ...Q20_POSITIONS.map((p) => ({ key: `resistencia_transversal_${p}`, value_type: "decimal", required: true, unit: null, sourceUnit: null })),
+  ...Q20_POSITIONS.map((p) => ({ key: `espesor_${p}`, value_type: "decimal", required: true, unit: "MM", sourceUnit: "kg", pageUnit: "mm" })),
+  { key: "observaciones", value_type: "textarea", required: false, unit: null, sourceUnit: null },
+];
+// Every other field of the legacy definition is deliberately NOT a field: central context derived from the F3 bobbin and the session,
+// or a derived average (recomputed for display only, never stored). The list must match the source exactly, so a new legacy field
+// stops the export instead of being silently dropped or published.
+const Q20_EXCLUDED = {
+  fecha: "automatic", hora: "automatic", maquina: "automatic", responsable: "automatic",
+  numero_de_bobina: "bobbin context", producto: "bobbin context", numero_de_cortes: "F3 production data",
+  promedio_resistencia_longitudinal: "calculated", promedio_resistencia_transversal: "calculated", promedio_espesor: "calculated",
+};
 
 export class SeedExportError extends Error {}
 
@@ -162,6 +189,27 @@ function formOverride(page, legacyKey, label) {
 const f6Override = (page) => formOverride(page, PILOT_FORM.legacyKey, "F6");
 const q19Override = (page) => formOverride(page, QUALITY_FORM.legacyKey, "P1-19");
 
+// The P1-20 override is a transformation of the legacy fields (not fld() calls). The exporter consumes what it forces: the unit of espesor_*
+// and the visible relabelling label.replace(from, to), applied to espesor_* and to every label containing `from`. Keys are never renamed.
+function q20Override(page) {
+  const start = page.indexOf(`f.id === "${PROPERTIES_FORM.legacyKey}"`);
+  if (start < 0) fail("P1-20: no se encontró su override en effectiveForms() de app/page.tsx");
+  const next = page.indexOf("if (f.id", start + 10);
+  const block = page.slice(start, next < 0 ? undefined : next);
+  const unit = block.match(/x\.key\.includes\("espesor"\)\s*\?\s*\{\s*\.\.\.x,\s*unit:\s*"([^"]*)"/);
+  if (!unit) fail("P1-20: el override de app/page.tsx ya no fija la unidad de espesor");
+  const espesor = block.match(/x\.key\.includes\("espesor"\)\s*\?\s*\{([^}]*)\}/)?.[1].match(/label:\s*x\.label\.replace\("([^"]*)",\s*"([^"]*)"\)/);
+  const others = block.match(/x\.label\.toLowerCase\(\)\.includes\("([^"]*)"\)\s*\?\s*\{\s*\.\.\.x,\s*label:\s*x\.label\.replace\("([^"]*)",\s*"([^"]*)"\)\s*\}/);
+  if (!espesor || !others) fail("P1-20: el override de app/page.tsx ya no reetiqueta las posiciones de espesor y del resto de campos");
+  if (others[1] !== others[2] || espesor[1] !== others[2] || espesor[2] !== others[3]) fail("P1-20: el override de app/page.tsx reetiqueta espesor y el resto de campos de forma distinta");
+  return { espesor_unit: unit[1], relabel: { from: others[2], to: others[3] } };
+}
+
+// Same rule as the override: espesor_* -> label.replace(from, to); any other label containing `from` (case-insensitive) -> idem.
+export function q20Label(key, label, { from, to }) {
+  return key.includes("espesor") || label.toLowerCase().includes(from) ? label.replace(from, to) : label;
+}
+
 function f6Choices(page) {
   const body = functionBody(page, "BobbinBales");
   const choices = {};
@@ -180,7 +228,7 @@ function f6Choices(page) {
 // (already extracted and normalised), never of the raw file. Visual/authentication edits, whitespace or
 // formatting changes elsewhere in the page do not alter it; changing GROUPS.Bobinas, the F6 override or the
 // BobbinBales selectors/options does.
-export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,shift_night_rule";
+export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,q20_override,shift_night_rule";
 const NIGHT_RULE = /else if \(h < 7 \|\| h >= 19\)/;
 
 export function pageSemantics(page) {
@@ -188,6 +236,7 @@ export function pageSemantics(page) {
     groups_bobinas: groupMachines(page, SECTOR_NAME),
     f6_override: f6Override(page),
     q19_override: q19Override(page),
+    q20_override: q20Override(page),
     f6_choices: f6Choices(page),
     shift_night_rule: NIGHT_RULE.test(page),
   };
@@ -393,9 +442,39 @@ export function buildBundle(sources) {
   };
   const q19Form = { schema_version: SCHEMA_VERSION, ...q19Definition, definition_checksum: sha256(canonical(q19Definition)) };
 
-  // Workflows used by F6/F3/P1-19 only
-  const workflowCodes = [...new Set([f6.workflowId, f3.workflowId, q19.workflowId])].sort(cmp);
-  if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3/P1-19");
+  // VINTO-P1-20 (Calidad · Propiedades físicas de bobina): eleven manual measurements + observaciones (provisional units).
+  const q20 = find(PROPERTIES_FORM);
+  if (q20.area !== "quality") fail(`P1-20 debe tener area quality y tiene ${q20.area}`);
+  const q20Allowed = new Set(q20.allowedMachineIds.map((m) => m.toLowerCase()));
+  for (const machine of MACHINES) if (!q20Allowed.has(machine.toLowerCase())) fail(`P1-20 no admite la máquina ${machine} en allowedMachineIds`);
+  const q20SourceKeys = q20.fields.map((f) => f.key);
+  const q20Unexpected = q20SourceKeys.filter((k) => !Q20_FIELDS.some((f) => f.key === k) && !(k in Q20_EXCLUDED));
+  if (q20Unexpected.length) fail(`P1-20: FORM_DEFINITIONS define campos fuera del contrato canónico: ${q20Unexpected}`);
+  const q20Missing = Object.keys(Q20_EXCLUDED).filter((k) => !q20SourceKeys.includes(k));
+  if (q20Missing.length) fail(`P1-20: FORM_DEFINITIONS ya no define los campos excluidos ${q20Missing}; revisar el contrato`);
+  const q20Page = q20Override(texts.page);
+  const q20Fields = Q20_FIELDS.map((spec, index) => {
+    const source = q20.fields.find((f) => f.key === spec.key);
+    if (!source) fail(`P1-20: FORM_DEFINITIONS ya no define ${spec.key}`);
+    if (source.source !== "manual") fail(`P1-20: ${spec.key} es ${source.source} en FORM_DEFINITIONS y el contrato canónico espera manual`);
+    if (source.type !== spec.value_type) fail(`P1-20: ${spec.key} es ${source.type} en FORM_DEFINITIONS y el contrato canónico espera ${spec.value_type}`);
+    if (source.required !== spec.required) fail(`P1-20: ${spec.key} cambió su obligatoriedad en FORM_DEFINITIONS`);
+    if ((source.unit ?? null) !== spec.sourceUnit) fail(`P1-20: la unidad de ${spec.key} en FORM_DEFINITIONS es ${JSON.stringify(source.unit)}, se esperaba ${JSON.stringify(spec.sourceUnit)}`);
+    if (spec.pageUnit !== undefined && q20Page.espesor_unit !== spec.pageUnit) fail(`P1-20: el override de app/page.tsx fija espesor en "${q20Page.espesor_unit}", se esperaba "${spec.pageUnit}"`);
+    if (spec.unit && !unitCodes.includes(spec.unit)) fail(`P1-20: la unidad ${spec.unit} no está entre las unidades del alcance (${unitCodes})`);
+    if (!source.label) fail(`P1-20: ${spec.key} no tiene etiqueta en FORM_DEFINITIONS`);
+    return { key: spec.key, label: q20Label(spec.key, source.label, q20Page.relabel), value_type: spec.value_type, source: "manual", required: spec.required, unit: spec.unit, display_order: index + 1 };
+  });
+  if (q20Fields.length !== 12 || q20Fields.filter((f) => f.value_type === "decimal").length !== 11) fail("P1-20 debe tener exactamente 12 campos (11 decimales y observaciones)");
+  const q20Definition = {
+    legacy_key: q20.id, code: q20.code, legacy_number: q20.legacyNumber, name: q20.name, area: "quality", workflow: q20.workflowId, version_number: 1,
+    machines: [...MACHINES], groups: [], fields: q20Fields,
+  };
+  const q20Form = { schema_version: SCHEMA_VERSION, ...q20Definition, definition_checksum: sha256(canonical(q20Definition)) };
+
+  // Workflows used by F6/F3/P1-19/P1-20 only
+  const workflowCodes = [...new Set([f6.workflowId, f3.workflowId, q19.workflowId, q20.workflowId])].sort(cmp);
+  if (workflowCodes.some((c) => typeof c !== "string" || !c)) fail("Workflow sin código en F6/F3/P1-19/P1-20");
 
   // Shifts: declarative, cross-checked against ctx() in app/page.tsx
   if (!NIGHT_RULE.test(texts.page)) {
@@ -425,6 +504,7 @@ export function buildBundle(sources) {
   files.set(`forms/${PILOT_FORM.code}.json`, json(form));
   files.set(`forms/${NEXT_FORM.code}.json`, json(f3Form));
   files.set(`forms/${QUALITY_FORM.code}.json`, json(q19Form));
+  files.set(`forms/${PROPERTIES_FORM.code}.json`, json(q20Form));
 
   // ---- warnings and out-of-scope information ----
   if (alsoMaterial) warn("ARTICLE_ALSO_MATERIAL", "info", "Artículos del alcance que también figuran en MATERIALS (is_product e is_material)", alsoMaterial);
@@ -437,7 +517,8 @@ export function buildBundle(sources) {
   warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${SHIFT_VALID_FROM} y timezone=${SHIFT_TIMEZONE} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
   const otherMachines = Object.keys(productsByMachine).filter((m) => !MACHINES.includes(m));
   warn("OUT_OF_SCOPE_MACHINES", "info", "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)", otherMachines.length);
-  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3 y P1-19 sí se exportan)`, formDefinitions.length - 3);
+  warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3, P1-19 y P1-20 sí se exportan)`, formDefinitions.length - 4);
+  warn("P1_20_PROVISIONAL_CONTRACT", "warning", "VINTO-P1-20: unidades provisionales del MVP (espesor_* en MM; gramaje medido sin código de catálogo para g/m², unit null; crepado y resistencias sin unidad); etiquetas visibles «comando» de las claves *_centro provisionales hasta validarlas con VINTO; sin rangos ni reglas de conformidad. Requiere homologación de laboratorio");
   warn("OUT_OF_SCOPE_RECIPES", "info", "Artículos del alcance con receta en recipes.ts; las recetas no se exportan en este piloto", articleItems.filter((a) => recipes?.[a.code]).length);
   warn("OUT_OF_SCOPE_MATERIALS", "info", "Entradas de MATERIALS que no son artículos del alcance", materials.length - alsoMaterial);
   warnings.sort((a, b) => cmp(a.code, b.code) || cmp(a.message, b.message));
@@ -456,14 +537,14 @@ export function buildBundle(sources) {
     workflows: workflowCodes.length,
     shifts: SHIFTS.length,
     shift_schedules: SHIFTS.length,
-    forms: 3,
-    form_fields: fields.length + f3Fields.length + q19Fields.length,
-    form_options: [...fields, ...f3Fields, ...q19Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
+    forms: 4,
+    form_fields: fields.length + f3Fields.length + q19Fields.length + q20Fields.length,
+    form_options: [...fields, ...f3Fields, ...q19Fields, ...q20Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
   };
   const manifest = {
     schema_version: SCHEMA_VERSION,
     bundle: "vinto-reference-bobinas-pilot",
-    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code] },
+    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code, PROPERTIES_FORM.code] },
     generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
       name === "page" ? { path, sha256: pageFingerprint(texts.page), scope: PAGE_FINGERPRINT_SCOPE } : { path, sha256: sha256(texts[name]) }
     )).sort((a, b) => cmp(a.path, b.path)),
@@ -477,6 +558,7 @@ export function buildBundle(sources) {
       f6_labels_units_and_options: "app/page.tsx (effectiveForms override and BobbinBales)",
       f3_labels_units: "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
       p1_19_labels_units: "app/page.tsx (effectiveForms override of form_19_control_de_humedad); only the 7 manual source fields, derived humidity is recomputed",
+      p1_20_labels_units: "form-definitions.ts (labels, types, requirement); visible relabelling centro -> comando and espesor unit (mm -> MM) from the app/page.tsx override, *_centro keys unchanged; provisional units, gramaje without catalog unit; only the 12 manual fields, averages are recomputed for display",
       grammage_g_m2: "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent",
     },
     warnings,
@@ -508,7 +590,7 @@ export function validateBundle({ files, manifest }) {
     const g = a.version.grammage_g_m2;
     if (g === undefined || (g !== null && !(typeof g === "number" && g > 0))) fail(`Gramaje inválido en ${a.code}`);
   }
-  for (const spec of [PILOT_FORM, NEXT_FORM, QUALITY_FORM]) {
+  for (const spec of [PILOT_FORM, NEXT_FORM, QUALITY_FORM, PROPERTIES_FORM]) {
     const form = JSON.parse(files.get(`forms/${spec.code}.json`));
     for (const f of form.fields) {
       const keys = (f.options ?? []).map((o) => o.option_key);

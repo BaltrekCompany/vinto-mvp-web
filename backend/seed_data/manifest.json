@@ -11,14 +11,15 @@
     "forms": [
       "VINTO-P1-06",
       "VINTO-P1-03",
-      "VINTO-P1-19"
+      "VINTO-P1-19",
+      "VINTO-P1-20"
     ]
   },
   "generated_from": [
     {
       "path": "app/page.tsx",
-      "sha256": "ae8d9b80e2ffd698e6a5a1bf7d8d5257ef5b9c12a969032beecda6f8e486dc4b",
-      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,shift_night_rule"
+      "sha256": "41503d5ba261b3ad343a05bd8c70f461a9679d47a2acfe28133b977c9f4c3277",
+      "scope": "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,q20_override,shift_night_rule"
     },
     {
       "path": "lib/vinto/catalogs.ts",
@@ -62,6 +63,11 @@
       "path": "forms/VINTO-P1-19.json",
       "sha256": "df14cba9c8baf4fc16d038b22b15464d162bbe1d24b58f1c94c4915fb0dea9ec",
       "bytes": 1896
+    },
+    {
+      "path": "forms/VINTO-P1-20.json",
+      "sha256": "11668df163311a79f8a9787b40cb893b41caf182de04d98367d95a06132c84f0",
+      "bytes": 3033
     },
     {
       "path": "machines.json",
@@ -113,8 +119,8 @@
     "workflows": 2,
     "shifts": 2,
     "shift_schedules": 2,
-    "forms": 3,
-    "form_fields": 18,
+    "forms": 4,
+    "form_fields": 30,
     "form_options": 5
   },
   "authority_rules": {
@@ -125,6 +131,7 @@
     "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)",
     "f3_labels_units": "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
     "p1_19_labels_units": "app/page.tsx (effectiveForms override of form_19_control_de_humedad); only the 7 manual source fields, derived humidity is recomputed",
+    "p1_20_labels_units": "form-definitions.ts (labels, types, requirement); visible relabelling centro -> comando and espesor unit (mm -> MM) from the app/page.tsx override, *_centro keys unchanged; provisional units, gramaje without catalog unit; only the 12 manual fields, averages are recomputed for display",
     "grammage_g_m2": "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent"
   },
   "warnings": [
@@ -161,8 +168,8 @@
     {
       "code": "OUT_OF_SCOPE_FORMS",
       "severity": "info",
-      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3 y P1-19 sí se exportan)",
-      "count": 22
+      "message": "Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3, P1-19 y P1-20 sí se exportan)",
+      "count": 21
     },
     {
       "code": "OUT_OF_SCOPE_MACHINES",
@@ -181,6 +188,11 @@
       "severity": "info",
       "message": "Artículos del alcance con receta en recipes.ts; las recetas no se exportan en este piloto",
       "count": 88
+    },
+    {
+      "code": "P1_20_PROVISIONAL_CONTRACT",
+      "severity": "warning",
+      "message": "VINTO-P1-20: unidades provisionales del MVP (espesor_* en MM; gramaje medido sin código de catálogo para g/m², unit null; crepado y resistencias sin unidad); etiquetas visibles «comando» de las claves *_centro provisionales hasta validarlas con VINTO; sin rangos ni reglas de conformidad. Requiere homologación de laboratorio"
     },
     {
       "code": "SHIFT_VALIDITY_PROVISIONAL",

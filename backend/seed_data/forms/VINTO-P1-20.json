@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_20_propiedades_fisicas_de_bobina",
+  "code": "VINTO-P1-20",
+  "legacy_number": 20,
+  "name": "Propiedades físicas de bobina",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "crepado",
+      "label": "Crepado",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "gramaje",
+      "label": "Gramaje",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "resistencia_longitudinal_centro",
+      "label": "Resistencia longitudinal comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "resistencia_longitudinal_medio",
+      "label": "Resistencia longitudinal medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "resistencia_longitudinal_extremo",
+      "label": "Resistencia longitudinal extremo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "resistencia_transversal_centro",
+      "label": "Resistencia transversal comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "resistencia_transversal_medio",
+      "label": "Resistencia transversal medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "resistencia_transversal_extremo",
+      "label": "Resistencia transversal extremo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "espesor_centro",
+      "label": "Espesor comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "MM",
+      "display_order": 9
+    },
+    {
+      "key": "espesor_medio",
+      "label": "Espesor medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "MM",
+      "display_order": 10
+    },
+    {
+      "key": "espesor_extremo",
+      "label": "Espesor extremo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": "MM",
+      "display_order": 11
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 12
+    }
+  ],
+  "definition_checksum": "1145b41c568e4616dddbfb9f2c5eff21e253a3840df36a87fa416871e30fbbe0"
+}
