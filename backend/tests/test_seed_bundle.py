@@ -226,10 +226,65 @@ class QualityP119Tests(unittest.TestCase):
                           "numero_de_bobina", "responsable", "maquina", "fecha", '"hora"'):
             self.assertNotIn(forbidden, text, forbidden)
 
-    def test_manifest_counts_cover_the_three_forms(self):
+    def test_manifest_counts_cover_the_four_forms(self):
         counts = read("manifest.json")["counts"]
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (3, 18, 5, 2))
+        # F6 5 + F3 6 + P1-19 7 + P1-20 12 campos; P1-20 no añade opciones ni workflows (reutiliza quality-release)
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (4, 30, 5, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
+
+
+P120_FIELDS = [
+    ("crepado", "decimal", True, None), ("gramaje", "decimal", True, None),
+    ("resistencia_longitudinal_centro", "decimal", True, None), ("resistencia_longitudinal_medio", "decimal", True, None),
+    ("resistencia_longitudinal_extremo", "decimal", True, None), ("resistencia_transversal_centro", "decimal", True, None),
+    ("resistencia_transversal_medio", "decimal", True, None), ("resistencia_transversal_extremo", "decimal", True, None),
+    ("espesor_centro", "decimal", True, "MM"), ("espesor_medio", "decimal", True, "MM"), ("espesor_extremo", "decimal", True, "MM"),
+    ("observaciones", "textarea", False, None)]
+
+
+class QualityP120Tests(unittest.TestCase):
+    def test_p1_20_is_published_for_mp1_and_mp3_with_the_twelve_manual_fields(self):
+        form = read("forms/VINTO-P1-20.json")
+        self.assertEqual((form["legacy_key"], form["code"], form["name"], form["area"], form["workflow"], form["version_number"], form["machines"], form["groups"]),
+                         ("form_20_propiedades_fisicas_de_bobina", "VINTO-P1-20", "Propiedades físicas de bobina", "quality", "quality-release", 1, ["MP1", "MP3"], []))
+        self.assertEqual([(f["key"], f["value_type"], f["required"], f["unit"]) for f in form["fields"]], P120_FIELDS)
+        self.assertEqual({f["source"] for f in form["fields"]}, {"manual"})
+        self.assertEqual([f["display_order"] for f in form["fields"]], list(range(1, 13)))
+        self.assertTrue(all("options" not in f for f in form["fields"]))
+        self.assertIn("forms/VINTO-P1-20.json", [f["path"] for f in read("manifest.json")["files"]])
+        self.assertIn("VINTO-P1-20", read("manifest.json")["scope"]["forms"])
+
+    def test_visible_labels_follow_the_effective_forms_override_and_keys_keep_centro(self):
+        form = read("forms/VINTO-P1-20.json")
+        self.assertEqual([(f["key"], f["label"]) for f in form["fields"]], [
+            ("crepado", "Crepado"), ("gramaje", "Gramaje"),
+            ("resistencia_longitudinal_centro", "Resistencia longitudinal comando"), ("resistencia_longitudinal_medio", "Resistencia longitudinal medio"),
+            ("resistencia_longitudinal_extremo", "Resistencia longitudinal extremo"), ("resistencia_transversal_centro", "Resistencia transversal comando"),
+            ("resistencia_transversal_medio", "Resistencia transversal medio"), ("resistencia_transversal_extremo", "Resistencia transversal extremo"),
+            ("espesor_centro", "Espesor comando"), ("espesor_medio", "Espesor medio"), ("espesor_extremo", "Espesor extremo"), ("observaciones", "Observaciones")])
+        self.assertEqual(form["definition_checksum"], "1145b41c568e4616dddbfb9f2c5eff21e253a3840df36a87fa416871e30fbbe0")
+        definition = {k: v for k, v in form.items() if k not in ("schema_version", "definition_checksum")}
+        self.assertEqual(hashlib.sha256(canonical(definition).encode("utf-8")).hexdigest(), form["definition_checksum"])
+
+    def test_published_forms_are_unchanged_by_p1_20(self):
+        self.assertEqual({code: read(f"forms/{code}.json")["definition_checksum"] for code in ("VINTO-P1-03", "VINTO-P1-06", "VINTO-P1-19")}, {
+            "VINTO-P1-03": "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13",
+            "VINTO-P1-06": "fe0bf83fb71057d8debbd014d20bfd3cd13aa4a6310c2b94be56ce2d2eb4f45f",
+            "VINTO-P1-19": "682908dee7878ce55313011a9a62ef9c0b82dbae404ed129bacaf2366c8a22ff"})
+
+    def test_derived_automatic_and_context_values_are_not_central_fields(self):
+        text = json.dumps(read("forms/VINTO-P1-20.json"), ensure_ascii=False)
+        for forbidden in ("promedio", "calculated", "automatic", "numero_de_bobina", "numero_de_cortes", "responsable", "maquina", '"producto"',
+                          "fecha", '"hora"', "minimo", "maximo", "tolerancia", "conforme"):
+            self.assertNotIn(forbidden, text, forbidden)
+
+    def test_no_catalog_unit_is_invented_for_the_measured_grammage(self):
+        form = read("forms/VINTO-P1-20.json")
+        self.assertIsNone(next(f for f in form["fields"] if f["key"] == "gramaje")["unit"])
+        units = {u["code"] for u in read("units.json")["items"]}
+        self.assertEqual(len(units), 3)
+        self.assertTrue({f["unit"] for f in form["fields"]} - {None} <= units)
+        self.assertIn("P1_20_PROVISIONAL_CONTRACT", [w["code"] for w in read("manifest.json")["warnings"]])
 
 
 if __name__ == "__main__":

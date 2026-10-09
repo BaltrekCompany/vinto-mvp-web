@@ -399,6 +399,153 @@ class RealP119Tests(QualityCaptureCase):
         self.assertEqual([c for c in f6_list.json() if c["form"]["code"] == P119], [])
 
 
+P120 = "VINTO-P1-20"
+P120_DECIMALS = {"crepado": "18.50", "gramaje": "15.500", "resistencia_longitudinal_centro": "410.0", "resistencia_longitudinal_medio": "398",
+                 "resistencia_longitudinal_extremo": "402.25", "resistencia_transversal_centro": "190.10", "resistencia_transversal_medio": "185",
+                 "resistencia_transversal_extremo": "0.100", "espesor_centro": "0.120", "espesor_medio": "0.1180", "espesor_extremo": "0.12"}
+P120_VALUES = {**P120_DECIMALS, "observaciones": "ensayo real P1-20"}
+
+
+class RealP120Tests(QualityCaptureCase):
+    """El formulario REAL VINTO-P1-20 del bundle (contrato provisional) por el POST/GET genéricos de Calidad, sin endpoints nuevos."""
+
+    def body120(self, **changes):
+        return self.body(form_code=P120, values=dict(P120_VALUES), **changes)
+
+    async def test_p1_20_is_a_published_quality_form_for_both_machines(self):
+        rows = self.connection.execute(
+            """SELECT fv.area, fv.status, w.code, array_agg(m.code ORDER BY m.code) FROM vinto_config.form f
+               JOIN vinto_config.form_version fv ON fv.form_id=f.id JOIN vinto_config.workflow_definition w ON w.id=fv.workflow_id
+               JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id=fv.id JOIN vinto_master.machine m ON m.id=fvm.machine_id
+               WHERE f.code=%s GROUP BY fv.area, fv.status, w.code""", (P120,)).fetchall()
+        self.assertEqual(rows, [("quality", "published", "quality-release", ["MP1", "MP3"])])
+
+    async def test_a_real_p1_20_capture_is_201_on_mp1_and_mp3_with_the_f3_context(self):
+        for machine in ("MP1", "MP3"):
+            _, created = await self.bobbin(machine)
+            reply = await self.submit(created["bobbin"]["id"], self.body120())
+            self.assertEqual(reply.status, 201, machine)
+            data = reply.json()
+            self.assertEqual((data["created"], data["already_submitted"]), (True, False))
+            c = data["capture"]
+            self.assertEqual((c["form"]["code"], c["form"]["name"], c["form"]["version_number"], c["status"], c["revision"], c["machine"]["code"]),
+                             (P120, "Propiedades físicas de bobina", 1, "submitted", 1, machine))
+            self.assertEqual(c["bobbin"], {"id": created["bobbin"]["id"], "code": created["bobbin"]["code"]})
+            self.assertEqual((c["shift"], c["operating_date"], c["work_order"], c["line"]),
+                             (created["capture"]["shift"], created["capture"]["operating_date"], created["capture"]["work_order"], created["capture"]["line"]))
+
+    async def test_the_eleven_decimals_are_exact_text_and_only_the_manual_fields_are_stored(self):
+        _, created = await self.bobbin()
+        c = (await self.submit(created["bobbin"]["id"], self.body120())).json()["capture"]
+        self.assertEqual(c["values"], P120_VALUES)  # "15.500", "0.100", "0.1180", "410.0" conservan su escala: sin float
+        for key, value in P120_DECIMALS.items():
+            self.assertIsInstance(c["values"][key], str, key)
+        keys = {r[0] for r in self.connection.execute("""SELECT f.key FROM vinto_txn.capture_detail d JOIN vinto_config.field_definition f ON f.id=d.field_definition_id
+                                                         WHERE d.capture_id=%s""", (c["id"],)).fetchall()}
+        self.assertEqual(keys, set(P120_VALUES))
+        stored = dict(self.connection.execute("""SELECT f.key, d.value_decimal::text FROM vinto_txn.capture_detail d
+                                                 JOIN vinto_config.field_definition f ON f.id=d.field_definition_id WHERE d.capture_id=%s AND f.value_type='decimal'""",
+                                              (c["id"],)).fetchall())
+        self.assertEqual(stored, P120_DECIMALS)
+        got = await call("GET", f"/api/quality/captures/{c['id']}", cookie=await self.cookie("CALIDAD"))
+        self.assertEqual((got.status, got.json()), (200, c))
+
+    async def test_observations_are_optional_and_missing_invalid_or_unknown_values_are_422(self):
+        _, created = await self.bobbin()
+        bobbin_id = created["bobbin"]["id"]
+        self.assertEqual((await self.submit(bobbin_id, self.body(form_code=P120, values=dict(P120_DECIMALS)))).status, 201)
+        before = self.counts()
+        for key in P120_DECIMALS:
+            reply = await self.submit(bobbin_id, self.body(form_code=P120, values={k: v for k, v in P120_VALUES.items() if k != key}))
+            self.assertEqual((reply.status, reply.json()["code"]), (422, "CAPTURE_VALIDATION"), f"missing {key}")
+        for bad in ("abc", "", "NaN", "Infinity", "-Infinity", "1e5", "1,5", "12.", True, None, ["1"], "9" * 41):
+            reply = await self.submit(bobbin_id, self.body(form_code=P120, values={**P120_VALUES, "espesor_medio": bad}))
+            self.assertEqual((reply.status, reply.json()["code"]), (422, "CAPTURE_VALIDATION"), repr(bad))
+        for derived in ("promedio_resistencia_longitudinal", "promedio_resistencia_transversal", "promedio_espesor", "numero_de_cortes", "numero_de_bobina",
+                        "producto", "maquina", "responsable", "fecha", "hora", "resultado"):
+            reply = await self.submit(bobbin_id, self.body(form_code=P120, values={**P120_VALUES, derived: "1"}))
+            self.assertEqual((reply.status, reply.json()["code"]), (422, "CAPTURE_VALIDATION"), derived)
+        self.assertEqual(self.counts(), before)
+
+    async def test_p1_20_retry_is_200_already_submitted_and_conflicting_reuse_is_409(self):
+        _, created = await self.bobbin()
+        _, other = await self.bobbin()
+        body = self.body120()
+        first = await self.submit(created["bobbin"]["id"], body)
+        self.assertEqual(first.status, 201)
+        before = self.counts()
+        again = await self.submit(created["bobbin"]["id"], body)
+        self.assertEqual((again.status, again.json()["created"], again.json()["already_submitted"], again.json()["capture"]), (200, False, True, first.json()["capture"]))
+        for bobbin_id, changed in ((other["bobbin"]["id"], body), (created["bobbin"]["id"], {**body, "values": {**P120_VALUES, "gramaje": "15.6"}}),
+                                   (created["bobbin"]["id"], {**body, "device_key": str(uuid4())}),
+                                   (created["bobbin"]["id"], {**body, "form_code": P119, "values": dict(P119_VALUES)})):
+            reply = await self.submit(bobbin_id, changed)
+            self.assertEqual((reply.status, reply.json()["code"]), (409, "CAPTURE_IDEMPOTENCY_CONFLICT"), changed)
+        self.assertEqual(self.counts(), before)
+
+    async def test_only_calidad_can_capture_or_read_p1_20(self):
+        _, created = await self.bobbin()
+        bobbin_id = created["bobbin"]["id"]
+        before = self.counts()
+        self.assertEqual((await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=self.body120())).status, 401)
+        for profile in ("OPERACION", "JEFATURA", "SUPERVISION", "DATA_BALTREK"):
+            self.assertEqual((await self.submit(bobbin_id, self.body120(), profile)).status, 403, profile)
+        self.assertEqual(self.counts(), before)
+        c = (await self.submit(bobbin_id, self.body120())).json()["capture"]
+        self.assertEqual((await call("GET", f"/api/quality/captures/{c['id']}")).status, 401)
+        self.assertEqual((await call("GET", f"/api/quality/captures/{c['id']}", cookie=await self.cookie("OPERACION"))).status, 403)
+        self.assertEqual((await call("GET", f"/api/quality/bobbins/{bobbin_id}/captures", cookie=await self.cookie("OPERACION"))).status, 403)
+
+    async def test_a_finished_assignment_does_not_block_p1_20_and_quality_release_stays_pending(self):
+        assignment, created = await self.bobbin()
+        self.connection.execute("UPDATE vinto_txn.assignment SET status='finished', finished_at=clock_timestamp() WHERE id=%s", (assignment["id"],))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.assignment WHERE status='active'"), 0)
+        before = self.release(created["bobbin"]["id"])
+        self.assertEqual(before[:4], ("pending", None, None, None))
+        c = (await self.submit(created["bobbin"]["id"], self.body120())).json()["capture"]
+        self.assertEqual((c["work_order"], c["line"], c["operating_date"], c["shift"]),
+                         (created["capture"]["work_order"], created["capture"]["line"], created["capture"]["operating_date"], created["capture"]["shift"]))
+        row = self.connection.execute("SELECT bobbin_id, machine_id, shift_schedule_id, operating_date, assignment_id FROM vinto_txn.capture WHERE id=%s", (c["id"],)).fetchone()
+        source = self.connection.execute("""SELECT b.id, b.machine_id, s.shift_schedule_id, s.operating_date, s.assignment_id FROM vinto_txn.bobbin b
+                                            JOIN vinto_txn.capture s ON s.id = b.source_capture_id WHERE b.id=%s""", (created["bobbin"]["id"],)).fetchone()
+        self.assertEqual(row, source)
+        self.assertEqual(self.release(created["bobbin"]["id"]), before)  # sin decisión: status, decided_by, decided_at, motivo y updated_at intactos
+        inbox = await call("GET", "/api/quality/bobbins", cookie=await self.cookie("CALIDAD"))
+        self.assertIn(created["bobbin"]["id"], [i["bobbin"]["id"] for i in inbox.json()])
+
+    async def test_the_history_returns_p1_19_and_p1_20_of_the_same_bobbin_without_mixing_them(self):
+        _, created = await self.bobbin()
+        _, other = await self.bobbin()
+        bobbin_id = created["bobbin"]["id"]
+        q19 = (await self.submit(bobbin_id, self.body(form_code=P119, values=dict(P119_VALUES)))).json()["capture"]
+        q20 = (await self.submit(bobbin_id, self.body120())).json()["capture"]
+        foreign = (await self.submit(other["bobbin"]["id"], self.body120())).json()["capture"]
+        listed = await call("GET", f"/api/quality/bobbins/{bobbin_id}/captures", cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(listed.status, 200)
+        items = listed.json()
+        self.assertEqual([c["id"] for c in items], [q20["id"], q19["id"]])  # captured_at DESC: P1-20 se registró después
+        self.assertNotIn(foreign["id"], [c["id"] for c in items])
+        self.assertEqual({c["bobbin"]["id"] for c in items}, {bobbin_id})
+        by_form = {c["form"]["code"]: c for c in items}
+        self.assertEqual(by_form[P119]["values"], P119_VALUES)
+        self.assertEqual(by_form[P120]["values"], P120_VALUES)
+        self.assertEqual(by_form[P119], q19)
+        self.assertEqual(by_form[P120], q20)
+        self.assertEqual(self.release(bobbin_id)[:4], ("pending", None, None, None))
+
+    async def test_p1_20_does_not_exist_in_the_production_endpoints(self):
+        assignment, created = await self.bobbin()
+        before = self.counts()
+        f6 = await call("POST", "/api/captures", cookie=await self.cookie("OPERACION"), json_body={
+            "capture_id": str(uuid4()), "form_code": P120, "assignment_id": assignment["id"], "device_key": str(uuid4()), "values": dict(P120_VALUES)})
+        self.assertEqual((f6.status, f6.json()["code"]), (422, "UNSUPPORTED_FORM"))
+        self.assertEqual(self.counts(), before)
+        machine_id = self.scalar("SELECT id FROM vinto_master.machine WHERE code=%s", (created["bobbin"]["machine"]["code"],))
+        from app.capture_errors import FormNotAvailableError
+        with self.assertRaises(FormNotAvailableError):
+            capture_service.published_form_version(self.connection, P120, machine_id)
+
+
 class SchemaTests(QualityCaptureCase):
     async def test_the_fk_is_on_delete_restrict_and_indexed(self):
         fk = self.connection.execute("""SELECT confdeltype, confrelid::regclass::text FROM pg_constraint

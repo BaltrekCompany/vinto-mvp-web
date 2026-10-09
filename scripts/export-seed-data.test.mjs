@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_OUT, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageSemantics, validateBundle, writeBundle } from "./export-seed-data.mjs";
+import { DEFAULT_OUT, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageSemantics, q20Label, validateBundle, writeBundle } from "./export-seed-data.mjs";
 
 const sources = await loadSources();
 const clone = (value) => structuredClone(value);
@@ -39,8 +39,8 @@ test("manifest is consistent with the files", () => {
   const { files, manifest } = buildBundle(sources);
   assert.deepEqual(manifest.files.map((f) => f.path), [...files.keys()].filter((n) => n !== "manifest.json").sort());
   assert.equal(manifest.counts.articles, JSON.parse(files.get("articles.json")).items.length);
-  assert.equal(manifest.counts.forms, 3);
-  assert.equal(manifest.counts.form_fields, 18);
+  assert.equal(manifest.counts.forms, 4);
+  assert.equal(manifest.counts.form_fields, 30); // F6 5 + F3 6 + P1-19 7 + P1-20 12
   assert.equal(manifest.counts.form_options, 5);
   assert.equal(manifest.pending_forms, undefined);
 });
@@ -149,7 +149,7 @@ test("the manifest fingerprints app/page.tsx semantically, not by file hash", ()
   assert.equal(entry.sha256, fingerprint(PAGE));
   assert.equal(entry.scope, PAGE_FINGERPRINT_SCOPE);
   assert.notEqual(entry.sha256, createHash("sha256").update(PAGE).digest("hex"));
-  assert.deepEqual(Object.keys(pageSemantics(PAGE)).sort(), ["f6_choices", "f6_override", "groups_bobinas", "q19_override", "shift_night_rule"]);
+  assert.deepEqual(Object.keys(pageSemantics(PAGE)).sort(), ["f6_choices", "f6_override", "groups_bobinas", "q19_override", "q20_override", "shift_night_rule"]);
   for (const other of manifest.generated_from.filter((e) => e.path !== "app/page.tsx")) assert.equal(other.scope, undefined);
 });
 
@@ -249,4 +249,109 @@ test("fails when the P1-19 override in the page changes the canonical contract",
   failsWith((s) => { s.texts.page = s.texts.page.replace('fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "kg")', 'fld("peso_seco_medio", "Peso seco · Medio", "text", true, "kg")'); }, /P1-19: peso_seco_medio/);
   failsWith((s) => { s.texts.page = s.texts.page.replace('fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "kg")', 'fld("peso_seco_medio", "Peso seco · Medio", "decimal", true, "g")'); }, /P1-19: la unidad de peso_seco_medio/);
   failsWith((s) => { s.texts.page = s.texts.page.replaceAll('fld("observaciones", "Observaciones", "textarea", false)', 'fld("observaciones", "Observaciones", "textarea", false), fld("extra", "Extra", "text")'); }, /fuera del contrato/); // replaceAll: el literal se repite en los overrides de F3, F6 y P1-19
+});
+
+// ---- VINTO-P1-20 (Propiedades físicas de bobina): provisional canonical contract ------------------------------------------
+
+const Q20_EXPECTED = [
+  ["crepado", "decimal", true, null, "manual"], ["gramaje", "decimal", true, null, "manual"],
+  ["resistencia_longitudinal_centro", "decimal", true, null, "manual"], ["resistencia_longitudinal_medio", "decimal", true, null, "manual"],
+  ["resistencia_longitudinal_extremo", "decimal", true, null, "manual"], ["resistencia_transversal_centro", "decimal", true, null, "manual"],
+  ["resistencia_transversal_medio", "decimal", true, null, "manual"], ["resistencia_transversal_extremo", "decimal", true, null, "manual"],
+  ["espesor_centro", "decimal", true, "MM", "manual"], ["espesor_medio", "decimal", true, "MM", "manual"], ["espesor_extremo", "decimal", true, "MM", "manual"],
+  ["observaciones", "textarea", false, null, "manual"],
+];
+const q20Of = (s) => s.formDefinitions.find((f) => f.legacyNumber === 20);
+
+test("VINTO-P1-20 is published for MP1/MP3 with exactly the twelve manual fields", () => {
+  const { files, manifest } = buildBundle(sources);
+  const form = JSON.parse(files.get("forms/VINTO-P1-20.json"));
+  assert.deepEqual([form.legacy_key, form.code, form.legacy_number, form.name, form.area, form.workflow, form.version_number, form.machines, form.groups],
+    ["form_20_propiedades_fisicas_de_bobina", "VINTO-P1-20", 20, "Propiedades físicas de bobina", "quality", "quality-release", 1, ["MP1", "MP3"], []]);
+  assert.deepEqual(form.fields.map((f) => [f.key, f.value_type, f.required, f.unit, f.source]), Q20_EXPECTED);
+  assert.deepEqual(form.fields.map((f) => f.display_order), Array.from({ length: 12 }, (_, i) => i + 1));
+  assert.equal(form.fields.filter((f) => f.value_type === "decimal").length, 11);
+  assert.ok(form.fields.every((f) => f.options === undefined), "no options");
+  assert.ok(manifest.files.some((f) => f.path === "forms/VINTO-P1-20.json"));
+  assert.ok(manifest.scope.forms.includes("VINTO-P1-20"));
+  assert.ok(manifest.warnings.some((w) => w.code === "P1_20_PROVISIONAL_CONTRACT"));
+  assert.ok(manifest.authority_rules.p1_20_labels_units);
+});
+
+test("VINTO-P1-20 excludes automatic data, bobbin/F3 context and averages; no catalog unit is invented for g/m²", () => {
+  const form = JSON.parse(buildBundle(sources).files.get("forms/VINTO-P1-20.json"));
+  const keys = form.fields.map((f) => f.key);
+  for (const excluded of ["fecha", "hora", "maquina", "responsable", "numero_de_bobina", "producto", "numero_de_cortes",
+    "promedio_resistencia_longitudinal", "promedio_resistencia_transversal", "promedio_espesor"]) assert.equal(keys.includes(excluded), false, excluded);
+  const text = JSON.stringify(form);
+  for (const word of ["promedio", "calculated", "automatic", "minimo", "maximo", "tolerancia", "conforme", "default"]) assert.equal(text.toLowerCase().includes(word), false, word);
+  assert.equal(form.fields.find((f) => f.key === "gramaje").unit, null);
+  const units = JSON.parse(buildBundle(sources).files.get("units.json")).items.map((u) => u.code);
+  assert.deepEqual(units, JSON.parse(readFileSync(join(DEFAULT_OUT, "units.json"), "utf8")).items.map((u) => u.code), "no new unit code");
+  assert.equal(units.length, 3);
+  assert.equal(units.some((u) => /G.?M2|GM2|G\/M/i.test(u)), false);
+  // the technical *_centro keys stay intact
+  assert.deepEqual(keys.filter((k) => k.endsWith("_centro")), ["resistencia_longitudinal_centro", "resistencia_transversal_centro", "espesor_centro"]);
+});
+
+test("adding P1-20 does not alter the already published forms (byte-identical checksums)", () => {
+  const { files } = buildBundle(sources);
+  const checksum = (code) => JSON.parse(files.get(`forms/${code}.json`)).definition_checksum;
+  assert.equal(checksum("VINTO-P1-03"), "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13");
+  assert.equal(checksum("VINTO-P1-06"), "fe0bf83fb71057d8debbd014d20bfd3cd13aa4a6310c2b94be56ce2d2eb4f45f");
+  assert.equal(checksum("VINTO-P1-19"), "682908dee7878ce55313011a9a62ef9c0b82dbae404ed129bacaf2366c8a22ff");
+  assert.equal(checksum("VINTO-P1-20"), "1145b41c568e4616dddbfb9f2c5eff21e253a3840df36a87fa416871e30fbbe0"); // con las etiquetas visibles «comando»
+});
+
+const Q20_LABELS = [
+  ["crepado", "Crepado"], ["gramaje", "Gramaje"],
+  ["resistencia_longitudinal_centro", "Resistencia longitudinal comando"], ["resistencia_longitudinal_medio", "Resistencia longitudinal medio"],
+  ["resistencia_longitudinal_extremo", "Resistencia longitudinal extremo"], ["resistencia_transversal_centro", "Resistencia transversal comando"],
+  ["resistencia_transversal_medio", "Resistencia transversal medio"], ["resistencia_transversal_extremo", "Resistencia transversal extremo"],
+  ["espesor_centro", "Espesor comando"], ["espesor_medio", "Espesor medio"], ["espesor_extremo", "Espesor extremo"], ["observaciones", "Observaciones"],
+];
+
+test("VINTO-P1-20 publishes the visible labels of the effectiveForms override while keeping the *_centro keys", () => {
+  const form = JSON.parse(buildBundle(sources).files.get("forms/VINTO-P1-20.json"));
+  assert.deepEqual(form.fields.map((f) => [f.key, f.label]), Q20_LABELS);
+  assert.equal(form.fields.some((f) => /centro/i.test(f.label)), false, "no visible label says centro");
+  assert.equal(form.fields.filter((f) => f.key.endsWith("_centro")).length, 3, "technical keys are not renamed");
+  // the published labels are exactly what effectiveForms() would show (same transformation as app/page.tsx), without touching the page
+  const legacy = q20Of(sources);
+  for (const f of form.fields) assert.equal(f.label, q20Label(f.key, legacy.fields.find((x) => x.key === f.key).label, { from: "centro", to: "comando" }), f.key);
+});
+
+test("fails when the P1-20 source deviates from the canonical contract", () => {
+  failsWith((s) => { q20Of(s).fields.find((f) => f.key === "crepado").type = "text"; }, /P1-20: crepado/);
+  failsWith((s) => { q20Of(s).fields.find((f) => f.key === "espesor_medio").required = false; }, /P1-20: espesor_medio cambió su obligatoriedad/);
+  failsWith((s) => { q20Of(s).fields.find((f) => f.key === "gramaje").unit = "kg"; }, /P1-20: la unidad de gramaje/);
+  failsWith((s) => { q20Of(s).fields.find((f) => f.key === "espesor_centro").unit = "mm"; }, /P1-20: la unidad de espesor_centro/);
+  failsWith((s) => { q20Of(s).fields = q20Of(s).fields.filter((f) => f.key !== "resistencia_transversal_extremo"); }, /P1-20: FORM_DEFINITIONS ya no define resistencia_transversal_extremo/);
+  failsWith((s) => { q20Of(s).fields.push({ ...q20Of(s).fields.find((f) => f.key === "crepado"), key: "brillo", id: "brillo" }); }, /P1-20: FORM_DEFINITIONS define campos fuera del contrato canónico: brillo/);
+  failsWith((s) => { q20Of(s).fields = q20Of(s).fields.filter((f) => f.key !== "promedio_espesor"); }, /campos excluidos promedio_espesor/);
+  failsWith((s) => { q20Of(s).fields.find((f) => f.key === "espesor_centro").source = "calculated"; }, /P1-20: espesor_centro es calculated/);
+  failsWith((s) => { q20Of(s).allowedMachineIds = ["mp1"]; }, /P1-20 no admite la máquina MP3/);
+  failsWith((s) => { q20Of(s).area = "production"; }, /P1-20 debe tener area quality/);
+});
+
+test("the P1-20 espesor unit comes from the page override and is part of the fingerprint", () => {
+  assert.deepEqual(pageSemantics(PAGE).q20_override, { espesor_unit: "mm", relabel: { from: "centro", to: "comando" } });
+  const changed = replaceOnce(PAGE, 'x.key.includes("espesor") ? { ...x, unit: "mm"', 'x.key.includes("espesor") ? { ...x, unit: "cm"');
+  assert.notEqual(fingerprint(changed), fingerprint(PAGE));
+  assert.throws(() => buildBundle(withPage(() => changed)), (e) => e instanceof SeedExportError && /P1-20: el override de app\/page\.tsx fija espesor en "cm"/.test(e.message));
+  const removed = replaceOnce(PAGE, 'x.key.includes("espesor") ? { ...x, unit: "mm"', 'x.key.includes("grosor") ? { ...x, unit: "mm"');
+  assert.throws(() => pageSemantics(removed), /P1-20: el override de app\/page\.tsx ya no fija la unidad de espesor/);
+});
+
+test("the P1-20 relabelling comes from the page override, is fingerprinted and must be consistent", () => {
+  const P20 = 'needsValidation: false, label: x.label.replace("centro", "comando") } : x.label.toLowerCase().includes("centro") ? { ...x, label: x.label.replace("centro", "comando") }';
+  const renamed = replaceOnce(PAGE, P20, P20.replaceAll('"comando"', '"mando"'));
+  assert.notEqual(fingerprint(renamed), fingerprint(PAGE));
+  const form = JSON.parse(buildBundle(withPage(() => renamed)).files.get("forms/VINTO-P1-20.json"));
+  assert.deepEqual(form.fields.filter((f) => f.key.endsWith("_centro")).map((f) => f.label), ["Resistencia longitudinal mando", "Resistencia transversal mando", "Espesor mando"]);
+  assert.notEqual(form.definition_checksum, JSON.parse(buildBundle(sources).files.get("forms/VINTO-P1-20.json")).definition_checksum);
+  const inconsistent = replaceOnce(PAGE, P20, P20.replace('x.label.replace("centro", "comando") }', 'x.label.replace("centro", "punta") }'));
+  assert.throws(() => pageSemantics(inconsistent), /P1-20: el override de app\/page\.tsx reetiqueta espesor y el resto de campos de forma distinta/);
+  const dropped = replaceOnce(PAGE, P20, P20.replace(' : x.label.toLowerCase().includes("centro") ? { ...x, label: x.label.replace("centro", "comando") }', ''));
+  assert.throws(() => pageSemantics(dropped), /P1-20: el override de app\/page\.tsx ya no reetiqueta/);
 });
