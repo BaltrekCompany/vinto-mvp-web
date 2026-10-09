@@ -447,9 +447,10 @@ test("after a success the form closes and the INBOX is refreshed so the bobbin s
   assert.equal(/filter|splice|slice\(/.test(branch), false, "the bobbin is not removed locally");
 });
 
-test("the legacy P1-19 card is excluded from the Calidad cards and nothing else changes", () => {
-  assert.match(page, /f\.area === "quality" && f\.id !== Q19_FORM_ID && norm\(/);
-  assert.equal((page.match(/Q19_FORM_ID/g) ?? []).length, 2); // import + filtro: ningún otro formulario se excluye
+test("the legacy P1-19 and P1-20 cards are excluded from the Calidad cards and nothing else changes", () => {
+  assert.match(page, /f\.area === "quality" && f\.id !== Q19_FORM_ID && f\.id !== Q20_FORM_ID && norm\(/); // P1-20 central (Q3.2-B)
+  assert.equal((page.match(/Q19_FORM_ID/g) ?? []).length, 2); // import + filtro
+  assert.equal((page.match(/Q20_FORM_ID/g) ?? []).length, 2); // import + filtro: ningún otro formulario se excluye
   assert.match(page, /f\.id === "form_19_control_de_humedad"/); // la definición legacy sigue existiendo
   assert.equal(/f\.id !== "form_18|f\.id !== "form_20|f\.id !== "form_21/.test(page), false);
 });
