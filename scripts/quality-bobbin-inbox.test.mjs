@@ -136,10 +136,15 @@ test("the inbox code never touches browser storage or local records", () => {
   }
 });
 
-test("the component lists read-only; its only actions are refresh and opening the humidity control of that bobbin", () => {
+test("the component lists read-only; its only actions are refresh, opening the humidity control and opening the control history of that bobbin", () => {
   assert.equal(/Liberar|Rechazar|liberar|rechazar/.test(component), false);
   const clicks = [...component.matchAll(/onClick=\{([^}]*)\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(clicks.sort(), ["() => onRegisterHumidity(i)", "refresh"]);
+  assert.deepEqual(clicks.sort(), ["() => onRegisterHumidity(i)", "() => onViewHistory(i)", "refresh"]);
+  // ambas acciones de la fila nombran la Bobina concreta (lectores de pantalla) y reciben ESE item
+  assert.match(component, /aria-label=\{`Registrar humedad de la bobina \$\{i\.bobbin\.code\}/);
+  assert.match(component, /aria-label=\{`Ver controles de la bobina \$\{i\.bobbin\.code\}/);
+  assert.match(component, />Registrar humedad<\/Button>/);
+  assert.match(component, />Ver controles<\/Button>/);
   assert.equal(/<input|checkbox|<select|<textarea|<Textarea|<Input/.test(component), false);
   assert.equal(/setReleases|useState|fetch\(/.test(component), false);
   assert.match(component, /Bobinas pendientes de Calidad/);
@@ -161,7 +166,7 @@ test("Calidad Execution renders the central inbox and no longer the demo Release
   const quality = executionBody.slice(executionBody.indexOf('if (front === "Calidad")'), executionBody.indexOf("return <><Panel"));
   assert.match(quality, /\{qualityInbox\}/);
   assert.equal(/ReleaseCards|releases|setReleases|Compuerta de liberación/.test(quality), false);
-  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=/);
+  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=\{item => setSelectedQualityBobbin\(humidityAttempt \? humidityAttempt\.bobbin : item\)\} onViewHistory=\{openQualityHistory\}\/>/);
   assert.equal(/Execution\(\{[^}]*\b(releases|setReleases|canRelease)\b/.test(executionBody), false);
   assert.equal(/<Execution [^>]*(releases=|setReleases=|canRelease=)/.test(page), false);
 });
