@@ -85,3 +85,7 @@ def scoped_sector_codes(sectors) -> tuple[str, ...]:
 
 def in_scope(code, sectors) -> bool:
     return isinstance(code, str) and code in scoped_sector_codes(sectors)
+
+
+# Frentes visibles de la interfaz -> código de sector. «Calidad» no es un sector: agrupa capturas de formularios de área quality.
+FRONT_SECTOR_CODES = {"Bobinas": SECTOR_BOBINAS, "Rebobinado": SECTOR_REBOBINADO, "Conversión": SECTOR_CONVERSION}

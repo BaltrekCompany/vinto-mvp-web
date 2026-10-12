@@ -5,18 +5,16 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-import psycopg
 from fastapi import APIRouter, Depends, Query, Response
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import capture_service
 from app.auth.dependencies import require_permission
-from app.auth.permissions import PRODUCTION_CAPTURE
+from app.auth.permissions import CATALOG_READ, PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
 from app.capture_schemas import CaptureIn, CaptureOut, CaptureResultOut, capture_out, result_out
-from app.config import settings
-from app.database import DatabaseUnavailable, get_connection, logger
+from app.database import get_connection
+from app.sectors import FRONT_SECTOR_CODES, scoped_sector_codes
 
 Front = Literal["Bobinas", "Rebobinado", "Conversión", "Calidad"]
 router = APIRouter(prefix="/api/captures", tags=["Seguimiento"])
@@ -28,41 +26,39 @@ class CaptureCount(BaseModel):
     source: Literal["database"] = "database"
 
 
-def capture_count_query(front: Front) -> tuple[str, tuple[str]]:
+def capture_count_query(front: Front, sectors) -> tuple[str, tuple]:
+    """Conteo agregado limitado SIEMPRE a los sectores visibles (operativos ∩ concedidos al usuario), por código de sector.
+
+    - Bobinas / Rebobinado / Conversión: capturas de máquinas de ese sector (si no está entre los visibles, el conteo es 0).
+    - Calidad: capturas de formularios con área quality, solo de máquinas de los sectores visibles.
+    Nunca se filtra por el nombre visible del sector. Con alcance vacío ambos devuelven 0.
+    """
+    visible = list(scoped_sector_codes(sectors))
     if front == "Calidad":
         return ("""SELECT count(*) FROM vinto_txn.capture c
                 JOIN vinto_config.form_version f ON f.id = c.form_version_id
-                WHERE f.area = %s""", ("quality",))
+                JOIN vinto_master.machine m ON m.id = c.machine_id
+                JOIN vinto_master.sector s ON s.id = m.sector_id
+                WHERE f.area = %s AND s.code = ANY(%s)""", ("quality", visible))
     return ("""SELECT count(*) FROM vinto_txn.capture c
             JOIN vinto_master.machine m ON m.id = c.machine_id
             JOIN vinto_master.sector s ON s.id = m.sector_id
-            WHERE s.name = %s""", (front,))
+            WHERE s.code = %s AND s.code = ANY(%s)""", (FRONT_SECTOR_CODES[front], visible))
 
 
-def count_captures(front: Front) -> int:
-    if settings.database_url is None or not settings.database_url.get_secret_value():
-        logger.warning("Capture count: DATABASE_URL no está configurada")
-        raise DatabaseUnavailable("Database unavailable")
-    try:
-        with psycopg.connect(
-            settings.database_url.get_secret_value(),
-            connect_timeout=settings.db_connect_timeout,
-            options=f"-c statement_timeout={settings.db_statement_timeout_ms}",
-        ) as connection:
-            connection.read_only = True
-            result = connection.execute(*capture_count_query(front)).fetchone()
-            return result[0]
-    except (psycopg.Error, ValueError) as error:
-        logger.warning("Capture count: consulta no disponible (%s)", type(error).__name__)
-        raise DatabaseUnavailable("Database unavailable") from None
+def count_captures(connection, front: Front, sectors) -> int:
+    """Una consulta de solo lectura sobre la conexión de la petición (la misma que resolvió la sesión)."""
+    with connection.transaction():
+        connection.execute("SET TRANSACTION READ ONLY")
+        return connection.execute(*capture_count_query(front, sectors)).fetchone()[0]
 
 
-@router.get("/count", response_model=CaptureCount, responses={503: {"description": "Consulta no disponible"}})
-def capture_count(front: Front):
-    try:
-        return CaptureCount(front=front, count=count_captures(front))
-    except DatabaseUnavailable:
-        return JSONResponse(status_code=503, content={"status": "error", "database": "unavailable"})
+@router.get("/count", response_model=CaptureCount, responses={401: {"description": "No autenticado"}, 403: {"description": "Permiso insuficiente (catalog.read)"},
+                                                              503: {"description": "Consulta no disponible"}})
+def capture_count(front: Front, user: AuthenticatedUser = Depends(require_permission(CATALOG_READ)), connection=Depends(get_connection)):
+    """Conteo agregado de capturas por frente. Exige sesión y `catalog.read` (lectura de estadísticas: no concede capturar) y solo cuenta los
+    sectores operativos concedidos a la sesión; el cliente no puede ampliar el alcance. No escribe nada."""
+    return CaptureCount(front=front, count=count_captures(connection, front, user.sectors))
 
 
 # ---- capturas de producción F6 (VINTO-P1-06) ---------------------------------------------------------------------

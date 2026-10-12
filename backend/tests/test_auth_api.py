@@ -485,7 +485,11 @@ class SecurityTests(ApiCase):
             self.assertNotIn(secret, audit)
 
     async def test_existing_routes_keep_their_behaviour(self):
-        reply = await call("GET", "/api/captures/count")  # missing front: FastAPI's standard 422 body is preserved
+        # M1-C2-a: the counter is no longer public. Without a session the answer is 401; with one, a missing front keeps FastAPI's standard 422 body.
+        self.assertEqual((await call("GET", "/api/captures/count")).status, 401)
+        created, password = self.make_user("JEFATURA")
+        cookie = (await self.login(created.username, password)).cookie_value()
+        reply = await call("GET", "/api/captures/count", cookie=cookie)
         self.assertEqual(reply.status, 422)
         self.assertIn("detail", reply.json())
         self.assertEqual((await call("GET", "/health")).json(), {"status": "ok"})
