@@ -10,8 +10,8 @@
 // (>= 22.18, >= 23.6 or 24); the repository already requires Node >= 22.18.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,6 +49,8 @@ const PROFILES = [
 //   shift:    [code, name, starts_at "HH:MM", ends_at "HH:MM", valid_from?, valid_to?]  (a night shift crosses midnight: ends_at < starts_at; its
 //             operating date is the day it STARTS). valid_from defaults to the sector's.
 //   unit_aliases: { "<unit as written in the catalog>": "<unit code>" } (none today). Material classes are derived from MATERIALS.
+//   unit_labels: { "<unit code>": "<label>" } declared labels (the rest keep the code as a placeholder label, warning UNIT_LABEL_PLACEHOLDER).
+//   nominal_weights: false keeps product-weights.ts out of the bundle (nominal_weight_kg null); omitted/true exports them as before.
 //   forms_sector: the sector whose machines the published forms (F3, F6, P1-19, P1-20) are enabled for. Adding sectors never changes the forms.
 // Shifts are declarative reference data requested for the pilot. Not read from the sources: the only source is the ctx() function in
 // app/page.tsx, which is cross-checked below.
@@ -64,6 +66,34 @@ export const DEFAULT_SCOPE = {
     },
   ],
 };
+// M1-B2-b CANDIDATE scope: the three-sector master data (Bobinas + Rebobinado + Conversión). It is NOT the approved bundle: it is only reachable
+// through `--scope candidate --out DIR` and is never written over backend/seed_data. Machine codes are technical candidates derived from the
+// catalog (pending the final agreement from VINTO); the visible names are the ones shown in GROUPS (app/page.tsx). Shifts of Rebobinado are
+// candidates (exact hours pending confirmation). Nominal weights and recipes are NOT part of this increment (nominal_weights: false).
+const named = (list) => list.map(([code, group, catalog = group]) => ({ code, name: group, group, catalog }));
+export const CANDIDATE_SCOPE = {
+  forms_sector: "BOBINAS",
+  unit_aliases: { Pack: "PACK" },
+  unit_labels: { PACK: "Pack" },
+  nominal_weights: false,
+  sectors: [
+    DEFAULT_SCOPE.sectors[0],
+    {
+      code: "REBOBINADO", name: "Rebobinado", front: "Rebobinado",
+      machines: named([["BELOIT", "Beloit", "BELOIT"], ["OVER", "Over", "OVER"], ["COPASA", "Copasa", "COPASA"], ["PERICHUN", "Perichun", "PERICHUN"], ["TUBETERA", "Tubetera", "TUBETERA"]]),
+      timezone: "America/La_Paz", valid_from: "2026-01-01",
+      shifts: [["DIA", "Día", "06:00", "18:00"], ["NOCHE", "Noche", "18:00", "06:00"]],
+    },
+    {
+      code: "CONVERSION", name: "Conversión", front: "Conversión",
+      machines: named([["GAMBINI", "Gambini", "GAMBINI"], ["SINCRO_II", "Sincro II"], ["SINCRO_III", "Sincro III"], ["OMET_I", "OMET I"], ["OMET_II", "OMET II"], ["8_2", "8.2"], ["8_5", "8.5"],
+        ["8002", "8002"], ["SERV_4", "Serv 4"], ["WALLY", "Wally", "WALLY"], ["PANUELERA", "Pañuelera", "PAÑUELERA"]]),
+      timezone: "America/La_Paz", valid_from: "2026-01-01",
+      shifts: [["MANANA", "Mañana", "06:00", "14:00"], ["TARDE", "Tarde", "14:00", "22:00"], ["NOCHE", "Noche", "22:00", "06:00"]],
+    },
+  ],
+};
+export const SCOPES = { approved: DEFAULT_SCOPE, candidate: CANDIDATE_SCOPE };
 // Code formats of the master data (the backend loader enforces the same ones).
 const CODE_PATTERNS = {
   sector: /^[A-Z][A-Z0-9_]{0,31}$/, machine: /^[A-Z0-9][A-Z0-9_]{0,31}$/, unit: /^[A-Z][A-Z0-9_]{0,15}$/,
@@ -390,9 +420,13 @@ export function prepareScope(scope = DEFAULT_SCOPE) {
   const unitAliases = scope.unit_aliases ?? {};
   if (typeof unitAliases !== "object" || unitAliases === null || Array.isArray(unitAliases)) fail("unit_aliases debe ser un objeto");
   for (const [from, to] of Object.entries(unitAliases)) if (!from.trim() || !CODE_PATTERNS.unit.test(to ?? "")) fail(`unit_aliases: ${JSON.stringify(from)} → ${JSON.stringify(to)} no es un código de unidad válido`);
+  const unitLabels = scope.unit_labels ?? {};
+  if (typeof unitLabels !== "object" || unitLabels === null || Array.isArray(unitLabels)) fail("unit_labels debe ser un objeto");
+  for (const [code, label] of Object.entries(unitLabels)) if (!CODE_PATTERNS.unit.test(code) || typeof label !== "string" || !label.trim()) fail(`unit_labels: ${JSON.stringify(code)} → ${JSON.stringify(label)} no es válido`);
+  if (scope.nominal_weights !== undefined && typeof scope.nominal_weights !== "boolean") fail("nominal_weights debe ser booleano");
   validateSchedules(schedules);
   return {
-    sectors, machines, shifts, schedules, unitAliases, formsSector, formMachines: formsSector.machines.map((m) => m.code),
+    sectors, machines, shifts, schedules, unitAliases, unitLabels, nominalWeights: scope.nominal_weights !== false, formsSector, formMachines: formsSector.machines.map((m) => m.code),
     timezones: [...new Set(schedules.map((s) => s.timezone))], validFromValues: [...new Set(schedules.map((s) => s.valid_from))],
   };
 }
@@ -513,7 +547,7 @@ export function buildBundle(sources, scope = DEFAULT_SCOPE) {
       }
       classNames.set(classCode, material.className);
     }
-    const weight = nominalWeights?.[a.code];
+    const weight = model.nominalWeights ? nominalWeights?.[a.code] : undefined;
     if (weight !== undefined && !(typeof weight === "number" && weight >= 0)) fail(`${a.code}: peso nominal inválido`);
     if (weight !== undefined) withWeight++;
     const grammage = grammageFromDescription(a.name);
@@ -681,7 +715,8 @@ export function buildBundle(sources, scope = DEFAULT_SCOPE) {
   // ---- entity files ----
   const wrap = (entity, items) => ({ schema_version: SCHEMA_VERSION, entity, items });
   const files = new Map();
-  files.set("units.json", json(wrap("unit", unitCodes.map((code) => ({ code, label: code })))));
+  for (const code of Object.keys(model.unitLabels)) if (!unitCodes.includes(code)) fail(`unit_labels declara la unidad ${code}, que ningún artículo ni campo usa`);
+  files.set("units.json", json(wrap("unit", unitCodes.map((code) => ({ code, label: model.unitLabels[code] ?? code })))));
   files.set("material_classes.json", json(wrap("material_class", [...classNames].sort((a, b) => cmp(a[0], b[0])).map(([code, name]) => ({ code, name })))));
   files.set("sectors.json", json(wrap("sector", model.sectors.map((s) => ({ code: s.code, name: s.name })))));
   files.set("machines.json", json(wrap("machine", model.machines.map((m) => ({ code: m.code, name: m.name, sector: m.sector })))));
@@ -706,7 +741,8 @@ export function buildBundle(sources, scope = DEFAULT_SCOPE) {
   if (withoutMaterial) warn("ARTICLE_NOT_IN_MATERIALS", "info", "Artículos del alcance ausentes de MATERIALS: sin clase de material", withoutMaterial);
   if (articleItems.length - withWeight) warn("NOMINAL_WEIGHT_MISSING", "info", "Artículos sin peso nominal en product-weights.ts; nominal_weight_kg queda null (no se inventa)", articleItems.length - withWeight);
   if (articleItems.length - withGrammage) warn("GRAMMAGE_MISSING", "info", "Artículos sin gramaje en la descripción oficial (sin G-<número>, p. ej. tubetes o SEGUNDA); grammage_g_m2 queda null y no bloquea F3", articleItems.length - withGrammage);
-  warn("UNIT_LABEL_PLACEHOLDER", "warning", "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla", unitCodes.length);
+  warn("UNIT_LABEL_PLACEHOLDER", "warning", "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla", unitCodes.filter((c) => model.unitLabels[c] === undefined).length);
+  if (!model.nominalWeights) warn("NOMINAL_WEIGHTS_DEFERRED", "info", "Los pesos nominales de product-weights.ts quedan fuera de este alcance; nominal_weight_kg es null en todos los artículos");
   warn("MACHINE_NAME_FROM_CODE", "warning", "machine.name usa el código de la fuente (no existe otro nombre)", model.machines.filter((m) => m.nameFromCode).length);
   warn("WORKFLOW_NAME_PLACEHOLDER", "warning", "workflow_definition.name usa el código de la fuente (no existe nombre real)", workflowCodes.length);
   warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${model.validFromValues.join(", ")} y timezone=${model.timezones.join(", ")} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
@@ -805,6 +841,22 @@ export function validateBundle({ files, manifest }) {
 
 // ---- IO ---------------------------------------------------------------------------------------
 
+// A non-approved scope (candidate) may only be written to a NEW or EMPTY directory that is neither inside nor above the approved bundle
+// (backend/seed_data): that rules out overwriting it, writing into its forms/ folder or the cleanup of stale *.json in a parent directory.
+// Paths are resolved through symlinks/junctions (nearest existing ancestor) and compared case-insensitively on Windows.
+export function assertSafeCandidateOut(outDir, approvedDir = DEFAULT_OUT) {
+  const real = (p) => {
+    let current = resolve(p); const rest = [];
+    while (!existsSync(current)) { const parent = dirname(current); if (parent === current) break; rest.unshift(current.slice(parent.length).replace(/^[\\/]+/, "")); current = parent; }
+    return join(realpathSync.native(current), ...rest);
+  };
+  const norm = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
+  const out = norm(real(outDir)), approved = norm(real(approvedDir));
+  const inside = (child, parent) => { const rel = relative(parent, child); return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)); };
+  if (inside(out, approved) || inside(approved, out)) fail(`--out no puede ser el bundle aprobado, estar dentro de él ni contenerlo: ${outDir}`);
+  if (existsSync(outDir) && readdirSync(outDir).length > 0) fail(`--out debe ser un directorio nuevo o vacío para un alcance candidato: ${outDir}`);
+}
+
 export function writeBundle(outDir, files) {
   mkdirSync(join(outDir, "forms"), { recursive: true });
   for (const [path, text] of files) writeFileSync(join(outDir, path), text, { encoding: "utf8" });
@@ -828,7 +880,15 @@ export function compareWithDisk(outDir, files) {
 async function main(argv) {
   const outIndex = argv.indexOf("--out");
   const outDir = outIndex >= 0 ? resolve(argv[outIndex + 1] ?? fail("--out requiere un directorio")) : DEFAULT_OUT;
-  const { files, manifest } = buildBundle(await loadSources());
+  const scopeIndex = argv.indexOf("--scope");
+  const scopeName = scopeIndex >= 0 ? (argv[scopeIndex + 1] ?? fail("--scope requiere un nombre (approved|candidate)")) : "approved";
+  if (!Object.hasOwn(SCOPES, scopeName)) fail(`Alcance desconocido: ${scopeName}. Opciones: ${Object.keys(SCOPES).join(", ")}`);
+  if (scopeName !== "approved") {
+    if (outIndex < 0) fail(`El alcance ${scopeName} es un candidato: indica --out con un directorio nuevo fuera de backend/seed_data`);
+    if (argv.includes("--check")) fail(`--check solo verifica el bundle aprobado, no el alcance ${scopeName}`);
+    assertSafeCandidateOut(outDir);
+  }
+  const { files, manifest } = buildBundle(await loadSources(), SCOPES[scopeName]);
   if (argv.includes("--check")) {
     const stale = compareWithDisk(outDir, files);
     if (stale.length) { console.error(`Bundle desactualizado: ${stale.join(", ")}. Ejecuta node scripts/export-seed-data.mjs`); return 1; }
