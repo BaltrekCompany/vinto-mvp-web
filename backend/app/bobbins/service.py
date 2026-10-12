@@ -21,7 +21,7 @@ from app import capture_service as cs
 from app.assignments.errors import AssignmentNotFoundError
 from app.bobbins.errors import BobbinNotFoundError
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError
-from app.work_orders.service import ALLOWED_SECTOR_CODES
+from app.sectors import operational_sector_codes
 
 FORM_CODE = "VINTO-P1-03"
 REASON = "register bobbin production"
@@ -80,7 +80,7 @@ def _bobbin_view(row) -> BobbinView:
 
 
 def _capture_view(connection, capture_id) -> cs.CaptureView:
-    rows = connection.execute(cs._VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(ALLOWED_SECTOR_CODES), capture_id)).fetchall()
+    rows = connection.execute(cs._VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(operational_sector_codes()), capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return cs._to_view(connection, rows[0])
@@ -88,14 +88,14 @@ def _capture_view(connection, capture_id) -> cs.CaptureView:
 
 def get_bobbin(connection, bobbin_id) -> BobbinView:
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
-    row = connection.execute(_BOBBIN_SQL + " AND b.id = %s", (list(ALLOWED_SECTOR_CODES), bobbin_id)).fetchone()
+    row = connection.execute(_BOBBIN_SQL + " AND b.id = %s", (list(operational_sector_codes()), bobbin_id)).fetchone()
     if row is None:
         raise BobbinNotFoundError()
     return _bobbin_view(row)
 
 
 def _result(connection, capture_id, *, created) -> BobbinResult:
-    row = connection.execute(_BOBBIN_SQL + " AND b.source_capture_id = %s", (list(ALLOWED_SECTOR_CODES), capture_id)).fetchone()
+    row = connection.execute(_BOBBIN_SQL + " AND b.source_capture_id = %s", (list(operational_sector_codes()), capture_id)).fetchone()
     if row is None:
         raise CaptureIdempotencyConflictError()
     return BobbinResult(_bobbin_view(row), _capture_view(connection, capture_id), created=created, already_submitted=not created)

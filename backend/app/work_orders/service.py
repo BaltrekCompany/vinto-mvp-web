@@ -6,7 +6,7 @@ con triggers). Todas las funciones esperan una conexión psycopg en autocommit y
 
 Decisiones:
 - Máquina y artículos se resuelven siempre por código contra los maestros; el cliente nunca envía ids,
-  descripciones ni unidades. El alcance se define por sector (`ALLOWED_SECTOR_CODES`), no por listas de máquinas.
+  descripciones ni unidades. El alcance se define por sector (`operational_sector_codes()` en app/sectors.py), no por listas de máquinas.
 - Cada línea congela el `article_version_id` MÁS RECIENTE (mayor version_number) del artículo en ese momento y
   toma la unidad de esa versión.
 - El número `OT-AAAA-NNNN` y el `line_code` (L1, L2, ...) se generan en el servidor. Sin tablas nuevas, la
@@ -21,11 +21,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from app.sectors import is_operational_sector, operational_sector_codes
 from app.work_orders.errors import (ArticleNotAllowedForMachineError, ArticleNotFoundError, InvalidWorkOrderLineError,
                                     MachineNotFoundError, MachineOutsideScopeError, WorkOrderAlreadyPublishedError,
                                     WorkOrderNotDraftError, WorkOrderNotFoundError, WorkOrderNotPublishableError)
 
-ALLOWED_SECTOR_CODES = ("BOBINAS",)
 MAX_PV_LENGTH = 100
 MAX_ARTICLE_CODE_LENGTH = 64
 MAX_QUANTITY_DIGITS = 15
@@ -122,7 +122,7 @@ def _machine(connection, machine_code):
     if row is None:
         raise MachineNotFoundError()
     machine_id, _, _, active, sector_code = row
-    if not active or sector_code not in ALLOWED_SECTOR_CODES:
+    if not active or not is_operational_sector(sector_code):
         raise MachineOutsideScopeError()
     return machine_id
 
@@ -285,7 +285,7 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
 def get_work_order(connection, work_order_id) -> WorkOrderView:
     """Detalle (solo la baseline). OT inexistente o fuera del alcance: WorkOrderNotFoundError."""
     work_order_id = _as_uuid(work_order_id)
-    headers = connection.execute(_HEADER_SQL + " AND wo.id = %s", (list(ALLOWED_SECTOR_CODES), work_order_id)).fetchall()
+    headers = connection.execute(_HEADER_SQL + " AND wo.id = %s", (list(operational_sector_codes()), work_order_id)).fetchall()
     if not headers:
         raise WorkOrderNotFoundError()
     return _hydrate(connection, headers)[0]
@@ -296,7 +296,7 @@ def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAUL
     if status is not None and status not in STATUSES:
         raise InvalidWorkOrderLineError(f"status debe ser uno de {', '.join(STATUSES)}")
     limit = max(1, min(int(limit), MAX_LIST_LIMIT))
-    sql, params = _HEADER_SQL, [list(ALLOWED_SECTOR_CODES)]
+    sql, params = _HEADER_SQL, [list(operational_sector_codes())]
     if machine_code is not None:
         sql += " AND m.code = %s"
         params.append(machine_code)

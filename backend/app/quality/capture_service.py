@@ -20,7 +20,7 @@ from datetime import date, datetime
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, UnsupportedFormDefinitionError
-from app.work_orders.service import ALLOWED_SECTOR_CODES
+from app.sectors import operational_sector_codes
 
 REASON = "submit quality capture"
 QUALITY_AREA = "quality"
@@ -95,7 +95,7 @@ def _to_view(connection, row) -> QualityCaptureView:
 
 def get_quality_capture(connection, capture_id) -> QualityCaptureView:
     capture_id = cs._uuid(capture_id, CaptureNotFoundError)
-    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(ALLOWED_SECTOR_CODES), capture_id)).fetchone()
+    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(operational_sector_codes()), capture_id)).fetchone()
     if row is None:
         raise CaptureNotFoundError()
     return _to_view(connection, row)
@@ -107,7 +107,7 @@ def _bobbin_context(connection, bobbin_id) -> _BobbinContext:
         """SELECT b.id, b.machine_id, c.shift_schedule_id, c.operating_date, c.assignment_id
            FROM vinto_txn.bobbin b JOIN vinto_txn.capture c ON c.id = b.source_capture_id
            JOIN vinto_master.machine m ON m.id = b.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
-           WHERE b.id = %s AND b.sequence_number IS NOT NULL AND s.code = ANY(%s)""", (bobbin_id, list(ALLOWED_SECTOR_CODES))).fetchone()
+           WHERE b.id = %s AND b.sequence_number IS NOT NULL AND s.code = ANY(%s)""", (bobbin_id, list(operational_sector_codes()))).fetchone()
     if row is None or row[4] is None:
         raise BobbinNotFoundError()
     return _BobbinContext(*row)
@@ -118,7 +118,7 @@ def list_bobbin_quality_captures(connection, bobbin_id) -> list[QualityCaptureVi
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
     _bobbin_context(connection, bobbin_id)
     rows = connection.execute(_VIEW_SQL + " AND c.bobbin_id = %s AND c.status IN ('submitted','closed') ORDER BY c.captured_at DESC, c.id DESC",
-                              (list(ALLOWED_SECTOR_CODES), bobbin_id)).fetchall()
+                              (list(operational_sector_codes()), bobbin_id)).fetchall()
     return [_to_view(connection, r) for r in rows]
 
 

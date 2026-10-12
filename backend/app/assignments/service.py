@@ -25,7 +25,7 @@ from app.assignments.errors import (AssignmentNotFoundError, BaselineLineNotFoun
                                     OperationalVersionError, WorkOrderNotActivatableError)
 from app.shifts import ResolvedShift, ShiftResolutionError, resolve_shift
 from app.work_orders.errors import MachineNotFoundError, MachineOutsideScopeError, WorkOrderNotFoundError
-from app.work_orders.service import ALLOWED_SECTOR_CODES
+from app.sectors import is_operational_sector, operational_sector_codes
 
 ASSIGNMENT_STATUSES = ("active", "finished")
 DEFAULT_LIST_LIMIT = 100
@@ -119,7 +119,7 @@ def _machine_info(connection, machine_code):
            JOIN vinto_master.sector s ON s.id = m.sector_id WHERE m.code = %s""", (machine_code.strip(),)).fetchone()
     if row is None:
         raise MachineNotFoundError()
-    if not row[2] or row[4] not in ALLOWED_SECTOR_CODES:
+    if not row[2] or not is_operational_sector(row[4]):
         raise MachineOutsideScopeError()
     return row[0], row[1], row[3]
 
@@ -152,7 +152,7 @@ def _to_view(row) -> AssignmentView:
 
 def get_assignment(connection, assignment_id) -> AssignmentView:
     assignment_id = _uuid(assignment_id, AssignmentNotFoundError)
-    rows = connection.execute(_VIEW_SQL + " AND a.id = %s", (list(ALLOWED_SECTOR_CODES), assignment_id)).fetchall()
+    rows = connection.execute(_VIEW_SQL + " AND a.id = %s", (list(operational_sector_codes()), assignment_id)).fetchall()
     if not rows:
         raise AssignmentNotFoundError()
     return _to_view(rows[0])
@@ -206,7 +206,7 @@ def activate(connection, *, actor_id, work_order_id, baseline_line_id, request_i
             """SELECT wo.status, wo.machine_id, m.active, s.id, s.code FROM vinto_txn.work_order wo
                JOIN vinto_master.machine m ON m.id = wo.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
                WHERE wo.id = %s FOR UPDATE OF wo""", (work_order_id,)).fetchone()
-        if order is None or order[4] not in ALLOWED_SECTOR_CODES:
+        if order is None or not is_operational_sector(order[4]):
             raise WorkOrderNotFoundError()
         status, machine_id, machine_active, sector_id, _ = order
         if status not in ("published", "in_progress"):
@@ -259,7 +259,7 @@ def finish(connection, *, actor_id, assignment_id, request_id=None) -> Assignmen
         row = connection.execute(
             """SELECT a.machine_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
                JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""",
-            (assignment_id, list(ALLOWED_SECTOR_CODES))).fetchone()
+            (assignment_id, list(operational_sector_codes()))).fetchone()
         if row is None:
             raise AssignmentNotFoundError()
         _machine_lock(connection, row[0])  # mismo orden que activate: máquina -> asignación
@@ -278,7 +278,7 @@ def finish(connection, *, actor_id, assignment_id, request_id=None) -> Assignmen
 def list_assignments(connection, *, machine_code=None, status=None, operating_date=None, work_order_id=None, limit=DEFAULT_LIST_LIMIT) -> list[AssignmentView]:
     if status is not None and status not in ASSIGNMENT_STATUSES:
         raise InvalidAssignmentFilterError(f"status debe ser uno de {', '.join(ASSIGNMENT_STATUSES)}")
-    sql, params = _VIEW_SQL, [list(ALLOWED_SECTOR_CODES)]
+    sql, params = _VIEW_SQL, [list(operational_sector_codes())]
     for clause, value in ((" AND m.code = %s", machine_code), (" AND a.status = %s", status), (" AND a.operating_date = %s", operating_date),
                           (" AND wo.id = %s", None if work_order_id is None else _uuid(work_order_id, WorkOrderNotFoundError))):
         if value is not None:
@@ -292,7 +292,7 @@ def list_assignments(connection, *, machine_code=None, status=None, operating_da
 def get_active(connection, *, machine_code) -> ActiveAssignment:
     """¿Qué OT/línea/producto tengo activo en esta máquina ahora? Incluye el turno actual y si la asignación quedó vencida."""
     machine_id, _, sector_id = _machine_info(connection, machine_code)
-    rows = connection.execute(_VIEW_SQL + " AND m.code = %s AND a.status = 'active' LIMIT 1", (list(ALLOWED_SECTOR_CODES), machine_code.strip())).fetchall()
+    rows = connection.execute(_VIEW_SQL + " AND m.code = %s AND a.status = 'active' LIMIT 1", (list(operational_sector_codes()), machine_code.strip())).fetchall()
     assignment = _to_view(rows[0]) if rows else None
     try:
         shift = resolve_shift(connection, _now(connection), sector_id=sector_id)

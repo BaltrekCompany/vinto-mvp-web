@@ -276,6 +276,44 @@ Rate limiting: NO está implementado y es un requisito antes de producción: lí
 `/api/auth/login` (preferiblemente también en Nginx). El bloqueo por cuenta no lo sustituye (un atacante puede
 bloquear cuentas ajenas). No se añadió un limitador en memoria porque fallaría con varios workers.
 
+## Alcance por sector (`app/sectors.py`)
+
+Estado actual (M1-A): **solo BOBINAS es operativo**. `REBOBINADO` y `CONVERSION` están *reconocidos* (su código está reservado y validado) pero **no habilitados**:
+cualquier máquina, OT, asignación, captura o Bobina de un sector no operativo se comporta como inexistente (404) o se rechaza
+(`MACHINE_OUTSIDE_SCOPE`, 422). Hasta M1-A esto era una constante repetida (`ALLOWED_SECTOR_CODES`); ahora hay un único punto de verdad.
+
+| Dónde se aplica | Cómo |
+|---|---|
+| OT: crear y consultar (`work_orders/service.py`) | `is_operational_sector()` en la máquina; `s.code = ANY(operational_sector_codes())` en las lecturas |
+| Asignaciones: activar, finalizar, listar, activa por máquina (`assignments/service.py`) | ídem |
+| Capturas F6 y Bobinas F3 (`capture_service.py`, `bobbins/service.py`) | filtro SQL por sector en la asignación y en las lecturas |
+| Calidad: bandeja, captura e historial (`quality/service.py`, `quality/capture_service.py`) | filtro SQL por sector en la Bobina |
+
+**Qué NO hace.** Habilitar un sector **no concede permisos**: los permisos siguen siendo por *perfil* (`app/auth/permissions.py`) y no dependen de sectores ni
+de máquinas (`app/sectors.py` no importa `app.auth` ni al revés). Lo que sí cambia es el alcance de los **datos**: al habilitar un sector, *todas* sus máquinas
+pasan a ser operables por los perfiles que ya tienen el permiso correspondiente. No existe autorización por máquina o por sector; si VINTO la necesita, es
+un diseño aparte (ver M1-B).
+
+**Cómo se incorporará un sector nuevo** (REBOBINADO o CONVERSION), solo cuando VINTO haya aprobado los datos:
+
+1. **Datos aprobados por VINTO** (el backend no los inventa): sector, máquinas (códigos), turnos con vigencia y zona horaria, relaciones artículo-máquina,
+   formularios publicados y habilitados por máquina, y si habrá permisos distintos por sector.
+2. **Bundle de referencia**: añadirlos con `scripts/export-seed-data.mjs` (nunca a mano) y comprobar `--check`. Los turnos del sector deben cubrir las 24 h sin
+   solaparse (`SHIFT_NOT_CONFIGURED` / `SHIFT_AMBIGUOUS`, ver `app/shifts.py`).
+3. **Importación** con el procedimiento de siempre: respaldo verificable, dry-run sin conflictos, `--apply` una sola vez y comprobación de NO-OP. En este punto el
+   sector existe en la base pero **sigue bloqueado**.
+4. **Habilitación**: cambiar `DEFAULT_OPERATIONAL_SECTORS` en `app/sectors.py` (cambio de una línea, revisado en PR). La validación al importar el módulo
+   impide arrancar con una lista incorrecta. Actualizar `tests/test_sector_scope.py` a propósito (la prueba del valor por defecto debe cambiar) y ejecutar toda la suite.
+5. **Revisión**: mensajes que mencionan «Bobinas» (p. ej. `MACHINE_OUTSIDE_SCOPE`), el frontend del sector y el plan de reversión: quitar el sector de la lista lo
+   vuelve invisible sin borrar datos.
+
+**Pruebas**: `tests/test_sector_scope.py` (15) cubre la validación de la configuración, que la constante antigua no reaparece, que ningún módulo repite códigos de
+sector, que la matriz de permisos y las migraciones no cambian y un escenario con un sector futuro **sintético** (solo en la plantilla efímera *_test) que ejecuta
+las mismas operaciones con el sector habilitado (deben funcionar) y deshabilitado (deben bloquearse), sin ampliar permisos en ningún caso.
+
+**Limitaciones conocidas**: `MACHINE_OUTSIDE_SCOPE` dice «órdenes de Bobinas»; `GET /api/captures/count` no exige sesión y cuenta por *nombre* de sector (no por
+alcance); el reintento exacto de una captura F3 de un sector deshabilitado responde 409 (F6 y Calidad: 404).
+
 ## Órdenes de trabajo BASE (Bobinas)
 
 `app/work_orders/` (`service.py` dominio, `router.py` y `schemas.py` HTTP, `errors.py`). Alcance: solo la versión
