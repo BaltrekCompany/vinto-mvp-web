@@ -10,14 +10,23 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path, PurePosixPath
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from app.shifts import ScheduleRow, ShiftResolutionError, resolve_shift_from_schedules
 
 BUNDLE_DIR = Path(__file__).resolve().parents[2] / "seed_data"
 SUPPORTED_SCHEMA_VERSION = 1
 MANIFEST = "manifest.json"
 VALUE_TYPES = {"text", "textarea", "decimal", "integer", "boolean", "date", "time"}
 SHA256_HEX = re.compile(r"^[a-f0-9]{64}$")
+# Formato de los códigos de datos maestros (el exportador scripts/export-seed-data.mjs aplica los mismos).
+CODE_PATTERNS = {
+    "sector": re.compile(r"[A-Z][A-Z0-9_]{0,31}"), "machine": re.compile(r"[A-Z0-9][A-Z0-9_]{0,31}"), "unit": re.compile(r"[A-Z][A-Z0-9_]{0,15}"),
+    "shift": re.compile(r"[A-Z][A-Z0-9_]{0,31}"), "article": re.compile(r"[A-Z0-9][A-Z0-9._-]{0,63}"),
+}
+MINUTES_PER_DAY = 1440
 
 # entity file -> Bundle attribute, entity name inside the file
 ENTITY_FILES = {
@@ -193,6 +202,82 @@ def _validate_counts(bundle: Bundle) -> None:
         _require(counts.get(name) == value, f"Conteo inconsistente en {name}: manifest={counts.get(name)!r}, datos={value}")
 
 
+def _hhmm(minute: int) -> str:
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def _runs(items, label) -> str:
+    """Lista ordenada de minutos (enteros) -> "desde–hasta" por tramos continuos (máx. 3)."""
+    runs: list[list[int]] = []
+    for item in items:
+        if runs and item == runs[-1][1] + 1:
+            runs[-1][1] = item
+        else:
+            runs.append([item, item])
+    text = ", ".join(f"{label(a)}–{label(b + 1)}" for a, b in runs[:3])
+    return text + (f" (+{len(runs) - 3})" if len(runs) > 3 else "")
+
+
+def _validate_codes(bundle: Bundle) -> None:
+    for kind, label, items in (("sector", "sector", bundle.sectors), ("machine", "machine", bundle.machines), ("unit", "unit", bundle.units),
+                               ("shift", "shift", bundle.shifts), ("article", "article", bundle.articles)):
+        for item in items:
+            code = item.get("code")
+            _require(isinstance(code, str) and CODE_PATTERNS[kind].fullmatch(code) is not None, f"{label}: código inválido {code!r}")
+
+
+def _validate_schedules(schedules) -> None:
+    """Horarios por sector: una sola zona horaria, sin huecos entre vigencias, cada minuto del día cubierto UNA vez dentro de cada vigencia y
+    también a través de cada cambio de vigencia (un cambio de horario puede dejar el tiempo real sin turno o con turnos solapados aunque cada
+    régimen sea correcto por separado). Los turnos nocturnos cruzan la medianoche y su fecha operativa es la del INICIO. Las transiciones se
+    simulan con el resolvedor real (app.shifts), de modo que se valida exactamente lo que ocurrirá en ejecución. Supone una zona sin saltos de
+    horario de verano (America/La_Paz)."""
+    by_sector: dict[str, list[ScheduleRow]] = {}
+    for sc in schedules:
+        by_sector.setdefault(sc["sector"], []).append(ScheduleRow(
+            shift_schedule_id=(sc["shift"], sc["sector"], sc["valid_from"]), shift_id=sc["shift"], shift_code=sc["shift"], shift_name=sc["shift"],
+            starts_at=time.fromisoformat(sc["starts_at"]), ends_at=time.fromisoformat(sc["ends_at"]), timezone=sc["timezone"],
+            valid_from=date.fromisoformat(sc["valid_from"]), valid_to=None if sc["valid_to"] is None else date.fromisoformat(sc["valid_to"])))
+    for sector, rows in by_sector.items():
+        zones = {r.timezone for r in rows}
+        _require(len(zones) == 1, f"Horarios del sector {sector}: todas las vigencias deben usar la misma zona horaria")
+        try:
+            zone = ZoneInfo(next(iter(zones)))
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            raise BundleError(f"Horarios del sector {sector}: zona horaria inválida {next(iter(zones))!r}") from None
+        bounds = sorted({r.valid_from for r in rows} | {r.valid_to + timedelta(days=1) for r in rows if r.valid_to is not None})
+        previous = None
+        for index, bound in enumerate(bounds):
+            following = bounds[index + 1] if index + 1 < len(bounds) else None
+            active = [r for r in rows if r.valid_from <= bound and (r.valid_to is None or r.valid_to >= bound)]
+            if not active:
+                _require(following is None, f"Horarios del sector {sector}: no hay turnos vigentes entre {bound} y {following - timedelta(days=1)}")
+                previous = None  # todas las vigencias terminaron: nada configurado después
+                continue
+            cover = [0] * MINUTES_PER_DAY
+            for r in active:
+                minute = r.starts_at.hour * 60 + r.starts_at.minute
+                end = r.ends_at.hour * 60 + r.ends_at.minute
+                while minute != end:
+                    cover[minute] += 1
+                    minute = (minute + 1) % MINUTES_PER_DAY
+            holes = [m for m, n in enumerate(cover) if n == 0]
+            overlaps = [m for m, n in enumerate(cover) if n > 1]
+            _require(not holes, f"Horarios del sector {sector} desde {bound}: minutos sin turno (hueco) {_runs(holes, _hhmm)}")
+            _require(not overlaps, f"Horarios del sector {sector} desde {bound}: turnos solapados {_runs(overlaps, _hhmm)}")
+            if previous:  # cambio de vigencia: tiempo real desde un día antes hasta un día después
+                start = datetime.combine(bound - timedelta(days=1), time.min, tzinfo=zone)
+                bad = []
+                for k in range(2 * MINUTES_PER_DAY):
+                    try:
+                        resolve_shift_from_schedules(rows, start + timedelta(minutes=k))
+                    except ShiftResolutionError:
+                        bad.append(k)
+                _require(not bad, f"Horarios del sector {sector}: el cambio de vigencia del {bound} deja el tiempo real sin turno o con turnos solapados "
+                                  f"({_runs(bad, lambda k: (start + timedelta(minutes=k)).strftime('%Y-%m-%d %H:%M'))})")
+            previous = active
+
+
 def _validate_content(bundle: Bundle) -> None:
     units = _unique(bundle.units, "code", "units")
     classes = _unique(bundle.material_classes, "code", "material_classes")
@@ -207,6 +292,10 @@ def _validate_content(bundle: Bundle) -> None:
 
     for machine in bundle.machines:
         _require(machine["sector"] in sectors, f"machine {machine['code']}: sector inexistente {machine['sector']}")
+    _validate_codes(bundle)
+    names = [str(m.get("name", "")).strip().casefold() for m in bundle.machines]
+    _require(all(names), "machine: nombre vacío")
+    _require(len(names) == len(set(names)), "machines: nombres repetidos")
     for article in bundle.articles:
         version = article["version"]
         _require(version["version_number"] == 1, f"article {article['code']}: solo se admite la versión 1")
@@ -223,6 +312,9 @@ def _validate_content(bundle: Bundle) -> None:
     for article_code, machine_code in pairs:
         _require(article_code in articles, f"article_machine: artículo inexistente {article_code}")
         _require(machine_code in machines, f"article_machine: máquina inexistente {machine_code}")
+    related = {article_code for article_code, _ in pairs}
+    for article in bundle.articles:
+        _require(not article["is_product"] or article["code"] in related, f"article {article['code']}: producto sin relación con ninguna máquina")
 
     schedule_keys = set()
     for schedule in bundle.schedules:
@@ -240,6 +332,7 @@ def _validate_content(bundle: Bundle) -> None:
         key = (schedule["shift"], schedule["sector"], schedule["valid_from"])
         _require(key not in schedule_keys, "shift_schedule duplicado")
         schedule_keys.add(key)
+    _validate_schedules(bundle.schedules)
 
     for form in bundle.forms:
         label = form["code"]

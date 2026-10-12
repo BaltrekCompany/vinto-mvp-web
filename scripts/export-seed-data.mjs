@@ -27,9 +27,7 @@ const SOURCE_FILES = {
 };
 
 // Pilot scope (project decision). Everything below is validated against the sources.
-const SECTOR_NAME = "Bobinas";
-const SECTOR_CODE = "BOBINAS";
-const MACHINES = ["MP1", "MP3"];
+// The master-data scope (sectors, machines, shifts, unit aliases) is DECLARATIVE: see DEFAULT_SCOPE below.
 const PILOT_FORM = { legacyNumber: 6, legacyKey: "form_6_registro_de_control_de_fardos", code: "VINTO-P1-06" };
 const QUALITY_FORM = { legacyNumber: 19, legacyKey: "form_19_control_de_humedad", code: "VINTO-P1-19" };
 const PROPERTIES_FORM = { legacyNumber: 20, legacyKey: "form_20_propiedades_fisicas_de_bobina", code: "VINTO-P1-20" };
@@ -41,11 +39,36 @@ const PROFILES = [
   ["CALIDAD", "Calidad"],
   ["DATA_BALTREK", "Data Baltrek"],
 ];
-// Declarative reference data requested for the pilot. Not read from the sources: the only
-// source is the ctx() function in app/page.tsx, which is cross-checked below.
-const SHIFTS = [["DIA", "Día", "07:00", "19:00"], ["NOCHE", "Noche", "19:00", "07:00"]];
-const SHIFT_TIMEZONE = "America/La_Paz";
-const SHIFT_VALID_FROM = "2026-01-01";
+
+// ---- declarative master-data scope -----------------------------------------------------------------------------------------
+// ONLY approved data belongs here. Adding a sector, machine or shift is a reviewed change to this table plus the approval from VINTO; the rest
+// of the exporter is derived from it. M1-B2-a keeps the approved BOBINAS pilot exactly as it was (the generated bundle is byte-identical).
+//   sector:   { code, name, front (key of GROUPS in app/page.tsx), machines, timezone, valid_from, shifts }
+//   machine:  { code, name?, group?, catalog? }   name defaults to code (warning MACHINE_NAME_FROM_CODE); group = name shown in GROUPS (defaults to code);
+//             catalog = key of PRODUCTS_BY_MACHINE (defaults to code)
+//   shift:    [code, name, starts_at "HH:MM", ends_at "HH:MM", valid_from?, valid_to?]  (a night shift crosses midnight: ends_at < starts_at; its
+//             operating date is the day it STARTS). valid_from defaults to the sector's.
+//   unit_aliases: { "<unit as written in the catalog>": "<unit code>" } (none today). Material classes are derived from MATERIALS.
+//   forms_sector: the sector whose machines the published forms (F3, F6, P1-19, P1-20) are enabled for. Adding sectors never changes the forms.
+// Shifts are declarative reference data requested for the pilot. Not read from the sources: the only source is the ctx() function in
+// app/page.tsx, which is cross-checked below.
+export const DEFAULT_SCOPE = {
+  forms_sector: "BOBINAS",
+  unit_aliases: {},
+  sectors: [
+    {
+      code: "BOBINAS", name: "Bobinas", front: "Bobinas",
+      machines: [{ code: "MP1" }, { code: "MP3" }],
+      timezone: "America/La_Paz", valid_from: "2026-01-01",
+      shifts: [["DIA", "Día", "07:00", "19:00"], ["NOCHE", "Noche", "19:00", "07:00"]],
+    },
+  ],
+};
+// Code formats of the master data (the backend loader enforces the same ones).
+const CODE_PATTERNS = {
+  sector: /^[A-Z][A-Z0-9_]{0,31}$/, machine: /^[A-Z0-9][A-Z0-9_]{0,31}$/, unit: /^[A-Z][A-Z0-9_]{0,15}$/,
+  shift: /^[A-Z][A-Z0-9_]{0,31}$/, article: /^[A-Z0-9][A-Z0-9._-]{0,63}$/,
+};
 // Canonical F6 contract (project decision). Labels, units and option labels are read from app/page.tsx.
 const F6_FIELDS = [
   { key: "cantidad_fardos", value_type: "integer", required: true },
@@ -228,12 +251,14 @@ function f6Choices(page) {
 // (already extracted and normalised), never of the raw file. Visual/authentication edits, whitespace or
 // formatting changes elsewhere in the page do not alter it; changing GROUPS.Bobinas, the F6 override or the
 // BobbinBales selectors/options does.
-export const PAGE_FINGERPRINT_SCOPE = "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,q20_override,shift_night_rule";
+export const pageFingerprintScope = (scope = DEFAULT_SCOPE) =>
+  `semantic-extract:${scope.sectors.map((s) => `groups_${s.code.toLowerCase()}`).join(",")},f6_override,f6_choices,q19_override,q20_override,shift_night_rule`;
+export const PAGE_FINGERPRINT_SCOPE = pageFingerprintScope(DEFAULT_SCOPE); // "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,q20_override,shift_night_rule"
 const NIGHT_RULE = /else if \(h < 7 \|\| h >= 19\)/;
 
-export function pageSemantics(page) {
+export function pageSemantics(page, scope = DEFAULT_SCOPE) {
   return {
-    groups_bobinas: groupMachines(page, SECTOR_NAME),
+    ...Object.fromEntries(scope.sectors.map((s) => [`groups_${s.code.toLowerCase()}`, groupMachines(page, s.front)])),
     f6_override: f6Override(page),
     q19_override: q19Override(page),
     q20_override: q20Override(page),
@@ -242,26 +267,198 @@ export function pageSemantics(page) {
   };
 }
 
-export function pageFingerprint(page) {
-  return sha256(canonical(pageSemantics(page)));
+export function pageFingerprint(page, scope = DEFAULT_SCOPE) {
+  return sha256(canonical(pageSemantics(page, scope)));
+}
+
+// ---- scope preparation and master-data validation (pure) ------------------------------------------------------------------------
+
+const MINUTES_PER_DAY = 1440;
+const isIsoDate = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const dayNumber = (iso) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86400000);
+const dayIso = (n) => new Date(n * 86400000).toISOString().slice(0, 10);
+const hhmm = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+function clock(value, what) {
+  const match = typeof value === "string" ? /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(value) : null;
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) fail(`${what}: hora inválida ${JSON.stringify(value)} (se espera HH:MM)`);
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+function validZone(zone) {
+  try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return typeof zone === "string" && zone.length > 0; } catch { return false; }
+}
+function ranges(minutes, label) { // sorted absolute minutes -> "from–to" runs
+  const runs = [];
+  for (const m of minutes) {
+    const last = runs[runs.length - 1];
+    if (last && m === last.to + 1) last.to = m; else runs.push({ from: m, to: m });
+  }
+  return runs.slice(0, 3).map((r) => `${label(r.from)}–${label(r.to + 1)}`).join(", ") + (runs.length > 3 ? ` (+${runs.length - 3})` : "");
+}
+const localLabel = (absolute) => `${dayIso(Math.floor(absolute / MINUTES_PER_DAY))} ${hhmm(absolute % MINUTES_PER_DAY)}`;
+
+// Which schedules cover a LOCAL wall-clock minute, with the same rule as app/shifts.py: [starts_at, ends_at) with a night shift crossing midnight; the
+// operating date is the day the shift STARTED; validity is evaluated against the operating date. Assumes a zone without DST jumps (America/La_Paz).
+function matchesAt(rows, absolute) {
+  const day = Math.floor(absolute / MINUTES_PER_DAY), minute = absolute % MINUTES_PER_DAY;
+  return rows.filter((r) => {
+    let operating = null;
+    if (r.start < r.end) operating = minute >= r.start && minute < r.end ? day : null;
+    else if (minute >= r.start) operating = day;
+    else if (minute < r.end) operating = day - 1;
+    return operating !== null && operating >= r.from && (r.to === null || operating <= r.to);
+  }).length;
+}
+
+// Schedules of ONE sector: well-formed, one timezone, no gaps between vigencias, every minute of the day covered exactly once inside each vigencia
+// and exactly once across each change of vigencia (a change of hours can overlap or leave a gap in real time even if both regimes are fine alone).
+export function validateSchedules(schedules) {
+  const keys = new Set(), bySector = new Map();
+  for (const s of schedules) {
+    const tag = `shift_schedule ${s.sector}/${s.shift}`;
+    const start = clock(s.starts_at, tag), end = clock(s.ends_at, tag);
+    if (start === end) fail(`${tag}: inicio y fin iguales`);
+    if (!isIsoDate(s.valid_from) || !(s.valid_to === null || isIsoDate(s.valid_to))) fail(`${tag}: vigencia con fecha inválida`);
+    if (s.valid_to !== null && s.valid_to < s.valid_from) fail(`${tag}: valid_to anterior a valid_from`);
+    if (!validZone(s.timezone)) fail(`${tag}: zona horaria inválida ${JSON.stringify(s.timezone)}`);
+    const key = `${s.shift}|${s.sector}|${s.valid_from}`;
+    if (keys.has(key)) fail(`${tag}: shift_schedule duplicado`);
+    keys.add(key);
+    if (!bySector.has(s.sector)) bySector.set(s.sector, []);
+    bySector.get(s.sector).push({ shift: s.shift, zone: s.timezone, start, end, from: dayNumber(s.valid_from), to: s.valid_to === null ? null : dayNumber(s.valid_to) });
+  }
+  for (const [sector, rows] of bySector) {
+    if (new Set(rows.map((r) => r.zone)).size !== 1) fail(`Horarios del sector ${sector}: todas las vigencias deben usar la misma zona horaria`);
+    const bounds = [...new Set(rows.flatMap((r) => (r.to === null ? [r.from] : [r.from, r.to + 1])))].sort((a, b) => a - b);
+    let previous = null;
+    bounds.forEach((b, i) => {
+      const next = i + 1 < bounds.length ? bounds[i + 1] : null;
+      const active = rows.filter((r) => r.from <= b && (r.to === null || r.to >= b));
+      if (active.length === 0) {
+        if (next !== null) fail(`Horarios del sector ${sector}: no hay turnos vigentes entre ${dayIso(b)} y ${dayIso(next - 1)}`);
+        previous = null; return; // every vigencia ended: nothing is configured afterwards
+      }
+      const cover = new Array(MINUTES_PER_DAY).fill(0);
+      for (const r of active) for (let m = r.start; m !== r.end; m = (m + 1) % MINUTES_PER_DAY) cover[m] += 1;
+      const hole = cover.flatMap((n, m) => (n === 0 ? [m] : [])), overlap = cover.flatMap((n, m) => (n > 1 ? [m] : []));
+      if (hole.length) fail(`Horarios del sector ${sector} desde ${dayIso(b)}: minutos sin turno (hueco) ${ranges(hole, hhmm)}`);
+      if (overlap.length) fail(`Horarios del sector ${sector} desde ${dayIso(b)}: turnos solapados ${ranges(overlap, hhmm)}`);
+      if (previous) { // change of vigencia: simulate real time from one day before to one day after
+        const bad = [];
+        for (let absolute = (b - 1) * MINUTES_PER_DAY; absolute < (b + 1) * MINUTES_PER_DAY; absolute += 1) if (matchesAt(rows, absolute) !== 1) bad.push(absolute);
+        if (bad.length) fail(`Horarios del sector ${sector}: el cambio de vigencia del ${dayIso(b)} deja el tiempo real sin turno o con turnos solapados (${ranges(bad, localLabel)})`);
+      }
+      previous = active;
+    });
+  }
+}
+
+// Declaration -> normalized model. Fails (SeedExportError) on duplicated/invalid codes, machines without sector, inconsistent shifts or bad schedules.
+export function prepareScope(scope = DEFAULT_SCOPE) {
+  if (!scope || !Array.isArray(scope.sectors) || scope.sectors.length === 0) fail("El alcance debe declarar al menos un sector");
+  const sectorCodes = new Set(), machineCodes = new Set(), machineNames = new Set(), shiftNames = new Map();
+  const sectors = [], machines = [], shifts = [], schedules = [];
+  for (const raw of scope.sectors) {
+    if (!CODE_PATTERNS.sector.test(raw?.code ?? "")) fail(`Sector con código inválido: ${JSON.stringify(raw?.code)}`);
+    if (sectorCodes.has(raw.code)) fail(`Sector duplicado en el alcance: ${raw.code}`);
+    sectorCodes.add(raw.code);
+    if (typeof raw.name !== "string" || !raw.name.trim()) fail(`Sector ${raw.code} sin nombre`);
+    if (typeof raw.front !== "string" || !raw.front.trim()) fail(`Sector ${raw.code} sin frente (clave de GROUPS en app/page.tsx)`);
+    if (!Array.isArray(raw.machines) || raw.machines.length === 0) fail(`Sector ${raw.code} sin máquinas`);
+    const list = raw.machines.map((m) => ({ code: m?.code, name: m?.name ?? m?.code, nameFromCode: m?.name === undefined, group: m?.group ?? m?.code, catalog: m?.catalog ?? m?.code, sector: raw.code }));
+    for (const m of list) {
+      if (!CODE_PATTERNS.machine.test(m.code ?? "")) fail(`Máquina con código inválido: ${JSON.stringify(m.code)}`);
+      if (machineCodes.has(m.code)) fail(`Máquina duplicada en el alcance: ${m.code}`);
+      machineCodes.add(m.code);
+      if (typeof m.name !== "string" || !m.name.trim()) fail(`Máquina ${m.code} sin nombre`);
+      const lower = m.name.trim().toLowerCase();
+      if (machineNames.has(lower)) fail(`Nombre de máquina repetido: ${m.name}`);
+      machineNames.add(lower);
+    }
+    sectors.push({ code: raw.code, name: raw.name, front: raw.front, machines: list });
+    machines.push(...list);
+    if (raw.shifts !== undefined && !Array.isArray(raw.shifts)) fail(`Sector ${raw.code}: shifts debe ser una lista`);
+    for (const [code, name, starts_at, ends_at, valid_from, valid_to] of raw.shifts ?? []) {
+      if (!CODE_PATTERNS.shift.test(code ?? "")) fail(`Turno con código inválido: ${JSON.stringify(code)}`);
+      if (typeof name !== "string" || !name.trim()) fail(`Turno ${code} sin nombre`);
+      if (shiftNames.has(code) && shiftNames.get(code) !== name) fail(`Turno ${code} declarado con nombres distintos: «${shiftNames.get(code)}» y «${name}»`);
+      if (!shiftNames.has(code)) { shiftNames.set(code, name); shifts.push({ code, name }); }
+      schedules.push({ shift: code, sector: raw.code, starts_at, ends_at, timezone: raw.timezone, valid_from: valid_from ?? raw.valid_from, valid_to: valid_to ?? null });
+    }
+  }
+  const formsSector = sectors.find((s) => s.code === scope.forms_sector);
+  if (!formsSector) fail(`forms_sector ${JSON.stringify(scope.forms_sector)} no está entre los sectores declarados`);
+  const unitAliases = scope.unit_aliases ?? {};
+  if (typeof unitAliases !== "object" || unitAliases === null || Array.isArray(unitAliases)) fail("unit_aliases debe ser un objeto");
+  for (const [from, to] of Object.entries(unitAliases)) if (!from.trim() || !CODE_PATTERNS.unit.test(to ?? "")) fail(`unit_aliases: ${JSON.stringify(from)} → ${JSON.stringify(to)} no es un código de unidad válido`);
+  validateSchedules(schedules);
+  return {
+    sectors, machines, shifts, schedules, unitAliases, formsSector, formMachines: formsSector.machines.map((m) => m.code),
+    timezones: [...new Set(schedules.map((s) => s.timezone))], validFromValues: [...new Set(schedules.map((s) => s.valid_from))],
+  };
+}
+
+// Master data of a generated bundle: code formats, references and schedules. Runs after the older structural checks.
+function validateMasterData(read) {
+  const sectors = read("sectors.json").items, machines = read("machines.json").items, articles = read("articles.json").items;
+  const relations = read("article_machines.json").items, units = read("units.json").items, shiftsDoc = read("shifts.json");
+  const check = (kind, items, label) => {
+    const seen = new Set();
+    for (const item of items) {
+      if (!CODE_PATTERNS[kind].test(item.code ?? "")) fail(`${label} con código inválido: ${JSON.stringify(item.code)}`);
+      if (seen.has(item.code)) fail(`${label} duplicado en el bundle: ${item.code}`);
+      seen.add(item.code);
+    }
+  };
+  check("sector", sectors, "Sector");
+  check("machine", machines, "Máquina");
+  check("unit", units, "Unidad");
+  check("shift", shiftsDoc.shifts, "Turno");
+  check("article", articles, "Artículo");
+  const sectorCodes = new Set(sectors.map((s) => s.code));
+  for (const m of machines) if (!sectorCodes.has(m.sector)) fail(`Máquina ${m.code} sin sector válido: ${JSON.stringify(m.sector)}`);
+  const names = new Set();
+  for (const m of machines) {
+    if (typeof m.name !== "string" || !m.name.trim()) fail(`Máquina ${m.code} sin nombre`);
+    if (names.has(m.name.trim().toLowerCase())) fail(`Nombre de máquina repetido: ${m.name}`);
+    names.add(m.name.trim().toLowerCase());
+  }
+  const related = new Set(relations.map((r) => r.article_code));
+  const seenPairs = new Set();
+  for (const r of relations) {
+    const pair = `${r.article_code}|${r.machine_code}`;
+    if (seenPairs.has(pair)) fail(`Relación article-machine duplicada: ${r.article_code} / ${r.machine_code}`);
+    seenPairs.add(pair);
+  }
+  for (const a of articles) if (a.is_product && !related.has(a.code)) fail(`Artículo de producto sin relación con ninguna máquina: ${a.code}`);
+  const shiftCodes = new Set(shiftsDoc.shifts.map((s) => s.code));
+  for (const s of shiftsDoc.schedules) {
+    if (!shiftCodes.has(s.shift)) fail(`shift_schedule: turno inexistente ${s.shift}`);
+    if (!sectorCodes.has(s.sector)) fail(`shift_schedule: sector inexistente ${s.sector}`);
+  }
+  validateSchedules(shiftsDoc.schedules);
 }
 
 // ---- bundle construction ------------------------------------------------------------------------
 
-export function buildBundle(sources) {
+export function buildBundle(sources, scope = DEFAULT_SCOPE) {
   const { texts, productsByMachine, materials, formDefinitions, nominalWeights, recipes } = sources;
+  const model = prepareScope(scope); // validates the declaration (codes, uniqueness, schedules) before reading anything else
+  const FORM_MACHINES = model.formMachines; // the published forms keep their machines no matter how many sectors are declared
+  const unitOf = (raw) => model.unitAliases[raw] ?? raw;
   const warnings = [];
   const warn = (code, severity, message, count) =>
     warnings.push(count === undefined ? { code, severity, message } : { code, severity, message, count });
 
-  // Sector and machines
-  const groupBobinas = groupMachines(texts.page, SECTOR_NAME);
-  for (const machine of MACHINES) {
-    if (!productsByMachine || !(machine in productsByMachine)) fail(`La máquina ${machine} no existe en PRODUCTS_BY_MACHINE`);
-    if (!groupBobinas.includes(machine)) fail(`La máquina ${machine} no pertenece a ${SECTOR_NAME} en GROUPS de app/page.tsx`);
-  }
-  if (groupBobinas.length !== MACHINES.length || groupBobinas.some((m, i) => m !== MACHINES[i])) {
-    fail(`GROUPS.${SECTOR_NAME} es [${groupBobinas}] y el alcance del piloto es [${MACHINES}]`);
+  // Sectors and machines: each declared sector must match its GROUPS entry in app/page.tsx and exist in the catalog
+  for (const sector of model.sectors) {
+    const group = groupMachines(texts.page, sector.front);
+    for (const machine of sector.machines) {
+      if (!productsByMachine || !(machine.catalog in productsByMachine)) fail(`La máquina ${machine.code} no existe en PRODUCTS_BY_MACHINE`);
+      if (!group.includes(machine.group)) fail(`La máquina ${machine.code} no pertenece a ${sector.name} en GROUPS de app/page.tsx`);
+    }
+    if (group.length !== sector.machines.length || group.some((m, i) => m !== sector.machines[i].group)) {
+      fail(`GROUPS.${sector.front} es [${group}] y el alcance del piloto es [${sector.machines.map((m) => m.group)}]`);
+    }
   }
 
   // Materials index (authoritative for material class and for "is also a material")
@@ -277,9 +474,9 @@ export function buildBundle(sources) {
   // Articles (authoritative for description and unit: PRODUCTS_BY_MACHINE)
   const articles = new Map();
   const relations = [];
-  for (const machine of MACHINES) {
+  for (const { code: machine, catalog } of model.machines) {
     const seenInMachine = new Set();
-    for (const product of productsByMachine[machine]) {
+    for (const product of productsByMachine[catalog]) {
       const { code, name, unit } = product;
       if (typeof code !== "string" || !code.trim()) fail(`${machine}: producto sin código`);
       if (typeof name !== "string" || !name.trim()) fail(`${machine}/${code}: producto sin nombre`);
@@ -296,7 +493,7 @@ export function buildBundle(sources) {
     }
   }
 
-  const unitCodes = [...new Set([...[...articles.values()].map((a) => a.unit), ...F3_FIELDS.flatMap((f) => (f.unit ? [f.unit] : []))])].sort(cmp);
+  const unitCodes = [...new Set([...[...articles.values()].map((a) => unitOf(a.unit)), ...F3_FIELDS.flatMap((f) => (f.unit ? [f.unit] : []))])].sort(cmp);
   const classNames = new Map(); // slug -> className
   let alsoMaterial = 0, withoutMaterial = 0, withWeight = 0, withGrammage = 0;
   const articleItems = [...articles.values()].sort((a, b) => cmp(a.code, b.code)).map((a) => {
@@ -328,7 +525,7 @@ export function buildBundle(sources) {
       version: {
         version_number: 1,
         description: a.name,
-        unit: a.unit,
+        unit: unitOf(a.unit),
         material_class: classCode,
         nominal_weight_kg: weight ?? null,
         grammage_g_m2: grammage,
@@ -349,7 +546,7 @@ export function buildBundle(sources) {
   const f6 = find(PILOT_FORM), f3 = find(NEXT_FORM);
   if (f6.area !== "production") fail(`F6 debe tener area production y tiene ${f6.area}`);
   const allowed = new Set(f6.allowedMachineIds.map((m) => m.toLowerCase()));
-  for (const machine of MACHINES) if (!allowed.has(machine.toLowerCase())) fail(`F6 no admite la máquina ${machine} en allowedMachineIds`);
+  for (const machine of FORM_MACHINES) if (!allowed.has(machine.toLowerCase())) fail(`F6 no admite la máquina ${machine} en allowedMachineIds`);
 
   const override = f6Override(texts.page);
   const choices = f6Choices(texts.page);
@@ -385,7 +582,7 @@ export function buildBundle(sources) {
     area: "production",
     workflow: f6.workflowId,
     version_number: 1,
-    machines: [...MACHINES],
+    machines: [...FORM_MACHINES],
     groups: [],
     fields,
   };
@@ -394,7 +591,7 @@ export function buildBundle(sources) {
   // F3 (VINTO-P1-03): only the six manual fields Operación types.
   if (f3.area !== "production") fail(`F3 debe tener area production y tiene ${f3.area}`);
   const f3Allowed = new Set(f3.allowedMachineIds.map((m) => m.toLowerCase()));
-  for (const machine of MACHINES) if (!f3Allowed.has(machine.toLowerCase())) fail(`F3 no admite la máquina ${machine} en allowedMachineIds`);
+  for (const machine of FORM_MACHINES) if (!f3Allowed.has(machine.toLowerCase())) fail(`F3 no admite la máquina ${machine} en allowedMachineIds`);
   const f3Fields = F3_FIELDS.map((spec, index) => {
     const source = f3.fields.find((f) => f.key === spec.key);
     if (!source) fail(`F3: FORM_DEFINITIONS ya no define ${spec.key}`);
@@ -412,7 +609,7 @@ export function buildBundle(sources) {
     area: "production",
     workflow: f3.workflowId,
     version_number: 1,
-    machines: [...MACHINES],
+    machines: [...FORM_MACHINES],
     groups: [],
     fields: f3Fields,
   };
@@ -422,7 +619,7 @@ export function buildBundle(sources) {
   const q19 = find(QUALITY_FORM);
   if (q19.area !== "quality") fail(`P1-19 debe tener area quality y tiene ${q19.area}`);
   const q19Allowed = new Set(q19.allowedMachineIds.map((m) => m.toLowerCase()));
-  for (const machine of MACHINES) if (!q19Allowed.has(machine.toLowerCase())) fail(`P1-19 no admite la máquina ${machine} en allowedMachineIds`);
+  for (const machine of FORM_MACHINES) if (!q19Allowed.has(machine.toLowerCase())) fail(`P1-19 no admite la máquina ${machine} en allowedMachineIds`);
   const q19Source = q19Override(texts.page);
   const q19Extra = Object.keys(q19Source).filter((k) => !Q19_FIELDS.some((f) => f.key === k));
   if (q19Extra.length) fail(`P1-19: app/page.tsx define campos fuera del contrato canónico: ${q19Extra}`);
@@ -438,7 +635,7 @@ export function buildBundle(sources) {
   if (q19Fields.length !== 7) fail("P1-19 debe tener exactamente 7 campos manuales");
   const q19Definition = {
     legacy_key: q19.id, code: q19.code, legacy_number: q19.legacyNumber, name: q19.name, area: "quality", workflow: q19.workflowId, version_number: 1,
-    machines: [...MACHINES], groups: [], fields: q19Fields,
+    machines: [...FORM_MACHINES], groups: [], fields: q19Fields,
   };
   const q19Form = { schema_version: SCHEMA_VERSION, ...q19Definition, definition_checksum: sha256(canonical(q19Definition)) };
 
@@ -446,7 +643,7 @@ export function buildBundle(sources) {
   const q20 = find(PROPERTIES_FORM);
   if (q20.area !== "quality") fail(`P1-20 debe tener area quality y tiene ${q20.area}`);
   const q20Allowed = new Set(q20.allowedMachineIds.map((m) => m.toLowerCase()));
-  for (const machine of MACHINES) if (!q20Allowed.has(machine.toLowerCase())) fail(`P1-20 no admite la máquina ${machine} en allowedMachineIds`);
+  for (const machine of FORM_MACHINES) if (!q20Allowed.has(machine.toLowerCase())) fail(`P1-20 no admite la máquina ${machine} en allowedMachineIds`);
   const q20SourceKeys = q20.fields.map((f) => f.key);
   const q20Unexpected = q20SourceKeys.filter((k) => !Q20_FIELDS.some((f) => f.key === k) && !(k in Q20_EXCLUDED));
   if (q20Unexpected.length) fail(`P1-20: FORM_DEFINITIONS define campos fuera del contrato canónico: ${q20Unexpected}`);
@@ -468,7 +665,7 @@ export function buildBundle(sources) {
   if (q20Fields.length !== 12 || q20Fields.filter((f) => f.value_type === "decimal").length !== 11) fail("P1-20 debe tener exactamente 12 campos (11 decimales y observaciones)");
   const q20Definition = {
     legacy_key: q20.id, code: q20.code, legacy_number: q20.legacyNumber, name: q20.name, area: "quality", workflow: q20.workflowId, version_number: 1,
-    machines: [...MACHINES], groups: [], fields: q20Fields,
+    machines: [...FORM_MACHINES], groups: [], fields: q20Fields,
   };
   const q20Form = { schema_version: SCHEMA_VERSION, ...q20Definition, definition_checksum: sha256(canonical(q20Definition)) };
 
@@ -486,8 +683,8 @@ export function buildBundle(sources) {
   const files = new Map();
   files.set("units.json", json(wrap("unit", unitCodes.map((code) => ({ code, label: code })))));
   files.set("material_classes.json", json(wrap("material_class", [...classNames].sort((a, b) => cmp(a[0], b[0])).map(([code, name]) => ({ code, name })))));
-  files.set("sectors.json", json(wrap("sector", [{ code: SECTOR_CODE, name: SECTOR_NAME }])));
-  files.set("machines.json", json(wrap("machine", MACHINES.map((code) => ({ code, name: code, sector: SECTOR_CODE })))));
+  files.set("sectors.json", json(wrap("sector", model.sectors.map((s) => ({ code: s.code, name: s.name })))));
+  files.set("machines.json", json(wrap("machine", model.machines.map((m) => ({ code: m.code, name: m.name, sector: m.sector })))));
   files.set("articles.json", json(wrap("article", articleItems)));
   files.set("article_machines.json", json(wrap("article_machine", relations)));
   files.set("profiles.json", json(wrap("profile", PROFILES.map(([code, name]) => ({ code, name })))));
@@ -496,10 +693,8 @@ export function buildBundle(sources) {
     schema_version: SCHEMA_VERSION,
     entity: "shift",
     note: "Vigencia valid_from provisional (fecha técnica). La vigencia funcional real debe recibirse antes de producción. No se define valid_to.",
-    shifts: SHIFTS.map(([code, name]) => ({ code, name })),
-    schedules: SHIFTS.map(([shift, , starts_at, ends_at]) => ({
-      shift, sector: SECTOR_CODE, starts_at, ends_at, timezone: SHIFT_TIMEZONE, valid_from: SHIFT_VALID_FROM, valid_to: null,
-    })),
+    shifts: model.shifts,
+    schedules: model.schedules,
   }));
   files.set(`forms/${PILOT_FORM.code}.json`, json(form));
   files.set(`forms/${NEXT_FORM.code}.json`, json(f3Form));
@@ -512,10 +707,10 @@ export function buildBundle(sources) {
   if (articleItems.length - withWeight) warn("NOMINAL_WEIGHT_MISSING", "info", "Artículos sin peso nominal en product-weights.ts; nominal_weight_kg queda null (no se inventa)", articleItems.length - withWeight);
   if (articleItems.length - withGrammage) warn("GRAMMAGE_MISSING", "info", "Artículos sin gramaje en la descripción oficial (sin G-<número>, p. ej. tubetes o SEGUNDA); grammage_g_m2 queda null y no bloquea F3", articleItems.length - withGrammage);
   warn("UNIT_LABEL_PLACEHOLDER", "warning", "unit.label usa el código de la fuente (no existe etiqueta real); Data Baltrek debe proveerla", unitCodes.length);
-  warn("MACHINE_NAME_FROM_CODE", "warning", "machine.name usa el código de la fuente (no existe otro nombre)", MACHINES.length);
+  warn("MACHINE_NAME_FROM_CODE", "warning", "machine.name usa el código de la fuente (no existe otro nombre)", model.machines.filter((m) => m.nameFromCode).length);
   warn("WORKFLOW_NAME_PLACEHOLDER", "warning", "workflow_definition.name usa el código de la fuente (no existe nombre real)", workflowCodes.length);
-  warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${SHIFT_VALID_FROM} y timezone=${SHIFT_TIMEZONE} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
-  const otherMachines = Object.keys(productsByMachine).filter((m) => !MACHINES.includes(m));
+  warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${model.validFromValues.join(", ")} y timezone=${model.timezones.join(", ")} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
+  const otherMachines = Object.keys(productsByMachine).filter((m) => !model.machines.some((x) => x.catalog === m));
   warn("OUT_OF_SCOPE_MACHINES", "info", "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)", otherMachines.length);
   warn("OUT_OF_SCOPE_FORMS", "info", `Definiciones de FORM_DEFINITIONS fuera del piloto (F6, F3, P1-19 y P1-20 sí se exportan)`, formDefinitions.length - 4);
   warn("P1_20_PROVISIONAL_CONTRACT", "warning", "VINTO-P1-20: unidades provisionales del MVP (espesor_* en MM; gramaje medido sin código de catálogo para g/m², unit null; crepado y resistencias sin unidad); etiquetas visibles «comando» de las claves *_centro provisionales hasta validarlas con VINTO; sin rangos ni reglas de conformidad. Requiere homologación de laboratorio");
@@ -526,8 +721,8 @@ export function buildBundle(sources) {
   const counts = {
     units: unitCodes.length,
     material_classes: classNames.size,
-    sectors: 1,
-    machines: MACHINES.length,
+    sectors: model.sectors.length,
+    machines: model.machines.length,
     articles: articleItems.length,
     article_machines: relations.length,
     articles_also_material: alsoMaterial,
@@ -535,8 +730,8 @@ export function buildBundle(sources) {
     articles_with_grammage: withGrammage,
     profiles: PROFILES.length,
     workflows: workflowCodes.length,
-    shifts: SHIFTS.length,
-    shift_schedules: SHIFTS.length,
+    shifts: model.shifts.length,
+    shift_schedules: model.schedules.length,
     forms: 4,
     form_fields: fields.length + f3Fields.length + q19Fields.length + q20Fields.length,
     form_options: [...fields, ...f3Fields, ...q19Fields, ...q20Fields].reduce((n, f) => n + (f.options?.length ?? 0), 0),
@@ -544,9 +739,13 @@ export function buildBundle(sources) {
   const manifest = {
     schema_version: SCHEMA_VERSION,
     bundle: "vinto-reference-bobinas-pilot",
-    scope: { sector: SECTOR_NAME, machines: [...MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code, PROPERTIES_FORM.code] },
+    scope: {
+      sector: model.formsSector.name, machines: [...FORM_MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code, PROPERTIES_FORM.code],
+      // Only when more than one sector is declared (never in the current bundle): the sectors of the master data, so the scope above stays about the forms.
+      ...(model.sectors.length > 1 ? { sectors: model.sectors.map((s) => ({ code: s.code, machines: s.machines.map((m) => m.code) })) } : {}),
+    },
     generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
-      name === "page" ? { path, sha256: pageFingerprint(texts.page), scope: PAGE_FINGERPRINT_SCOPE } : { path, sha256: sha256(texts[name]) }
+      name === "page" ? { path, sha256: pageFingerprint(texts.page, scope), scope: pageFingerprintScope(scope) } : { path, sha256: sha256(texts[name]) }
     )).sort((a, b) => cmp(a.path, b.path)),
     files: [...files].sort((a, b) => cmp(a[0], b[0])).map(([path, text]) => ({ path, sha256: sha256(text), bytes: Buffer.byteLength(text, "utf8") })),
     counts,
@@ -598,6 +797,7 @@ export function validateBundle({ files, manifest }) {
       if (f.unit !== null && !unitCodes.has(f.unit)) fail(`Unidad no declarada: ${f.unit}`);
     }
   }
+  validateMasterData(read);
   if (manifest) {
     for (const f of manifest.files) if (sha256(files.get(f.path)) !== f.sha256) fail(`Checksum inconsistente en el manifest: ${f.path}`);
   }

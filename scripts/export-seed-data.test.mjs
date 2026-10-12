@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_OUT, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageSemantics, q20Label, validateBundle, writeBundle } from "./export-seed-data.mjs";
+import { DEFAULT_OUT, DEFAULT_SCOPE, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageFingerprintScope, pageSemantics, q20Label, validateBundle, validateSchedules, writeBundle } from "./export-seed-data.mjs";
 
 const sources = await loadSources();
 const clone = (value) => structuredClone(value);
@@ -354,4 +354,163 @@ test("the P1-20 relabelling comes from the page override, is fingerprinted and m
   assert.throws(() => pageSemantics(inconsistent), /P1-20: el override de app\/page\.tsx reetiqueta espesor y el resto de campos de forma distinta/);
   const dropped = replaceOnce(PAGE, P20, P20.replace(' : x.label.toLowerCase().includes("centro") ? { ...x, label: x.label.replace("centro", "comando") }', ''));
   assert.throws(() => pageSemantics(dropped), /P1-20: el override de app\/page\.tsx ya no reetiqueta/);
+});
+
+// ---- M1-B2-a · declarative multi-sector scope ----------------------------------------------------------------------------------------
+// The approved bundle is BOBINAS only and must not change. These tests prove the exporter is generalized (synthetic future scopes, in memory,
+// never written) and that every new validation rejects what it must. Nothing here adds data to the committed bundle.
+
+const CONVERSION_MACHINES = [
+  { code: "GAMBINI", name: "Gambini", group: "Gambini", catalog: "GAMBINI" }, { code: "SINCRO_II", name: "Sincro II", group: "Sincro II", catalog: "Sincro II" },
+  { code: "SINCRO_III", name: "Sincro III", group: "Sincro III", catalog: "Sincro III" }, { code: "OMET_I", name: "OMET I", group: "OMET I", catalog: "OMET I" },
+  { code: "OMET_II", name: "OMET II", group: "OMET II", catalog: "OMET II" }, { code: "8_2", name: "8.2", group: "8.2", catalog: "8.2" },
+  { code: "8_5", name: "8.5", group: "8.5", catalog: "8.5" }, { code: "8002", name: "8002", group: "8002", catalog: "8002" },
+  { code: "SERV_4", name: "Serv 4", group: "Serv 4", catalog: "Serv 4" }, { code: "WALLY", name: "Wally", group: "Wally", catalog: "WALLY" },
+  { code: "PANUELERA", name: "Pañuelera", group: "Pañuelera", catalog: "PAÑUELERA" },
+];
+const THREE_SHIFTS = [["MANANA", "Mañana", "06:00", "14:00"], ["TARDE", "Tarde", "14:00", "22:00"], ["NOCHE", "Noche", "22:00", "06:00"]];
+const futureScope = (change = () => {}) => {
+  const scope = structuredClone(DEFAULT_SCOPE);
+  scope.sectors.push({ code: "CONVERSION", name: "Conversión", front: "Conversión", machines: structuredClone(CONVERSION_MACHINES), timezone: "America/La_Paz", valid_from: "2026-01-01", shifts: structuredClone(THREE_SHIFTS) });
+  scope.unit_aliases = { Pack: "PACK" };
+  change(scope);
+  return scope;
+};
+const failsScope = (scope, pattern) => assert.throws(() => buildBundle(sources, scope), (error) => error instanceof SeedExportError && pattern.test(error.message));
+const json = (map, name) => JSON.parse(map.get(name));
+const sched = (shift, sector, start, end, from = "2026-01-01", to = null, tz = "America/La_Paz") => ({ shift, sector, starts_at: start, ends_at: end, timezone: tz, valid_from: from, valid_to: to });
+const rejects = (schedules, pattern) => assert.throws(() => validateSchedules(schedules), (error) => error instanceof SeedExportError && pattern.test(error.message));
+
+test("the default scope is the approved BOBINAS pilot and declaring it explicitly changes nothing", () => {
+  assert.deepEqual(DEFAULT_SCOPE.sectors.map((s) => [s.code, s.name, s.front, s.machines.map((m) => m.code), s.timezone, s.valid_from, s.shifts]),
+    [["BOBINAS", "Bobinas", "Bobinas", ["MP1", "MP3"], "America/La_Paz", "2026-01-01", [["DIA", "Día", "07:00", "19:00"], ["NOCHE", "Noche", "19:00", "07:00"]]]]);
+  assert.equal(DEFAULT_SCOPE.forms_sector, "BOBINAS");
+  assert.deepEqual(DEFAULT_SCOPE.unit_aliases, {});
+  assert.equal(PAGE_FINGERPRINT_SCOPE, "semantic-extract:groups_bobinas,f6_override,f6_choices,q19_override,q20_override,shift_night_rule");
+  assert.deepEqual([...buildBundle(sources).files], [...buildBundle(sources, structuredClone(DEFAULT_SCOPE)).files]);
+  const { manifest } = buildBundle(sources);
+  assert.deepEqual(manifest.scope, { sector: "Bobinas", machines: ["MP1", "MP3"], first_form: "VINTO-P1-06", forms: ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"] });
+  assert.deepEqual([manifest.counts.sectors, manifest.counts.machines, manifest.counts.shifts, manifest.counts.shift_schedules], [1, 2, 2, 2]);
+});
+
+test("a synthetic multi-sector scope generates its master data without touching the published forms or the BOBINAS data", () => {
+  const base = buildBundle(sources), extended = buildBundle(sources, futureScope());
+  for (const name of [...base.files.keys()].filter((n) => n.startsWith("forms/") || n === "profiles.json" || n === "workflows.json")) {
+    assert.equal(extended.files.get(name), base.files.get(name), name); // forms and their checksums are independent of how many sectors exist
+  }
+  assert.deepEqual(json(extended.files, "sectors.json").items.map((s) => s.code), ["BOBINAS", "CONVERSION"]);
+  const machines = json(extended.files, "machines.json").items;
+  assert.equal(machines.length, 13);
+  assert.deepEqual(machines.slice(0, 2), json(base.files, "machines.json").items);
+  assert.deepEqual(machines.filter((m) => m.sector === "CONVERSION").map((m) => m.code), CONVERSION_MACHINES.map((m) => m.code));
+  assert.deepEqual(machines.find((m) => m.code === "SINCRO_II"), { code: "SINCRO_II", name: "Sincro II", sector: "CONVERSION" });
+  const shifts = json(extended.files, "shifts.json");
+  assert.deepEqual(shifts.shifts.map((s) => s.code), ["DIA", "NOCHE", "MANANA", "TARDE"]);
+  assert.deepEqual(shifts.schedules.filter((s) => s.sector === "BOBINAS"), json(base.files, "shifts.json").schedules);
+  assert.deepEqual(shifts.schedules.filter((s) => s.sector === "CONVERSION").map((s) => [s.shift, s.starts_at, s.ends_at]), [["MANANA", "06:00", "14:00"], ["TARDE", "14:00", "22:00"], ["NOCHE", "22:00", "06:00"]]);
+  const baseArticles = json(base.files, "articles.json").items, extendedArticles = new Map(json(extended.files, "articles.json").items.map((a) => [a.code, a]));
+  for (const article of baseArticles) assert.deepEqual(extendedArticles.get(article.code), article, article.code); // approved articles are untouched
+  assert.ok(extendedArticles.size > baseArticles.length);
+  const relations = json(extended.files, "article_machines.json").items;
+  for (const r of json(base.files, "article_machines.json").items) assert.ok(relations.some((x) => x.article_code === r.article_code && x.machine_code === r.machine_code));
+  const units = json(extended.files, "units.json").items.map((u) => u.code);
+  assert.ok(units.includes("PACK") && !units.includes("Pack"), "the declared unit alias is applied");
+  for (const code of json(base.files, "units.json").items.map((u) => u.code)) assert.ok(units.includes(code));
+  assert.ok([...extendedArticles.values()].every((a) => units.includes(a.version.unit)));
+  const { manifest } = extended;
+  assert.deepEqual([manifest.counts.sectors, manifest.counts.machines, manifest.counts.shifts, manifest.counts.shift_schedules, manifest.counts.forms], [2, 13, 4, 5, 4]);
+  assert.equal(manifest.counts.articles, extendedArticles.size);
+  assert.equal(manifest.counts.article_machines, relations.length);
+  assert.deepEqual(manifest.scope.sectors.map((s) => s.code), ["BOBINAS", "CONVERSION"]);
+  assert.deepEqual(manifest.scope.machines, ["MP1", "MP3"]); // the scope of the FORMS does not grow
+  assert.equal(manifest.generated_from.find((e) => e.path === "app/page.tsx").scope, pageFingerprintScope(futureScope()));
+  assert.deepEqual(Object.keys(pageSemantics(PAGE, futureScope())).sort(), ["f6_choices", "f6_override", "groups_bobinas", "groups_conversion", "q19_override", "q20_override", "shift_night_rule"]);
+  assert.notEqual(manifest.generated_from.find((e) => e.path === "app/page.tsx").sha256, base.manifest.generated_from.find((e) => e.path === "app/page.tsx").sha256);
+});
+
+test("a sector may be declared without shifts (it stays blocked until its hours are approved)", () => {
+  const scope = futureScope((s) => { delete s.sectors[1].shifts; });
+  const { files, manifest } = buildBundle(sources, scope);
+  assert.deepEqual(json(files, "shifts.json").schedules.map((x) => x.sector), ["BOBINAS", "BOBINAS"]);
+  assert.equal(manifest.counts.shift_schedules, 2);
+});
+
+test("scope declarations are validated: duplicates, invalid codes, missing machines and inconsistent shifts", () => {
+  failsScope({ ...DEFAULT_SCOPE, sectors: [] }, /al menos un sector/);
+  failsScope(futureScope((s) => { s.sectors[1].code = "BOBINAS"; }), /Sector duplicado en el alcance: BOBINAS/);
+  for (const bad of ["conversion", "CONV ERSION", "1CONVERSION", "", "C".repeat(33)]) failsScope(futureScope((s) => { s.sectors[1].code = bad; }), /Sector con código inválido/);
+  for (const bad of ["sincro ii", "SINCRO-II", "sincro_ii", "", "S".repeat(33)]) failsScope(futureScope((s) => { s.sectors[1].machines[1].code = bad; }), /Máquina con código inválido/);
+  failsScope(futureScope((s) => { s.sectors[1].machines[0].code = "MP1"; }), /Máquina duplicada en el alcance: MP1/);
+  failsScope(futureScope((s) => { s.sectors[1].machines[0].name = " mp1 "; }), /Nombre de máquina repetido/);
+  failsScope(futureScope((s) => { s.sectors[1].machines = []; }), /sin máquinas/);
+  failsScope(futureScope((s) => { s.sectors[1].name = ""; }), /sin nombre/);
+  failsScope(futureScope((s) => { s.sectors[1].front = ""; }), /sin frente/);
+  failsScope(futureScope((s) => { s.forms_sector = "REBOBINADO"; }), /forms_sector "REBOBINADO" no está entre los sectores declarados/);
+  failsScope(futureScope((s) => { s.sectors[1].shifts[0][0] = "manana"; }), /Turno con código inválido/);
+  failsScope(futureScope((s) => { s.sectors[1].shifts[2][1] = "Nocturno"; }), /Turno NOCHE declarado con nombres distintos/); // NOCHE ya existe en BOBINAS como «Noche»
+  failsScope(futureScope((s) => { s.unit_aliases = { Pack: "pack" }; }), /unit_aliases/);
+  failsScope(futureScope((s) => { s.unit_aliases = []; }), /unit_aliases debe ser un objeto/);
+});
+
+test("scope declarations are cross-checked against the sources (catalog and GROUPS in app/page.tsx)", () => {
+  failsScope(futureScope((s) => { s.sectors[1].machines[0].catalog = "NO-EXISTE"; }), /La máquina GAMBINI no existe en PRODUCTS_BY_MACHINE/);
+  failsScope(futureScope((s) => { s.sectors[1].machines[0].group = "Gambini 9"; }), /La máquina GAMBINI no pertenece a Conversión en GROUPS/);
+  failsScope(futureScope((s) => { s.sectors[1].machines = s.sectors[1].machines.slice(0, 3); }), /GROUPS\.Conversión es \[/);
+  failsScope(futureScope((s) => { s.sectors[1].front = "Fantasma"; }), /No se encontró GROUPS\.Fantasma/);
+});
+
+test("schedule validation: gaps, overlaps, midnight crossing, vigencias, time zones and changes of hours", () => {
+  validateSchedules([sched("DIA", "BOBINAS", "07:00", "19:00"), sched("NOCHE", "BOBINAS", "19:00", "07:00")]); // the approved ones
+  validateSchedules(THREE_SHIFTS.map(([c, , a, b]) => sched(c, "CONVERSION", a, b))); // 22:00–06:00 crosses midnight
+  rejects([sched("DIA", "BOBINAS", "07:00", "18:00"), sched("NOCHE", "BOBINAS", "19:00", "07:00")], /BOBINAS desde 2026-01-01: minutos sin turno \(hueco\) 18:00–19:00/);
+  rejects([sched("DIA", "BOBINAS", "07:00", "19:00"), sched("NOCHE", "BOBINAS", "18:00", "07:00")], /turnos solapados 18:00–19:00/);
+  rejects([sched("MANANA", "C", "06:00", "14:00"), sched("TARDE", "C", "14:00", "22:00"), sched("NOCHE", "C", "22:00", "07:00")], /turnos solapados 06:00–07:00/);
+  rejects([sched("MANANA", "C", "06:00", "14:00"), sched("TARDE", "C", "14:00", "22:00"), sched("NOCHE", "C", "22:00", "05:00")], /minutos sin turno \(hueco\) 05:00–06:00/);
+  rejects([sched("DIA", "B", "07:00", "07:00")], /inicio y fin iguales/);
+  rejects([sched("DIA", "B", "7", "19:00")], /hora inválida/);
+  rejects([sched("DIA", "B", "25:00", "19:00")], /hora inválida/);
+  rejects([sched("DIA", "B", "07:00", "19:00", "2026-01-01", "2025-12-31")], /valid_to anterior a valid_from/);
+  rejects([sched("DIA", "B", "07:00", "19:00", "2026-02-30")], /vigencia con fecha inválida/);
+  rejects([sched("DIA", "B", "07:00", "19:00"), sched("DIA", "B", "07:00", "19:00")], /shift_schedule duplicado/);
+  rejects([sched("DIA", "B", "07:00", "19:00", "2026-01-01", null, "Mars/Olympus"), sched("NOCHE", "B", "19:00", "07:00", "2026-01-01", null, "Mars/Olympus")], /zona horaria inválida/);
+  rejects([sched("DIA", "B", "07:00", "19:00"), sched("NOCHE", "B", "19:00", "07:00", "2026-01-01", null, "America/Lima")], /misma zona horaria/);
+  const old = [sched("DIA", "B", "07:00", "19:00", "2026-01-01", "2026-10-31"), sched("NOCHE", "B", "19:00", "07:00", "2026-01-01", "2026-10-31")];
+  rejects([...old, sched("DIA", "B", "07:00", "19:00", "2026-11-05"), sched("NOCHE", "B", "19:00", "07:00", "2026-11-05")], /no hay turnos vigentes entre 2026-11-01 y 2026-11-04/);
+  // The M1-B1 finding: BOBINAS 07–19 → 06–18. Both regimes are fine alone, but the last old night ends at 07:00 and the new day starts at 06:00.
+  rejects([...old, sched("DIA", "B", "06:00", "18:00", "2026-11-01"), sched("NOCHE", "B", "18:00", "06:00", "2026-11-01")],
+    /el cambio de vigencia del 2026-11-01 deja el tiempo real sin turno o con turnos solapados \(2026-11-01 06:00–2026-11-01 07:00/);
+  rejects([...old, sched("DIA", "B", "08:00", "20:00", "2026-11-01"), sched("NOCHE", "B", "20:00", "08:00", "2026-11-01")], /\(2026-11-01 07:00–2026-11-01 08:00/); // a gap
+  validateSchedules([...old, sched("DIA", "B", "07:00", "19:00", "2026-11-01"), sched("NOCHE", "B", "19:00", "07:00", "2026-11-01")]); // same hours, new vigencia
+  validateSchedules([...old, sched("MANANA", "B", "07:00", "15:00", "2026-11-01"), sched("TARDE", "B", "15:00", "23:00", "2026-11-01"), sched("NOCHE", "B", "23:00", "07:00", "2026-11-01")]);
+});
+
+test("validateBundle rejects inconsistent master data in the generated files", () => {
+  const { files } = buildBundle(sources);
+  const mutate = (name, change) => { const copy = new Map(files); const doc = JSON.parse(files.get(name)); change(doc); copy.set(name, JSON.stringify(doc)); return copy; };
+  const renameMachine = (from, to) => (map) => {
+    const withMachines = new Map(map); const machines = JSON.parse(map.get("machines.json")); machines.items.find((m) => m.code === from).code = to; withMachines.set("machines.json", JSON.stringify(machines));
+    const relations = JSON.parse(map.get("article_machines.json")); for (const r of relations.items) if (r.machine_code === from) r.machine_code = to; withMachines.set("article_machines.json", JSON.stringify(relations));
+    return withMachines;
+  };
+  const renameArticle = (to) => (map) => {
+    const out = new Map(map); const articles = JSON.parse(map.get("articles.json")); const from = articles.items[0].code; articles.items[0].code = to; out.set("articles.json", JSON.stringify(articles));
+    const relations = JSON.parse(map.get("article_machines.json")); for (const r of relations.items) if (r.article_code === from) r.article_code = to; out.set("article_machines.json", JSON.stringify(relations));
+    return out;
+  };
+  const invalid = (map, pattern) => assert.throws(() => validateBundle({ files: map }), (error) => error instanceof SeedExportError && pattern.test(error.message));
+  validateBundle({ files }); // the approved data passes every new check
+  invalid(renameMachine("MP1", "mp 1")(files), /Máquina con código inválido: "mp 1"/);
+  invalid(mutate("sectors.json", (d) => { d.items[0].code = "bobinas"; }), /Sector con código inválido/);
+  invalid(mutate("units.json", (d) => { d.items.push({ ...d.items[0], code: "kg" }); }), /Unidad con código inválido/);
+  invalid(mutate("shifts.json", (d) => { d.shifts[0].code = "dia"; }), /Turno con código inválido/);
+  invalid(renameArticle("m1 1031")(files), /Artículo con código inválido: "m1 1031"/);
+  invalid(mutate("machines.json", (d) => { d.items[1].name = " mp1 "; }), /Nombre de máquina repetido/);
+  invalid(mutate("machines.json", (d) => { d.items[1].sector = "OTRO"; }), /Máquina MP3 sin sector válido: "OTRO"/);
+  invalid(mutate("machines.json", (d) => { d.items.push({ ...d.items[0] }); }), /Máquina duplicad[ao] en el bundle: MP1/);
+  invalid(mutate("article_machines.json", (d) => { d.items.push(d.items[0]); }), /Relación article-machine duplicada/);
+  invalid(mutate("article_machines.json", (d) => { d.items.shift(); }), /Artículo de producto sin relación con ninguna máquina/);
+  invalid(mutate("shifts.json", (d) => { d.schedules[0].ends_at = "18:00"; }), /minutos sin turno \(hueco\) 18:00–19:00/);
+  invalid(mutate("shifts.json", (d) => { d.schedules[1].starts_at = "18:00"; }), /turnos solapados 18:00–19:00/);
+  invalid(mutate("shifts.json", (d) => { d.schedules[1].shift = "FANTASMA"; }), /turno inexistente FANTASMA/);
+  invalid(mutate("shifts.json", (d) => { d.schedules[0].sector = "FANTASMA"; }), /sector inexistente FANTASMA/);
 });
