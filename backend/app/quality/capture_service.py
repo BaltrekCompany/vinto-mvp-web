@@ -20,7 +20,7 @@ from datetime import date, datetime
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, UnsupportedFormDefinitionError
-from app.sectors import operational_sector_codes
+from app.sectors import scoped_sector_codes
 
 REASON = "submit quality capture"
 QUALITY_AREA = "quality"
@@ -93,32 +93,32 @@ def _to_view(connection, row) -> QualityCaptureView:
     return QualityCaptureView(*row, values={k: cs._serialize(v) for k, v in cs._stored_values(connection, row[0]).items()})
 
 
-def get_quality_capture(connection, capture_id) -> QualityCaptureView:
+def get_quality_capture(connection, capture_id, *, sectors) -> QualityCaptureView:
     capture_id = cs._uuid(capture_id, CaptureNotFoundError)
-    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(operational_sector_codes()), capture_id)).fetchone()
+    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(scoped_sector_codes(sectors)), capture_id)).fetchone()
     if row is None:
         raise CaptureNotFoundError()
     return _to_view(connection, row)
 
 
-def _bobbin_context(connection, bobbin_id) -> _BobbinContext:
+def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
     """Bobina numerada F3 del alcance (Bobinas) y el contexto productivo de su captura F3 de origen. 404 si no existe."""
     row = connection.execute(
         """SELECT b.id, b.machine_id, c.shift_schedule_id, c.operating_date, c.assignment_id
            FROM vinto_txn.bobbin b JOIN vinto_txn.capture c ON c.id = b.source_capture_id
            JOIN vinto_master.machine m ON m.id = b.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
-           WHERE b.id = %s AND b.sequence_number IS NOT NULL AND s.code = ANY(%s)""", (bobbin_id, list(operational_sector_codes()))).fetchone()
+           WHERE b.id = %s AND b.sequence_number IS NOT NULL AND s.code = ANY(%s)""", (bobbin_id, list(scoped_sector_codes(sectors)))).fetchone()
     if row is None or row[4] is None:
         raise BobbinNotFoundError()
     return _BobbinContext(*row)
 
 
-def list_bobbin_quality_captures(connection, bobbin_id) -> list[QualityCaptureView]:
+def list_bobbin_quality_captures(connection, bobbin_id, *, sectors) -> list[QualityCaptureView]:
     """Capturas de Calidad enviadas de una Bobina (más recientes primero; orden solo de presentación). Sin paginación."""
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
-    _bobbin_context(connection, bobbin_id)
+    _bobbin_context(connection, bobbin_id, sectors)
     rows = connection.execute(_VIEW_SQL + " AND c.bobbin_id = %s AND c.status IN ('submitted','closed') ORDER BY c.captured_at DESC, c.id DESC",
-                              (list(operational_sector_codes()), bobbin_id)).fetchall()
+                              (list(scoped_sector_codes(sectors)), bobbin_id)).fetchall()
     return [_to_view(connection, r) for r in rows]
 
 
@@ -149,7 +149,7 @@ def _insert_capture(connection, *, capture_id, form_version_id, context: _Bobbin
         (capture_id, form_version_id, context.machine_id, context.shift_schedule_id, device_id, context.assignment_id, context.operating_date, context.bobbin_id))
 
 
-def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_code, device_key, values, request_id=None) -> QualityCaptureResult:
+def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_code, device_key, values, request_id=None, sectors) -> QualityCaptureResult:
     """Crea y envía una captura de Calidad de una Bobina, de forma atómica e idempotente (capture.id = capture_id del cliente)."""
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
     capture_id = cs._uuid(capture_id, CaptureValidationError)
@@ -166,10 +166,10 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
             if _existing_matches(connection, existing, actor_id=actor_id, bobbin_id=bobbin_id, form_code=form_code, device_key=device_key, values=values):
-                return QualityCaptureResult(get_quality_capture(connection, capture_id), created=False, already_submitted=True)
+                return QualityCaptureResult(get_quality_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
-        context = _bobbin_context(connection, bobbin_id)
+        context = _bobbin_context(connection, bobbin_id, sectors)
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         form_version_id = cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA)
         fields = cs.load_fields(connection, form_version_id)  # solo campos manuales sin grupo; lo demás -> UNSUPPORTED_FORM_DEFINITION
@@ -178,4 +178,4 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)
         cs._insert_details(connection, capture_id, form_version_id, fields, clean)
         connection.execute("UPDATE vinto_txn.capture SET status = 'submitted', submitted_at = clock_timestamp() WHERE id = %s", (capture_id,))
-    return QualityCaptureResult(get_quality_capture(connection, capture_id), created=True, already_submitted=False)
+    return QualityCaptureResult(get_quality_capture(connection, capture_id, sectors=sectors), created=True, already_submitted=False)

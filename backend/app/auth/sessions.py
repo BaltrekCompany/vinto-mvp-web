@@ -15,6 +15,7 @@ import secrets
 from dataclasses import dataclass, field
 
 from app.auth.errors import AuthError, InvalidSessionError
+from app.auth.grants import sector_codes_for_user
 from app.auth.permissions import permissions_for_profiles
 from app.auth.service import AuthenticatedUser, attempt_authentication
 from app.config import settings
@@ -68,7 +69,8 @@ def resolve_session(connection, raw_token) -> AuthenticatedUser:
         profiles = tuple(r[0] for r in connection.execute(
             """SELECT p.code FROM vinto_master.user_profile up JOIN vinto_master.profile p ON p.id = up.profile_id
                WHERE up.user_id = %s AND p.active ORDER BY p.code""", (user_id,)).fetchall())
-    return AuthenticatedUser(user_id, username, display_name, profiles, permissions_for_profiles(profiles), must_change)
+        sectors = sector_codes_for_user(connection, user_id)
+    return AuthenticatedUser(user_id, username, display_name, profiles, permissions_for_profiles(profiles), must_change, sectors)
 
 
 def revoke_session(connection, raw_token, *, request_id=None) -> bool:

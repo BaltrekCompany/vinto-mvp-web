@@ -42,7 +42,7 @@ class BobbinApiCase(unittest.IsolatedAsyncioTestCase):
         cls.users, cls.cookies = {}, {}
         for profile in PROFILES:
             password = "pw-" + secrets.token_urlsafe(18)
-            cls.users[profile] = (create_user(cls.connection, username=f"f3api.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password), password)
+            cls.users[profile] = (create_user(cls.connection, username=f"f3api.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password, sectors=("BOBINAS",)), password)
 
     @classmethod
     def tearDownClass(cls):

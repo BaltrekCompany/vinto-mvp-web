@@ -16,8 +16,15 @@ except ModuleNotFoundError:
     from tests.test_assignments_api import call, order_body
 
 from app.ephemeral_db import build_reference_template, drop_database
-from app.quality import service as quality_service
+from app.quality import service as _quality_service
 from app.seed.bundle import load_bundle
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+quality_service = internal(_quality_service)
 
 BUNDLE = load_bundle()
 NO_GRAMMAGE = next(a["code"] for a in BUNDLE.articles if a["version"]["grammage_g_m2"] is None)
@@ -230,7 +237,7 @@ class EmptyInboxTests(InboxCase):
 class NoTruncationTests(InboxCase):
     async def test_the_listing_applies_no_artificial_limit(self):
         import inspect
-        source = inspect.getsource(quality_service)
+        source = inspect.getsource(_quality_service)
         self.assertFalse(hasattr(quality_service, "MAX_INBOX_ROWS"))
         self.assertNotRegex(source.replace("LIMIT fijo", ""), r"(?i)LIMIT|OFFSET")
         created = [(await self.create_bobbin())[1]["bobbin"]["id"] for _ in range(7)]

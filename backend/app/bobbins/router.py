@@ -28,11 +28,11 @@ def register_bobbin(body: BobbinIn, response: Response, user: AuthenticatedUser 
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id)."""
     result = service.submit_bobbin_production(
         connection, actor_id=user.user_id, capture_id=body.capture_id, assignment_id=body.assignment_id, device_key=body.device_key,
-        values=body.values.model_dump(exclude_none=True), request_id=str(uuid.uuid4()))
+        values=body.values.model_dump(exclude_none=True), request_id=str(uuid.uuid4()), sectors=user.sectors)
     response.status_code = 201 if result.created else 200
     return result_out(result)
 
 
 @router.get("/{bobbin_id}", response_model=BobbinOut, responses=_ERRORS)
-def get_bobbin(bobbin_id: str, _user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
-    return bobbin_out(service.get_bobbin(connection, bobbin_id))
+def get_bobbin(bobbin_id: str, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
+    return bobbin_out(service.get_bobbin(connection, bobbin_id, sectors=user.sectors))

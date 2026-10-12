@@ -31,7 +31,7 @@ def _request_id() -> str:
 def create_work_order(body: CreateWorkOrderIn, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
                       connection=Depends(get_connection)):
     view = service.create_work_order(connection, actor_id=user.user_id, machine_code=body.machine_code,
-                                     lines=[line.to_domain() for line in body.lines], request_id=_request_id())
+                                     lines=[line.to_domain() for line in body.lines], request_id=_request_id(), sectors=user.sectors)
     return work_order_out(view)
 
 
@@ -39,25 +39,25 @@ def create_work_order(body: CreateWorkOrderIn, user: AuthenticatedUser = Depends
 def list_work_orders(machine_code: str | None = Query(default=None, max_length=64),
                      status: Literal["draft", "published", "in_progress", "closed"] | None = None,
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
-                     _user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)), connection=Depends(get_connection)):
-    return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit)]
+                     user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)), connection=Depends(get_connection)):
+    return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors)]
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
-def get_work_order(work_order_id: str, _user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
+def get_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
                    connection=Depends(get_connection)):
-    return work_order_out(service.get_work_order(connection, work_order_id))
+    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors))
 
 
 @router.post("/{work_order_id}/lines", status_code=201, response_model=WorkOrderOut, responses=_ERRORS)
 def add_line(work_order_id: str, body: LineIn, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
              connection=Depends(get_connection)):
     return work_order_out(service.add_line(connection, actor_id=user.user_id, work_order_id=work_order_id,
-                                           line=body.to_domain(), request_id=_request_id()))
+                                           line=body.to_domain(), request_id=_request_id(), sectors=user.sectors))
 
 
 @router.post("/{work_order_id}/publish", response_model=WorkOrderOut, responses=_ERRORS)
 def publish_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
                        connection=Depends(get_connection)):
     return work_order_out(service.publish_work_order(connection, actor_id=user.user_id, work_order_id=work_order_id,
-                                                     request_id=_request_id()))
+                                                     request_id=_request_id(), sectors=user.sectors))

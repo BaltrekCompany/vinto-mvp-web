@@ -15,8 +15,8 @@ from uuid import uuid4
 
 import psycopg
 
-from app import capture_service
-from app.assignments import service as assignments
+from app import capture_service as _capture_service
+from app.assignments import service as _assignments
 from app.assignments.errors import AssignmentNotFoundError
 from app.auth.service import create_user
 from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, CaptureIdempotencyConflictError, CaptureNotFoundError,
@@ -25,8 +25,17 @@ from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, 
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.seed.bundle import load_bundle
 from app.shifts import SHIFT_NOT_CONFIGURED, ShiftResolutionError
-from app.work_orders import service as work_orders
+from app.work_orders import service as _work_orders
 from app.work_orders.service import LineInput
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+capture_service = internal(_capture_service)
+assignments = internal(_assignments)
+work_orders = internal(_work_orders)
 
 BUNDLE = load_bundle()
 STATE = {}
@@ -148,7 +157,7 @@ class ContextTests(CaptureCase):
 
     def test_the_client_cannot_provide_the_form_version_or_any_derived_field(self):
         parameters = set(inspect.signature(capture_service.submit_production_capture).parameters)
-        self.assertEqual(parameters, {"connection", "actor_id", "capture_id", "form_code", "assignment_id", "device_key", "values", "request_id"})
+        self.assertEqual(parameters, {"connection", "actor_id", "capture_id", "form_code", "assignment_id", "device_key", "values", "request_id", "sectors"})  # sectors: authorization scope supplied by the router from the session, never by the client
 
     def test_only_f6_is_enabled(self):
         _, assignment = self.assignment()

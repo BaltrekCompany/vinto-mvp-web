@@ -6,6 +6,7 @@ La contraseña se pide con getpass (dos veces) y nunca se imprime ni se guarda. 
 existe `--password-env NOMBRE`: lee la contraseña de esa variable de entorno, solo si se pide
 explícitamente, y tampoco se imprime. No hay opción para pasar la contraseña como argumento.
 No crea perfiles: el perfil debe existir y estar activo. --target es obligatorio.
+Sin --sector el usuario no accede a ningún sector; las concesiones son explícitas (--sector BOBINAS, repetible).
 """
 
 import argparse
@@ -50,6 +51,7 @@ def main(argv=None) -> int:
     parser.add_argument("--username", required=True)
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--profile", required=True, help="Código de un perfil existente (por ejemplo JEFATURA)")
+    parser.add_argument("--sector", action="append", default=[], metavar="CODIGO", help="Sector concedido explícitamente (repetible, p. ej. --sector BOBINAS). Sin --sector el usuario no accede a ningún sector")
     parser.add_argument("--password-env", metavar="VAR", help="Leer la contraseña de esta variable de entorno (solo automatización)")
     args = parser.parse_args(argv)
 
@@ -58,7 +60,7 @@ def main(argv=None) -> int:
         with open_connection(args.target) as connection:
             database = connection.execute("SELECT current_database()").fetchone()[0]
             created = create_user(connection, username=args.username, display_name=args.display_name,
-                                  profile_code=args.profile, password=password)
+                                  profile_code=args.profile, password=password, sectors=args.sector)
     except AuthError as error:
         print(f"Usuario no creado: {error}")
         return 1
@@ -68,7 +70,7 @@ def main(argv=None) -> int:
     except psycopg.Error as error:
         print(f"Usuario no creado: {type(error).__name__}; SQLSTATE={error.sqlstate or 'n/a'}; transacción revertida")
         return 1
-    print(f"Usuario creado en {database}: username={created.username} perfil={created.profile_code} id={created.user_id}")
+    print(f"Usuario creado en {database}: username={created.username} perfil={created.profile_code} sectores={','.join(args.sector) or 'ninguno'} id={created.user_id}")
     return 0
 
 

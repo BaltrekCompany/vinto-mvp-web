@@ -35,27 +35,27 @@ def activate(body: ActivateIn, response: Response, user: AuthenticatedUser = Dep
              connection=Depends(get_connection)):
     """201 si se creó una asignación nueva; 200 si ya estaba activa para esa línea, turno y fecha (idempotente)."""
     result = service.activate(connection, actor_id=user.user_id, work_order_id=body.work_order_id,
-                              baseline_line_id=body.baseline_line_id, request_id=_request_id())
+                              baseline_line_id=body.baseline_line_id, request_id=_request_id(), sectors=user.sectors)
     response.status_code = 201 if result.created else 200
     return activation_out(result)
 
 
 @router.post("/{assignment_id}/finish", response_model=AssignmentOut, responses=_ERRORS)
 def finish(assignment_id: str, user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)), connection=Depends(get_connection)):
-    return assignment_out(service.finish(connection, actor_id=user.user_id, assignment_id=assignment_id, request_id=_request_id()))
+    return assignment_out(service.finish(connection, actor_id=user.user_id, assignment_id=assignment_id, request_id=_request_id(), sectors=user.sectors))
 
 
 @router.get("/active", response_model=ActiveOut, responses=_ERRORS)
-def active(machine_code: str = Query(max_length=64), _user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
+def active(machine_code: str = Query(max_length=64), user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
            connection=Depends(get_connection)):
     """Asignación activa de la máquina (o null), turno actual y si la asignación quedó vencida (`stale`)."""
-    return active_out(service.get_active(connection, machine_code=machine_code))
+    return active_out(service.get_active(connection, machine_code=machine_code, sectors=user.sectors))
 
 
 @router.get("", response_model=list[AssignmentOut], responses=_ERRORS)
 def list_assignments(machine_code: str | None = Query(default=None, max_length=64), status: Literal["active", "finished"] | None = None,
                      operating_date: date | None = None, work_order_id: UUID | None = None,
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
-                     _user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)), connection=Depends(get_connection)):
+                     user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)), connection=Depends(get_connection)):
     return [assignment_out(v) for v in service.list_assignments(connection, machine_code=machine_code, status=status,
-                                                                  operating_date=operating_date, work_order_id=work_order_id, limit=limit)]
+                                                                  operating_date=operating_date, work_order_id=work_order_id, limit=limit, sectors=user.sectors)]

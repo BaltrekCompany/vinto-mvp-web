@@ -13,15 +13,23 @@ from uuid import uuid4
 
 import psycopg
 
-from app.assignments import service
+from app.assignments import service as _service
 from app.assignments.errors import (AssignmentNotFoundError, BaselineLineNotFoundError, WorkOrderNotActivatableError)
 from app.auth.service import create_user
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.seed.bundle import load_bundle
 from app.shifts import SHIFT_AMBIGUOUS, SHIFT_NOT_CONFIGURED, ShiftResolutionError, resolve_shift
-from app.work_orders import service as work_orders
+from app.work_orders import service as _work_orders
 from app.work_orders.errors import WorkOrderNotFoundError
 from app.work_orders.service import LineInput
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+service = internal(_service)
+work_orders = internal(_work_orders)
 
 BUNDLE = load_bundle()
 STATE = {}

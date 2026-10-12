@@ -23,6 +23,7 @@ from app.auth.errors import (AccountLockedError, AuthError, InvalidCredentialsEr
                              InvalidUsernameError, ProfileNotFoundError, UserAlreadyExistsError)
 from app.auth.passwords import (HASH_ALGORITHM, MAX_PASSWORD_LENGTH, dummy_hash, hash_password, validate_password_policy,
                                 verify_password)
+from app.auth.grants import grant_sector, sector_codes_for_user
 from app.auth.permissions import permissions_for_profiles
 from app.config import settings
 
@@ -48,6 +49,7 @@ class AuthenticatedUser:
     profile_codes: tuple
     permissions: frozenset
     must_change: bool
+    sectors: frozenset = frozenset()  # sectores concedidos explícitamente (vinto_master.user_sector); vacío = ninguno
 
     def can(self, permission: str) -> bool:
         return permission in self.permissions
@@ -70,10 +72,13 @@ def _clean_display_name(display_name) -> str:
     return cleaned
 
 
-def create_user(connection, *, username, display_name, profile_code, password, request_id=None) -> CreatedUser:
+def create_user(connection, *, username, display_name, profile_code, password, request_id=None, sectors=()) -> CreatedUser:
     """Crea user + user_profile + credential en UNA transacción, con exactamente un perfil existente y activo.
 
     No crea perfiles. `created_by` queda NULL mientras no exista un actor autenticado.
+
+    `sectors`: códigos de sector concedidos explícitamente en la misma transacción. Por defecto NINGUNO: un usuario sin concesiones no accede
+    a ningún sector (ver app/auth/grants.py). Un sector inexistente revierte la creación completa.
     """
     normalized = normalize_username(username)
     name = _clean_display_name(display_name)
@@ -96,6 +101,8 @@ def create_user(connection, *, username, display_name, profile_code, password, r
                    VALUES (%s,%s,%s,%s,clock_timestamp())""", (user_id, normalized, password_hash, HASH_ALGORITHM))
         except psycopg.errors.UniqueViolation:
             raise UserAlreadyExistsError(f"Ya existe un usuario con el username {normalized!r}") from None
+        for sector_code in dict.fromkeys(sectors):  # sin repetidos; el orden de entrada se conserva
+            grant_sector(connection, user_id=user_id, sector_code=sector_code, request_id=request_id)
     return CreatedUser(user_id, normalized, name, profile_code)
 
 
@@ -163,7 +170,7 @@ def attempt_authentication(connection, username, password, request_id):
             """SELECT p.code FROM vinto_master.user_profile up JOIN vinto_master.profile p ON p.id = up.profile_id
                WHERE up.user_id = %s AND p.active ORDER BY p.code""", (user_id,)).fetchall())
         return AuthenticatedUser(user_id, row["username"], row["display_name"], profiles,
-                                 permissions_for_profiles(profiles), row["must_change"])
+                                 permissions_for_profiles(profiles), row["must_change"], sector_codes_for_user(connection, user_id))
 
 
 def authenticate(connection, username, password, *, request_id=None) -> AuthenticatedUser:

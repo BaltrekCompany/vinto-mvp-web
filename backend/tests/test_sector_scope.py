@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from app import sectors
 from app.auth import permissions
+from app.auth.grants import grant_sector
 from app.ephemeral_db import build_reference_template, connect, drop_database
 
 try:
@@ -46,6 +47,7 @@ PINNED_MIGRATIONS = [
     ("0003_capture_revision_semantics.sql", "b739fb041b3e64401555d07ae86f6bed5b9b4f629075c9ab2331e919f4b652d8"),
     ("0004_bobbin_production.sql", "2346215c46fad1dc6c036f225a43a5a7a9251c21e892f1bfdf7ea7872b77f631"),
     ("0005_quality_capture_bobbin.sql", "abf8b6fb9d678bc44de2260a05e7852b6df34659f2ebbb75a8bb64cabc5b1422"),
+    ("0006_user_sector_grants.sql", "98057f5b94236aa843f82ffc9ba4105266ea4f516abe861208a50664eb51ac9a"),  # M1-C1: additive table for sector grants
 ]
 
 
@@ -111,8 +113,9 @@ class StaticScopeTests(unittest.TestCase):
         filtered = [(p, text) for p, text in app_sources() if p.name != "sectors.py" and re.search(r"s\.code\s*=\s*ANY\(%s\)", text)]
         self.assertGreaterEqual(len(filtered), 6)  # work_orders, assignments, capture_service, bobbins, quality (x2)
         for path, text in filtered:
-            self.assertIn("operational_sector_codes()", text, str(path.relative_to(APP)))
-            self.assertRegex(text, r"from app\.sectors import [^\n]*operational_sector_codes", str(path.relative_to(APP)))
+            self.assertIn("scoped_sector_codes(", text, str(path.relative_to(APP)))  # M1-C1: the accessor is the user-scoped one
+            self.assertRegex(text, r"from app\.sectors import [^\n]*scoped_sector_codes", str(path.relative_to(APP)))
+            self.assertNotIn("operational_sector_codes()", text, str(path.relative_to(APP)))  # nobody may bypass the user scope
 
     def test_sectors_and_permissions_stay_independent(self):
         sectors_source = (APP / "sectors.py").read_text(encoding="utf-8")
@@ -129,7 +132,7 @@ class StaticScopeTests(unittest.TestCase):
             for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
                 self.assertEqual(set(permissions.permissions_for_profiles([profile])), expected, profile)
 
-    def test_existing_migrations_are_intact_and_none_was_added(self):
+    def test_existing_migrations_are_intact_and_only_the_known_ones_exist(self):
         from migrate import read_migrations
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], PINNED_MIGRATIONS)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in PINNED_MIGRATIONS])
@@ -200,6 +203,8 @@ class SectorGateTests(f3.BobbinApiCase):
         quality_body = lambda bobbin_id: {"capture_id": str(uuid4()), "form_code": "VINTO-P1-19", "device_key": str(uuid4()), "values": dict(P119_VALUES)}
 
         # ---------- FASE 1: sector habilitado (solo dentro del bloque). Prueba que las operaciones y los datos son válidos. ----------
+        for profile in ("JEFATURA", "SUPERVISION", "OPERACION", "CALIDAD"):  # M1-C1: enabling the sector is not enough, the user also needs an explicit grant
+            grant_sector(self.connection, user_id=self.users[profile][0].user_id, sector_code=FUTURE_SECTOR)
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", FUTURE_SECTOR)):
             order = await call("POST", "/api/work-orders", json_body=future_order, cookie=jefatura)
             self.assertEqual(order.status, 201)

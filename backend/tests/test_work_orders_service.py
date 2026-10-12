@@ -16,11 +16,18 @@ import psycopg
 from app.auth.service import create_user
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.seed.bundle import load_bundle
-from app.work_orders import service
+from app.work_orders import service as _service
 from app.work_orders.errors import (ArticleNotAllowedForMachineError, ArticleNotFoundError, InvalidWorkOrderLineError,
                                     MachineNotFoundError, MachineOutsideScopeError, WorkOrderAlreadyPublishedError,
                                     WorkOrderNotFoundError, WorkOrderNotPublishableError)
 from app.work_orders.service import LineInput
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+service = internal(_service)
 
 BUNDLE = load_bundle()
 STATE = {}

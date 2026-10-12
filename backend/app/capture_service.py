@@ -30,7 +30,7 @@ from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, 
                                 CaptureValidationError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError,
                                 UnsupportedFormDefinitionError, UnsupportedFormError)
 from app.shifts import resolve_shift
-from app.sectors import operational_sector_codes
+from app.sectors import scoped_sector_codes
 
 FORM_CODE = "VINTO-P1-06"  # único formulario habilitado en este checkpoint
 REASON = "submit production capture"
@@ -274,17 +274,17 @@ def _to_view(connection, row) -> CaptureView:
     return CaptureView(*row, values={k: _serialize(v) for k, v in _stored_values(connection, row[0]).items()})
 
 
-def get_capture(connection, capture_id) -> CaptureView:
+def get_capture(connection, capture_id, *, sectors) -> CaptureView:
     capture_id = _uuid(capture_id, CaptureNotFoundError)
-    rows = connection.execute(_VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(operational_sector_codes()), capture_id)).fetchall()
+    rows = connection.execute(_VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(scoped_sector_codes(sectors)), capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return _to_view(connection, rows[0])
 
 
-def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT) -> list[CaptureView]:
+def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT, sectors) -> list[CaptureView]:
     """Capturas F6 enviadas (submitted/closed), más recientes primero. Sin borradores."""
-    sql, params = _VIEW_SQL + " AND c.status IN ('submitted','closed')", [FORM_CODE, list(operational_sector_codes())]
+    sql, params = _VIEW_SQL + " AND c.status IN ('submitted','closed')", [FORM_CODE, list(scoped_sector_codes(sectors))]
     for clause, value in ((" AND a.id = %s", assignment_id), (" AND m.code = %s", machine_code), (" AND c.operating_date = %s", operating_date)):
         if value is not None:
             sql += clause
@@ -320,7 +320,7 @@ class ActiveContext:
     now: datetime
 
 
-def lock_active_assignment(connection, assignment_id) -> ActiveContext:
+def lock_active_assignment(connection, assignment_id, sectors) -> ActiveContext:
     """Toma el lock de máquina y valida que la asignación siga activa y vigente para el turno/fecha actuales.
 
     Compartido por F6 y F3: AssignmentNotFoundError, AssignmentNotActiveError y AssignmentStaleError (más los errores de
@@ -328,7 +328,7 @@ def lock_active_assignment(connection, assignment_id) -> ActiveContext:
     """
     head = connection.execute(
         """SELECT a.machine_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
-           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(operational_sector_codes()))).fetchone()
+           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(scoped_sector_codes(sectors)))).fetchone()
     if head is None:
         raise AssignmentNotFoundError()
     _machine_lock(connection, head[0])  # serializa con activate/finish de la misma máquina
@@ -363,7 +363,7 @@ def published_form_version(connection, form_code: str, machine_id, *, area: str 
     return version[0]
 
 
-def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None) -> CaptureResult:
+def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None, sectors) -> CaptureResult:
     """Crea y envía una captura F6 de forma atómica e idempotente (capture.id = capture_id del cliente)."""
     if form_code != FORM_CODE:
         raise UnsupportedFormError(f"Solo se admite el formulario {FORM_CODE}")
@@ -380,10 +380,10 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
             if _existing_matches(connection, existing, actor_id=actor_id, form_code=form_code, assignment_id=assignment_id, device_key=device_key, values=values):
-                return CaptureResult(get_capture(connection, capture_id), created=False, already_submitted=True)
+                return CaptureResult(get_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
-        context = lock_active_assignment(connection, assignment_id)
+        context = lock_active_assignment(connection, assignment_id, sectors)
         machine_id, schedule_id, operating_date, now = context.machine_id, context.shift_schedule_id, context.operating_date, context.now
 
         device_id = _resolve_device(connection, device_key, machine_id)
@@ -398,7 +398,7 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
             (capture_id, form_version_id, machine_id, schedule_id, device_id, assignment_id, operating_date, now))
         _insert_details(connection, capture_id, form_version_id, fields, clean)
         connection.execute("UPDATE vinto_txn.capture SET status = 'submitted', submitted_at = clock_timestamp() WHERE id = %s", (capture_id,))
-    return CaptureResult(get_capture(connection, capture_id), created=True, already_submitted=False)
+    return CaptureResult(get_capture(connection, capture_id, sectors=sectors), created=True, already_submitted=False)
 
 
 def _resolve_device(connection, device_key: str, machine_id):
