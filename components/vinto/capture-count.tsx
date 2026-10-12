@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getCaptureCount, type CaptureFront } from "@/lib/vinto/api";
+import { CaptureCountError, getCaptureCount, type CaptureCountFailure, type CaptureFront } from "@/lib/vinto/api";
 
-type CountState = { front: CaptureFront; attempt: number; status: "unavailable" } |
-    { front: CaptureFront; attempt: number; status: "ready"; count: number };
+// Cada resultado queda ligado a (usuario, frente, intento): si cambia el usuario, el frente o se reintenta, el resultado anterior deja de
+// aplicar y se muestra "cargando". Así nunca se muestra el conteo de otra sesión u otro frente.
+type CountState = { owner: string; front: CaptureFront; attempt: number } & ({ status: "failed"; kind: CaptureCountFailure } | { status: "ready"; count: number });
 
-export function CaptureCount({ front, localCount }: { front: CaptureFront; localCount: number }) {
+export function CaptureCount({ front, localCount, userKey, onSessionLost }: { front: CaptureFront; localCount: number; userKey: string; onSessionLost: () => void }) {
     const [attempt, setAttempt] = useState(0);
     const [state, setState] = useState<CountState | null>(null);
     useEffect(() => {
@@ -15,18 +16,26 @@ export function CaptureCount({ front, localCount }: { front: CaptureFront; local
         let active = true;
         const timer = window.setTimeout(() => controller.abort(), 5000);
         getCaptureCount(front, controller.signal)
-            .then(result => { if (active) setState({ front, attempt, status: "ready", count: result.count }); })
-            .catch(() => { if (active) setState({ front, attempt, status: "unavailable" }); })
+            .then(result => { if (active) setState({ owner: userKey, front, attempt, status: "ready", count: result.count }); })
+            .catch(error => {
+                if (!active) return; // petición obsoleta (cambio de frente, usuario o desmontaje): se descarta
+                const kind: CaptureCountFailure = error instanceof CaptureCountError ? error.kind : "unavailable";
+                if (kind === "session") onSessionLost(); // 401: vuelve al Login por el mecanismo de autenticación existente
+                else setState({ owner: userKey, front, attempt, status: "failed", kind });
+            })
             .finally(() => window.clearTimeout(timer));
         return () => { active = false; window.clearTimeout(timer); controller.abort(); };
-    }, [front, attempt]);
-    const current = state && state.front === front && state.attempt === attempt ? state : { front, attempt, status: "loading" as const };
+        // onSessionLost cambia en cada render del padre; el efecto solo depende de la identidad de la consulta.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [front, attempt, userKey]);
+    const current = state && state.owner === userKey && state.front === front && state.attempt === attempt ? state : { owner: userKey, front, attempt, status: "loading" as const };
     return <div className="rounded-2xl border bg-white p-5" aria-live="polite">
-        <p className="text-sm text-slate-700">{current.status === "ready" ? "Registros centrales" : "Registros locales"}</p>
+        <p className="text-sm text-slate-700">{current.status === "ready" ? "Registros centrales" : "Registros locales (este navegador)"}</p>
         <p className="mt-2 text-3xl font-black">{current.status === "ready" ? current.count : localCount}</p>
         <p className="mt-2 text-xs text-slate-600">
             {current.status === "ready" ? `En este navegador: ${localCount}. Sin sincronización automática.` :
-                current.status === "loading" ? "Consultando registros centrales…" : "Consulta central no disponible"}
+                current.status === "loading" ? "Consultando registros centrales…" :
+                    current.kind === "forbidden" ? "Tu perfil no tiene acceso al conteo central." : "Consulta central no disponible"}
         </p>
         {current.status !== "loading" && <Button variant="ghost" size="sm" className="mt-2" onClick={() => setAttempt(n => n + 1)}>
             {current.status === "ready" ? "Actualizar" : "Reintentar"}

@@ -1,10 +1,13 @@
-"""Contrato HTTP y CORS sin escribir datos de negocio."""
+"""Contrato HTTP y CORS sin escribir datos de negocio.
+
+El endpoint GET /api/captures/count (sesión + catalog.read + alcance por sector) se prueba de extremo a extremo en
+tests/test_capture_count_authorization.py. Aquí quedan la salud de la API y la consulta de conteo sobre datos de fixture revertidos.
+"""
 
 import json
 import unittest
 from unittest.mock import patch
 
-from app.database import DatabaseUnavailable
 from app.main import app
 from app.captures import capture_count_query
 
@@ -30,39 +33,11 @@ async def request(path, query="", origin=None):
 
 
 class CaptureApiTests(unittest.IsolatedAsyncioTestCase):
-    async def test_zero_is_a_success(self):
-        with patch("app.captures.count_captures", return_value=0):
-            status, _, body = await request("/api/captures/count", "front=Bobinas")
-        self.assertEqual(status, 200)
-        self.assertEqual(body, {"front": "Bobinas", "count": 0, "source": "database"})
-
-    async def test_all_existing_fronts_and_positive_count(self):
-        from urllib.parse import urlencode
-        for front in ("Bobinas", "Rebobinado", "Conversión", "Calidad"):
-            with self.subTest(front=front), patch("app.captures.count_captures", return_value=3) as count:
-                status, _, body = await request("/api/captures/count", urlencode({"front": front}))
-                self.assertEqual(status, 200)
-                self.assertEqual(body["count"], 3)
-                count.assert_called_once_with(front)
-
-    async def test_invalid_or_missing_front_does_not_query_database(self):
-        for query in ("", "front=Inventado"):
-            with patch("app.captures.count_captures") as count:
-                status, _, _ = await request("/api/captures/count", query)
-                self.assertEqual(status, 422)
-                count.assert_not_called()
-
-    async def test_database_failure_is_safe_and_has_cors(self):
-        with patch("app.captures.count_captures", side_effect=DatabaseUnavailable("private detail")):
-            status, headers, body = await request("/api/captures/count", "front=Bobinas", "http://127.0.0.1:8787")
-        self.assertEqual(status, 503)
-        self.assertEqual(body, {"status": "error", "database": "unavailable"})
-        self.assertEqual(headers[b"access-control-allow-origin"], b"http://127.0.0.1:8787")
-
-    async def test_other_origins_are_not_authorized(self):
-        with patch("app.captures.count_captures", return_value=0):
-            _, headers, _ = await request("/api/captures/count", "front=Bobinas", "http://example.com")
-        self.assertNotIn(b"access-control-allow-origin", headers)
+    async def test_the_count_is_no_longer_public(self):
+        # Without a session the request never reaches the count: 401 (or the safe 503 when PostgreSQL is not reachable, because the session is resolved first).
+        status, _, body = await request("/api/captures/count", "front=Bobinas")
+        self.assertIn(status, (401, 503))
+        self.assertNotIn("count", body)
 
     async def test_health_does_not_query_database(self):
         with patch("app.main.check_database") as check:
@@ -70,37 +45,33 @@ class CaptureApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((status, body), (200, {"status": "ok"}))
         check.assert_not_called()
 
-    async def test_real_connection_failure_returns_503(self):
-        from psycopg.conninfo import make_conninfo
-        from pydantic import SecretStr
-        from app.config import settings
-        closed_port_url = SecretStr(make_conninfo(settings.database_url.get_secret_value(), host="127.0.0.1", port=1))
-        with patch.object(settings, "database_url", closed_port_url):
-            status, _, body = await request("/api/captures/count", "front=Bobinas")
-        self.assertEqual((status, body), (503, {"status": "error", "database": "unavailable"}))
-
 
 class CaptureQueryTests(unittest.TestCase):
-    def test_real_counts_filter_sector_and_quality_without_persisting_fixtures(self):
+    def test_real_counts_filter_sector_code_and_quality_without_persisting_fixtures(self):
         # Reuse existing fixtures, all inside the same rolled-back transaction.
         from test_schema import SchemaTests
         fixture = SchemaTests()
         self.addCleanup(fixture.doCleanups)
         fixture.setUp()
         connection = fixture.connection
-        baseline = {front: connection.execute(*capture_count_query(front)).fetchone()[0]
-                    for front in ("Bobinas", "Rebobinado", "Conversión", "Calidad")}
-        connection.execute("UPDATE vinto_master.sector SET name='Bobinas' WHERE id=%s", (fixture.sector,))
+        scope = ("BOBINAS", "REBOBINADO", "CONVERSION")  # full operational scope is intersected with the operational sectors, so it still means BOBINAS only
+        count = lambda front, sectors=scope: connection.execute(*capture_count_query(front, sectors)).fetchone()[0]
+        baseline = {front: count(front) for front in ("Bobinas", "Rebobinado", "Conversión", "Calidad")}
+        connection.execute("UPDATE vinto_master.sector SET code='BOBINAS' WHERE id=%s", (fixture.sector,))  # the fixture sector stands for BOBINAS
         fixture.capture()
         fixture.capture()
-        self.assertEqual(connection.execute(*capture_count_query("Bobinas")).fetchone()[0], baseline["Bobinas"] + 2)
+        self.assertEqual(count("Bobinas"), baseline["Bobinas"] + 2)
         for front in ("Rebobinado", "Conversión", "Calidad"):
-            self.assertEqual(connection.execute(*capture_count_query(front)).fetchone()[0], baseline[front])
+            self.assertEqual(count(front), baseline[front])
+        self.assertEqual(count("Bobinas", ()), 0, "an empty scope counts nothing")
+        self.assertEqual(count("Bobinas", ("REBOBINADO",)), 0, "a sector the user does not hold counts nothing")
         version = fixture.insert("vinto_config.form_version",
             "form_id,version_number,name,area,workflow_id,definition_checksum",
             (fixture.form, 2, "Technical quality fixture", "quality", fixture.workflow, "2" * 64))
         connection.execute("INSERT INTO vinto_config.form_version_machine (form_version_id,machine_id) VALUES (%s,%s)", (version, fixture.machine))
         connection.execute("UPDATE vinto_config.form_version SET status='published',published_at=clock_timestamp() WHERE id=%s", (version,))
         fixture.capture(form_version_id=version)
-        self.assertEqual(connection.execute(*capture_count_query("Calidad")).fetchone()[0], baseline["Calidad"] + 1)
-        self.assertEqual(connection.execute(*capture_count_query("Bobinas")).fetchone()[0], baseline["Bobinas"] + 3)
+        self.assertEqual(count("Calidad"), baseline["Calidad"] + 1)
+        self.assertEqual(count("Bobinas"), baseline["Bobinas"] + 3)
+        self.assertEqual(count("Calidad", ()), 0, "Calidad is filtered by sector too")
+        self.assertEqual(count("Calidad", ("REBOBINADO",)), 0)
