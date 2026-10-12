@@ -1,12 +1,13 @@
 // node --test scripts/export-seed-data.test.mjs
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import test from "node:test";
 
-import { DEFAULT_OUT, DEFAULT_SCOPE, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageFingerprintScope, pageSemantics, q20Label, validateBundle, validateSchedules, writeBundle } from "./export-seed-data.mjs";
+import { CANDIDATE_SCOPE, DEFAULT_OUT, ROOT, assertSafeCandidateOut, DEFAULT_SCOPE, SCOPES, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageFingerprintScope, pageSemantics, q20Label, validateBundle, validateSchedules, writeBundle } from "./export-seed-data.mjs";
 
 const sources = await loadSources();
 const clone = (value) => structuredClone(value);
@@ -513,4 +514,169 @@ test("validateBundle rejects inconsistent master data in the generated files", (
   invalid(mutate("shifts.json", (d) => { d.schedules[1].starts_at = "18:00"; }), /turnos solapados 18:00–19:00/);
   invalid(mutate("shifts.json", (d) => { d.schedules[1].shift = "FANTASMA"; }), /turno inexistente FANTASMA/);
   invalid(mutate("shifts.json", (d) => { d.schedules[0].sector = "FANTASMA"; }), /sector inexistente FANTASMA/);
+});
+
+// ---- M1-B2-b · candidate three-sector scope ----------------------------------------------------------------------------------------
+// CANDIDATE_SCOPE is generated only on request (--scope candidate --out DIR); the committed bundle stays the approved BOBINAS one.
+
+const REBOBINADO_CODES = ["BELOIT", "OVER", "COPASA", "PERICHUN", "TUBETERA"];
+const CONVERSION_CODES = ["GAMBINI", "SINCRO_II", "SINCRO_III", "OMET_I", "OMET_II", "8_2", "8_5", "8002", "SERV_4", "WALLY", "PANUELERA"];
+const candidate = buildBundle(sources, CANDIDATE_SCOPE);
+
+test("the candidate scope is not the approved one and the approved bundle is still what is committed", () => {
+  assert.notDeepEqual(CANDIDATE_SCOPE, DEFAULT_SCOPE);
+  assert.deepEqual(Object.keys(SCOPES), ["approved", "candidate"]);
+  assert.equal(SCOPES.approved, DEFAULT_SCOPE);
+  assert.deepEqual(compareWithDisk(DEFAULT_OUT, buildBundle(sources, SCOPES.approved).files), []);
+  assert.notDeepEqual(compareWithDisk(DEFAULT_OUT, candidate.files), []);
+});
+
+test("the candidate declares exactly the three sectors and their 18 technical machine codes", () => {
+  const machines = json(candidate.files, "machines.json").items;
+  assert.deepEqual(json(candidate.files, "sectors.json").items.map((s) => s.code), ["BOBINAS", "REBOBINADO", "CONVERSION"]);
+  assert.deepEqual(machines.filter((m) => m.sector === "BOBINAS").map((m) => m.code), ["MP1", "MP3"]);
+  assert.deepEqual(machines.filter((m) => m.sector === "REBOBINADO").map((m) => m.code), REBOBINADO_CODES);
+  assert.deepEqual(machines.filter((m) => m.sector === "CONVERSION").map((m) => m.code), CONVERSION_CODES);
+  assert.deepEqual(machines.slice(0, 2), json(buildBundle(sources).files, "machines.json").items); // MP1/MP3 untouched
+  assert.deepEqual(machines.find((m) => m.code === "PANUELERA"), { code: "PANUELERA", name: "Pañuelera", sector: "CONVERSION" });
+});
+
+test("the candidate counts are the audited ones and the approved articles and relations are untouched", () => {
+  const approved = buildBundle(sources);
+  const { counts } = candidate.manifest;
+  assert.deepEqual([counts.sectors, counts.machines, counts.articles, counts.article_machines, counts.shifts, counts.shift_schedules, counts.units, counts.material_classes], [3, 18, 315, 340, 4, 7, 4, 5]);
+  const articles = new Map(json(candidate.files, "articles.json").items.map((a) => [a.code, a]));
+  const base = json(approved.files, "articles.json").items;
+  assert.equal(articles.size - base.length, 222);
+  for (const a of base) assert.deepEqual(articles.get(a.code), a, a.code);
+  const relations = json(candidate.files, "article_machines.json").items;
+  const baseRelations = json(approved.files, "article_machines.json").items;
+  assert.equal(relations.length - baseRelations.length, 247);
+  for (const r of baseRelations) assert.ok(relations.some((x) => x.article_code === r.article_code && x.machine_code === r.machine_code));
+  assert.equal(relations.filter((r) => r.machine_code === "MP1" || r.machine_code === "MP3").length, 93); // Bobinas keeps exactly its 93 relations
+});
+
+test("the candidate publishes no nominal weights or recipes and invents nothing for the new articles", () => {
+  const articles = json(candidate.files, "articles.json").items;
+  assert.ok(articles.every((a) => a.version.nominal_weight_kg === null));
+  assert.equal(candidate.manifest.counts.articles_with_nominal_weight, 0);
+  assert.ok(candidate.manifest.warnings.some((w) => w.code === "NOMINAL_WEIGHTS_DEFERRED"));
+  assert.ok(buildBundle(sources, { ...CANDIDATE_SCOPE, nominal_weights: true }).manifest.counts.articles_with_nominal_weight > 0); // the switch is real, not cosmetic
+  assert.ok(!candidate.files.has("recipes.json"));
+});
+
+test("PACK (label Pack) and BLANCOS come from the sources; no Bobinas article changes unit or class", () => {
+  assert.deepEqual(json(candidate.files, "units.json").items, [{ code: "KG", label: "KG" }, { code: "MM", label: "MM" }, { code: "PACK", label: "Pack" }, { code: "UN", label: "UN" }]);
+  assert.ok(json(candidate.files, "material_classes.json").items.some((c) => c.code === "BLANCOS" && c.name === "BLANCOS"));
+  const articles = json(candidate.files, "articles.json").items;
+  assert.ok(articles.every((a) => a.version.unit !== "Pack"));
+  assert.ok(articles.filter((a) => a.version.unit === "PACK").length > 0);
+  assert.deepEqual(articles.filter((a) => a.version.material_class === "BLANCOS").map((a) => a.code), ["10335"]); // sourced from MATERIALS
+  const relations = json(candidate.files, "article_machines.json").items;
+  const bobinasCodes = new Set(relations.filter((r) => r.machine_code === "MP1" || r.machine_code === "MP3").map((r) => r.article_code));
+  assert.ok(articles.filter((a) => bobinasCodes.has(a.code)).every((a) => a.version.unit !== "PACK" && a.version.material_class !== "BLANCOS"));
+  assert.equal(candidate.manifest.warnings.find((w) => w.code === "UNIT_LABEL_PLACEHOLDER").count, 3);
+});
+
+test("the candidate shifts keep Bobinas as is and cover each sector without gaps or overlaps", () => {
+  const { schedules, shifts } = json(candidate.files, "shifts.json");
+  assert.deepEqual(schedules.filter((s) => s.sector === "BOBINAS"), json(buildBundle(sources).files, "shifts.json").schedules);
+  const hours = (sector) => schedules.filter((s) => s.sector === sector).map((s) => `${s.shift} ${s.starts_at}-${s.ends_at}`);
+  assert.deepEqual(hours("REBOBINADO"), ["DIA 06:00-18:00", "NOCHE 18:00-06:00"]);
+  assert.deepEqual(hours("CONVERSION"), ["MANANA 06:00-14:00", "TARDE 14:00-22:00", "NOCHE 22:00-06:00"]);
+  assert.ok(schedules.every((s) => s.timezone === "America/La_Paz" && s.valid_from === "2026-01-01" && s.valid_to === null));
+  assert.deepEqual(shifts.map((s) => [s.code, s.name]), [["DIA", "Día"], ["NOCHE", "Noche"], ["MANANA", "Mañana"], ["TARDE", "Tarde"]]);
+  validateSchedules(schedules);
+});
+
+test("the four central forms are byte-identical and stay bound to MP1/MP3 only", () => {
+  const approved = buildBundle(sources);
+  for (const name of ["forms/VINTO-P1-03.json", "forms/VINTO-P1-06.json", "forms/VINTO-P1-19.json", "forms/VINTO-P1-20.json", "profiles.json", "workflows.json"]) {
+    assert.equal(candidate.files.get(name), approved.files.get(name), name);
+  }
+  assert.deepEqual(candidate.manifest.scope.machines, ["MP1", "MP3"]);
+  assert.deepEqual(candidate.manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
+});
+
+test("the candidate is reproducible byte for byte and passes every validation", () => {
+  const again = buildBundle(sources, structuredClone(CANDIDATE_SCOPE));
+  assert.deepEqual([...again.files], [...candidate.files]);
+  validateBundle(candidate);
+});
+
+test("candidate declarations fail clearly when they drift from the sources", () => {
+  const failsCandidate = (change, pattern) => failsScope((() => { const s = structuredClone(CANDIDATE_SCOPE); change(s); return s; })(), pattern);
+  failsCandidate((s) => { s.unit_aliases = {}; s.unit_labels = {}; }, /Unidad con código inválido: "Pack"/); // without the alias the catalog "Pack" is rejected, never silently accepted
+  failsCandidate((s) => { s.unit_labels = { PAQUETE: "Paquete" }; }, /unit_labels declara la unidad PAQUETE/);
+  failsCandidate((s) => { s.unit_labels = { pack: "Pack" }; }, /unit_labels/);
+  failsCandidate((s) => { s.nominal_weights = "no"; }, /nominal_weights debe ser booleano/);
+  failsCandidate((s) => { s.sectors[2].machines.pop(); }, /GROUPS\.Conversión es \[/);
+  failsCandidate((s) => { s.sectors[1].machines[0].catalog = "NO-EXISTE"; }, /no existe en PRODUCTS_BY_MACHINE/);
+  failsCandidate((s) => { s.sectors[1].shifts[1][2] = "19:00"; }, /solapados|hueco/);
+  failsCandidate((s) => { s.sectors[2].shifts[2][1] = "Nocturno"; }, /Turno NOCHE declarado con nombres distintos/);
+});
+
+test("NOCHE is one shift master shared by the three sectors, each with its own hours", () => {
+  const { shifts, schedules } = json(candidate.files, "shifts.json");
+  assert.equal(shifts.filter((s) => s.code === "NOCHE").length, 1);
+  const night = schedules.filter((s) => s.shift === "NOCHE");
+  assert.deepEqual(night.map((s) => [s.sector, s.starts_at, s.ends_at]), [["BOBINAS", "19:00", "07:00"], ["REBOBINADO", "18:00", "06:00"], ["CONVERSION", "22:00", "06:00"]]);
+  for (const sector of ["BOBINAS", "REBOBINADO", "CONVERSION"]) validateSchedules(schedules.filter((s) => s.sector === sector)); // each sector is valid on its own
+  assert.equal(new Set(schedules.map((s) => `${s.shift}|${s.sector}|${s.valid_from}`)).size, schedules.length);
+});
+
+test("articles that share an official description under different codes are published as distinct articles (documented for VINTO)", () => {
+  const byDescription = new Map();
+  for (const a of json(candidate.files, "articles.json").items) byDescription.set(a.version.description.toLowerCase(), [...(byDescription.get(a.version.description.toLowerCase()) ?? []), a.code]);
+  const repeated = [...byDescription.values()].filter((codes) => codes.length > 1);
+  assert.deepEqual(repeated, [["BC-1216-200", "BC-1216-230"], ["BC-1242-200", "BC-1242-400", "BC-1242-440"], ["RB-1216-200", "RB-1216-230", "RB-1216-580"], ["RB-1242-200", "RB-1242-400", "RB-1242-440"], ["RO-1242-200", "RO-1242-400", "RO-1242-440"]]);
+});
+
+test("a candidate bundle can only be written to a new or empty directory outside the approved bundle", () => {
+  const root = mkdtempSync(join(tmpdir(), "seed-guard-"));
+  try {
+    const approved = join(root, "seed_data");
+    mkdirSync(join(approved, "forms"), { recursive: true });
+    writeFileSync(join(approved, "manifest.json"), "{}");
+    const rejects = (dir, pattern) => assert.throws(() => assertSafeCandidateOut(dir, approved), (e) => e instanceof SeedExportError && pattern.test(e.message), dir);
+    rejects(approved, /no puede ser el bundle aprobado/);
+    rejects(`${approved}${sep}`, /no puede ser el bundle aprobado/);
+    rejects(join(approved, "forms"), /no puede ser el bundle aprobado/); // inside it
+    rejects(join(approved, "nuevo", "mas"), /no puede ser el bundle aprobado/); // new, but inside it
+    rejects(root, /no puede ser el bundle aprobado/); // a parent that would contain it
+    rejects(join(root, "seed_data", "..", "seed_data"), /no puede ser el bundle aprobado/);
+    const full = join(root, "full");
+    mkdirSync(full);
+    writeFileSync(join(full, "x.json"), "{}");
+    rejects(full, /nuevo o vacío/); // non-empty: the cleanup of stale *.json must never run on someone else's files
+    assertSafeCandidateOut(join(root, "candidate"), approved); // new
+    assertSafeCandidateOut(join(root, "deep", "er", "candidate"), approved); // new, parents do not exist yet
+    const empty = join(root, "empty");
+    mkdirSync(empty);
+    assertSafeCandidateOut(empty, approved);
+    assert.deepEqual(readdirSync(approved).sort(), ["forms", "manifest.json"]); // nothing was touched
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the CLI never writes a candidate over the approved bundle and --check keeps verifying the approved one", () => {
+  const run = (...args) => spawnSync(process.execPath, [join(ROOT, "scripts", "export-seed-data.mjs"), ...args], { encoding: "utf8" });
+  const before = [...readdirSync(DEFAULT_OUT, { recursive: true })].sort();
+  for (const args of [["--scope", "candidate"], ["--scope", "candidate", "--out", DEFAULT_OUT], ["--scope", "candidate", "--out", join(DEFAULT_OUT, "forms")], ["--scope", "candidate", "--out", join(DEFAULT_OUT, "..")],
+    ["--scope", "candidate", "--check"], ["--scope", "candidate", "--check", "--out", DEFAULT_OUT], ["--scope", "nope", "--out", join(tmpdir(), "seed-never")], ["--scope", "--out", join(tmpdir(), "seed-never")]]) {
+    const result = run(...args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.match(result.stderr, /Exportación detenida/);
+  }
+  assert.deepEqual([...readdirSync(DEFAULT_OUT, { recursive: true })].sort(), before);
+  assert.deepEqual(compareWithDisk(DEFAULT_OUT, buildBundle(sources).files), []);
+  const check = run("--check");
+  assert.equal(check.status, 0);
+  assert.match(check.stdout, /Bundle al día \(14 archivos\)/);
+  assert.equal(run("--scope", "approved", "--check").status, 0);
+  const out = mkdtempSync(join(tmpdir(), "seed-cli-"));
+  try {
+    assert.equal(run("--scope", "candidate", "--out", out).status, 0);
+    assert.equal(readFileSync(join(out, "manifest.json"), "utf8"), candidate.files.get("manifest.json"));
+    assert.equal(run("--scope", "candidate", "--out", out).status, 1); // second run into a non-empty directory
+  } finally { rmSync(out, { recursive: true, force: true }); }
 });
