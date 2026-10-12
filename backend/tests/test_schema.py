@@ -123,7 +123,7 @@ class SchemaTests(unittest.TestCase):
               AND table_type='BASE TABLE'
         """).fetchall())
         self.assertEqual(expected,actual)
-        self.assertEqual(len(actual),41)  # 39 from 0001 + article_version_spec and bobbin_sequence from 0004
+        self.assertEqual(len(actual),42)  # 39 from 0001 + article_version_spec and bobbin_sequence from 0004 + user_sector from 0006
         missing = self.connection.execute("""
             SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname IN ('vinto_master','vinto_config','vinto_txn','vinto_audit') AND c.relkind='r'

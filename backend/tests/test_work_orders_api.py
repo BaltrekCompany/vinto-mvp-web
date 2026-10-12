@@ -106,7 +106,7 @@ class WorkOrderApiCase(unittest.IsolatedAsyncioTestCase):
         cls.users = {}
         for profile in PROFILES:
             password = "pw-" + secrets.token_urlsafe(18)
-            created = create_user(cls.connection, username=f"woapi.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password)
+            created = create_user(cls.connection, username=f"woapi.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password, sectors=("BOBINAS",))
             cls.users[profile] = (created, password)
         cls.cookies = {}
 

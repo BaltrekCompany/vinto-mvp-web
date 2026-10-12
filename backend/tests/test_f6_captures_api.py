@@ -13,7 +13,7 @@ from uuid import uuid4
 import psycopg
 from pydantic import SecretStr
 
-from app import capture_service
+from app import capture_service as _capture_service
 from app.auth.service import create_user
 from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
@@ -22,6 +22,13 @@ try:
     from test_assignments_api import PROFILES, call, order_body
 except ModuleNotFoundError:
     from tests.test_assignments_api import PROFILES, call, order_body
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+capture_service = internal(_capture_service)
 
 STATE = {}
 VALUES = {"cantidad_fardos": 10, "punto_merma": "recorte_maquina", "tipo_producto": "hoja_doble", "peso_kg": "125.50", "observaciones": "ok"}
@@ -47,7 +54,7 @@ class CaptureApiCase(unittest.IsolatedAsyncioTestCase):
         cls.users, cls.cookies = {}, {}
         for profile in PROFILES:
             password = "pw-" + secrets.token_urlsafe(18)
-            cls.users[profile] = (create_user(cls.connection, username=f"capapi.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password), password)
+            cls.users[profile] = (create_user(cls.connection, username=f"capapi.{profile.lower()}", display_name=profile.title(), profile_code=profile, password=password, sectors=("BOBINAS",)), password)
 
     @classmethod
     def tearDownClass(cls):

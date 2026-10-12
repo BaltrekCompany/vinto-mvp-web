@@ -49,3 +49,11 @@ class InvalidSessionError(AuthError):
 
     def __init__(self):
         super().__init__("Sesión no válida")
+
+
+class UserNotFoundError(AuthError):
+    """El usuario no existe."""
+
+
+class SectorNotFoundError(AuthError):
+    """El sector no existe."""

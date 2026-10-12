@@ -291,8 +291,8 @@ cualquier máquina, OT, asignación, captura o Bobina de un sector no operativo 
 
 **Qué NO hace.** Habilitar un sector **no concede permisos**: los permisos siguen siendo por *perfil* (`app/auth/permissions.py`) y no dependen de sectores ni
 de máquinas (`app/sectors.py` no importa `app.auth` ni al revés). Lo que sí cambia es el alcance de los **datos**: al habilitar un sector, *todas* sus máquinas
-pasan a ser operables por los perfiles que ya tienen el permiso correspondiente. No existe autorización por máquina o por sector; si VINTO la necesita, es
-un diseño aparte (ver M1-B).
+pasan a ser operables por los perfiles que ya tienen el permiso correspondiente **y la concesión del sector** (ver «Autorización por sector» más abajo, M1-C1).
+No existe autorización por máquina; si VINTO la necesita, se añade sobre este modelo sin cambiarlo.
 
 **Cómo se incorporará un sector nuevo** (REBOBINADO o CONVERSION), solo cuando VINTO haya aprobado los datos:
 
@@ -313,6 +313,35 @@ las mismas operaciones con el sector habilitado (deben funcionar) y deshabilitad
 
 **Limitaciones conocidas**: `MACHINE_OUTSIDE_SCOPE` dice «órdenes de Bobinas»; `GET /api/captures/count` no exige sesión y cuenta por *nombre* de sector (no por
 alcance); el reintento exacto de una captura F3 de un sector deshabilitado responde 409 (F6 y Calidad: 404).
+
+## Autorización por sector (M1-C1)
+
+El perfil decide **qué** puede hacer un usuario (matriz sin cambios: 5 perfiles, 10 permisos); la **concesión de sector** decide **dónde**. El alcance efectivo de
+una petición es `sectores operativos (app/sectors.py) ∩ sectores concedidos al usuario`.
+
+- **Persistencia**: `vinto_master.user_sector (user_id, sector_id)`, migración aditiva `0006_user_sector_grants.sql` (PK compuesta: no admite duplicados; auditada con
+  el trigger genérico). Sin filas = **ningún sector**: la ausencia de una concesión nunca amplía el acceso. No hay perfil ni bandera de administrador que la omita.
+- **Lectura**: las concesiones se leen de la base en cada petición junto con la sesión (`AuthenticatedUser.sectors`), así que revocar una tiene efecto inmediato sin
+  cerrar sesiones. Nunca se confía en un sector o máquina enviado por el cliente: el alcance sale de la sesión.
+- **Aplicación**: todos los servicios de OT, asignaciones, capturas F6/F3, Bobinas y Calidad reciben `sectors=` desde el router (`user.sectors`) y filtran por
+  `scoped_sector_codes(sectors)`. Fuera de alcance equivale a inexistente (404, o `MACHINE_OUTSIDE_SCOPE` 422 al crear/consultar por máquina) y no se escribe nada.
+  El alcance es **obligatorio y sin valor por defecto**: omitir `sectors` es un `TypeError` y `sectors=None` lanza `SectorConfigError`; nunca significa «todos». Un
+  llamador interno sin usuario (scripts, pruebas de servicio) debe pedir el alcance amplio explícitamente (`operational_sector_codes()`; las pruebas lo hacen con
+  `tests/scope_helpers.py`). Un test AST verifica que ningún router lo omita y otro que ninguna función de servicio recupere un valor por defecto.
+- **Concesiones inertes**: conceder REBOBINADO o CONVERSION no los habilita; siguen bloqueados mientras `app/sectors.py` no los marque como operativos.
+- **Compatibilidad**: la migración concede BOBINAS a todo usuario **existente** y activo con uno de los cinco perfiles (JEFATURA, SUPERVISION, OPERACION, CALIDAD,
+  DATA_BALTREK), de modo que conservan exactamente el acceso actual (DATA_BALTREK, sus lecturas de OT y asignaciones). No toca la matriz de permisos: DATA_BALTREK
+  sigue sin `work_order.manage`, `assignment.manage`, `production.capture`, `quality.capture` ni `quality.release`. Los usuarios **nuevos** empiezan sin ninguna
+  concesión. Cada fila del backfill queda auditada (`request_id = migration:0006_user_sector_grants`).
+- **Despliegue coordinado**: DEV (y producción) siguen en 5 migraciones. Este código **exige** la tabla `vinto_master.user_sector`: hay que aplicar la 0006 (respaldo, `migrate.py
+  --check`, luego `migrate.py`) **antes o a la vez** que el backend nuevo; con el backend nuevo y sin la 0006 las lecturas de sesión fallan. No desplegar uno sin lo otro.
+- **Altas**: `create_user(..., sectors=("BOBINAS",))` / `python create_user.py ... --sector BOBINAS` (repetible); sin `--sector` el usuario no accede a ningún sector.
+  `app.auth.grants.grant_sector / revoke_sector` son idempotentes y quedan auditados. No hay endpoint HTTP de administración todavía.
+- **Por máquina (futuro)**: se añadiría una tabla `user_machine` que solo *restringe* dentro de los sectores ya concedidos; no requiere cambiar `user_sector`.
+
+`GET /api/captures/count` sigue sin exigir sesión (hallazgo previo, **no** modificado aquí porque cambiaría un contrato consumido por el frontend). Debe quedar
+protegido en un PR aparte: exigir sesión (`production.capture` o `catalog.read`) y contar solo los sectores del alcance del usuario (`user.sectors`), manteniendo
+503 ante falta de base de datos.
 
 ## Órdenes de trabajo BASE (Bobinas)
 

@@ -14,16 +14,26 @@ from uuid import uuid4
 
 import psycopg
 
-from app import capture_service
-from app.assignments import service as assignments
+from app import capture_service as _capture_service
+from app.assignments import service as _assignments
 from app.auth.service import create_user
-from app.bobbins import service as bobbins
+from app.bobbins import service as _bobbins
 from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, CaptureIdempotencyConflictError, CaptureValidationError,
                                 FormNotAvailableError)
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.seed.bundle import load_bundle
-from app.work_orders import service as work_orders
+from app.work_orders import service as _work_orders
 from app.work_orders.service import LineInput
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+capture_service = internal(_capture_service)
+assignments = internal(_assignments)
+bobbins = internal(_bobbins)
+work_orders = internal(_work_orders)
 
 BUNDLE = load_bundle()
 STATE = {}

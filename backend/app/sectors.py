@@ -65,3 +65,23 @@ def operational_sector_codes() -> tuple[str, ...]:
 
 def is_operational_sector(code) -> bool:
     return isinstance(code, str) and code in _OPERATIONAL
+
+
+def scoped_sector_codes(sectors) -> tuple[str, ...]:
+    """Sectores visibles para una operación: la intersección de los operativos con los autorizados al usuario.
+
+    El alcance es OBLIGATORIO y no tiene valor por defecto: omitirlo (o pasar None) es un error, nunca «todos los sectores». Un llamador interno
+    sin usuario (scripts, pruebas de servicio) que necesite acceso amplio debe pedirlo explícitamente con `operational_sector_codes()`; los routers
+    pasan `user.sectors` (verificado por test). Una colección vacía significa NINGÚN sector: la ausencia de una concesión nunca amplía el acceso.
+    Los códigos desconocidos o no operativos se descartan.
+    """
+    if sectors is None:
+        raise SectorConfigError("El alcance de sectores es obligatorio: None no significa «todos»; indica los sectores explícitamente")
+    if isinstance(sectors, (str, bytes)):
+        raise SectorConfigError("Los sectores autorizados deben ser una colección de códigos, no un texto")
+    allowed = set(sectors)
+    return tuple(code for code in _OPERATIONAL if code in allowed)
+
+
+def in_scope(code, sectors) -> bool:
+    return isinstance(code, str) and code in scoped_sector_codes(sectors)

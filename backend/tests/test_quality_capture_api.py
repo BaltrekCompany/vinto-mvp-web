@@ -20,9 +20,17 @@ except ModuleNotFoundError:
     import tests.test_f3_bobbins_api as f3
     from tests.test_assignments_api import call
 
-from app import capture_service
+from app import capture_service as _capture_service
 from app.ephemeral_db import build_reference_template, connect, drop_database
-from app.quality import capture_service as quality_captures
+from app.quality import capture_service as _quality_captures
+
+try:
+    from scope_helpers import internal
+except ModuleNotFoundError:
+    from tests.scope_helpers import internal
+
+capture_service = internal(_capture_service)
+quality_captures = internal(_quality_captures)
 
 FORM = "QA-TEST-01"
 FIELDS = (("humedad_pct", "Humedad", "decimal", True), ("muestras", "Muestras", "integer", False), ("resultado", "Resultado visual", "text", True),
@@ -595,9 +603,9 @@ class SchemaTests(QualityCaptureCase):
     def test_0005_is_registered_by_the_normal_migration_mechanism(self):
         from migrate import read_migrations
         names = [m.filename for m in read_migrations()]
-        self.assertEqual(names[-1], "0005_quality_capture_bobbin.sql")
+        self.assertEqual(names[4], "0005_quality_capture_bobbin.sql")
         applied = self.connection.execute("SELECT version, filename FROM vinto_meta.schema_migration ORDER BY version").fetchall()
-        self.assertEqual(applied[-1], (5, "0005_quality_capture_bobbin.sql"))
+        self.assertEqual(applied[4], (5, "0005_quality_capture_bobbin.sql"))
         self.assertEqual([r[0] for r in applied], list(range(1, len(names) + 1)))
 
 

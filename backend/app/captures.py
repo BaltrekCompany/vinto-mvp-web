@@ -83,7 +83,7 @@ def submit_capture(body: CaptureIn, response: Response, user: AuthenticatedUser 
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id)."""
     result = capture_service.submit_production_capture(
         connection, actor_id=user.user_id, capture_id=body.capture_id, form_code=body.form_code, assignment_id=body.assignment_id,
-        device_key=body.device_key, values=body.values, request_id=str(uuid.uuid4()))
+        device_key=body.device_key, values=body.values, request_id=str(uuid.uuid4()), sectors=user.sectors)
     response.status_code = 201 if result.created else 200
     return result_out(result)
 
@@ -91,11 +91,11 @@ def submit_capture(body: CaptureIn, response: Response, user: AuthenticatedUser 
 @router.get("", response_model=list[CaptureOut], responses=_CAPTURE_ERRORS)
 def list_captures(assignment_id: UUID | None = None, machine_code: str | None = Query(default=None, max_length=64), operating_date: date | None = None,
                   limit: int = Query(default=capture_service.DEFAULT_LIST_LIMIT, ge=1, le=capture_service.MAX_LIST_LIMIT),
-                  _user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
+                  user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
     return [capture_out(v) for v in capture_service.list_captures(connection, assignment_id=assignment_id, machine_code=machine_code,
-                                                                   operating_date=operating_date, limit=limit)]
+                                                                   operating_date=operating_date, limit=limit, sectors=user.sectors)]
 
 
 @router.get("/{capture_id}", response_model=CaptureOut, responses=_CAPTURE_ERRORS)
-def get_capture(capture_id: str, _user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
-    return capture_out(capture_service.get_capture(connection, capture_id))
+def get_capture(capture_id: str, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
+    return capture_out(capture_service.get_capture(connection, capture_id, sectors=user.sectors))

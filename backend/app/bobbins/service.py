@@ -21,7 +21,7 @@ from app import capture_service as cs
 from app.assignments.errors import AssignmentNotFoundError
 from app.bobbins.errors import BobbinNotFoundError
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError
-from app.sectors import operational_sector_codes
+from app.sectors import scoped_sector_codes
 
 FORM_CODE = "VINTO-P1-03"
 REASON = "register bobbin production"
@@ -79,26 +79,26 @@ def _bobbin_view(row) -> BobbinView:
     return BobbinView(*r)
 
 
-def _capture_view(connection, capture_id) -> cs.CaptureView:
-    rows = connection.execute(cs._VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(operational_sector_codes()), capture_id)).fetchall()
+def _capture_view(connection, capture_id, sectors) -> cs.CaptureView:
+    rows = connection.execute(cs._VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(scoped_sector_codes(sectors)), capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return cs._to_view(connection, rows[0])
 
 
-def get_bobbin(connection, bobbin_id) -> BobbinView:
+def get_bobbin(connection, bobbin_id, *, sectors) -> BobbinView:
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
-    row = connection.execute(_BOBBIN_SQL + " AND b.id = %s", (list(operational_sector_codes()), bobbin_id)).fetchone()
+    row = connection.execute(_BOBBIN_SQL + " AND b.id = %s", (list(scoped_sector_codes(sectors)), bobbin_id)).fetchone()
     if row is None:
         raise BobbinNotFoundError()
     return _bobbin_view(row)
 
 
-def _result(connection, capture_id, *, created) -> BobbinResult:
-    row = connection.execute(_BOBBIN_SQL + " AND b.source_capture_id = %s", (list(operational_sector_codes()), capture_id)).fetchone()
+def _result(connection, capture_id, *, created, sectors) -> BobbinResult:
+    row = connection.execute(_BOBBIN_SQL + " AND b.source_capture_id = %s", (list(scoped_sector_codes(sectors)), capture_id)).fetchone()
     if row is None:
         raise CaptureIdempotencyConflictError()
-    return BobbinResult(_bobbin_view(row), _capture_view(connection, capture_id), created=created, already_submitted=not created)
+    return BobbinResult(_bobbin_view(row), _capture_view(connection, capture_id, sectors), created=created, already_submitted=not created)
 
 
 def _context(connection, actor_id, request_id):
@@ -145,7 +145,7 @@ def _insert_quality_release(connection, bobbin_id) -> None:
     connection.execute("INSERT INTO vinto_txn.quality_release (bobbin_id, status) VALUES (%s, 'pending')", (bobbin_id,))
 
 
-def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id, device_key, values, request_id=None) -> BobbinResult:
+def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id, device_key, values, request_id=None, sectors) -> BobbinResult:
     """Registra una bobina F3 de forma atómica e idempotente (capture.id = capture_id del cliente)."""
     capture_id = cs._uuid(capture_id, CaptureValidationError)
     assignment_id = cs._uuid(assignment_id, AssignmentNotFoundError)
@@ -161,10 +161,10 @@ def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id,
         if existing is not None:
             if cs._existing_matches(connection, existing, actor_id=actor_id, form_code=FORM_CODE, assignment_id=assignment_id,
                                     device_key=device_key, values=values):
-                return _result(connection, capture_id, created=False)
+                return _result(connection, capture_id, created=False, sectors=sectors)
             raise CaptureIdempotencyConflictError()
 
-        context = cs.lock_active_assignment(connection, assignment_id)
+        context = cs.lock_active_assignment(connection, assignment_id, sectors)
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         form_version_id = cs.published_form_version(connection, FORM_CODE, context.machine_id)
         fields = cs.load_fields(connection, form_version_id)
@@ -183,4 +183,4 @@ def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id,
         bobbin_id = _insert_bobbin(connection, capture_id=capture_id, machine_id=context.machine_id, article_version_id=context.article_version_id,
                                    management_year=management_year, sequence=sequence, clean=clean, grammage=grammage)
         _insert_quality_release(connection, bobbin_id)
-    return _result(connection, capture_id, created=True)
+    return _result(connection, capture_id, created=True, sectors=sectors)
