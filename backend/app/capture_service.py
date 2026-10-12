@@ -30,7 +30,7 @@ from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, 
                                 CaptureValidationError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError,
                                 UnsupportedFormDefinitionError, UnsupportedFormError)
 from app.shifts import resolve_shift
-from app.work_orders.service import ALLOWED_SECTOR_CODES
+from app.sectors import operational_sector_codes
 
 FORM_CODE = "VINTO-P1-06"  # único formulario habilitado en este checkpoint
 REASON = "submit production capture"
@@ -276,7 +276,7 @@ def _to_view(connection, row) -> CaptureView:
 
 def get_capture(connection, capture_id) -> CaptureView:
     capture_id = _uuid(capture_id, CaptureNotFoundError)
-    rows = connection.execute(_VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(ALLOWED_SECTOR_CODES), capture_id)).fetchall()
+    rows = connection.execute(_VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(operational_sector_codes()), capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return _to_view(connection, rows[0])
@@ -284,7 +284,7 @@ def get_capture(connection, capture_id) -> CaptureView:
 
 def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT) -> list[CaptureView]:
     """Capturas F6 enviadas (submitted/closed), más recientes primero. Sin borradores."""
-    sql, params = _VIEW_SQL + " AND c.status IN ('submitted','closed')", [FORM_CODE, list(ALLOWED_SECTOR_CODES)]
+    sql, params = _VIEW_SQL + " AND c.status IN ('submitted','closed')", [FORM_CODE, list(operational_sector_codes())]
     for clause, value in ((" AND a.id = %s", assignment_id), (" AND m.code = %s", machine_code), (" AND c.operating_date = %s", operating_date)):
         if value is not None:
             sql += clause
@@ -328,7 +328,7 @@ def lock_active_assignment(connection, assignment_id) -> ActiveContext:
     """
     head = connection.execute(
         """SELECT a.machine_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
-           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(ALLOWED_SECTOR_CODES))).fetchone()
+           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(operational_sector_codes()))).fetchone()
     if head is None:
         raise AssignmentNotFoundError()
     _machine_lock(connection, head[0])  # serializa con activate/finish de la misma máquina

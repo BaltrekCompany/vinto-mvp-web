@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
-from app.work_orders.service import ALLOWED_SECTOR_CODES
+from app.sectors import operational_sector_codes
 
 QUALITY_STATUSES = ("pending", "released", "rejected")  # CHECK de quality_release en 0001
 DEFAULT_STATUS = "pending"
@@ -80,7 +80,7 @@ def _text(value):
 def list_quality_bobbins(connection, status: str = DEFAULT_STATUS) -> list[QualityBobbinView]:
     if status not in QUALITY_STATUSES:
         raise ValueError(f"Estado de calidad desconocido: {status!r}")
-    rows = connection.execute(_SQL, (status, list(ALLOWED_SECTOR_CODES))).fetchall()
+    rows = connection.execute(_SQL, (status, list(operational_sector_codes()))).fetchall()
     views = []
     for row in rows:
         r = list(row)
