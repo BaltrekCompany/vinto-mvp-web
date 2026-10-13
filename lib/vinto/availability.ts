@@ -50,8 +50,13 @@ export const sectorOf = (availability: Availability, code: string): SectorAvaila
 
 // Pantalla central que implementa cada formulario. Solo los formularios con pantalla (y que el backend habilita para la máquina) se pueden abrir.
 export type FormScreen = "p110" | "p116" | "p129";
-export const FORM_SCREENS: Readonly<Record<string, FormScreen>> = { "VINTO-P1-10": "p110", "VINTO-P1-16": "p116", "VINTO-P1-29": "p129" };
-export const screenFor = (formCode: string): FormScreen | null => FORM_SCREENS[formCode] ?? null;
+// Una pantalla solo se ofrece para el par (sector, formulario) que Home sabe enrutar: P1-10 y P1-29 en Rebobinado, P1-16 en Conversión. Un formulario que el backend publique en otro sector
+// (p. ej. P1-16 en Rebobinado) se informa como «sin pantalla central» y no se abre. El backend sigue decidiendo qué se publica; esto solo limita lo que la interfaz sabe dibujar.
+export const SECTOR_SCREENS: Readonly<Record<string, Readonly<Record<string, FormScreen>>>> = {
+    [REBOBINADO_SECTOR]: { "VINTO-P1-10": "p110", "VINTO-P1-29": "p129" },
+    [CONVERSION_SECTOR]: { "VINTO-P1-16": "p116" },
+};
+export const screenFor = (sectorCode: string, formCode: string): FormScreen | null => SECTOR_SCREENS[sectorCode]?.[formCode] ?? null;
 
 export type SectorView =
     | { kind: "disabled" } // el backend no expone el sector a esta sesión (no operativo y/o sin concesión)
@@ -72,8 +77,8 @@ export const CONVERSION_DISABLED_TITLE = "Conversión no está habilitado";
 export const CONVERSION_DISABLED_MESSAGE = "El backend no habilita Conversión para tu sesión: el sector no es operativo o no tienes concesión. No se registran capturas centrales ni se usan datos de demostración ni registros locales como respaldo.";
 
 // Formularios que se pueden ofrecer en una máquina: los que el backend publica Y que tienen pantalla central; el resto se informan como «sin pantalla».
-export function offeredForms(machine: MachineAvailability): { form: FormRef; screen: FormScreen | null }[] {
-    return machine.forms.map((form) => ({ form, screen: screenFor(form.code) }));
+export function offeredForms(sectorCode: string, machine: MachineAvailability): { form: FormRef; screen: FormScreen | null }[] {
+    return machine.forms.map((form) => ({ form, screen: screenFor(sectorCode, form.code) }));
 }
 
 export const articlesOf = (machine: MachineAvailability | undefined): ArticleRef[] => machine?.articles ?? [];

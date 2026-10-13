@@ -39,7 +39,8 @@ const identity = q("SELECT current_database()")[0];
 if (identity !== database || !identity.endsWith("_test")) abort(`identidad de base inesperada: ${identity}`);
 check("S0 la base del recorrido es efímera (*_test) y su identidad se verificó con current_database()", true, identity);
 const DEV_SQL = "SELECT (SELECT count(*) FROM vinto_txn.capture)||'|'||(SELECT count(*) FROM vinto_txn.capture_group_row)||'|'||(SELECT count(*) FROM vinto_audit.audit_event)||'|'||(SELECT count(*) FROM vinto_auth.session)||'|'||(SELECT count(*) FROM vinto_auth.auth_event)||'|'||(SELECT count(*) FROM vinto_master.user_sector)||'|'||(SELECT count(*) FROM vinto_txn.work_order)";
-const DEV_READ = process.env.E2E_DEV_READ !== "off"; // E2E_DEV_READ=off: no se abre NINGUNA conexión de lectura a DEV (usado cuando el entorno prohíbe tocar DEV)
+// Lectura de DEV (solo SELECT, comprobación Z9) EXPLÍCITAMENTE opt-in: sin la variable o con cualquier valor distinto de "on" NO se abre ninguna conexión a DEV. `E2E_DEV_READ=on` solo con autorización expresa.
+const DEV_READ = process.env.E2E_DEV_READ === "on";
 const devBefore = DEV_READ ? psql("vinto", DEV_SQL)[0] : "omitido";
 
 function client() {

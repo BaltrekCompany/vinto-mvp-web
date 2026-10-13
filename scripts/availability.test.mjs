@@ -40,10 +40,10 @@ test("rebobinadoView: sin sector o sin máquinas = deshabilitado; con máquinas 
 
 test("los formularios ofrecidos son solo los que el backend publica para la máquina; sin pantalla no se abren", () => {
   const view = rebobinadoView(parseAvailability(payload([REB])));
-  assert.deepEqual(offeredForms(view.sector.machines[0]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-10", "p110"]]);
-  assert.deepEqual(offeredForms(view.sector.machines[1]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-29", "p129"]]);
-  assert.equal(screenFor("VINTO-P1-99"), null);
-  assert.deepEqual(offeredForms({ code: "X", name: "X", forms: [{ code: "VINTO-P1-99", name: "n", version_number: 1 }] }).map((o) => o.screen), [null]);
+  assert.deepEqual(offeredForms("REBOBINADO", view.sector.machines[0]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-10", "p110"]]);
+  assert.deepEqual(offeredForms("REBOBINADO", view.sector.machines[1]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-29", "p129"]]);
+  assert.equal(screenFor("REBOBINADO", "VINTO-P1-99"), null);
+  assert.deepEqual(offeredForms("REBOBINADO", { code: "X", name: "X", forms: [{ code: "VINTO-P1-99", name: "n", version_number: 1 }] }).map((o) => o.screen), [null]);
 });
 
 test("la ruta central de Rebobinado no usa almacenamiento del navegador ni datos demo/legacy", () => {
@@ -97,10 +97,11 @@ test("M6-A: conversionView depende solo de lo que el backend devuelve; Rebobinad
 
 test("M6-A: P1-16 tiene pantalla central solo si el backend lo publica para la máquina; P1-10 y P1-29 no cambian", () => {
   const view = conversionView(parseAvailability(payload([CONV])));
-  assert.deepEqual(offeredForms(view.sector.machines[0]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-16", "p116"]]);
-  assert.deepEqual(offeredForms(view.sector.machines[1]), []); // WALLY: sin relación formulario-máquina no se ofrece nada
-  assert.equal(screenFor("VINTO-P1-10"), "p110");
-  assert.equal(screenFor("VINTO-P1-29"), "p129");
+  assert.deepEqual(offeredForms("CONVERSION", view.sector.machines[0]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-16", "p116"]]);
+  assert.deepEqual(offeredForms("CONVERSION", view.sector.machines[1]), []); // WALLY: sin relación formulario-máquina no se ofrece nada
+  assert.equal(screenFor("REBOBINADO", "VINTO-P1-10"), "p110");
+  assert.equal(screenFor("REBOBINADO", "VINTO-P1-29"), "p129");
+  assert.equal(screenFor("CONVERSION", "VINTO-P1-16"), "p116");
 });
 
 test("M6-A: Home enruta Conversión al shell central y deja Rebobinado y Bobinas tal cual; los registros locales no se leen ni se borran", () => {
@@ -121,4 +122,33 @@ test("M6-A: la configuración productiva no cambia (Conversión sigue sin habili
   assert.match(policy, /CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)/);
   assert.equal(/P1-16/.test(code("backend/app/capture_service.py")), false);
   assert.equal(existsSync(join(root, "backend/seed_data/forms/VINTO-P1-16.json")), false); // el formulario candidato no está en el bundle oficial
+});
+
+test("M6-A review: una pantalla solo se ofrece para su sector; los cruces P1-16 en Rebobinado y P1-10/P1-29 en Conversión no abren nada", () => {
+  const f10 = { code: "VINTO-P1-10", name: "Registro de fardos", version_number: 1 }, f29 = { code: "VINTO-P1-29", name: "Producción Tubetera", version_number: 1 };
+  // el backend (hipotético) publica formularios en el sector equivocado: la interfaz no tiene pantalla para ese cruce
+  const rebWith16 = { code: "COPASA", name: "Copasa", forms: [FORM10, FORM16] }, convWithReb = { code: "GAMBINI", name: "Gambini", forms: [FORM16, f10, f29] };
+  assert.deepEqual(offeredForms("REBOBINADO", rebWith16).map((o) => [o.form.code, o.screen]), [["VINTO-P1-10", "p110"], ["VINTO-P1-16", null]]);
+  assert.deepEqual(offeredForms("CONVERSION", convWithReb).map((o) => [o.form.code, o.screen]), [["VINTO-P1-16", "p116"], ["VINTO-P1-10", null], ["VINTO-P1-29", null]]);
+  for (const [sector, code] of [["REBOBINADO", "VINTO-P1-16"], ["CONVERSION", "VINTO-P1-10"], ["CONVERSION", "VINTO-P1-29"], ["BOBINAS", "VINTO-P1-16"], ["", "VINTO-P1-10"], ["rebobinado", "VINTO-P1-10"]]) assert.equal(screenFor(sector, code), null, `${sector}/${code}`);
+  // el shell deshabilita el botón sin pantalla, dice «Sin pantalla central» y solo pide los historiales compatibles con el sector
+  const shell = read("components/vinto/sector-central.tsx");
+  assert.ok(shell.includes("disabled={screen === null}") && shell.includes("Sin pantalla central"));
+  assert.match(shell, /offeredForms\(code, machine\)/);
+  assert.match(shell, /filter\(formCode => screenFor\(code, formCode\) !== null\)/);
+  assert.equal(/FORM_SCREENS/.test(code("lib/vinto/availability.ts")), false); // ya no hay un mapa global código -> pantalla
+  // Home enruta cada pantalla solo dentro de su frente
+  const page = read("app/page.tsx");
+  assert.match(page, /rebCapture && front === "Rebobinado" && rebCapture\.screen === "p110"/);
+  assert.match(page, /rebCapture && front === "Rebobinado" && rebCapture\.screen === "p129"/);
+  assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p116"/);
+});
+
+test("M6-A review: E2E_DEV_READ está desactivado por defecto (solo `on` permite las lecturas de DEV ya existentes)", () => {
+  const e2e = read("scripts/e2e/m4a-e2e.mjs");
+  assert.match(e2e, /const DEV_READ = process\.env\.E2E_DEV_READ === "on"/);
+  assert.equal(/E2E_DEV_READ !== "off"/.test(e2e), false);
+  assert.match(e2e, /DEV_READ \? psql\("vinto", DEV_SQL\)\[0\] : "omitido"/); // las dos lecturas pasan por la bandera
+  assert.equal((e2e.match(/psql\("vinto"/g) ?? []).length, 2);
+  assert.equal(/psql\("vinto"/.test(read("scripts/e2e/m6a-e2e.mjs")), false); // el E2E de M6-A nunca lee DEV
 });

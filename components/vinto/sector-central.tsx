@@ -9,7 +9,7 @@ import { P110History, P116History, P129History } from "@/components/vinto/centra
 import { CentralStatus } from "@/components/vinto/central-status";
 import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
 import { Panel } from "@/components/vinto/panels";
-import { CONVERSION_DISABLED_MESSAGE, CONVERSION_DISABLED_TITLE, DISABLED_MESSAGE, DISABLED_TITLE, articlesOf, offeredForms, sectorView, type FormScreen, type SectorAvailability } from "@/lib/vinto/availability";
+import { CONVERSION_DISABLED_MESSAGE, CONVERSION_DISABLED_TITLE, DISABLED_MESSAGE, DISABLED_TITLE, articlesOf, offeredForms, screenFor, sectorView, type FormScreen, type SectorAvailability } from "@/lib/vinto/availability";
 import { listCapturesOf } from "@/lib/vinto/captures-api";
 import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActive, failureMessage, type CaptureContext } from "@/lib/vinto/orders";
 import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
@@ -82,7 +82,7 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, o
         if (!state.check.ok) return void toast.error(CONTEXT_MESSAGES[state.check.reason]);
         onOpenForm(screen, state.check.context);
     };
-    const forms = offeredForms(machine);
+    const forms = offeredForms(code, machine);
     return <div {...tag(code, "ejecucion")}><Panel title="Punto de captura" note="La máquina y sus formularios los publica el backend; la OT y el producto llegan desde Supervisión (asignación central).">
         <div className="flex flex-wrap gap-2">{sector.machines.map(m => <Button key={m.code} size="sm" variant={machine.code === m.code ? "default" : "outline"} className={machine.code === m.code ? "bg-[#146b4f]" : ""} onClick={() => setMachineCode(m.code)}>{m.code}</Button>)}</div></Panel>
         <ContextBanner state={state} machine={machine.code}/>
@@ -99,7 +99,7 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
     const workOrders = useWorkOrders(canReadOrders, onSessionLost);
     const assignments = useAssignments(canReadAssignments, onSessionLost);
     const machines = new Set(sector.machines.map(m => m.code));
-    const offered = new Set(sector.machines.flatMap(m => m.forms.map(f => f.code)));
+    const offered = new Set(sector.machines.flatMap(m => m.forms.map(f => f.code)).filter(formCode => screenFor(code, formCode) !== null)); // solo los historiales de formularios con pantalla en ESTE sector
     // Un historial por formulario que el backend publica en ESTE sector: los demás no se consultan (el recurso queda deshabilitado).
     const p110 = useResource(`captures-p110:${refreshKey}`, canCapture && offered.has(P1_10_CODE), signal => listCapturesOf(parseP110List, signal, 50, P1_10_CODE), onSessionLost);
     const p116 = useResource(`captures-p116:${refreshKey}`, canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);

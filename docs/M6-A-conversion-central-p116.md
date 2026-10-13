@@ -88,7 +88,9 @@ Línea base de `origin/main` medida en este entorno: backend 870 pruebas (2 fall
 | Regresión M4-A Rebobinado habilitada (`m4a-e2e.mjs` sin cambios funcionales) | **49/49** (en M4-A fueron 50: falta solo el chequeo de DEV, omitido a propósito) |
 | Regresión M4-A Rebobinado deshabilitada | **12/12** (13 en M4-A; mismo motivo) |
 
-`m4a-e2e.mjs` recibió un único cambio: la variable `E2E_DEV_READ=off` omite las lecturas de solo `SELECT` sobre DEV (comprobación Z9) para no abrir ninguna conexión a DEV. `m6a-e2e.mjs` nunca las hace.
+`m4a-e2e.mjs` recibió un único cambio: la lectura de solo `SELECT` sobre DEV (comprobación Z9) es **opt-in**. Sin la variable `E2E_DEV_READ`, o con cualquier valor distinto de `on`, no se abre ninguna conexión a DEV; solo `E2E_DEV_READ=on` (con autorización expresa) reactiva las lecturas que ya existían. `m6a-e2e.mjs` nunca las hace. Una prueba estática (`availability.test.mjs`) vigila el valor por defecto.
+
+**Pantallas por sector (revisión del PR #30):** `screenFor(sector, formCode)` solo reconoce P1-10 y P1-29 en Rebobinado y P1-16 en Conversión. Si el backend publicara un formulario en otro sector (P1-16 en Rebobinado; P1-10 o P1-29 en Conversión), la tarjeta muestra «Sin pantalla central» y queda deshabilitada, y Seguimiento no solicita su historial. No cambia ninguna regla del backend.
 
 ### Cobertura de los puntos A–L solicitados
 
