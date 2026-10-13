@@ -90,7 +90,7 @@ class AdminCase(sa.SectorAuthorizationCase):
 class AccessControlTests(AdminCase):
     def routes(self):
         some = uuid4()
-        return (("GET", "/api/admin/users", None), ("GET", f"/api/admin/users/{some}/sectors", None),
+        return (("GET", "/api/admin/users", None), ("GET", "/api/admin/sectors", None), ("GET", f"/api/admin/users/{some}/sectors", None),
                 ("POST", f"/api/admin/users/{some}/sectors/grant", {"sector_code": "BOBINAS"}), ("POST", f"/api/admin/users/{some}/sectors/revoke", {"sector_code": "BOBINAS"}))
 
     async def test_no_session_is_401_everywhere_and_writes_nothing(self):
@@ -124,7 +124,7 @@ class AccessControlTests(AdminCase):
 
     async def test_the_routes_are_get_and_post_only_and_the_cors_policy_is_unchanged(self):
         paths = {p: set(m) for p, m in app.openapi()["paths"].items() if p.startswith("/api/admin")}
-        self.assertEqual(set(paths), {"/api/admin/users", "/api/admin/users/{user_id}/sectors", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"})
+        self.assertEqual(set(paths), {"/api/admin/users", "/api/admin/sectors", "/api/admin/users/{user_id}/sectors", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"})
         self.assertTrue(all(methods <= {"get", "post"} for methods in paths.values()))
         cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
         self.assertEqual(sorted(cors.kwargs["allow_methods"]), ["GET", "POST"])
@@ -228,6 +228,55 @@ class ReadTests(AdminCase):
         await call("GET", "/api/admin/users", cookie=await self.admin_cookie())
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_master.user_sector"), before)
         self.assertEqual(self.grants_of(created.user_id), [])
+
+
+class SectorCatalogTests(AdminCase):
+    """GET /api/admin/sectors: the central catalogue the administration UI offers; read-only, from PostgreSQL, user.manage only."""
+
+    async def catalogue(self):
+        reply = await call("GET", "/api/admin/sectors", cookie=await self.admin_cookie())
+        self.assertEqual(reply.status, 200)
+        return reply.json()
+
+    async def test_catalogue_comes_from_the_database_with_active_and_operational_flags(self):
+        reply = await call("GET", "/api/admin/sectors", cookie=await self.admin_cookie())
+        self.assertEqual(reply.status, 200)
+        self.assertTrue(any(k.decode().lower() == "cache-control" and v == b"no-store" for k, v in reply.headers))
+        body = reply.json()
+        self.assertEqual([s["code"] for s in body], ["BOBINAS", FUTURE_SECTOR], "sorted by code; only sectors that exist in the database")
+        for sector in body:
+            self.assertEqual(set(sector), {"code", "name", "active", "operational"})
+        self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in body}, {"BOBINAS": (True, True), FUTURE_SECTOR: (True, False)})
+        self.assertNotRegex(reply.text.lower(), r"password|hash|token|session|secret|argon")
+        self.assertEqual(await self.catalogue(), body, "the order is stable")
+        for profile in ("DATA_BALTREK",):
+            self.assertEqual((await call("GET", "/api/admin/sectors", cookie=await self.cookie(profile))).status, 200)
+
+    async def test_active_inactive_and_non_operational_are_three_different_things(self):
+        self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in await self.catalogue()}["BOBINAS"], (True, True))
+        with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", FUTURE_SECTOR)):
+            self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in await self.catalogue()}[FUTURE_SECTOR], (True, True), "active AND enabled in code")
+            self.connection.execute("UPDATE vinto_master.sector SET active=false WHERE code=%s", (FUTURE_SECTOR,))
+            try:
+                listed = {s["code"]: (s["active"], s["operational"]) for s in await self.catalogue()}
+                self.assertEqual(listed[FUTURE_SECTOR], (False, False), "an inactive sector is listed, marked inactive and never operational, even if enabled in code")
+            finally:
+                self.connection.execute("UPDATE vinto_master.sector SET active=true WHERE code=%s", (FUTURE_SECTOR,))
+        self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in await self.catalogue()}[FUTURE_SECTOR], (True, False), "active but not enabled in code")
+
+    async def test_unrecognised_codes_in_the_database_are_not_offered(self):
+        self.connection.execute("INSERT INTO vinto_master.sector (code, name) VALUES ('EXTRANO', 'No reconocido')")
+        try:
+            self.assertNotIn("EXTRANO", [s["code"] for s in await self.catalogue()])
+        finally:
+            self.connection.execute("DELETE FROM vinto_master.sector WHERE code='EXTRANO'")
+
+    async def test_the_catalogue_is_read_only_and_does_not_change_anything(self):
+        before = (self.business(), self.sector_audit_total(), self.scalar("SELECT count(*) FROM vinto_master.user_sector"))
+        await self.catalogue()
+        self.assertEqual((await call("POST", "/api/admin/sectors", json_body={"sector_code": "BOBINAS"}, cookie=await self.admin_cookie())).status, 405)
+        self.assertEqual((await call("DELETE", "/api/admin/sectors", cookie=await self.admin_cookie())).status, 405)
+        self.assertEqual((self.business(), self.sector_audit_total(), self.scalar("SELECT count(*) FROM vinto_master.user_sector")), before)
 
 
 class GrantRevokeTests(AdminCase):
@@ -381,7 +430,7 @@ class UnavailableDatabaseTests(unittest.IsolatedAsyncioTestCase):
     async def test_postgres_unavailable_is_a_safe_503(self):
         closed = SecretStr(make_conninfo(settings.database_url.get_secret_value(), host="127.0.0.1", port=1))
         with patch.object(settings, "database_url", closed):
-            for method, path, body in (("GET", "/api/admin/users", None), ("GET", f"/api/admin/users/{uuid4()}/sectors", None),
+            for method, path, body in (("GET", "/api/admin/users", None), ("GET", "/api/admin/sectors", None), ("GET", f"/api/admin/users/{uuid4()}/sectors", None),
                                        ("POST", f"/api/admin/users/{uuid4()}/sectors/grant", {"sector_code": "BOBINAS"})):
                 reply = await call(method, path, json_body=body)
                 self.assertEqual((reply.status, reply.json()), (503, {"status": "error", "database": "unavailable"}), path)
