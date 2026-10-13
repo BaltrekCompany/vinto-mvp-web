@@ -1,0 +1,55 @@
+"use client";
+// HARNESS TEMPORAL DE QA (NO es una ruta del producto): se copia a app/qa-harness/page.tsx SOLO en un worktree de QA, se construye con NEXT_PUBLIC_API_URL apuntando al backend E2E aislado y se
+// elimina después (scripts/e2e/p129-e2e.mjs lo verifica). Monta el componente REAL P129CaptureForm con los clientes REALES (login, sesión, asignación activa de la máquina de prueba TUBETERA,
+// captura P1-29, logout). ?mode=lose-response / lose-request solo simulan fallos de red del navegador para probar la reconciliación; nunca cambian el backend.
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { P129CaptureForm } from "@/components/vinto/p1-29-capture";
+import { getActiveAssignment } from "@/lib/vinto/assignments-api";
+import { getCurrentUser, login, logout } from "@/lib/vinto/auth-api";
+import { contextFromActive, type CaptureContext } from "@/lib/vinto/orders";
+import type { P129Attempt } from "@/lib/vinto/p1-29";
+
+function installNetworkFault(mode: string | null) {
+    const w = window as unknown as { __faultInstalled?: boolean; __posts?: string[] };
+    if (w.__faultInstalled) return;
+    w.__faultInstalled = true; w.__posts = [];
+    const real = window.fetch.bind(window);
+    let armed = mode === "lose-response" || mode === "lose-request";
+    window.fetch = async (input, init) => {
+        const isCapturePost = (init?.method ?? "GET") === "POST" && String(input).endsWith("/api/captures");
+        if (isCapturePost) w.__posts!.push(String(init?.body ?? ""));
+        if (isCapturePost && armed && mode === "lose-request") { armed = false; throw new TypeError("simulated: request never reached the server"); }
+        const response = await real(input, init);
+        if (isCapturePost && armed && mode === "lose-response") { armed = false; throw new TypeError("simulated: response lost after the server processed the request"); }
+        return response;
+    };
+}
+
+function Harness() {
+    const params = useSearchParams();
+    const [user, setUser] = useState<{ display_name: string } | null>(null);
+    const [context, setContext] = useState<CaptureContext | null>(null);
+    const [status, setStatus] = useState("loading");
+    const [attempt, setAttempt] = useState<P129Attempt | null>(null);
+    const [creds, setCreds] = useState({ username: "", password: "" });
+    const load = useCallback(async () => {
+        const session = await getCurrentUser();
+        if (session.status !== "authenticated") { setUser(null); setContext(null); return void setStatus("anonymous"); }
+        setUser(session.user);
+        const active = await getActiveAssignment("TUBETERA");
+        if (!active.ok) return void setStatus(`assignment-error-${active.status}`);
+        const check = contextFromActive(active.data);
+        if (!check.ok) return void setStatus(`no-context-${check.reason}`);
+        setContext(check.context); setStatus("ready");
+    }, []);
+    useEffect(() => { installNetworkFault(params.get("mode")); void load(); }, [load, params]);
+    if (status === "anonymous") return <main className="p-6"><h1 className="font-black">Harness QA · Ingreso</h1>
+        <input id="qa-user" className="border p-2" value={creds.username} onChange={e => setCreds({ ...creds, username: e.target.value })}/>
+        <input id="qa-pass" type="password" className="border p-2" value={creds.password} onChange={e => setCreds({ ...creds, password: e.target.value })}/>
+        <button id="qa-login" onClick={async () => { const r = await login(creds.username, creds.password); if (r.status === "ok") { setStatus("loading"); void load(); } }}>Ingresar</button></main>;
+    if (status !== "ready" || !context) return <main className="p-6" id="qa-status">{status}</main>;
+    return <div><P129CaptureForm context={context} online attempt={attempt} setAttempt={setAttempt} back={() => undefined} onAssignmentChanged={() => setStatus("assignment-changed")} onSessionLost={() => setStatus("anonymous")} user={user}/>
+        <button id="qa-logout" onClick={async () => { await logout(); setUser(null); setContext(null); setStatus("anonymous"); }}>Cerrar sesión (harness)</button></div>;
+}
+export default function Page() { return <Suspense fallback={null}><Harness/></Suspense>; }

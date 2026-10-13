@@ -11,7 +11,7 @@ import { build } from "vite";
 
 import { freezeAttempt, parseCaptureOf, submitAttemptOf } from "../lib/vinto/capture-core.ts";
 import {
-  GROUPS_KEY, addRow, buildGroupedValues, buildGroups, canAddRow, canRemoveRow, emptyRow, errorsFor, groupedValuesParser, initialDrafts, initialRows, parseGroups, removeRow, setCell, validateGroup,
+  GROUPS_KEY, TECHNICAL_MAX_GROUP_ROWS, addRow, buildGroupedValues, buildGroups, canAddRow, canRemoveRow, emptyRow, errorsFor, groupedValuesParser, initialDrafts, initialRows, parseGroups, removeRow, setCell, validateGroup,
 } from "../lib/vinto/capture-groups.ts";
 
 const root = resolve(import.meta.dirname, "..").replace(/\\/g, "/");
@@ -86,6 +86,10 @@ test("rows: add respects the declared maximum and non-repeatable groups; remove 
   assert.equal(canAddRow(UNICO, addRow(UNICO, [], key)), false); // not repeatable: at most one
   assert.equal(canAddRow(EXTRAS, Array.from({ length: 500 }, () => row({}))), true); // no declared maximum: the client invents none
   assert.equal(canRemoveRow(EXTRAS, [row({})]), true);
+  const cap = Array.from({ length: TECHNICAL_MAX_GROUP_ROWS }, () => row({ etiqueta: "e" }));
+  assert.equal(canAddRow(EXTRAS, cap), false); // no declared maximum: only the TECHNICAL cap (1000) applies, so the UI cannot prepare an impossible capture
+  assert.equal(addRow(EXTRAS, cap, key), cap);
+  assert.equal(canAddRow(EXTRAS, cap.slice(1)), true);
 });
 
 test("rows: operations are immutable and keep the order of the remaining rows", () => {
@@ -123,6 +127,9 @@ test("validation: required fields, types, options, empty rows and limits are rep
   assert.equal(validateGroup(DETALLE, Array.from({ length: 4 }, () => row({ item: "A", cantidad: "1" }))).errors[0].message, "Detalle: máximo 3 filas.");
   assert.equal(validateGroup(UNICO, [row({ ref: "a" }), row({ ref: "b" })]).errors[0].message, "Único: máximo 1 filas.");
   assert.equal(validateGroup(EXTRAS, []).ok, true); // zero rows where the minimum is zero
+  const over = validateGroup(EXTRAS, Array.from({ length: TECHNICAL_MAX_GROUP_ROWS + 1 }, () => row({ etiqueta: "e" })));
+  assert.equal(over.errors[0].message, "Extras: máximo 1000 filas (límite técnico del sistema).");  // identified as a technical limit, not an industrial one
+  assert.equal(validateGroup(DETALLE, Array.from({ length: 4 }, () => row({ item: "A", cantidad: "1" }))).errors[0].message, "Detalle: máximo 3 filas."); // a declared maximum keeps its own message
   const optional = { code: "g", label: "G", repeatable: true, minRows: 0, maxRows: null, fields: [{ key: "x", label: "X", kind: "text", required: false }] };
   assert.equal(validateGroup(optional, [row({ x: "  " })]).errors[0].message, "La fila no tiene valores.");
 });
@@ -159,6 +166,18 @@ const envelope = (id, formCode, values) => ({
   work_order: { id: "22222222-2222-4222-8222-222222222222", number: "OT-1" }, line: { id: "55555555-5555-4555-8555-555555555555", line_code: "L1", pv_reference: "PV-1", article: { code: "A", description: "B" } }, values,
 });
 const ID = "11111111-1111-4111-8111-111111111111";
+
+test("parseGroups verifies the declared cardinality of every group when reading a response", () => {
+  const one = { item: "A", cantidad: 1 };
+  const base = { detalle: [one], extras: [], unico: [] };
+  assert.notEqual(parseGroups(SPECS, base), null);
+  assert.equal(parseGroups(SPECS, { ...base, detalle: [] }), null); // min_rows = 1
+  assert.notEqual(parseGroups(SPECS, { ...base, detalle: [one, one, one] }), null); // max_rows = 3
+  assert.equal(parseGroups(SPECS, { ...base, detalle: [one, one, one, one] }), null);
+  assert.equal(parseGroups(SPECS, { ...base, unico: [{ ref: "a" }, { ref: "b" }] }), null); // not repeatable
+  assert.notEqual(parseGroups(SPECS, { ...base, extras: Array.from({ length: TECHNICAL_MAX_GROUP_ROWS }, () => ({ etiqueta: "e" })) }), null);
+  assert.equal(parseGroups(SPECS, { ...base, extras: Array.from({ length: TECHNICAL_MAX_GROUP_ROWS + 1 }, () => ({ etiqueta: "e" })) }), null); // the technical cap also applies on reads
+});
 
 test("a grouped capture is parsed with the form's simple parser + groups and rejected if either part fails", () => {
   const parse = (value) => parseCaptureOf(value, groupedValuesParser(parseSimple, SPECS), "VINTO-TEST-GRP-1");
