@@ -1,0 +1,78 @@
+// node --test scripts/availability.test.mjs
+// M4-A · disponibilidad de Rebobinado verificada por el backend: parser estricto, vista habilitada/deshabilitada, formularios ofrecidos por máquina, y salvaguardas de código fuente
+// (sin localStorage ni respaldo demo en la ruta central, sin habilitar Rebobinado ni P1-10/P1-29 en la configuración productiva).
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { test } from "node:test";
+
+import { DISABLED_TITLE, articlesOf, offeredForms, parseAvailability, rebobinadoView, screenFor } from "../lib/vinto/availability.ts";
+
+const root = resolve(import.meta.dirname, "..");
+const read = (file) => readFileSync(join(root, file), "utf8").replace(/\r\n/g, "\n");
+const code = (file) => read(file).replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+const FORM10 = { code: "VINTO-P1-10", name: "Registro de fardos", version_number: 1 };
+const FORM29 = { code: "VINTO-P1-29", name: "Producción Tubetera", version_number: 2 };
+const payload = (sectors) => ({ sectors });
+const REB = { code: "REBOBINADO", name: "Rebobinado", machines: [{ code: "COPASA", name: "Copasa", forms: [FORM10], articles: [{ code: "ART-1", description: "Artículo ficticio" }] }, { code: "TUBETERA", name: "Tubetera", forms: [FORM29] }] };
+
+test("parseAvailability acepta la respuesta bien formada y conserva el orden", () => {
+  const parsed = parseAvailability(payload([REB]));
+  assert.deepEqual(parsed.sectors[0].machines.map((m) => m.code), ["COPASA", "TUBETERA"]);
+  assert.deepEqual(articlesOf(parsed.sectors[0].machines[0]).map((a) => a.code), ["ART-1"]);
+  assert.deepEqual(articlesOf(parsed.sectors[0].machines[1]), []);
+});
+
+test("parseAvailability es estricto: un elemento mal formado invalida toda la respuesta", () => {
+  for (const bad of [null, [], {}, { sectors: "x" }, payload([{ code: "R", name: "R" }]), payload([{ ...REB, machines: [{ code: "C", name: "C" }] }]),
+    payload([{ ...REB, machines: [{ code: "C", name: "C", forms: [{ code: "F", name: "n", version_number: 1.5 }] }] }]),
+    payload([{ ...REB, machines: [{ code: "C", name: "C", forms: [], articles: [{ code: "A" }] }] }])]) assert.equal(parseAvailability(bad), null);
+});
+
+test("rebobinadoView: sin sector o sin máquinas = deshabilitado; con máquinas = listo", () => {
+  assert.deepEqual(rebobinadoView(parseAvailability(payload([]))), { kind: "disabled" });
+  assert.deepEqual(rebobinadoView(parseAvailability(payload([{ code: "BOBINAS", name: "Bobinas", machines: [{ code: "MP1", name: "MP1", forms: [] }] }]))), { kind: "disabled" });
+  assert.deepEqual(rebobinadoView(parseAvailability(payload([{ ...REB, machines: [] }]))), { kind: "disabled" });
+  assert.equal(rebobinadoView(parseAvailability(payload([REB]))).kind, "ready");
+  assert.ok(DISABLED_TITLE.includes("no está habilitado"));
+});
+
+test("los formularios ofrecidos son solo los que el backend publica para la máquina; sin pantalla no se abren", () => {
+  const view = rebobinadoView(parseAvailability(payload([REB])));
+  assert.deepEqual(offeredForms(view.sector.machines[0]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-10", "p110"]]);
+  assert.deepEqual(offeredForms(view.sector.machines[1]).map((o) => [o.form.code, o.screen]), [["VINTO-P1-29", "p129"]]);
+  assert.equal(screenFor("VINTO-P1-99"), null);
+  assert.deepEqual(offeredForms({ code: "X", name: "X", forms: [{ code: "VINTO-P1-99", name: "n", version_number: 1 }] }).map((o) => o.screen), [null]);
+});
+
+test("la ruta central de Rebobinado no usa almacenamiento del navegador ni datos demo/legacy", () => {
+  for (const file of ["components/vinto/rebobinado-central.tsx", "components/vinto/central-form-history.tsx", "lib/vinto/availability.ts", "lib/vinto/production-api.ts"]) {
+    assert.equal(/localStorage|sessionStorage|document\.cookie|vinto-ot|vinto-asg|vinto-p1-records|form-definitions|GROUPS\b/.test(code(file)), false, file);
+  }
+});
+
+test("Home: Rebobinado se renderiza con RebobinadoCentral y el legacy queda en la rama alterna, no como respaldo", () => {
+  const page = read("app/page.tsx");
+  assert.match(page, /front === "Rebobinado" \? <RebobinadoCentral/);
+  assert.ok(page.includes("<RebobinadoCentral module={activeModule}") && page.includes("onSessionLost={sessionLost}/> : <>"));
+  assert.match(page, /P110CaptureForm/);
+  assert.match(page, /P129CaptureForm/);
+});
+
+test("BobbinasProgramming: las props genéricas son opcionales, así Bobinas no cambia", () => {
+  const source = read("components/vinto/bobinas-programming.tsx");
+  assert.match(source, /catalog\?:/);
+  assert.match(source, /sectorLabel\?:/);
+});
+
+test("la configuración productiva no habilita Rebobinado ni P1-10/P1-29 y no hay banderas de entorno", () => {
+  assert.match(read("backend/app/sectors.py"), /DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)/);
+  const service = read("backend/app/capture_service.py");
+  assert.match(service, /CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)/);
+  assert.equal(/CENTRAL_FORM_CODES[^\n]*P1-(10|29)/.test(service), false);
+  const access = read("backend/app/production_access.py");
+  assert.equal(/os\.environ|getenv/.test(access), false);
+  assert.match(access, /SET TRANSACTION READ ONLY/);
+  assert.equal(/INSERT|UPDATE |DELETE/.test(access.replace(/--[^\n]*/g, "")), false);
+});

@@ -269,14 +269,15 @@ test("component: a pending attempt locks every field, keeps the typed draft and 
   assert.match(markup, /value="12,5 kg"/);
 });
 
-test("component and clients never touch business storage or credentials; P1-10 is not wired into the app", () => {
+test("component and clients never touch business storage or credentials; P1-10 is wired only behind the backend-verified Rebobinado navigation (M4-A)", () => {
   const code = (file) => readFileSync(join(root, file), "utf8").replace(/\r\n/g, "\n").replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const file of ["components/vinto/p1-10-capture.tsx", "lib/vinto/p1-10.ts", "lib/vinto/p1-10-api.ts", "lib/vinto/captures-api.ts", "lib/vinto/capture-core.ts"]) {
     assert.equal(/localStorage|sessionStorage|vinto-p1-records|document\.cookie|Authorization/.test(code(file)), false, file);
   }
   assert.equal(/form-definitions/.test(code("components/vinto/p1-10-capture.tsx")) || /form-definitions/.test(code("lib/vinto/p1-10.ts")), false); // the capture does not bundle the 8,900-line definitions
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
-  assert.equal(/p1-10|P110/.test(page), false);
+  assert.match(page, /P110CaptureForm/); // M4-A: reachable only from the Rebobinado front, whose visibility the backend decides
+  assert.match(readFileSync(join(root, "components/vinto/rebobinado-central.tsx"), "utf8"), /useAvailability/);
   for (const dir of ["app/p1-10", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
   assert.ok(Object.keys(CONTEXT_NOTES).join() === "fecha,maquina,responsable,firma");
 });

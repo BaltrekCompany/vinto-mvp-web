@@ -319,9 +319,9 @@ test("component: a pending attempt locks fields and rows, keeps the typed draft 
   assert.equal((markup.match(/data-row="2"/g) ?? []).length, 2); // both groups restored with their two rows
 });
 
-test("P1-29 is not wired into the application: no route, no navigation, not in the central policy, not in the seed bundle", () => {
+test("P1-29 is wired only behind the backend-verified Rebobinado navigation (M4-A): no route, not in the central policy, not in the seed bundle", () => {
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
-  assert.equal(/components\/vinto\/p1-29-capture|lib\/vinto\/p1-29|P129CaptureForm/.test(page), false); // the legacy page may mention the old P1-29 form; the central capture is not wired
+  assert.match(page, /P129CaptureForm/); // M4-A: reachable only from the Rebobinado front, whose visibility the backend decides
   for (const dir of ["app/p1-29", "app/tubetera", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
   const service = readFileSync(join(root, "backend/app/capture_service.py"), "utf8");
   assert.match(service, /CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)/);
