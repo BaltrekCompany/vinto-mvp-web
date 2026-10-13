@@ -1,4 +1,4 @@
-"""Capturas: contador de seguimiento (GET /count) y capturas de producción F6 (POST, listado y detalle)."""
+"""Capturas: contador de seguimiento (GET /count) y capturas de producción centrales (POST, listado y detalle; hoy solo F6)."""
 
 import uuid
 from datetime import date
@@ -61,7 +61,7 @@ def capture_count(front: Front, user: AuthenticatedUser = Depends(require_permis
     return CaptureCount(front=front, count=count_captures(connection, front, user.sectors))
 
 
-# ---- capturas de producción F6 (VINTO-P1-06) ---------------------------------------------------------------------
+# ---- capturas de producción centrales (formularios de capture_service.CENTRAL_FORM_CODES; hoy F6 / VINTO-P1-06) ---------------------------------------------------------------------
 # /count se declara primero: "count" no debe interpretarse como un {capture_id}.
 
 _CAPTURE_ERRORS = {
@@ -86,10 +86,11 @@ def submit_capture(body: CaptureIn, response: Response, user: AuthenticatedUser 
 
 @router.get("", response_model=list[CaptureOut], responses=_CAPTURE_ERRORS)
 def list_captures(assignment_id: UUID | None = None, machine_code: str | None = Query(default=None, max_length=64), operating_date: date | None = None,
+                  form_code: str | None = Query(default=None, max_length=64),
                   limit: int = Query(default=capture_service.DEFAULT_LIST_LIMIT, ge=1, le=capture_service.MAX_LIST_LIMIT),
                   user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
     return [capture_out(v) for v in capture_service.list_captures(connection, assignment_id=assignment_id, machine_code=machine_code,
-                                                                   operating_date=operating_date, limit=limit, sectors=user.sectors)]
+                                                                   operating_date=operating_date, limit=limit, form_code=form_code, sectors=user.sectors)]
 
 
 @router.get("/{capture_id}", response_model=CaptureOut, responses=_CAPTURE_ERRORS)
