@@ -39,7 +39,9 @@ const identity = q("SELECT current_database()")[0];
 if (identity !== database || !identity.endsWith("_test")) abort(`identidad de base inesperada: ${identity}`);
 check("S0 la base del recorrido es efímera (*_test) y su identidad se verificó con current_database()", true, identity);
 const DEV_SQL = "SELECT (SELECT count(*) FROM vinto_txn.capture)||'|'||(SELECT count(*) FROM vinto_txn.capture_group_row)||'|'||(SELECT count(*) FROM vinto_audit.audit_event)||'|'||(SELECT count(*) FROM vinto_auth.session)||'|'||(SELECT count(*) FROM vinto_auth.auth_event)||'|'||(SELECT count(*) FROM vinto_master.user_sector)||'|'||(SELECT count(*) FROM vinto_txn.work_order)";
-const devBefore = psql("vinto", DEV_SQL)[0];
+// Lectura de DEV (solo SELECT, comprobación Z9) EXPLÍCITAMENTE opt-in: sin la variable o con cualquier valor distinto de "on" NO se abre ninguna conexión a DEV. `E2E_DEV_READ=on` solo con autorización expresa.
+const DEV_READ = process.env.E2E_DEV_READ === "on";
+const devBefore = DEV_READ ? psql("vinto", DEV_SQL)[0] : "omitido";
 
 function client() {
   let cookie = "";
@@ -371,8 +373,8 @@ if (phase === "enabled") {
   check("D7 con Rebobinado deshabilitado no se escribió ninguna captura ni OT en la base efímera", q("SELECT (SELECT count(*) FROM vinto_txn.capture)||'|'||(SELECT count(*) FROM vinto_txn.work_order)")[0] === "0|0");
   check("D8 sin sesiones activas de prueba tras los logouts", q("SELECT count(*) FROM vinto_auth.session WHERE revoked_at IS NULL AND expires_at > now()")[0] === "0");
 }
-const devAfter = psql("vinto", DEV_SQL)[0];
-check("Z9 DEV intacto: capturas | filas de grupo | auditoría | sesiones | auth_event | concesiones | OT idénticos antes y después (solo SELECT)", devBefore === devAfter, `${devBefore} -> ${devAfter}`);
+const devAfter = DEV_READ ? psql("vinto", DEV_SQL)[0] : "omitido";
+if (DEV_READ) check("Z9 DEV intacto: capturas | filas de grupo | auditoría | sesiones | auth_event | concesiones | OT idénticos antes y después (solo SELECT)", devBefore === devAfter, `${devBefore} -> ${devAfter}`);
 writeFileSync(join(outDir, `resultados-m4a-${phase}.json`), JSON.stringify({ phase, database, devBefore, devAfter, results }, null, 2));
 const fails = results.filter((r) => !r.ok);
 console.log(`\nTOTAL ${results.length} · PASS ${results.length - fails.length} · FAIL ${fails.length}`);

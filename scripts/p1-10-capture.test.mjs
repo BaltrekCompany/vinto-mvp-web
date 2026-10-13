@@ -277,7 +277,8 @@ test("component and clients never touch business storage or credentials; P1-10 i
   assert.equal(/form-definitions/.test(code("components/vinto/p1-10-capture.tsx")) || /form-definitions/.test(code("lib/vinto/p1-10.ts")), false); // the capture does not bundle the 8,900-line definitions
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
   assert.match(page, /P110CaptureForm/); // M4-A: reachable only from the Rebobinado front, whose visibility the backend decides
-  assert.match(readFileSync(join(root, "components/vinto/rebobinado-central.tsx"), "utf8"), /useAvailability/);
+  assert.match(readFileSync(join(root, "components/vinto/sector-central.tsx"), "utf8"), /useAvailability/); // M6-A: the shell is shared by sector; Rebobinado is its REBOBINADO configuration
+  assert.match(readFileSync(join(root, "components/vinto/rebobinado-central.tsx"), "utf8"), /code="REBOBINADO"/);
   for (const dir of ["app/p1-10", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
   assert.ok(Object.keys(CONTEXT_NOTES).join() === "fecha,maquina,responsable,firma");
 });
