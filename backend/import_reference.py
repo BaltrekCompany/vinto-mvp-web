@@ -6,9 +6,14 @@
   python import_reference.py --target dev --apply     importa en la base de desarrollo
 
 --target es obligatorio: nunca se elige una base de forma implícita.
+
+Barrera de DEV: `--target dev --apply` SOLO admite el bundle oficial aprobado (backend/seed_data) y rechaza cualquier bundle candidato (manifest con
+`scope.candidate: true`) o un directorio distinto del oficial, ANTES de abrir ninguna conexión. No existe opción para saltarla. Los candidatos se ensayan
+únicamente con `--target test` (bases *_test). El dry-run no escribe y no está sujeto a esta barrera.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -31,6 +36,32 @@ def open_connection(target: str):
     return psycopg.connect(settings.database_url.get_secret_value(), **kwargs)
 
 
+def is_candidate(manifest) -> bool:
+    scope = manifest.get("scope") if isinstance(manifest, dict) else None
+    return isinstance(scope, dict) and scope.get("candidate") is True
+
+
+def assert_dev_apply_allowed(bundle_directory: Path) -> None:
+    """`--target dev --apply` solo admite el bundle oficial. Lanza UnsafeDatabaseError (mensaje sin rutas ni secretos) si el directorio no es el oficial.
+
+    La comparación usa os.path.samefile: resuelve rutas equivalentes (.., mayúsculas, nombres 8.3), enlaces simbólicos y junctions, así que un alias del
+    oficial es el oficial y un enlace a otro directorio NO lo es.
+    """
+    try:
+        same = os.path.samefile(bundle_directory, BUNDLE_DIR)
+    except OSError:
+        same = False
+    if not same:
+        raise UnsafeDatabaseError("Importación a DEV rechazada: --target dev --apply solo admite el bundle oficial aprobado (backend/seed_data). "
+                                  "Un catálogo candidato o no promovido solo puede ensayarse con --target test.")
+
+
+def assert_bundle_not_candidate_for_dev(bundle) -> None:
+    if is_candidate(bundle.manifest):
+        raise UnsafeDatabaseError("Importación a DEV rechazada: el bundle es un CANDIDATO (scope.candidate) y no está aprobado por VINTO. "
+                                  "Solo puede ensayarse con --target test; su promoción a backend/seed_data requiere una revisión aparte.")
+
+
 def print_counts(counts: dict) -> None:
     for entity, numbers in counts.items():
         print(f"  {entity:<22} crear={numbers['create']:<4} ya_presentes={numbers['present']}")
@@ -43,10 +74,18 @@ def main(argv=None) -> int:
     parser.add_argument("--bundle", type=Path, default=BUNDLE_DIR, help="Directorio del bundle (por defecto backend/seed_data)")
     args = parser.parse_args(argv)
 
+    dev_apply = args.target == "dev" and args.apply
     try:
+        if dev_apply:
+            assert_dev_apply_allowed(args.bundle)  # antes de leer nada y de abrir cualquier conexión
         bundle = load_bundle(args.bundle)  # valida todo ANTES de abrir cualquier conexión
+        if dev_apply:
+            assert_bundle_not_candidate_for_dev(bundle)
     except BundleError as error:
         print(f"Bundle rechazado: {error}")
+        return 1
+    except UnsafeDatabaseError as error:
+        print(f"Importación detenida: {error}")
         return 1
     print(f"Bundle válido; source_checksum={bundle.source_checksum}")
 

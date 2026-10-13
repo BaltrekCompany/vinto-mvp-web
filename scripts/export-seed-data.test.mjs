@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import test from "node:test";
 
-import { CANDIDATE_SCOPE, DEFAULT_OUT, ROOT, assertSafeCandidateOut, DEFAULT_SCOPE, SCOPES, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageFingerprintScope, pageSemantics, q20Label, validateBundle, validateSchedules, writeBundle } from "./export-seed-data.mjs";
+import { CANDIDATE_REBOBINADO_SCOPE, CANDIDATE_SCOPE, DEFAULT_OUT, ROOT, assertSafeCandidateOut, DEFAULT_SCOPE, SCOPES, PAGE_FINGERPRINT_SCOPE, SeedExportError, buildBundle, compareWithDisk, grammageFromDescription, loadSources, pageFingerprint, pageFingerprintScope, pageSemantics, q20Label, validateBundle, validateSchedules, writeBundle } from "./export-seed-data.mjs";
 
 const sources = await loadSources();
 const clone = (value) => structuredClone(value);
@@ -525,7 +525,7 @@ const candidate = buildBundle(sources, CANDIDATE_SCOPE);
 
 test("the candidate scope is not the approved one and the approved bundle is still what is committed", () => {
   assert.notDeepEqual(CANDIDATE_SCOPE, DEFAULT_SCOPE);
-  assert.deepEqual(Object.keys(SCOPES), ["approved", "candidate"]);
+  assert.deepEqual(Object.keys(SCOPES).slice(0, 2), ["approved", "candidate"]); // the partial candidate is covered by its own tests below
   assert.equal(SCOPES.approved, DEFAULT_SCOPE);
   assert.deepEqual(compareWithDisk(DEFAULT_OUT, buildBundle(sources, SCOPES.approved).files), []);
   assert.notDeepEqual(compareWithDisk(DEFAULT_OUT, candidate.files), []);
@@ -679,4 +679,120 @@ test("the CLI never writes a candidate over the approved bundle and --check keep
     assert.equal(readFileSync(join(out, "manifest.json"), "utf8"), candidate.files.get("manifest.json"));
     assert.equal(run("--scope", "candidate", "--out", out).status, 1); // second run into a non-empty directory
   } finally { rmSync(out, { recursive: true, force: true }); }
+});
+
+// ---- M1-B2-c2a · partial candidate scope: Bobinas + Rebobinado -------------------------------------------------------------------------
+// TECHNICAL preparation only. VINTO has not approved these data; the scope cannot be promoted to backend/seed_data nor imported to DEV.
+
+const rebobinado = buildBundle(sources, CANDIDATE_REBOBINADO_SCOPE);
+
+test("candidate-rebobinado is composed from the existing declarations, with no manual copy of masters", () => {
+  assert.deepEqual(Object.keys(SCOPES), ["approved", "candidate", "candidate-rebobinado"]);
+  assert.equal(SCOPES["candidate-rebobinado"], CANDIDATE_REBOBINADO_SCOPE);
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.sectors[0], DEFAULT_SCOPE.sectors[0], "Bobinas is the very same declaration as the approved one");
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.sectors[1], CANDIDATE_SCOPE.sectors[1], "Rebobinado is declared once and shared with the full candidate");
+  assert.deepEqual(CANDIDATE_REBOBINADO_SCOPE.sectors.map((s) => s.code), ["BOBINAS", "REBOBINADO"]);
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.candidate, true);
+  assert.equal(CANDIDATE_SCOPE.candidate, true);
+  assert.notEqual(DEFAULT_SCOPE.candidate, true, "the approved scope is never a candidate");
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.nominal_weights, false);
+  assert.deepEqual(CANDIDATE_REBOBINADO_SCOPE.unit_aliases, {});
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.unit_labels, undefined, "no PACK label: Conversión is the only user of PACK");
+  assert.equal(CANDIDATE_REBOBINADO_SCOPE.forms_sector, "BOBINAS");
+});
+
+test("the partial candidate has exactly the expected counts and nothing from Conversión", () => {
+  const { counts } = rebobinado.manifest;
+  assert.deepEqual([counts.sectors, counts.machines, counts.articles, counts.article_machines, counts.shifts, counts.shift_schedules, counts.forms, counts.units, counts.material_classes],
+    [2, 7, 241, 242, 2, 4, 4, 3, 4]);
+  assert.deepEqual(json(rebobinado.files, "sectors.json").items.map((s) => s.code), ["BOBINAS", "REBOBINADO"]);
+  assert.deepEqual(json(rebobinado.files, "machines.json").items.map((m) => m.code), ["MP1", "MP3", ...REBOBINADO_CODES]);
+  const articles = json(rebobinado.files, "articles.json").items;
+  assert.ok(articles.every((a) => a.version.unit !== "PACK" && a.version.unit !== "Pack" && a.version.material_class !== "BLANCOS" && a.version.nominal_weight_kg === null));
+  assert.deepEqual(json(rebobinado.files, "units.json").items, [{ code: "KG", label: "KG" }, { code: "MM", label: "MM" }, { code: "UN", label: "UN" }]);
+  assert.ok(!json(rebobinado.files, "material_classes.json").items.some((c) => c.code === "BLANCOS"));
+  assert.ok(!articles.some((a) => a.code === "10335"), "the only BLANCOS article belongs to Conversión");
+  const conversionOnly = new Set(json(candidate.files, "article_machines.json").items.filter((r) => CONVERSION_CODES.includes(r.machine_code)).map((r) => r.article_code));
+  const conversionExclusive = [...conversionOnly].filter((code) => !json(candidate.files, "article_machines.json").items.some((r) => r.article_code === code && !CONVERSION_CODES.includes(r.machine_code)));
+  assert.ok(conversionExclusive.length > 0 && articles.every((a) => !conversionExclusive.includes(a.code)), "no Conversión article leaks in");
+  assert.ok(!rebobinado.files.has("recipes.json"));
+});
+
+test("Bobinas is byte-identical to the approved bundle inside the partial candidate", () => {
+  const approved = buildBundle(sources);
+  for (const name of ["forms/VINTO-P1-03.json", "forms/VINTO-P1-06.json", "forms/VINTO-P1-19.json", "forms/VINTO-P1-20.json", "profiles.json", "workflows.json"]) {
+    assert.equal(rebobinado.files.get(name), approved.files.get(name), name);
+  }
+  const articles = new Map(json(rebobinado.files, "articles.json").items.map((a) => [a.code, a]));
+  for (const a of json(approved.files, "articles.json").items) assert.deepEqual(articles.get(a.code), a, a.code);
+  const relations = json(rebobinado.files, "article_machines.json").items;
+  for (const r of json(approved.files, "article_machines.json").items) assert.ok(relations.some((x) => x.article_code === r.article_code && x.machine_code === r.machine_code));
+  assert.equal(relations.filter((r) => r.machine_code === "MP1" || r.machine_code === "MP3").length, 93);
+  assert.deepEqual(json(rebobinado.files, "shifts.json").schedules.filter((s) => s.sector === "BOBINAS"), json(approved.files, "shifts.json").schedules);
+  assert.deepEqual(rebobinado.manifest.scope.machines, ["MP1", "MP3"], "the four central forms stay bound to MP1 and MP3");
+  assert.deepEqual(rebobinado.manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
+  for (const name of ["VINTO-P1-03", "VINTO-P1-06", "VINTO-P1-19", "VINTO-P1-20"]) {
+    assert.ok(!/BELOIT|OVER|COPASA|PERICHUN|TUBETERA/.test(rebobinado.files.get(`forms/${name}.json`)), name);
+  }
+  assert.deepEqual(compareWithDisk(DEFAULT_OUT, approved.files), [], "the committed approved bundle is untouched");
+});
+
+test("Rebobinado data in the partial candidate equals the Rebobinado data of the full candidate", () => {
+  const pick = (map) => ({
+    articles: json(map, "articles.json").items.filter((a) => !json(map, "article_machines.json").items.every((r) => r.article_code !== a.code || CONVERSION_CODES.includes(r.machine_code))),
+    relations: json(map, "article_machines.json").items.filter((r) => REBOBINADO_CODES.includes(r.machine_code)),
+    machines: json(map, "machines.json").items.filter((m) => m.sector === "REBOBINADO"),
+    schedules: json(map, "shifts.json").schedules.filter((s) => s.sector === "REBOBINADO"),
+  });
+  assert.deepEqual(pick(rebobinado.files), pick(candidate.files));
+  assert.deepEqual(json(rebobinado.files, "shifts.json").schedules.filter((s) => s.sector === "REBOBINADO").map((s) => [s.shift, s.starts_at, s.ends_at, s.timezone, s.valid_from, s.valid_to]),
+    [["DIA", "06:00", "18:00", "America/La_Paz", "2026-01-01", null], ["NOCHE", "18:00", "06:00", "America/La_Paz", "2026-01-01", null]]);
+  assert.deepEqual(json(rebobinado.files, "shifts.json").shifts.map((s) => s.code), ["DIA", "NOCHE"], "the shift masters are the existing ones: DIA and NOCHE are shared with Bobinas");
+  validateSchedules(json(rebobinado.files, "shifts.json").schedules.filter((s) => s.sector === "REBOBINADO"));
+  validateBundle(rebobinado);
+});
+
+test("every candidate keeps the provisional-data warnings and the approved bundle carries none", () => {
+  for (const bundle of [rebobinado, candidate]) {
+    const codes = bundle.manifest.warnings.map((w) => w.code);
+    for (const code of ["SCOPE_PENDING_APPROVAL", "SHIFT_VALIDITY_PROVISIONAL", "NOMINAL_WEIGHTS_DEFERRED"]) assert.ok(codes.includes(code), code);
+    assert.equal(bundle.manifest.scope.candidate, true);
+    assert.match(bundle.manifest.warnings.find((w) => w.code === "SCOPE_PENDING_APPROVAL").message, /No está autorizado promoverlo a backend\/seed_data ni importarlo a DEV/);
+    assert.match(bundle.manifest.warnings.find((w) => w.code === "SHIFT_VALIDITY_PROVISIONAL").message, /provisionales/);
+  }
+  const approved = buildBundle(sources);
+  assert.ok(!approved.manifest.warnings.some((w) => w.code === "SCOPE_PENDING_APPROVAL"));
+  assert.equal(approved.manifest.scope.candidate, undefined);
+});
+
+test("the partial candidate is reproducible byte for byte", () => {
+  const again = buildBundle(sources, structuredClone(CANDIDATE_REBOBINADO_SCOPE));
+  assert.deepEqual([...again.files], [...rebobinado.files]);
+});
+
+test("a PACK alias or label cannot be declared without Conversión and the candidate flag must be a boolean", () => {
+  failsScope({ ...structuredClone(CANDIDATE_REBOBINADO_SCOPE), unit_labels: { PACK: "Pack" } }, /unit_labels declara la unidad PACK/);
+  failsScope({ ...structuredClone(CANDIDATE_REBOBINADO_SCOPE), unit_aliases: { Pack: "PACK" }, unit_labels: { PACK: "Pack" } }, /unit_labels declara la unidad PACK/);
+  failsScope({ ...structuredClone(CANDIDATE_REBOBINADO_SCOPE), candidate: "yes" }, /candidate debe ser booleano/);
+});
+
+test("the CLI writes candidate-rebobinado only to a new directory outside the approved bundle and never accepts --check for it", () => {
+  const run = (...args) => spawnSync(process.execPath, [join(ROOT, "scripts", "export-seed-data.mjs"), ...args], { encoding: "utf8" });
+  const before = [...readdirSync(DEFAULT_OUT, { recursive: true })].sort();
+  for (const args of [["--scope", "candidate-rebobinado"], ["--scope", "candidate-rebobinado", "--out", DEFAULT_OUT], ["--scope", "candidate-rebobinado", "--out", join(DEFAULT_OUT, "forms")],
+    ["--scope", "candidate-rebobinado", "--out", join(DEFAULT_OUT, "..")], ["--scope", "candidate-rebobinado", "--check", "--out", join(tmpdir(), "seed-never-reb")]]) {
+    const result = run(...args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.match(result.stderr, /Exportación detenida/);
+  }
+  assert.deepEqual([...readdirSync(DEFAULT_OUT, { recursive: true })].sort(), before);
+  const out = mkdtempSync(join(tmpdir(), "seed-reb-"));
+  try {
+    const first = run("--scope", "candidate-rebobinado", "--out", out);
+    assert.equal(first.status, 0, first.stderr);
+    assert.match(first.stdout, /articles: 241/);
+    assert.equal(readFileSync(join(out, "manifest.json"), "utf8"), rebobinado.files.get("manifest.json"));
+    assert.equal(run("--scope", "candidate-rebobinado", "--out", out).status, 1, "a second run into a non-empty directory is refused");
+  } finally { rmSync(out, { recursive: true, force: true }); }
+  assert.equal(run("--check").status, 0);
 });

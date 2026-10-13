@@ -71,29 +71,40 @@ export const DEFAULT_SCOPE = {
 // catalog (pending the final agreement from VINTO); the visible names are the ones shown in GROUPS (app/page.tsx). Shifts of Rebobinado are
 // candidates (exact hours pending confirmation). Nominal weights and recipes are NOT part of this increment (nominal_weights: false).
 const named = (list) => list.map(([code, group, catalog = group]) => ({ code, name: group, group, catalog }));
+// The sector declarations below are declared ONCE and composed into every candidate scope (nothing is copied by hand between scopes).
+// REBOBINADO shifts are PROVISIONAL: the number of shifts, the exact hours and the functional validity are not confirmed by VINTO.
+const REBOBINADO_SECTOR = {
+  code: "REBOBINADO", name: "Rebobinado", front: "Rebobinado",
+  machines: named([["BELOIT", "Beloit", "BELOIT"], ["OVER", "Over", "OVER"], ["COPASA", "Copasa", "COPASA"], ["PERICHUN", "Perichun", "PERICHUN"], ["TUBETERA", "Tubetera", "TUBETERA"]]),
+  timezone: "America/La_Paz", valid_from: "2026-01-01",
+  shifts: [["DIA", "Día", "06:00", "18:00"], ["NOCHE", "Noche", "18:00", "06:00"]],
+};
+const CONVERSION_SECTOR = {
+  code: "CONVERSION", name: "Conversión", front: "Conversión",
+  machines: named([["GAMBINI", "Gambini", "GAMBINI"], ["SINCRO_II", "Sincro II"], ["SINCRO_III", "Sincro III"], ["OMET_I", "OMET I"], ["OMET_II", "OMET II"], ["8_2", "8.2"], ["8_5", "8.5"],
+    ["8002", "8002"], ["SERV_4", "Serv 4"], ["WALLY", "Wally", "WALLY"], ["PANUELERA", "Pañuelera", "PAÑUELERA"]]),
+  timezone: "America/La_Paz", valid_from: "2026-01-01",
+  shifts: [["MANANA", "Mañana", "06:00", "14:00"], ["TARDE", "Tarde", "14:00", "22:00"], ["NOCHE", "Noche", "22:00", "06:00"]],
+};
+// `candidate: true` marks a scope whose data VINTO has NOT approved: the manifest carries a warning and the scope can never be written to backend/seed_data.
 export const CANDIDATE_SCOPE = {
+  candidate: true,
   forms_sector: "BOBINAS",
   unit_aliases: { Pack: "PACK" },
   unit_labels: { PACK: "Pack" },
   nominal_weights: false,
-  sectors: [
-    DEFAULT_SCOPE.sectors[0],
-    {
-      code: "REBOBINADO", name: "Rebobinado", front: "Rebobinado",
-      machines: named([["BELOIT", "Beloit", "BELOIT"], ["OVER", "Over", "OVER"], ["COPASA", "Copasa", "COPASA"], ["PERICHUN", "Perichun", "PERICHUN"], ["TUBETERA", "Tubetera", "TUBETERA"]]),
-      timezone: "America/La_Paz", valid_from: "2026-01-01",
-      shifts: [["DIA", "Día", "06:00", "18:00"], ["NOCHE", "Noche", "18:00", "06:00"]],
-    },
-    {
-      code: "CONVERSION", name: "Conversión", front: "Conversión",
-      machines: named([["GAMBINI", "Gambini", "GAMBINI"], ["SINCRO_II", "Sincro II"], ["SINCRO_III", "Sincro III"], ["OMET_I", "OMET I"], ["OMET_II", "OMET II"], ["8_2", "8.2"], ["8_5", "8.5"],
-        ["8002", "8002"], ["SERV_4", "Serv 4"], ["WALLY", "Wally", "WALLY"], ["PANUELERA", "Pañuelera", "PAÑUELERA"]]),
-      timezone: "America/La_Paz", valid_from: "2026-01-01",
-      shifts: [["MANANA", "Mañana", "06:00", "14:00"], ["TARDE", "Tarde", "14:00", "22:00"], ["NOCHE", "Noche", "22:00", "06:00"]],
-    },
-  ],
+  sectors: [DEFAULT_SCOPE.sectors[0], REBOBINADO_SECTOR, CONVERSION_SECTOR],
 };
-export const SCOPES = { approved: DEFAULT_SCOPE, candidate: CANDIDATE_SCOPE };
+// M1-B2-c2a candidate scope: Bobinas + Rebobinado ONLY. Technical preparation, not approved and not promotable. It needs neither the PACK unit nor the
+// BLANCOS class (those come only from Conversión), so it declares no unit alias or label, and it keeps nominal weights, recipes and new forms out.
+export const CANDIDATE_REBOBINADO_SCOPE = {
+  candidate: true,
+  forms_sector: "BOBINAS",
+  unit_aliases: {},
+  nominal_weights: false,
+  sectors: [DEFAULT_SCOPE.sectors[0], REBOBINADO_SECTOR],
+};
+export const SCOPES = { approved: DEFAULT_SCOPE, candidate: CANDIDATE_SCOPE, "candidate-rebobinado": CANDIDATE_REBOBINADO_SCOPE };
 // Code formats of the master data (the backend loader enforces the same ones).
 const CODE_PATTERNS = {
   sector: /^[A-Z][A-Z0-9_]{0,31}$/, machine: /^[A-Z0-9][A-Z0-9_]{0,31}$/, unit: /^[A-Z][A-Z0-9_]{0,15}$/,
@@ -424,9 +435,10 @@ export function prepareScope(scope = DEFAULT_SCOPE) {
   if (typeof unitLabels !== "object" || unitLabels === null || Array.isArray(unitLabels)) fail("unit_labels debe ser un objeto");
   for (const [code, label] of Object.entries(unitLabels)) if (!CODE_PATTERNS.unit.test(code) || typeof label !== "string" || !label.trim()) fail(`unit_labels: ${JSON.stringify(code)} → ${JSON.stringify(label)} no es válido`);
   if (scope.nominal_weights !== undefined && typeof scope.nominal_weights !== "boolean") fail("nominal_weights debe ser booleano");
+  if (scope.candidate !== undefined && typeof scope.candidate !== "boolean") fail("candidate debe ser booleano");
   validateSchedules(schedules);
   return {
-    sectors, machines, shifts, schedules, unitAliases, unitLabels, nominalWeights: scope.nominal_weights !== false, formsSector, formMachines: formsSector.machines.map((m) => m.code),
+    sectors, machines, shifts, schedules, unitAliases, unitLabels, nominalWeights: scope.nominal_weights !== false, candidate: scope.candidate === true, formsSector, formMachines: formsSector.machines.map((m) => m.code),
     timezones: [...new Set(schedules.map((s) => s.timezone))], validFromValues: [...new Set(schedules.map((s) => s.valid_from))],
   };
 }
@@ -745,6 +757,10 @@ export function buildBundle(sources, scope = DEFAULT_SCOPE) {
   if (!model.nominalWeights) warn("NOMINAL_WEIGHTS_DEFERRED", "info", "Los pesos nominales de product-weights.ts quedan fuera de este alcance; nominal_weight_kg es null en todos los artículos");
   warn("MACHINE_NAME_FROM_CODE", "warning", "machine.name usa el código de la fuente (no existe otro nombre)", model.machines.filter((m) => m.nameFromCode).length);
   warn("WORKFLOW_NAME_PLACEHOLDER", "warning", "workflow_definition.name usa el código de la fuente (no existe nombre real)", workflowCodes.length);
+  if (model.candidate) {
+    warn("SCOPE_PENDING_APPROVAL", "warning", "Alcance CANDIDATO: los maestros no están aprobados por VINTO (códigos y nombres de máquinas, número y horas de turnos, vigencia funcional, artículos y relaciones). " +
+      "No está autorizado promoverlo a backend/seed_data ni importarlo a DEV.");
+  }
   warn("SHIFT_VALIDITY_PROVISIONAL", "warning", `valid_from=${model.validFromValues.join(", ")} y timezone=${model.timezones.join(", ")} son datos técnicos provisionales; producción debe recibir la vigencia funcional real`);
   const otherMachines = Object.keys(productsByMachine).filter((m) => !model.machines.some((x) => x.catalog === m));
   warn("OUT_OF_SCOPE_MACHINES", "info", "Máquinas de PRODUCTS_BY_MACHINE fuera del piloto (otros frentes)", otherMachines.length);
@@ -778,6 +794,7 @@ export function buildBundle(sources, scope = DEFAULT_SCOPE) {
     scope: {
       sector: model.formsSector.name, machines: [...FORM_MACHINES], first_form: PILOT_FORM.code, forms: [PILOT_FORM.code, NEXT_FORM.code, QUALITY_FORM.code, PROPERTIES_FORM.code],
       // Only when more than one sector is declared (never in the current bundle): the sectors of the master data, so the scope above stays about the forms.
+      ...(model.candidate ? { candidate: true } : {}),
       ...(model.sectors.length > 1 ? { sectors: model.sectors.map((s) => ({ code: s.code, machines: s.machines.map((m) => m.code) })) } : {}),
     },
     generated_from: Object.entries(SOURCE_FILES).map(([name, path]) => (
@@ -881,7 +898,7 @@ async function main(argv) {
   const outIndex = argv.indexOf("--out");
   const outDir = outIndex >= 0 ? resolve(argv[outIndex + 1] ?? fail("--out requiere un directorio")) : DEFAULT_OUT;
   const scopeIndex = argv.indexOf("--scope");
-  const scopeName = scopeIndex >= 0 ? (argv[scopeIndex + 1] ?? fail("--scope requiere un nombre (approved|candidate)")) : "approved";
+  const scopeName = scopeIndex >= 0 ? (argv[scopeIndex + 1] ?? fail(`--scope requiere un nombre (${Object.keys(SCOPES).join("|")})`)) : "approved";
   if (!Object.hasOwn(SCOPES, scopeName)) fail(`Alcance desconocido: ${scopeName}. Opciones: ${Object.keys(SCOPES).join(", ")}`);
   if (scopeName !== "approved") {
     if (outIndex < 0) fail(`El alcance ${scopeName} es un candidato: indica --out con un directorio nuevo fuera de backend/seed_data`);

@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from psycopg.types.json import Jsonb
 
+from app.db_guard import UnsafeDatabaseError, is_test_database_name
 from app.seed.bundle import Bundle
 
 SOURCE = "vinto-reference-bobinas"
@@ -401,7 +402,15 @@ def dry_run(connection, bundle: Bundle) -> ImportResult:
 
 
 def apply(connection, bundle: Bundle) -> ImportResult:
-    """Importa en una sola transacción. Requiere conexión autocommit; lanza ReferenceConflictError si hay conflictos o drift."""
+    """Importa en una sola transacción. Requiere conexión autocommit; lanza ReferenceConflictError si hay conflictos o drift.
+
+    Defensa en profundidad (además de la barrera del CLI): un bundle CANDIDATO (manifest scope.candidate) solo se puede aplicar en una base *_test.
+    """
+    scope = bundle.manifest.get("scope")
+    if isinstance(scope, dict) and scope.get("candidate") is True:
+        database = connection.execute("SELECT current_database()").fetchone()[0]
+        if not is_test_database_name(database):
+            raise UnsafeDatabaseError("Un bundle candidato (no aprobado) solo puede aplicarse en una base de pruebas *_test")
     with connection.transaction():
         connection.execute("SELECT set_config('vinto.request_id', %s, true)", (f"import:{SOURCE}:{bundle.source_checksum[:12]}",))
         connection.execute("SELECT set_config('vinto.reason', %s, true)", (REASON,))
