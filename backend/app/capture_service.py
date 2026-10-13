@@ -1,9 +1,10 @@
-"""Captura productiva central: F6 (VINTO-P1-06), formulario manual sin grupos.
+"""Captura productiva central multiformulario: formularios de producción manuales sin grupos habilitados por política explícita
+(hoy solo F6, VINTO-P1-06).
 
 La asignación activa es la autoridad COMPLETA del contexto: máquina, turno, fecha operativa, OT, PV y producto salen de
 ella; el cliente no decide nada de eso. Las definiciones de campos, tipos, obligatoriedad y opciones se leen de
-vinto_config (form, form_version, field_definition, field_option); el único valor fijo aquí es el código del formulario
-que habilita este endpoint.
+vinto_config (form, form_version, field_definition, field_option); lo único fijo aquí es la POLÍTICA de qué códigos de formulario
+habilita este endpoint (CENTRAL_FORM_CODES): un formulario publicado NO se acepta por el solo hecho de existir.
 
 Una captura es UNA transacción:
   lock(capture_id) -> idempotencia -> contexto de auditoría -> reloj de PostgreSQL -> asignación vigente (lock de máquina,
@@ -32,7 +33,11 @@ from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, 
 from app.shifts import resolve_shift
 from app.sectors import scoped_sector_codes
 
-FORM_CODE = "VINTO-P1-06"  # único formulario habilitado en este checkpoint
+FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de las lecturas
+# POLÍTICA EXPLÍCITA de formularios de producción habilitados para captura central. Añadir un formulario aquí (p. ej. VINTO-P1-10) es una decisión
+# deliberada de producto, nunca automática; además cada captura exige área production, versión publicada y relación formulario-máquina.
+CENTRAL_FORM_CODES = frozenset({FORM_CODE})
+PRODUCTION_AREA = "production"
 REASON = "submit production capture"
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -114,6 +119,11 @@ def _uuid(value, error):
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
     except (ValueError, AttributeError, TypeError):
         raise error() from None
+
+
+def is_central_form(form_code) -> bool:
+    """¿Está `form_code` habilitado para captura central? Coincidencia exacta (sin mayúsculas/espacios implícitos); None o no-texto = no."""
+    return isinstance(form_code, str) and form_code in CENTRAL_FORM_CODES
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -244,7 +254,7 @@ def _serialize(value):
 # views
 # ---------------------------------------------------------------------------------------------------
 
-_VIEW_SQL = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at, c.operating_date, f.code, fv.version_number, fv.name,
+_VIEW_SELECT = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at, c.operating_date, f.code, fv.version_number, fv.name,
                       m.code, m.name, sh.code, sh.name, a.id, wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description
                FROM vinto_txn.capture c
                JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
@@ -258,8 +268,11 @@ _VIEW_SQL = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at,
                JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
                JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id
                JOIN vinto_master.article_version av ON av.id = l.article_version_id
-               JOIN vinto_master.article ar ON ar.id = av.article_id
-               WHERE f.code = %s AND s.code = ANY(%s)"""
+               JOIN vinto_master.article ar ON ar.id = av.article_id"""
+# Un solo formulario (compatibilidad: P1-03 de bobinas la usa con (código, sectores)).
+_VIEW_SQL = _VIEW_SELECT + " WHERE f.code = %s AND s.code = ANY(%s)"
+# Producción central: cualquier formulario HABILITADO (código, área production) dentro de los sectores del usuario; nunca Calidad ni otros códigos.
+_CENTRAL_VIEW_SQL = _VIEW_SELECT + " WHERE f.code = ANY(%s) AND fv.area = 'production' AND s.code = ANY(%s)"
 
 
 def _stored_values(connection, capture_id) -> dict:
@@ -276,15 +289,22 @@ def _to_view(connection, row) -> CaptureView:
 
 def get_capture(connection, capture_id, *, sectors) -> CaptureView:
     capture_id = _uuid(capture_id, CaptureNotFoundError)
-    rows = connection.execute(_VIEW_SQL + " AND c.id = %s", (FORM_CODE, list(scoped_sector_codes(sectors)), capture_id)).fetchall()
+    rows = connection.execute(_CENTRAL_VIEW_SQL + " AND c.id = %s", (sorted(CENTRAL_FORM_CODES), list(scoped_sector_codes(sectors)), capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return _to_view(connection, rows[0])
 
 
-def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT, sectors) -> list[CaptureView]:
-    """Capturas F6 enviadas (submitted/closed), más recientes primero. Sin borradores."""
-    sql, params = _VIEW_SQL + " AND c.status IN ('submitted','closed')", [FORM_CODE, list(scoped_sector_codes(sectors))]
+def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT, form_code=None,
+                  sectors) -> list[CaptureView]:
+    """Capturas centrales enviadas (submitted/closed), más recientes primero. Sin borradores.
+
+    Sin `form_code` se conserva el comportamiento histórico (solo F6). Con `form_code` se filtra a ese formulario, que debe estar habilitado
+    (CENTRAL_FORM_CODES); cualquier otro código es UnsupportedFormError (422) en vez de una lista vacía engañosa."""
+    if form_code is not None and not is_central_form(form_code):
+        raise UnsupportedFormError("Formulario no habilitado para captura central")
+    sql = _VIEW_SQL + " AND fv.area = 'production' AND c.status IN ('submitted','closed')"
+    params = [FORM_CODE if form_code is None else form_code, list(scoped_sector_codes(sectors))]
     for clause, value in ((" AND a.id = %s", assignment_id), (" AND m.code = %s", machine_code), (" AND c.operating_date = %s", operating_date)):
         if value is not None:
             sql += clause
@@ -364,9 +384,12 @@ def published_form_version(connection, form_code: str, machine_id, *, area: str 
 
 
 def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None, sectors) -> CaptureResult:
-    """Crea y envía una captura F6 de forma atómica e idempotente (capture.id = capture_id del cliente)."""
-    if form_code != FORM_CODE:
-        raise UnsupportedFormError(f"Solo se admite el formulario {FORM_CODE}")
+    """Crea y envía una captura de producción de forma atómica e idempotente (capture.id = capture_id del cliente).
+
+    `form_code` debe estar en la política CENTRAL_FORM_CODES; el resto (área production, versión publicada, máquina de la asignación, sector
+    operativo ∩ concedido) lo exige este mismo flujo para cualquier formulario."""
+    if not is_central_form(form_code):
+        raise UnsupportedFormError("Formulario no habilitado para captura central")
     capture_id = _uuid(capture_id, CaptureValidationError)
     assignment_id = _uuid(assignment_id, AssignmentNotFoundError)
     device_key = str(_uuid(device_key, CaptureValidationError))

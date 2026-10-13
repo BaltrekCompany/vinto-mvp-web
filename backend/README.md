@@ -553,6 +553,22 @@ El esquema es cerrado (`extra="forbid"`): máquina, turno, fecha operativa, OT, 
 
 Orden de locks: capture_id -> máquina (misma clave que asignaciones) -> asignación FOR SHARE -> device_key.
 
+### Motor multiformulario de captura de producción (M2-A)
+
+`capture_service` ya no está atado a un único código: la POLÍTICA explícita `CENTRAL_FORM_CODES` (hoy `{"VINTO-P1-06"}`) decide qué formularios de producción admite
+`POST /api/captures`. Un formulario publicado **no** se acepta por existir: debe estar en la política (decisión de producto y cambio de código revisado), y además cada captura
+exige área `production`, versión publicada, relación formulario-máquina con la máquina de la asignación, permiso `production.capture` y sector operativo ∩ concedido.
+Máquina, turno, fecha operativa, OT, línea, producto y asignación siguen saliendo de la asignación vigente; el cliente no envía nada de eso (esquema cerrado). Idempotencia, 201/200/409/422,
+dispositivos, orden de locks, auditoría y valores normalizados no cambian. Un código fuera de la política -> 422 `UNSUPPORTED_FORM` (sin escrituras).
+
+Lecturas:
+- `GET /api/captures` sin filtros = comportamiento histórico (solo F6). Filtro opcional `form_code` (máx. 64): debe estar en la política; si no, 422 `UNSUPPORTED_FORM` (no una lista vacía engañosa).
+- `GET /api/captures/{id}` resuelve capturas de cualquier formulario habilitado; una captura de un formulario no habilitado, de Calidad (`area` distinta de `production`) o de un sector no operativo/no concedido es 404.
+- Forma de la respuesta (`CaptureOut`) sin cambios.
+
+Añadir un formulario (p. ej. VINTO-P1-10, M2-B) = definición aprobada en el bundle + máquinas publicadas + una línea en `CENTRAL_FORM_CODES` + pruebas; sin duplicar el motor. Las pruebas del
+segundo formulario usan una definición SINTÉTICA (`tests/m2a_fixtures.py`) instalada solo en bases efímeras `*_test`; nunca en `backend/seed_data` ni en `vinto`.
+
 ### Verificar capturas F6 en DEV (solo lectura)
 
 ```powershell
