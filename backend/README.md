@@ -366,6 +366,48 @@ una petición es `sectores operativos (app/sectors.py) ∩ sectores concedidos a
 protegido en un PR aparte: exigir sesión (`production.capture` o `catalog.read`) y contar solo los sectores del alcance del usuario (`user.sectors`), manteniendo
 503 ante falta de base de datos.
 
+## API administrativa de concesiones por sector (M1-C2-b1)
+
+Solo backend (sin interfaz). Rutas bajo `/api/admin` (`app/admin/`), **solo GET y POST** (la configuración CORS no se amplía). Reutilizan `app.auth.grants.grant_sector` / `revoke_sector`
+sobre `vinto_master.user_sector`; no hay migración ni permisos nuevos.
+
+| Ruta | Descripción |
+|---|---|
+| `GET /api/admin/users?limit=` | Usuarios (por defecto 200, máx. 500): `id`, `username`, `display_name`, `active`, `profiles[]`, `sectors[]` |
+| `GET /api/admin/users/{user_id}/sectors` | `user_id`, `username`, `active`, `sectors[]` |
+| `POST /api/admin/users/{user_id}/sectors/grant` | Cuerpo `{"sector_code": "BOBINAS"}`. Concede el sector (idempotente) |
+| `POST /api/admin/users/{user_id}/sectors/revoke` | Mismo cuerpo. Revoca la concesión (idempotente) |
+
+Cada elemento de `sectors[]`: `{code, name, active, operational}`. **Concedido no es operativo**: `operational` es `true` solo si el sector está activo **y** habilitado en `app/sectors.py`.
+Los POST devuelven `{user_id, sector_code, operation, changed, sector, granted_sectors[], request_id}`; `changed: false` y `request_id: null` cuando ya estaba así.
+
+**Autorización.** Sesión válida (401) y permiso **`user.manage`** (403); `catalog.manage` no lo sustituye. Hoy solo DATA_BALTREK lo tiene, y eso **no** le da facultades de producción ni calidad
+(sigue sin `work_order.manage`, `assignment.manage`, `production.capture`, `quality.*`). El perfil decide *qué* puede hacer un usuario; la concesión, *dónde*. El alcance efectivo
+sigue siendo `concedidos ∩ operativos`. **Protección contra solicitudes de origen no autorizado (CSRF)**, sin depender solo de CORS: los POST exigen un `Origin` presente que esté en `CORS_ORIGINS` (ausente, vacío, `null` o no autorizado ⇒ 403 `ORIGIN_NOT_ALLOWED`, antes de resolver la sesión y de cualquier escritura) y un cuerpo `application/json` (otro tipo ⇒ 415); un script debe enviar explícitamente un origen permitido **y** la cookie de sesión. La cookie sigue siendo HttpOnly y SameSite=Lax.
+
+**Validación.** `sector_code` debe cumplir `^[A-Z][A-Z0-9_]{0,31}$` y ser un código **reconocido** (`KNOWN_SECTOR_CODES`), si no 422. Cualquier otro campo del cuerpo (`actor_id`, `user_id`, `sectors`…)
+es 422: el actor sale de la sesión, el usuario de la ruta y el `request_id` lo genera el servidor. Usuario inexistente → 404 `USER_NOT_FOUND`; sector reconocido pero ausente en la base →
+404 `SECTOR_NOT_FOUND`; conceder un sector **inactivo** → 422 `SECTOR_INACTIVE` (revocar una concesión antigua sobre un sector inactivo sí se permite). No se crean sectores ni concesiones implícitas.
+
+**Concesiones inertes.** Conceder un sector existente pero no operativo (p. ej. REBOBINADO hoy) es válido y se informa (`operational: false`), pero **nunca lo habilita**: eso exige cambiar
+`app/sectors.py` en un incremento revisado, con los maestros aprobados por VINTO.
+
+**Revocación.** Efectiva en la **siguiente petición autenticada** del usuario, incluso con sesiones abiertas (las concesiones se leen de la base en cada petición).
+
+**Auditoría e idempotencia.** Un cambio efectivo queda en `vinto_audit.audit_event` (`entity_table = user_sector`): `action` INSERT/DELETE, `actor_id` = usuario autenticado, `request_id` =
+`admin-sector-grant:<uuid>` / `admin-sector-revoke:<uuid>`, `reason` = `sector grant` / `sector revoke` y `occurred_at` de la base. Repetir una operación no escribe ni audita nada.
+Ninguna respuesta, error o log incluye credenciales, hashes, tokens ni sesiones.
+
+**Prueba administrativa (solo bases `*_test`).** `python -B -m unittest discover -s tests -p "test_admin_sector_api.py"` (22 pruebas). Para probar a mano contra una base de pruebas: iniciar sesión como un usuario con `user.manage`,
+`GET /api/admin/users`, luego `POST …/sectors/grant` con `{"sector_code":"BOBINAS"}` y comprobar `audit_event`. **No** ejecutar escrituras administrativas contra DEV sin autorización explícita.
+
+**Ejecución segura de la suite completa.** Con el backend de DEV en marcha, ejecutar las pruebas desde un contenedor aparte con `DATABASE_URL` apuntando a una base inexistente deja a `tests/test_db_guard.py` (7 pruebas) sin base a la que conectarse; esas pruebas se ejecutan por separado con `DATABASE_URL` apuntando a la base de mantenimiento `postgres` (solo abren la conexión, leen `current_database()` y la guardia las rechaza). Ninguna otra prueba abre `DATABASE_URL`.
+
+**Para permitir un sector nuevo**: maestros aprobados e importados, turnos, formularios y permisos definidos; luego habilitar el sector en `app/sectors.py` (PR revisado) y por último conceder el acceso por esta API.
+
+**Limitaciones para una futura interfaz**: no hay paginación por cursor ni búsqueda; no existe alta/baja de usuarios ni cambio de perfil por API; no hay restricción por máquina; un administrador puede modificar sus propias
+concesiones (queda auditado; decisión de producto pendiente sobre separación de funciones); no hay límite de frecuencia ni confirmación en dos pasos.
+
 ## Órdenes de trabajo BASE (Bobinas)
 
 `app/work_orders/` (`service.py` dominio, `router.py` y `schemas.py` HTTP, `errors.py`). Alcance: solo la versión

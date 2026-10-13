@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.admin.errors import AdminError
+from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
@@ -30,6 +32,7 @@ app.include_router(quality_router)
 app.include_router(auth_router)
 app.include_router(work_orders_router)
 app.include_router(assignments_router)
+app.include_router(admin_router)
 
 UNAVAILABLE = UNAVAILABLE_BODY
 
@@ -37,6 +40,12 @@ UNAVAILABLE = UNAVAILABLE_BODY
 @app.exception_handler(DatabaseUnavailable)
 async def database_unavailable_handler(request: Request, error: DatabaseUnavailable):
     return JSONResponse(status_code=503, content=UNAVAILABLE)
+
+
+@app.exception_handler(AdminError)
+async def admin_error_handler(request: Request, error: AdminError):
+    """Mensaje público fijo, sin SQL ni identificadores internos."""
+    return JSONResponse(status_code=error.http_status, content={"detail": error.public_message, "code": error.code})
 
 
 @app.exception_handler(WorkOrderError)
