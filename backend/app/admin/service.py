@@ -12,7 +12,7 @@ import uuid
 from app.admin.errors import SectorInactive, SectorNotFound, UserNotFound
 from app.auth.errors import SectorNotFoundError, UserNotFoundError
 from app.auth.grants import grant_sector, revoke_sector
-from app.sectors import is_operational_sector
+from app.sectors import KNOWN_SECTOR_CODES, is_operational_sector
 
 DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT = 200, 500
 
@@ -43,6 +43,15 @@ def list_users(connection, limit=DEFAULT_LIST_LIMIT) -> list[dict]:
            ORDER BY c.username NULLS LAST, u.id LIMIT %s""", (limit,)).fetchall()
     grants = _grants(connection, [r[0] for r in rows])
     return [{"id": r[0], "username": r[1], "display_name": r[2], "active": r[3], "profiles": list(r[4]), "sectors": grants[r[0]]} for r in rows]
+
+
+def list_sectors(connection) -> list[dict]:
+    """Catálogo de sectores de la base: solo los códigos que el producto reconoce, ordenados por código, incluidos los inactivos (marcados como tales).
+
+    `operational` = activo Y habilitado en app/sectors.py. Nada se inventa fuera de la base ni se crea un sector.
+    """
+    rows = connection.execute("SELECT code, name, active FROM vinto_master.sector WHERE code = ANY(%s) ORDER BY code", (sorted(KNOWN_SECTOR_CODES),)).fetchall()
+    return [_sector_view(code, name, active) for code, name, active in rows]
 
 
 def get_user_sectors(connection, user_id) -> dict:

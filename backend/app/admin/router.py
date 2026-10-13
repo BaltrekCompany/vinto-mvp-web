@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.admin import service
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
-from app.admin.schemas import SectorChangeIn, SectorChangeOut, UserAdminOut, UserSectorsOut
+from app.admin.schemas import SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut, UserSectorsOut
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -49,6 +49,13 @@ def list_users(response: Response, limit: int = Query(default=service.DEFAULT_LI
                _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
     response.headers.update(NO_STORE)
     return service.list_users(connection, limit)
+
+
+@router.get("/sectors", response_model=list[SectorGrantOut], responses=_ERRORS)
+def list_sectors(response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Catálogo central de sectores (solo lectura) para administrar concesiones: nunca se inventan sectores en el cliente."""
+    response.headers.update(NO_STORE)
+    return service.list_sectors(connection)
 
 
 @router.get("/users/{user_id}/sectors", response_model=UserSectorsOut, responses=_ERRORS)

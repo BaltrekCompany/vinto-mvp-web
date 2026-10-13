@@ -374,6 +374,7 @@ sobre `vinto_master.user_sector`; no hay migración ni permisos nuevos.
 | Ruta | Descripción |
 |---|---|
 | `GET /api/admin/users?limit=` | Usuarios (por defecto 200, máx. 500): `id`, `username`, `display_name`, `active`, `profiles[]`, `sectors[]` |
+| `GET /api/admin/sectors` | Catálogo central de sectores (solo lectura, `user.manage`): `[{code, name, active, operational}]`, solo códigos reconocidos por el producto, ordenados por código e **incluidos los inactivos** (marcados). Lo usa la interfaz `/admin`; no se inventan sectores en el cliente |
 | `GET /api/admin/users/{user_id}/sectors` | `user_id`, `username`, `active`, `sectors[]` |
 | `POST /api/admin/users/{user_id}/sectors/grant` | Cuerpo `{"sector_code": "BOBINAS"}`. Concede el sector (idempotente) |
 | `POST /api/admin/users/{user_id}/sectors/revoke` | Mismo cuerpo. Revoca la concesión (idempotente) |
@@ -398,7 +399,9 @@ es 422: el actor sale de la sesión, el usuario de la ruta y el `request_id` lo 
 `admin-sector-grant:<uuid>` / `admin-sector-revoke:<uuid>`, `reason` = `sector grant` / `sector revoke` y `occurred_at` de la base. Repetir una operación no escribe ni audita nada.
 Ninguna respuesta, error o log incluye credenciales, hashes, tokens ni sesiones.
 
-**Prueba administrativa (solo bases `*_test`).** `python -B -m unittest discover -s tests -p "test_admin_sector_api.py"` (22 pruebas). Para probar a mano contra una base de pruebas: iniciar sesión como un usuario con `user.manage`,
+**Interfaz `/admin` (M1-C2-b2).** Pantalla de administración de usuarios y concesiones en el frontend (`app/admin/`, `components/vinto/admin/`, `lib/vinto/admin*.ts`). Consume exclusivamente esta API con la cookie HttpOnly (`credentials: "include"`; el navegador envía el `Origin`, que debe estar en `CORS_ORIGINS`). Se muestra solo si `/api/auth/me` devuelve el permiso `user.manage` (no por el nombre del perfil); sin sesión ofrece el Login, sin permiso muestra «Acceso no autorizado» y no solicita ninguna lista administrativa. Toda concesión o revocación exige seleccionar usuario y sector y **confirmar en un diálogo**; se bloquea el doble envío, nunca se asume el resultado (se vuelve a leer la API) y un 401 devuelve al Login. No edita perfiles, permisos, máquinas ni el estado operativo de los sectores. Se llega desde el enlace «Administración» de la vista técnica (DATA_BALTREK) y de la cabecera operativa de quien tenga `user.manage`. QA aislado: backend de pruebas en un contenedor aparte con una base `*_test` y `CORS_ORIGINS` del servidor de desarrollo del frontend; nunca el backend ni la base de DEV.
+
+**Prueba administrativa (solo bases `*_test`).** `python -B -m unittest discover -s tests -p "test_admin_sector_api.py"` (26 pruebas). Para probar a mano contra una base de pruebas: iniciar sesión como un usuario con `user.manage`,
 `GET /api/admin/users`, luego `POST …/sectors/grant` con `{"sector_code":"BOBINAS"}` y comprobar `audit_event`. **No** ejecutar escrituras administrativas contra DEV sin autorización explícita.
 
 **Ejecución segura de la suite completa.** Con el backend de DEV en marcha, ejecutar las pruebas desde un contenedor aparte con `DATABASE_URL` apuntando a una base inexistente deja a `tests/test_db_guard.py` (7 pruebas) sin base a la que conectarse; esas pruebas se ejecutan por separado con `DATABASE_URL` apuntando a la base de mantenimiento `postgres` (solo abren la conexión, leen `current_database()` y la guardia las rechaza). Ninguna otra prueba abre `DATABASE_URL`.
