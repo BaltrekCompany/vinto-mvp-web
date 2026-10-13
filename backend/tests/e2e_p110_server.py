@@ -2,7 +2,7 @@
 
 Crea una base EFÍMERA nueva (`*_test`) a partir de la plantilla migrada, instala los fixtures de prueba (Rebobinado ficticio + definición candidata de P1-10, ver
 tests/m2b2_fixtures.py), crea usuarios de prueba y sirve la API real (`app.main:app`) con la configuración de prueba habilitada SOLO en este proceso:
-    - sectors._OPERATIONAL incluye REBOBINADO  - capture_service.CENTRAL_FORM_CODES incluye VINTO-P1-10
+    - sectors._OPERATIONAL incluye REBOBINADO  - capture_service.CENTRAL_FORM_CODES incluye VINTO-P1-10 y el formulario SINTÉTICO agrupado de M3-A
 La configuración real del producto (app/sectors.py, capture_service.py) no se modifica. Al terminar se eliminan las bases creadas.
 
 SALVAGUARDAS (cualquiera de ellas aborta antes de abrir el puerto):
@@ -31,6 +31,7 @@ from app.seed.bundle import load_bundle
 
 sys.path.insert(0, os.path.dirname(__file__))
 from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, install_p110, install_rebobinado_fixture  # noqa: E402
+from m3a_fixtures import GROUPED_CODE, install_grouped_form  # noqa: E402
 
 F6 = "VINTO-P1-06"
 DEV_PORTS = {8000}
@@ -61,6 +62,7 @@ def main():
         article = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
         install_rebobinado_fixture(connection, [article])
         install_p110(connection)
+        install_grouped_form(connection, machine_codes=("COPASA",))  # M3-A: formulario SINTÉTICO con grupos repetibles (solo esta base efímera)
         users = {}
         for name, profile, grants in (("jefatura", "JEFATURA", ENABLED_SECTORS), ("supervision", "SUPERVISION", ENABLED_SECTORS), ("operacion", "OPERACION", ENABLED_SECTORS),
                                       ("operacion_solo_bobinas", "OPERACION", ("BOBINAS",))):
@@ -70,7 +72,7 @@ def main():
         # --- configuración de PRUEBA, solo en este proceso -------------------------------------------------------------------------------
         settings.database_url = SecretStr(database_url(database))
         sectors._OPERATIONAL = sectors.validate_operational_sectors(ENABLED_SECTORS)
-        capture_service.CENTRAL_FORM_CODES = frozenset({F6, P110_CODE})
+        capture_service.CENTRAL_FORM_CODES = frozenset({F6, P110_CODE, GROUPED_CODE})
         with connect(database) as check:  # el proceso sirve exactamente esta base
             if check.execute("SELECT current_database()").fetchone()[0] != database:
                 refuse("la conexión de verificación no apunta a la base efímera")

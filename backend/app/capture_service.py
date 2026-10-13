@@ -1,5 +1,5 @@
-"""Captura productiva central multiformulario: formularios de producción manuales sin grupos habilitados por política explícita
-(hoy solo F6, VINTO-P1-06).
+"""Captura productiva central multiformulario: formularios de producción manuales habilitados por política explícita (hoy solo F6, VINTO-P1-06),
+con soporte opcional de GRUPOS REPETIBLES (M3-A, ver validate_form_values).
 
 La asignación activa es la autoridad COMPLETA del contexto: máquina, turno, fecha operativa, OT, PV y producto salen de
 ella; el cliente no decide nada de eso. Las definiciones de campos, tipos, obligatoriedad y opciones se leen de
@@ -38,6 +38,8 @@ FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de 
 # deliberada de producto, nunca automática; además cada captura exige área production, versión publicada y relación formulario-máquina.
 CENTRAL_FORM_CODES = frozenset({FORM_CODE})
 PRODUCTION_AREA = "production"
+GROUPS_KEY = "_groups"  # propiedad RESERVADA de `values` para los grupos repetibles; ningún campo de una definición puede llamarse así
+TECHNICAL_MAX_GROUP_ROWS = 1000  # tope TÉCNICO (no funcional) por grupo cuando la definición no declara max_rows: evita cargas absurdas
 REASON = "submit production capture"
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
@@ -59,6 +61,16 @@ class FieldDef:
     unit: str | None
     display_order: int
     options: tuple = ()
+
+
+@dataclass(frozen=True)
+class GroupDef:
+    id: uuid.UUID
+    code: str
+    display_order: int
+    repeatable: bool
+    min_rows: int
+    max_rows: int | None
 
 
 @dataclass(frozen=True)
@@ -130,8 +142,11 @@ def is_central_form(form_code) -> bool:
 # definition and values
 # ---------------------------------------------------------------------------------------------------
 
-def load_fields(connection, form_version_id) -> list[FieldDef]:
-    """Campos de la versión. Este endpoint solo soporta campos manuales sin grupo; lo demás se rechaza en vez de aceptarse a medias."""
+def load_fields(connection, form_version_id, *, allow_groups=False) -> list[FieldDef]:
+    """Campos de la versión. Solo se soportan campos MANUALES; lo demás (automáticos, calculados) se rechaza en vez de aceptarse a medias.
+
+    Los campos dentro de un grupo solo se aceptan con `allow_groups=True` (el motor central de producción); P1-03 y Calidad no los manejan y siguen
+    rechazándolos. Un campo cuya clave es la propiedad reservada `_groups` hace inválida la definición."""
     rows = connection.execute(
         """SELECT f.id, f.key, f.value_type, f.source, f.required, f.field_group_id, u.code, f.display_order
            FROM vinto_config.field_definition f LEFT JOIN vinto_master.unit u ON u.id = f.unit_id
@@ -141,10 +156,20 @@ def load_fields(connection, form_version_id) -> list[FieldDef]:
             "SELECT field_definition_id, option_key FROM vinto_config.field_option WHERE form_version_id = %s", (form_version_id,)).fetchall():
         options.setdefault(field_id, []).append(option_key)
     fields = [FieldDef(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], tuple(options.get(r[0], ()))) for r in rows]
-    unsupported = [f.key for f in fields if f.source != "manual" or f.group_id is not None]
+    unsupported = [f.key for f in fields if f.source != "manual" or (f.group_id is not None and not allow_groups)]
     if unsupported:
         raise UnsupportedFormDefinitionError(f"Campos no soportados: {', '.join(unsupported)}")
+    if any(f.key == GROUPS_KEY for f in fields):
+        raise UnsupportedFormDefinitionError(f"Un campo no puede llamarse {GROUPS_KEY} (propiedad reservada de los grupos)")
     return fields
+
+
+def load_groups(connection, form_version_id) -> list[GroupDef]:
+    """Grupos de la versión publicada, en orden determinista (display_order, code). Sin grupos = formulario sin filas repetibles."""
+    rows = connection.execute(
+        """SELECT id, code, display_order, repeatable, min_rows, max_rows FROM vinto_config.field_group
+           WHERE form_version_id = %s ORDER BY display_order, code""", (form_version_id,)).fetchall()
+    return [GroupDef(*r) for r in rows]
 
 
 def _normalize(definition: FieldDef, raw):
@@ -230,6 +255,75 @@ def validate_values(fields: list[FieldDef], values) -> dict:
     return clean
 
 
+def validate_form_values(fields: list[FieldDef], groups: list[GroupDef], values) -> dict:
+    """Valida `values` de un formulario CON grupos: campos simples a nivel de captura y filas en `_groups` {código_de_grupo: [fila, ...]}.
+
+    Resultado: {simples..., "_groups": {código: [ {clave: valor}, ... ]}} con TODOS los grupos declarados (lista vacía si no hay filas) y las filas en
+    el orden recibido (el orden es contenido: row_number = posición + 1). Los grupos se resuelven SOLO por la definición publicada: un código no declarado,
+    una clave que no pertenece a la fila, referencias internas (ids, row_number...) o metadatos son errores 422 que nombran la clave y nunca el valor."""
+    if not isinstance(values, dict):
+        raise CaptureValidationError("values debe ser un objeto")
+    simple_fields = [f for f in fields if f.group_id is None]
+    grouped_keys = {f.key: g for g in groups for f in fields if f.group_id == g.id}
+    raw_groups = values.get(GROUPS_KEY, {})
+    problems: list[str] = []
+    simple = {k: v for k, v in values.items() if k != GROUPS_KEY}
+    for key in sorted(k for k in simple if k in grouped_keys):
+        problems.append(f"{key}: campo del grupo {grouped_keys[key].code}; se envía dentro de {GROUPS_KEY}")
+        del simple[key]
+    try:
+        clean = validate_values(simple_fields, simple)
+    except CaptureValidationError as error:
+        problems.append(str(error))
+        clean = {}
+    by_code = {g.code: g for g in groups}
+    out: dict = {g.code: [] for g in groups}
+    if not isinstance(raw_groups, dict):
+        problems.append(f"{GROUPS_KEY}: debe ser un objeto {{código_de_grupo: [filas]}}")
+        raw_groups = {}
+    for code in sorted(str(k) for k in raw_groups if k not in by_code):
+        problems.append(f"{GROUPS_KEY}.{code}: grupo no declarado")
+    for group in groups:
+        rows = raw_groups.get(group.code, [])
+        if not isinstance(rows, list):
+            problems.append(f"{GROUPS_KEY}.{group.code}: debe ser una lista de filas")
+            continue
+        limit = group.max_rows if group.max_rows is not None else TECHNICAL_MAX_GROUP_ROWS
+        if len(rows) < group.min_rows:
+            problems.append(f"{GROUPS_KEY}.{group.code}: se requieren al menos {group.min_rows} filas")
+        if len(rows) > limit:
+            problems.append(f"{GROUPS_KEY}.{group.code}: máximo {limit} filas")
+            continue
+        if not group.repeatable and len(rows) > 1:
+            problems.append(f"{GROUPS_KEY}.{group.code}: el grupo no es repetible (máximo 1 fila)")
+            continue
+        row_fields = [f for f in fields if f.group_id == group.id]
+        by_key = {f.key: f for f in row_fields}
+        for number, row in enumerate(rows, start=1):
+            where = f"{GROUPS_KEY}.{group.code}[{number}]"
+            if not isinstance(row, dict):
+                problems.append(f"{where}: la fila debe ser un objeto")
+                continue
+            row_problems = [f"{where}.{key}: campo desconocido" for key in sorted(str(k) for k in row if k not in by_key)]
+            clean_row = {}
+            for definition in row_fields:
+                value, problem = _normalize(definition, row.get(definition.key))
+                if problem:
+                    row_problems.append(f"{where}.{definition.key}: {problem}")
+                elif value is None:
+                    if definition.required:
+                        row_problems.append(f"{where}.{definition.key}: obligatorio")
+                else:
+                    clean_row[definition.key] = value
+            if not row_problems and not clean_row:
+                row_problems.append(f"{where}: la fila no tiene valores")
+            problems.extend(row_problems)
+            out[group.code].append(clean_row)
+    if problems:
+        raise CaptureValidationError("; ".join(problems))
+    return {**clean, GROUPS_KEY: out}
+
+
 _COLUMNS = {"text": "value_text", "textarea": "value_text", "decimal": "value_decimal", "integer": "value_integer",
             "boolean": "value_boolean", "date": "value_date", "time": "value_time"}
 
@@ -240,6 +334,37 @@ def _insert_details(connection, capture_id, form_version_id, fields, clean):
             connection.execute(
                 f"""INSERT INTO vinto_txn.capture_detail (capture_id, form_version_id, field_definition_id, value_type, {_COLUMNS[definition.value_type]})
                     VALUES (%s,%s,%s,%s,%s)""", (capture_id, form_version_id, definition.id, definition.value_type, clean[definition.key]))
+
+
+def _insert_groups(connection, capture_id, form_version_id, fields, groups, clean_groups):
+    """capture_group_row + capture_detail de cada fila, en orden determinista (grupos por display_order, filas por posición -> row_number = posición + 1)."""
+    for group in groups:
+        row_fields = [f for f in fields if f.group_id == group.id]
+        for number, row in enumerate(clean_groups.get(group.code, []), start=1):
+            row_id = connection.execute(
+                """INSERT INTO vinto_txn.capture_group_row (capture_id, form_version_id, field_group_id, row_number)
+                   VALUES (%s,%s,%s,%s) RETURNING id""", (capture_id, form_version_id, group.id, number)).fetchone()[0]
+            for definition in row_fields:
+                if definition.key in row:
+                    connection.execute(
+                        f"""INSERT INTO vinto_txn.capture_detail (capture_id, form_version_id, field_definition_id, field_group_id, group_row_id, value_type, {_COLUMNS[definition.value_type]})
+                            VALUES (%s,%s,%s,%s,%s,%s,%s)""", (capture_id, form_version_id, definition.id, group.id, row_id, definition.value_type, row[definition.key]))
+
+
+def _prepare_content(connection, form_version_id, values):
+    """Campos, grupos y contenido NORMALIZADO de `values` para una versión. Sin grupos declarados se comporta exactamente como antes
+    (validate_values, sin `_groups`: un `_groups` enviado a un formulario sin grupos es un campo desconocido, como cualquier otro)."""
+    fields = load_fields(connection, form_version_id, allow_groups=True)
+    groups = load_groups(connection, form_version_id)
+    if not groups:
+        return fields, groups, validate_values(fields, values)
+    return fields, groups, validate_form_values(fields, groups, values)
+
+
+def _serialize_values(values: dict) -> dict:
+    """Valores listos para JSON (decimales como texto); los grupos conservan la estructura {código: [fila, ...]}."""
+    return {k: ({code: [{key: _serialize(v) for key, v in row.items()} for row in rows] for code, rows in v.items()} if k == GROUPS_KEY else _serialize(v))
+            for k, v in values.items()}
 
 
 def _serialize(value):
@@ -276,15 +401,29 @@ _CENTRAL_VIEW_SQL = _VIEW_SELECT + " WHERE f.code = ANY(%s) AND fv.area = 'produ
 
 
 def _stored_values(connection, capture_id) -> dict:
+    """Valores guardados: campos simples y, si la versión declara grupos, `_groups` {código: [fila, ...]} con las filas en su orden original (row_number)."""
     rows = connection.execute(
-        """SELECT f.key, f.display_order, f.value_type, d.value_text, d.value_decimal, d.value_integer, d.value_boolean, d.value_date, d.value_time
+        """SELECT f.key, f.display_order, f.value_type, d.value_text, d.value_decimal, d.value_integer, d.value_boolean, d.value_date, d.value_time, d.group_row_id
            FROM vinto_txn.capture_detail d JOIN vinto_config.field_definition f ON f.id = d.field_definition_id
            WHERE d.capture_id = %s ORDER BY f.display_order, f.key""", (capture_id,)).fetchall()
-    return {r[0]: next(v for v in r[3:] if v is not None) for r in rows}
+    values = {r[0]: next(v for v in r[3:9] if v is not None) for r in rows if r[9] is None}
+    declared = connection.execute(
+        """SELECT g.id, g.code FROM vinto_config.field_group g JOIN vinto_txn.capture c ON c.form_version_id = g.form_version_id
+           WHERE c.id = %s ORDER BY g.display_order, g.code""", (capture_id,)).fetchall()
+    if not declared:
+        return values
+    row_ids = connection.execute(
+        "SELECT id, field_group_id FROM vinto_txn.capture_group_row WHERE capture_id = %s ORDER BY field_group_id, row_number", (capture_id,)).fetchall()
+    cells: dict = {}
+    for r in rows:
+        if r[9] is not None:
+            cells.setdefault(r[9], {})[r[0]] = next(v for v in r[3:9] if v is not None)
+    values[GROUPS_KEY] = {code: [cells.get(row_id, {}) for row_id, group_id in row_ids if group_id == gid] for gid, code in declared}
+    return values
 
 
 def _to_view(connection, row) -> CaptureView:
-    return CaptureView(*row, values={k: _serialize(v) for k, v in _stored_values(connection, row[0]).items()})
+    return CaptureView(*row, values=_serialize_values(_stored_values(connection, row[0])))
 
 
 def get_capture(connection, capture_id, *, sectors) -> CaptureView:
@@ -324,10 +463,10 @@ def _existing_matches(connection, existing, *, actor_id, form_code, assignment_i
             or stored_form_code != form_code or stored_device_key != device_key):
         return False
     try:
-        incoming = validate_values(load_fields(connection, form_version_id), values)
+        incoming = _prepare_content(connection, form_version_id, values)[2]
     except (CaptureValidationError, UnsupportedFormDefinitionError):
         return False
-    return incoming == _stored_values(connection, capture_id)
+    return incoming == _stored_values(connection, capture_id)  # incluye TODAS las filas de los grupos, en orden
 
 
 @dataclass(frozen=True)
@@ -412,14 +551,15 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
         device_id = _resolve_device(connection, device_key, machine_id)
 
         form_version_id = published_form_version(connection, form_code, machine_id)
-        fields = load_fields(connection, form_version_id)
-        clean = validate_values(fields, values)
+        fields, groups, clean = _prepare_content(connection, form_version_id, values)
 
         connection.execute(
             """INSERT INTO vinto_txn.capture (id, form_version_id, machine_id, shift_schedule_id, device_id, assignment_id, operating_date, captured_at, status)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'draft')""",
             (capture_id, form_version_id, machine_id, schedule_id, device_id, assignment_id, operating_date, now))
-        _insert_details(connection, capture_id, form_version_id, fields, clean)
+        _insert_details(connection, capture_id, form_version_id, [f for f in fields if f.group_id is None], {k: v for k, v in clean.items() if k != GROUPS_KEY})
+        if groups:
+            _insert_groups(connection, capture_id, form_version_id, fields, groups, clean[GROUPS_KEY])
         connection.execute("UPDATE vinto_txn.capture SET status = 'submitted', submitted_at = clock_timestamp() WHERE id = %s", (capture_id,))
     return CaptureResult(get_capture(connection, capture_id, sectors=sectors), created=True, already_submitted=False)
 

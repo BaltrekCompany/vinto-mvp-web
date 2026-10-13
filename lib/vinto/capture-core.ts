@@ -79,8 +79,15 @@ export function parseCaptureListOf<C>(value: unknown, parseOne: (capture: unknow
 // conservan EXACTAMENTE (el payload es inmutable, también `values`) y los campos del formulario quedan bloqueados.
 export type PendingAttemptOf<P extends { capture_id: string }, D> = { readonly captureId: string; readonly payload: Readonly<P>; readonly draft: Readonly<D> };
 
+// Copia PROFUNDA y congelada: ni el payload ni el borrador comparten referencias con el estado de la pantalla (p. ej. las listas de filas de un grupo repetible), de modo que
+// agregar, eliminar o editar filas después NO modifica un intento pendiente.
+function deepFreeze<T>(value: T): T {
+    if (typeof value === "object" && value !== null) for (const inner of Object.values(value)) deepFreeze(inner);
+    return Object.freeze(value);
+}
+
 export function freezeAttempt<P extends { capture_id: string; values: object }, D extends object>(payload: P, draft: D): PendingAttemptOf<P, D> {
-    return Object.freeze({ captureId: payload.capture_id, payload: Object.freeze({ ...payload, values: Object.freeze({ ...payload.values }) }), draft: Object.freeze({ ...draft }) });
+    return deepFreeze({ captureId: payload.capture_id, payload: structuredClone(payload) as Readonly<P>, draft: structuredClone(draft) as Readonly<D> });
 }
 
 // ---- rutas de lectura (sin red) ----------------------------------------------------------------------------------------------
