@@ -71,3 +71,44 @@ test("the package keeps M1-B2-c1 as pending evidence, the article_version_spec f
   assert.match(decisions, /\*\*Decisión actual: NO GO\*\*/);
   assert.equal(/\bGO\b(?! \/)(?!\*\*)/.test(decisions.split("## 7.")[1].replace(/NO GO/g, "").replace(/\| GO \(/g, "|")), false);
 });
+
+// ---- gates: preparación frente a autorización de implementación; H2-10 nunca opcional --------------------------------------------------------------------------------------
+const phases = decisions.split("## 5.")[1].split("## 6.")[0];
+const phaseRow = (name) => phases.split("\n").find((l) => l.startsWith(`| **${name}**`));
+const bullet = (heading) => agenda.split("\n").find((l) => l.includes(heading));
+
+test("the agenda's complete sets cover EVERY decision that the §5 dependency matrix requires for M4-B2 and M5-B", () => {
+  const m4b2 = expand(phaseRow("M4-B2")), m5b = expand(phaseRow("M5-B"));
+  assert.ok(m4b2.size > 15 && m5b.size > 20);
+  const completeM4 = expand(bullet("Conjunto completo para iniciar M4-B2")), completeM5 = expand(bullet("Conjunto completo para iniciar M5-B"));
+  for (const id of ["H1-12", "H1-14", "H1-20", "H1-22"]) assert.ok(completeM4.has(id), `${id} falta en el conjunto completo de M4-B2`);
+  for (const id of ["H2-06", "H2-09", "H2-14", "H2-15", "H2-16", "H2-17", "H2-18"]) assert.ok(completeM5.has(id), `${id} falta en el conjunto completo de M5-B`);
+  for (const id of m4b2) assert.ok(completeM4.has(id), `M4-B2 §5 exige ${id} y la agenda no lo incluye`);
+  for (const id of m5b) assert.ok(completeM5.has(id), `M5-B §5 exige ${id} y la agenda no lo incluye`);
+});
+
+test("agenda minimums are preparation only: they never authorize definitive contracts, catalog promotion or enabling Rebobinado", () => {
+  assert.match(agenda, /## Alcance de las decisiones «mínimas» de cada sesión/);
+  assert.match(agenda, /análisis y preparación técnica no operativa/);
+  assert.match(agenda, /\*\*NO autorizan\*\* implementar contratos definitivos, promover catálogos[^.]*activar Rebobinado/);
+  assert.match(agenda, /condiciones explícitas de la §5/);
+  assert.equal(agenda.split("\n").filter((l) => /^- \*Mínimo de la reunión/.test(l)).length, 2);
+  assert.equal(/se puede iniciar M[45]-B[23]\b/.test(agenda), false); // la forma antigua («con los mínimos… se puede iniciar M4-B2») no debe volver
+  assert.match(agenda, /M4-B2 completo solo inicia cuando el conjunto completo anterior está Aprobado con evidencia/);
+  assert.match(agenda, /M5-B completo solo inicia con el conjunto completo anterior Aprobado con evidencia/);
+  assert.match(decisions, /Los mínimos de la agenda solo permiten análisis y preparación técnica no operativa/);
+});
+
+test("H2-10 (liberación de Calidad de la madre) is always required; only H2-11 is conditional", () => {
+  const row = (id) => rows.find((r) => r[0] === id);
+  assert.match(row("H2-10")[10], /M5-B \(siempre\)/);
+  assert.equal(/\bsi se exige\b/.test(row("H2-10")[10]), false);
+  assert.match(row("H2-11")[10], /solo si/);
+  assert.match(phaseRow("M5-B"), /\*\*H2-10 siempre debe estar aprobada\*\*/);
+  assert.match(phaseRow("M5-B"), /\*\*H2-11 es condicional\*\*/);
+  assert.equal(/H2-10\/H2-11 solo/.test(decisions), false);
+  assert.match(phaseRow("M4-B3"), /\*\*H2-10 resuelta siempre\*\*/);
+  assert.ok(expand(bullet("Conjunto completo para iniciar M5-B")).has("H2-10"));
+  assert.match(agenda, /\*\*H2-10 siempre se resuelve\*\*/);
+  assert.match(agenda, /\*\*H2-11 solo\*\* si H2-10 exige liberación/);
+});

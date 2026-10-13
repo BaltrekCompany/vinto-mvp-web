@@ -67,8 +67,8 @@ La **matriz de homologación M1-B2-c1** (mencionada en `backend/README.md`: «vi
 | H2-07 | Relación | ¿Una hija puede tener más de una madre? | No / Sí, hasta N | M5-A #5 | I (permitido sin control) | Pendiente | JP | Decisión | Restricción de unicidad | M5-B | Regla aprobada |
 | H2-08 | Relación | ¿Una ficha consume una o varias madres? | Una / Varias | M5-A #6 | O | Pendiente | JP | Decisión | Contrato de madres | M5-B | Regla aprobada |
 | H2-09 | Relación | ¿Puede la madre estar en otra máquina/sector (Bobinas → Rebobinado)? ¿Restricciones? | Libre / Solo … | M5-A #9 | I (sin regla) | Pendiente | JP | Reglas por sector/máquina | Trigger de coherencia | M5-B | Regla aprobada |
-| H2-10 | Calidad | ¿Debe la madre estar liberada por Calidad para rebobinar? ¿Qué pasa si está pendiente o rechazada? | Exige liberada / permite pendiente / bloquea rechazada | M4-B1 P20 (parte 1) + M5-A #10 | O | Pendiente | CAL, JP | Política escrita | Validación de estado de madre | M5-B, M4-B3 si se exige | Política aprobada |
-| H2-11 | Calidad | ¿Quién libera/rechaza una bobina y con qué flujo? | Rol: … | M5-A #11 | I (`quality.release` sin servicio) | Pendiente | CAL | Flujo | Servicio de liberación (no existe) | M5-B si H2-10 exige liberación | Flujo aprobado |
+| H2-10 | Calidad | ¿Debe la madre estar liberada por Calidad para rebobinar? ¿Qué pasa si está pendiente o rechazada? | Exige liberada / permite pendiente / bloquea rechazada | M4-B1 P20 (parte 1) + M5-A #10 | O | Pendiente | CAL, JP | Política escrita | Validación de estado de madre | **M5-B (siempre)**, M4-B3 | Política aprobada (siempre requerida; su contenido decide si H2-11 aplica) |
+| H2-11 | Calidad | ¿Quién libera/rechaza una bobina y con qué flujo? | Rol: … | M5-A #11 | I (`quality.release` sin servicio) | Pendiente | CAL | Flujo | Servicio de liberación (no existe) | M5-B **solo si** la política aprobada de H2-10 exige liberación | Flujo aprobado, o «no aplica» registrado como consecuencia de H2-10 |
 | H2-12 | Calidad | ¿Las hijas heredan el estado de Calidad o entran `pending` y pasan por Calidad? | Heredan / Pendiente | M5-A #12 | I (F3: nace pendiente) — **no se extiende a P1-07 sin aprobación** | Pendiente | CAL | Decisión | Estado inicial y bandeja | M5-B | Regla aprobada |
 | H2-13 | Correlativo | ¿Las hijas usan el correlativo F3 de su máquina o uno propio? | F3 / Propio | M5-A #13 | I (compartiría el de F3) — **no se asume** | Pendiente | JP, TI | Decisión | Contador y unicidad | M5-B | Regla aprobada |
 | H2-14 | Trazabilidad | ¿Se corrige o anula una relación registrada, quién y cómo? | Sin cambios / anulación con motivo / versión | M5-A #14 | I (mutable sin control) | Pendiente | JP, CAL | Política | Inmutabilidad/anulación | M5-B | Política aprobada |
@@ -101,9 +101,11 @@ Total: 20 + 18 = 38 preguntas de origen → **47 decisiones** (H1 22, H2 18, H3 
 | Fase | Decisiones necesarias | Notas |
 |---|---|---|
 | **M4-B2** promoción de maestros y contratos | **Maestros:** H1-01, H1-02, H1-05…H1-08, H1-10, H1-11, H1-07. **Vínculos:** H1-03, H1-04 (+ H2-16 si P1-07 entra). **P1-10:** H1-12…H1-16. **P1-29:** H1-17, H1-19…H1-22 (H1-18 puede quedar texto libre) | Sin H1-13 «central» no hay migración; con «central» se añade un numerador (migración) |
-| **M5-B** genealogía P1-07 | H2-01…H2-18 (H2-10/H2-11 solo si se exige liberación), más H1-01, H1-05…H1-08, H1-10 y H2-16 (maestros de P1-07). H3-* solo si consumo entra en esta fase | Requiere migración (0007+) según M5-A §7 |
-| **M4-B3** activación controlada en DEV | M4-B2 completado; H1-09 y H1-16/H1-21 resueltos; H2-01 define si M5-B va antes; H2-10 si Calidad condiciona | Procedimiento: `docs/M4-B1-homologacion-rebobinado.md` §5 |
+| **M5-B** genealogía P1-07 | H2-01…H2-18 (**H2-10 siempre debe estar aprobada**; **H2-11 es condicional**: solo se exige si la política aprobada de H2-10 requiere liberación de Calidad; si no, se registra «no aplica» con referencia a H2-10), más H1-01, H1-05…H1-08, H1-10 y H2-16 (maestros de P1-07). H3-* solo si consumo entra en esta fase | Requiere migración (0007+) según M5-A §7 |
+| **M4-B3** activación controlada en DEV | M4-B2 completado; H1-09 y H1-16/H1-21 resueltos; H2-01 define si M5-B va antes; **H2-10 resuelta siempre** (y H2-11 si H2-10 exige liberación) | Procedimiento: `docs/M4-B1-homologacion-rebobinado.md` §5 |
 | **H3+** consumo/inventario | H3-01…H3-03 | Fase posterior sin ID |
+
+**Importante.** Estas condiciones (no los «mínimos» de la [agenda](M5-B0-agenda-homologacion.md)) son las que habilitan implementar M4-B2 y M5-B completos: cada decisión listada debe estar **Aprobada con evidencia** (o «no aplica» registrado y aprobado cuando la fila lo permite). Los mínimos de la agenda solo permiten análisis y preparación técnica no operativa.
 
 ## 6. Contrato técnico derivado (qué se hace y cuándo puede definirse)
 **M4-B2 — Promoción de maestros y contratos aprobados** (tras las respuestas H1):
