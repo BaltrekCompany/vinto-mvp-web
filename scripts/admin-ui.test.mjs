@@ -58,7 +58,7 @@ const count = (text, needle) => text.split(needle).length - 1;
 const button = (text, label) => (text.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`)) ?? [""])[0]; // the opening tag of the button with that accessible name
 const isDisabled = (text, label) => /\sdisabled(=""|\s|>)/.test(button(text, label));
 const listProps = (o = {}) => ({ users: [user()], retrieved: 1, query: "", onQuery: noop, selectedId: null, onSelect: noop, limited: false, disabled: false, ...o });
-const detailProps = (o = {}) => ({ user: user(), detail: detailOf([BOBINAS]), catalog: ready([BOBINAS, REBOBINADO, CONVERSION]), blocked: false, onGrant: noop, onRevoke: noop, onRetryDetail: noop, onRetryCatalog: noop, ...o });
+const detailProps = (o = {}) => ({ user: user(), detail: detailOf([BOBINAS]), catalog: ready([BOBINAS, REBOBINADO, CONVERSION]), block: null, onGrant: noop, onRevoke: noop, onRetryDetail: noop, onRetryCatalog: noop, ...o });
 
 test("the user list shows username, name, state, profiles, granted sectors and an explicit Administrar action; nothing changes by selecting a row", () => {
   const text = html(parts.AdminUserList, listProps({ users: [user(), user({ id: ID_B, username: "dev.data", display_name: "Data DEV", active: false, profiles: ["DATA_BALTREK"], sectors: [] })], retrieved: 2, selectedId: ID_A }));
@@ -129,10 +129,62 @@ test("detail states: loading, error with retry, no grants, nothing left to grant
   const refreshing = html(parts.AdminUserDetail, detailProps({ detail: ready({ user_id: ID_A, username: "u", active: true, sectors: [BOBINAS] }, true) }));
   assert.ok(isDisabled(refreshing, "Revocar acceso a Bobinas"), "no new operation while the grants are being re-read");
   assert.ok(!isDisabled(html(parts.AdminUserDetail, detailProps()), "Revocar acceso a Bobinas"), "and it is enabled once the grants are known");
-  const blocked = html(parts.AdminUserDetail, detailProps({ blocked: true }));
+  const blocked = html(parts.AdminUserDetail, detailProps({ block: "forbidden" }));
   assert.ok(blocked.includes("Sin permiso") && blocked.includes("No tienes permiso para administrar usuarios y sectores."));
   assert.ok(isDisabled(blocked, "Conceder acceso a Rebobinado") && isDisabled(blocked, "Revocar acceso a Bobinas"));
   assert.ok(!isDisabled(html(parts.AdminUserDetail, detailProps()), "Conceder acceso a Rebobinado"));
+});
+
+const NOW_USER = { id: ID_A, username: "dev.data", display_name: "Data DEV", profiles: ["DATA_BALTREK"], permissions: ["user.manage", "catalog.read"], must_change: false };
+const viewProps = (o = {}) => {
+  const base = { user: NOW_USER, users: ready([user(), user({ id: ID_B, username: "dev.data", display_name: "Data DEV", profiles: ["DATA_BALTREK"], sectors: [] })]), catalog: ready([BOBINAS, REBOBINADO, CONVERSION]), detail: detailOf([BOBINAS]),
+    query: "", onQuery: noop, selectedId: ID_A, onSelect: noop, change: { step: "closed" }, onOpen: noop, onConfirm: noop, onClose: noop, onRetryUsers: noop, onRetryCatalog: noop, onRetryDetail: noop, onLogout: noop, block: null, ...o };
+  return base;
+};
+const actionsOf = (text) => [...text.matchAll(/<button[^>]*aria-label="((?:Conceder|Revocar) acceso a [^"]+)"[^>]*>/g)].map((m) => ({ label: m[1], disabled: /\sdisabled(=""|\s|>)/.test(m[0]) }));
+const err = (kind) => ({ status: "error", kind, refreshing: false });
+
+test("D) users list answers 403: the console says there is no permission, offers no list and no action, and never talks about the session", () => {
+  const text = html(consoleModule.AdminConsoleView, viewProps({ users: err("forbidden"), block: "forbidden", detail: { status: "idle" } }));
+  assert.ok(text.includes("Sin permiso") && text.includes("No tienes permiso para administrar usuarios y sectores."));
+  assert.deepEqual(actionsOf(text), []);
+  assert.ok(!/Administrar dev|Reintentar/.test(text), "no list and no retry for a permission problem");
+  assert.ok(!/sesión ya no es válida|Ingresa de nuevo/.test(text));
+});
+
+test("E) the catalogue answers 403 while users and detail are loaded: every action is blocked", () => {
+  const text = html(consoleModule.AdminConsoleView, viewProps({ catalog: err("forbidden"), block: "forbidden" }));
+  assert.ok(text.includes("Sin permiso"));
+  const actions = actionsOf(text);
+  assert.ok(actions.length >= 1 && actions.every((a) => a.disabled), JSON.stringify(actions));
+  assert.ok(/aria-label="Administrar dev\.jefatura"[^>]*>|disabled=""[^>]*aria-label="Administrar dev\.jefatura"/.test(text));
+});
+
+test("F) the user detail answers 403: the actions are blocked and the message is about permission", () => {
+  const text = html(consoleModule.AdminConsoleView, viewProps({ detail: err("forbidden"), block: "forbidden" }));
+  assert.ok(text.includes("Sin permiso") && !/sesión ya no es válida/.test(text));
+  assert.ok(actionsOf(text).every((a) => a.disabled));
+  assert.ok(text.includes("No se pudieron cargar las concesiones"));
+});
+
+test("G) an unauthorised origin blocks the actions with ITS OWN message, not the missing-permission one", () => {
+  const text = html(consoleModule.AdminConsoleView, viewProps({ block: "origin" }));
+  assert.ok(text.includes("Origen no autorizado") && text.includes("Esta dirección no está autorizada para administrar"));
+  assert.ok(!text.includes("Sin permiso") && !text.includes("No tienes permiso para administrar"), "the real cause is the origin, not a permission");
+  assert.ok(!/sesión ya no es válida/.test(text));
+  const actions = actionsOf(text);
+  assert.ok(actions.length >= 1 && actions.every((a) => a.disabled));
+});
+
+test("without a block, the same console offers the actions (so the blocked cases above are real, not vacuous)", () => {
+  const actions = actionsOf(html(consoleModule.AdminConsoleView, viewProps({ block: null })));
+  assert.ok(actions.length >= 2 && actions.every((a) => !a.disabled));
+  assert.ok(!html(consoleModule.AdminConsoleView, viewProps({ block: null })).includes("Sin permiso"));
+});
+
+test("a failed read that is NOT a permission problem keeps the retry and does not block", () => {
+  const text = html(consoleModule.AdminConsoleView, viewProps({ users: err("unavailable"), block: null, detail: { status: "idle" } }));
+  assert.ok(text.includes("No se pudieron cargar los usuarios") && text.includes("Reintentar") && !text.includes("Sin permiso"));
 });
 
 test("a forbidden answer is shown as missing permission, not as an expired session", () => {

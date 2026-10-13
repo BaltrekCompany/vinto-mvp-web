@@ -8,7 +8,7 @@ import test from "node:test";
 import {
   ADMIN_USERS_MAX, CLOSED, FAILURE_MESSAGES, INERT_NOTICE, canAdminister, changeReducer, confirmationText, createAdminClient, createChangeController, deriveResource,
   failureKind, filterUsers, grantableSectors, isLimited, loadResource, parseAdminSectors, parseAdminUsers, parseSectorChange, parseUserSectors, resultText, revocableSectors,
-  sectorBadges, summarize,
+  sectorBadges, summarize, adminScreen, deriveAccess, BLOCK_TITLES, blockMessage,
 } from "../lib/vinto/admin.ts";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -218,7 +218,8 @@ test("controller: opening the dialog sends nothing; confirming sends exactly onc
   assert.equal(h.calls.length, 0, "confirm without an open dialog does nothing");
   h.controller.open(target());
   await h.controller.confirm();
-  assert.deepEqual(h.calls, [["grant", ID_A, "REBOBINADO"]]);
+  assert.deepEqual(h.calls.map((call) => call.slice(0, 3)), [["grant", ID_A, "REBOBINADO"]]);
+  assert.equal(h.calls[0][3].aborted, false, "an active controller passes a live abort signal (aborted only on dispose)");
   assert.equal(h.controller.state.step, "done");
   assert.deepEqual(h.states, ["confirming", "closed", "confirming", "submitting", "done"]);
   assert.equal(h.settled.length, 1);
@@ -351,11 +352,12 @@ test("no administrative source stores credentials, reads cookies, sets Origin or
 
 test("wiring: the page decides by session and permission before mounting the console; the console is keyed by user; entry points use the permission", () => {
   const page = read("app/admin/page.tsx");
-  assert.ok(page.indexOf("canAdminister") < page.indexOf("<AdminConsole"), "authorization is decided before the console (and its requests) exists");
-  assert.match(page, /status === "checking"[\s\S]*AuthChecking/);
-  assert.match(page, /status === "unavailable"[\s\S]*AuthUnavailable[\s\S]*onRetry/);
-  assert.match(page, /status === "anonymous"[\s\S]*<Login/);
-  assert.match(page, /AdminDenied/);
+  assert.ok(page.indexOf("adminScreen(view, loggingOut)") < page.indexOf("<AdminConsole"), "the screen (session + permission + logout) is decided before the console (and its requests) exists");
+  assert.match(page, /screen === "closing"\) return <AuthChecking label="Cerrando sesión…"\/>/, "while logging out the console is unmounted");
+  assert.match(page, /screen === "checking"\) return <AuthChecking\/>/);
+  assert.match(page, /screen === "unavailable"\) return <AuthUnavailable onRetry/);
+  assert.match(page, /view\.status !== "authenticated"\) return <Login/);
+  assert.match(page, /screen === "denied"\) return <AdminDenied/);
   assert.match(page, /<AdminConsole key=\{view\.user\.id\}/);
   const technical = read("components/vinto/technical-view.tsx");
   assert.match(technical, /canAdminister\(user\)/);
@@ -371,9 +373,125 @@ test("wiring of the confirmation dialog: it cannot be dismissed while sending, t
   assert.match(parts, /pending \? "Aplicando…" : text\.confirm/);
   assert.doesNotMatch(parts, /adminApi|fetch\(|changeSector/, "presentational components never call the API");
   const consoleSource = read("components/vinto/admin/admin-console.tsx");
-  assert.match(consoleSource, /onGrant=\{\(sector\) => open\("grant", sector\)\}/);
+  assert.match(consoleSource, /onGrant=\{\(sector\) => props\.onOpen\("grant", sector\)\}/);
   assert.match(consoleSource, /change\.open\(\{ operation, userId: selected\.id/, "buttons only OPEN the dialog");
   assert.match(consoleSource, /users\.refresh\(\); detail\.refresh\(\)/, "the central state is re-read after every response");
   assert.match(consoleSource, /result\.kind === "session"\) \{ onSessionLost\(\)/);
-  assert.match(consoleSource, /result\.kind === "forbidden"\) setForbidden\(true\)/);
+  assert.match(consoleSource, /result\.kind === "forbidden" \|\| result\.kind === "origin"\)\) setChangeFailure\(result\.kind\)/);
+  assert.match(consoleSource, /deriveAccess\(\[users\.view, catalog\.view, detail\.view\], changeFailure\)/, "users, catalogue and detail all feed the access block");
+  assert.match(parts, /state\.failure\.kind === "origin" \? BLOCK_TITLES\.origin/, "the failed-operation dialog names an unauthorised origin correctly");
+});
+
+// ---- PR #20: controlador liberado, logout y bloqueo por 403 --------------------------------------------------------------------------------------------
+
+const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
+const pendingHarness = () => {
+  const pending = deferred(), calls = [], states = [], settled = [], sessionLost = [];
+  const client = { changeSector: (...args) => { calls.push(args); return pending.promise; } };
+  const controller = createChangeController(client, (s) => states.push(s.step), (r) => { settled.push(r); if (!r.ok && r.kind === "session") sessionLost.push(1); });
+  return { controller, pending, calls, states, settled, sessionLost };
+};
+
+test("A) a 401 that arrives after the console was unmounted never reaches the callbacks, so it cannot close the NEXT session", async () => {
+  const old = pendingHarness();
+  old.controller.open(target());
+  const inFlight = old.controller.confirm();
+  old.controller.dispose(); // the console unmounts (logout, user change) while the POST is pending
+  assert.equal(old.calls[0][3].aborted, true, "the pending request is aborted on unmount");
+  // a NEW session mounts its own controller and starts working
+  const next = harness(async () => ({ ok: true, data: change(), status: 200 }));
+  next.controller.open(target({ userId: ID_B }));
+  const statesBefore = [...next.states];
+  old.pending.resolve({ ok: false, kind: "session", status: 401 }); // the late 401 of the OLD session
+  await inFlight;
+  assert.deepEqual(old.settled, [], "no callback of the old controller runs");
+  assert.deepEqual(old.sessionLost, [], "onSessionLost is never triggered by the old session");
+  assert.deepEqual(old.states, ["confirming", "submitting"], "the old administrative state is not published after disposal");
+  assert.deepEqual(next.states, statesBefore);
+  assert.equal(next.controller.state.step, "confirming", "the new session is intact");
+  assert.equal(next.settled.length, 0);
+});
+
+test("B) a 200 that arrives after unmount changes nothing in the new interface; the controller does not presume what the server did", async () => {
+  const old = pendingHarness();
+  old.controller.open(target());
+  const inFlight = old.controller.confirm();
+  old.controller.dispose();
+  old.pending.resolve({ ok: true, data: change(), status: 200 }); // the server may well have applied it: aborting a POST guarantees nothing
+  await inFlight;
+  assert.deepEqual([old.settled.length, old.states.at(-1)], [0, "submitting"], "no state, no re-read callback from a disposed controller");
+  assert.equal(old.controller.state.step, "submitting", "it keeps no verdict about the operation: the new console reads the central API again");
+  const fresh = harness(async () => ({ ok: true, data: change({ changed: false, request_id: null }), status: 200 }));
+  fresh.controller.open(target());
+  await fresh.controller.confirm();
+  assert.equal(fresh.controller.state.step, "done");
+  assert.equal(fresh.settled.length, 1, "a controller that is still active keeps the normal reconciliation");
+});
+
+test("C) logout during a pending request: the console is gone while closing and the late outcome cannot alter the next session", async () => {
+  assert.equal(adminScreen({ status: "authenticated", user: { permissions: ["user.manage"] } }, true), "closing", "even with a still-valid session, the console is not shown while logging out");
+  assert.equal(adminScreen({ status: "authenticated", user: { permissions: ["user.manage"] } }, false), "console");
+  const old = pendingHarness();
+  old.controller.open(target());
+  const inFlight = old.controller.confirm();
+  await old.controller.confirm();
+  assert.equal(old.calls.length, 1, "no new operation can start meanwhile");
+  old.controller.dispose(); // the page renders "Cerrando sesión…" and unmounts the console
+  old.controller.open(target({ userId: ID_B }));
+  await old.controller.confirm();
+  assert.equal(old.calls.length, 1, "a disposed controller cannot start operations either");
+  old.pending.resolve({ ok: false, kind: "session", status: 401 });
+  await inFlight;
+  assert.deepEqual([old.settled.length, old.sessionLost.length], [0, 0]);
+});
+
+test("H) a 401 of an operation on an ACTIVE controller still reports the session loss normally and keeps the failure", async () => {
+  const h = pendingHarness();
+  h.controller.open(target());
+  const inFlight = h.controller.confirm();
+  h.pending.resolve({ ok: false, kind: "session", status: 401 });
+  await inFlight;
+  assert.deepEqual(h.sessionLost, [1], "the page is told to go back to the Login");
+  assert.deepEqual([h.controller.state.step, h.controller.state.failure.kind], ["failed", "session"]);
+  assert.equal(h.settled.length, 1);
+});
+
+test("a controller disposed before sending never sends, and dispose is idempotent", async () => {
+  const h = pendingHarness();
+  h.controller.open(target());
+  h.controller.dispose();
+  h.controller.dispose();
+  await h.controller.confirm();
+  assert.equal(h.calls.length, 0, "a disposed controller never sends anything");
+  assert.equal(h.settled.length, 0);
+});
+
+test("deriveAccess: a 403 on ANY read or on a change blocks the actions, an unauthorised origin is told apart, and a 401 never blocks", () => {
+  const ready = { status: "ready" }, loading = { status: "loading" }, idle = { status: "idle" };
+  const err = (kind) => ({ status: "error", kind });
+  assert.equal(deriveAccess([ready, ready, ready], null), null);
+  assert.equal(deriveAccess([loading, idle, ready], null), null);
+  assert.equal(deriveAccess([err("forbidden"), ready, idle], null), "forbidden", "D) users list 403");
+  assert.equal(deriveAccess([ready, err("forbidden"), ready], null), "forbidden", "E) catalogue 403 while users and detail exist");
+  assert.equal(deriveAccess([ready, ready, err("forbidden")], null), "forbidden", "F) user detail 403");
+  assert.equal(deriveAccess([ready, ready, ready], "forbidden"), "forbidden", "a 403 on a change");
+  assert.equal(deriveAccess([ready, ready, ready], "origin"), "origin", "G) ORIGIN_NOT_ALLOWED on a change");
+  assert.equal(deriveAccess([ready, err("forbidden"), ready], "origin"), "origin", "the unauthorised origin is the more specific cause");
+  for (const kind of ["session", "unavailable", "not_found", "user_not_found", "sector_not_found", "invalid", "sector_inactive", "unsupported"]) {
+    assert.equal(deriveAccess([err(kind), err(kind), err(kind)], kind), null, `${kind} must not block the actions as if it were a permission problem`);
+  }
+  assert.notEqual(BLOCK_TITLES.origin, BLOCK_TITLES.forbidden);
+  assert.match(blockMessage("origin"), /dirección no está autorizada/);
+  assert.match(blockMessage("forbidden"), /No tienes permiso/);
+  assert.doesNotMatch(`${blockMessage("origin")} ${blockMessage("forbidden")}`, /sesión ya no es válida/);
+});
+
+test("adminScreen: closing wins over everything; session, permission and availability decide the rest", () => {
+  const manager = { status: "authenticated", user: { permissions: ["user.manage"] } }, plain = { status: "authenticated", user: { permissions: ["catalog.read"] } };
+  assert.equal(adminScreen({ status: "checking" }, false), "checking");
+  assert.equal(adminScreen({ status: "unavailable" }, false), "unavailable");
+  assert.equal(adminScreen({ status: "anonymous" }, false), "login");
+  assert.equal(adminScreen(plain, false), "denied");
+  assert.equal(adminScreen(manager, false), "console");
+  for (const view of [manager, plain, { status: "anonymous" }, { status: "checking" }]) assert.equal(adminScreen(view, true), "closing");
 });

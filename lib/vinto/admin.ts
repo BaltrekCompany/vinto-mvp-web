@@ -305,36 +305,69 @@ export type ChangeController = {
 };
 
 // Abrir el diálogo NO envía nada; solo confirm() envía, una sola vez (candado síncrono + reductor). La respuesta solo se aplica si sigue siendo la de ESTE envío;
-// después de CUALQUIER respuesta (incluso un fallo de red, cuyo resultado real se desconoce) se llama a onSettled para volver a leer la API central.
+// después de CUALQUIER respuesta mientras el controlador sigue ACTIVO (incluso un fallo de red, cuyo resultado real se desconoce) se llama a onSettled para volver a leer la API central.
+// dispose() (desmontaje, cierre de sesión): el controlador deja de existir. Se aborta la petición en vuelo, pero abortar un POST NO garantiza que el servidor no lo haya
+// ejecutado (puede haberse aplicado en PostgreSQL); por eso un controlador liberado ignora por completo cualquier resultado tardío —ni estado ni onSettled—, de modo que un 401
+// de la sesión anterior jamás puede cerrar una sesión posterior. La consola nueva lee de nuevo la API central y refleja lo que realmente ocurrió.
 export function createChangeController(
     client: Pick<AdminClient, "changeSector">,
     onState: (state: ChangeState) => void,
     onSettled: (result: AdminResult<SectorChange>) => void,
 ): ChangeController {
     let state: ChangeState = CLOSED, tokens = 0, inFlight = false, disposed = false;
+    const abort = new AbortController();
     const apply = (action: ChangeAction) => { const next = changeReducer(state, action); if (next !== state) { state = next; if (!disposed) onState(state); } };
     return {
         get state() { return state; },
         open: (target) => apply({ type: "open", target }),
         close: () => apply({ type: "close" }),
         reset: () => apply({ type: "reset" }),
-        dispose: () => { disposed = true; },
+        dispose: () => { disposed = true; abort.abort(); },
         async confirm() {
-            if (inFlight || state.step !== "confirming") return; // doble clic o diálogo no confirmable: no hace nada
+            if (disposed || inFlight || state.step !== "confirming") return; // liberado, doble clic o diálogo no confirmable: no hace nada
             inFlight = true;
             const token = ++tokens, { target } = state;
             apply({ type: "submit", token });
             let result: AdminResult<SectorChange>;
             try {
-                result = await client.changeSector(target.operation, target.userId, target.sector.code);
+                result = await client.changeSector(target.operation, target.userId, target.sector.code, abort.signal);
             } catch {
                 result = { ok: false, kind: "unavailable", status: 0 };
             }
             inFlight = false;
+            if (disposed) return; // liberado mientras la petición estaba en vuelo: ni estado ni callbacks
             apply({ type: "resolved", token, result });
             onSettled(result);
         },
     };
+}
+
+// ---- bloqueo por falta de permiso / origen no autorizado y pantalla de /admin (puros) ------------------------------------------------------
+
+export type AccessBlock = "forbidden" | "origin" | null;
+
+type ViewLike = { status: string; kind?: AdminFailureKind };
+
+// Un 403 en CUALQUIER lectura (usuarios, catálogo, detalle) o en un cambio bloquea las acciones. Nunca se confunde con un 401 (eso es sesión y lo gestiona el Login) y
+// ORIGIN_NOT_ALLOWED se distingue de la falta de permiso para no atribuir el error a lo que no es. `changeFailure` es el último fallo de una operación (se conserva: un 403 no se "recupera").
+export function deriveAccess(views: readonly ViewLike[], changeFailure: AdminFailureKind | null): AccessBlock {
+    const kinds = [...views.filter((view) => view.status === "error").map((view) => view.kind), changeFailure];
+    if (kinds.includes("origin")) return "origin";
+    if (kinds.includes("forbidden")) return "forbidden";
+    return null;
+}
+
+export const BLOCK_TITLES: Record<Exclude<AccessBlock, null>, string> = { forbidden: "Sin permiso", origin: "Origen no autorizado" };
+export const blockMessage = (block: Exclude<AccessBlock, null>): string => FAILURE_MESSAGES[block];
+
+export type AdminScreen = "checking" | "unavailable" | "login" | "denied" | "closing" | "console";
+// Qué muestra /admin. Mientras se cierra la sesión la consola NO existe (se desmonta y libera sus controladores), aunque la sesión todavía figure como válida.
+export function adminScreen(view: { status: string; user?: { permissions: readonly string[] } }, loggingOut: boolean): AdminScreen {
+    if (loggingOut) return "closing";
+    if (view.status === "checking") return "checking";
+    if (view.status === "unavailable") return "unavailable";
+    if (view.status !== "authenticated") return "login";
+    return canAdminister(view.user) ? "console" : "denied";
 }
 
 // ---- recurso administrativo: derivación de la vista (pura) ----------------------------------------------------------------------------------

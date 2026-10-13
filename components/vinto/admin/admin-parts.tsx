@@ -11,8 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { profileLabel } from "@/lib/vinto/auth";
 import {
-    ADMIN_USERS_MAX, FAILURE_MESSAGES, INERT_NOTICE, confirmationText, grantableSectors, resultText, revocableSectors, sectorBadges, userLabel,
-    type AdminFailureKind, type AdminResource, type AdminSector, type AdminSummary, type AdminUser, type ChangeState, type ChangeTarget, type SectorBadge, type UserSectors,
+    ADMIN_USERS_MAX, BLOCK_TITLES, FAILURE_MESSAGES, INERT_NOTICE, blockMessage, confirmationText, grantableSectors, resultText, revocableSectors, sectorBadges, userLabel,
+    type AccessBlock, type AdminFailureKind, type AdminResource, type AdminSector, type AdminSummary, type AdminUser, type ChangeState, type ChangeTarget, type SectorBadge, type UserSectors,
 } from "@/lib/vinto/admin";
 
 // Componentes de presentación de la administración de usuarios y sectores. No hacen peticiones ni guardan nada: reciben datos ya validados.
@@ -83,17 +83,18 @@ function SectorRow({ sector, action }: { sector: AdminSector; action: React.Reac
     </li>;
 }
 
-export function AdminUserDetail({ user, detail, catalog, blocked, onGrant, onRevoke, onRetryDetail, onRetryCatalog }: {
-    user: AdminUser | null; detail: AdminResource<UserSectors>; catalog: AdminResource<AdminSector[]>; blocked: boolean;
+export function AdminUserDetail({ user, detail, catalog, block, onGrant, onRevoke, onRetryDetail, onRetryCatalog }: {
+    user: AdminUser | null; detail: AdminResource<UserSectors>; catalog: AdminResource<AdminSector[]>; block: AccessBlock;
     onGrant: (sector: AdminSector) => void; onRevoke: (sector: AdminSector) => void; onRetryDetail: () => void; onRetryCatalog: () => void;
 }) {
+    const blocked = block !== null; // 403 (permiso u origen): las acciones quedan bloqueadas; nunca se confunde con una sesión vencida
     if (user === null) return <section aria-label="Detalle de usuario" className="rounded-2xl border border-dashed bg-white p-6"><h2 className="font-black">Detalle de usuario</h2><p className="mt-2 text-sm text-slate-700">Selecciona un usuario del listado para ver y administrar su acceso por sector.</p></section>;
     return <section aria-label="Detalle de usuario" className="rounded-2xl border bg-white p-5">
         <h2 className="text-xl font-black">{userLabel(user)}</h2>
         <p className="text-sm text-slate-700">{user.username ?? "Sin usuario de acceso"} · <Badge variant="outline" className={user.active ? TONES.ok : TONES.muted}>{user.active ? "Activo" : "Inactivo"}</Badge></p>
         <div className="mt-2 flex flex-wrap gap-1">{user.profiles.length ? user.profiles.map((profile) => <Badge key={profile} variant="outline" className="border-slate-300 bg-white text-slate-800">{profileLabel(profile)}</Badge>) : <span className="text-xs text-slate-600">Sin perfil activo</span>}</div>
         <p className="mt-3 text-xs text-slate-600">Aquí solo se administra el acceso por sector (<b>dónde</b> puede trabajar). Los perfiles y permisos (<b>qué</b> puede hacer) y el estado operativo de los sectores no se editan desde esta pantalla.</p>
-        {blocked && <div className="mt-4"><AdminNotice title="Sin permiso" text={FAILURE_MESSAGES.forbidden}/></div>}
+        {block && <div className="mt-4"><AdminNotice title={BLOCK_TITLES[block]} text={blockMessage(block)}/></div>}
 
         <h3 className="mt-5 font-black">Sectores concedidos</h3>
         {(detail.status === "idle" || detail.status === "loading") && <div role="status" aria-live="polite" className="mt-3 space-y-2"><Skeleton className="h-14 w-full"/><span className="text-xs text-slate-600">Consultando las concesiones…</span></div>}
@@ -146,7 +147,7 @@ export function AdminChangeDialog({ state, onConfirm, onClose }: { state: Change
                     <AlertDialogFooter><Button className="bg-[#146b4f]" onClick={onClose}>Cerrar</Button></AlertDialogFooter></>;
             })()}
             {state.step === "failed" && <>
-                <AlertDialogHeader><AlertDialogTitle>{state.failure.kind === "forbidden" ? "Sin permiso" : state.failure.kind === "unavailable" ? "No se pudo confirmar el cambio" : "No se aplicó el cambio"}</AlertDialogTitle>
+                <AlertDialogHeader><AlertDialogTitle>{state.failure.kind === "forbidden" ? BLOCK_TITLES.forbidden : state.failure.kind === "origin" ? BLOCK_TITLES.origin : state.failure.kind === "unavailable" ? "No se pudo confirmar el cambio" : "No se aplicó el cambio"}</AlertDialogTitle>
                     <AlertDialogDescription>{FAILURE_MESSAGES[state.failure.kind as AdminFailureKind]}</AlertDialogDescription></AlertDialogHeader>
                 <AlertDialogFooter><Button className="bg-[#146b4f]" onClick={onClose}>Cerrar</Button></AlertDialogFooter></>}
         </AlertDialogContent>
