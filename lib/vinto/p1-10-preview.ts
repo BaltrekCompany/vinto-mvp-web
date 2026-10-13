@@ -4,9 +4,10 @@
 // P1-10 NO está en el bundle de producción ni en la política de captura central del backend, y Rebobinado sigue sin ser operativo.
 
 import { FORM_DEFINITIONS } from "./form-definitions.ts";
+import { CONTEXT_NOTES, P1_10_CODE } from "./p1-10.ts";
 import type { FieldDefinition, FormDefinition } from "./types.ts";
 
-export const P1_10_CODE = "VINTO-P1-10";
+export { P1_10_CODE };
 
 export function p110Definition(): FormDefinition {
     const definition = FORM_DEFINITIONS.find((form) => form.code === P1_10_CODE);
@@ -20,14 +21,6 @@ export type ContextualField = PreviewField & { origin: string; pending: string }
 const toField = (field: FieldDefinition): PreviewField => ({
     key: field.key, label: field.label, description: field.description, declaredType: field.type, required: field.required, unit: field.unit ?? null,
 });
-
-// Origen propuesto y decisión pendiente de cada campo contextual. NO son reglas confirmadas: son la hipótesis del contrato técnico con su pregunta abierta.
-export const CONTEXT_NOTES: Readonly<Record<string, { origin: string; pending: string }>> = {
-    fecha: { origin: "Se tomaría del contexto de la asignación (no se digita).", pending: "Por confirmar: fecha operativa o fecha calendario de la captura." },
-    maquina: { origin: "Se tomaría de la máquina de la asignación (no se elige).", pending: "Por confirmar: qué máquinas pueden usar P1-10 (la definición dice «todas las rebobinadoras» pero lista solo COPASA)." },
-    responsable: { origin: "Se tomaría de la sesión o del turno (no se digita).", pending: "Por confirmar: no se asume que el responsable sea el operador que captura." },
-    firma: { origin: "Sin mecanismo definido.", pending: "Por definir: no existe firma digital en el sistema y no se simula una." },
-};
 
 export function previewSpec() {
     const definition = p110Definition();
