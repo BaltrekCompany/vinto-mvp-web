@@ -102,6 +102,7 @@ test("M6-A: P1-16 tiene pantalla central solo si el backend lo publica para la m
   assert.equal(screenFor("REBOBINADO", "VINTO-P1-10"), "p110");
   assert.equal(screenFor("REBOBINADO", "VINTO-P1-29"), "p129");
   assert.equal(screenFor("CONVERSION", "VINTO-P1-16"), "p116");
+  assert.equal(screenFor("CONVERSION", "VINTO-P1-12"), "p112"); // M6-B
 });
 
 test("M6-A: Home enruta Conversión al shell central y deja Rebobinado y Bobinas tal cual; los registros locales no se leen ni se borran", () => {
@@ -130,7 +131,7 @@ test("M6-A review: una pantalla solo se ofrece para su sector; los cruces P1-16 
   const rebWith16 = { code: "COPASA", name: "Copasa", forms: [FORM10, FORM16] }, convWithReb = { code: "GAMBINI", name: "Gambini", forms: [FORM16, f10, f29] };
   assert.deepEqual(offeredForms("REBOBINADO", rebWith16).map((o) => [o.form.code, o.screen]), [["VINTO-P1-10", "p110"], ["VINTO-P1-16", null]]);
   assert.deepEqual(offeredForms("CONVERSION", convWithReb).map((o) => [o.form.code, o.screen]), [["VINTO-P1-16", "p116"], ["VINTO-P1-10", null], ["VINTO-P1-29", null]]);
-  for (const [sector, code] of [["REBOBINADO", "VINTO-P1-16"], ["CONVERSION", "VINTO-P1-10"], ["CONVERSION", "VINTO-P1-29"], ["BOBINAS", "VINTO-P1-16"], ["", "VINTO-P1-10"], ["rebobinado", "VINTO-P1-10"]]) assert.equal(screenFor(sector, code), null, `${sector}/${code}`);
+  for (const [sector, code] of [["REBOBINADO", "VINTO-P1-12"], ["REBOBINADO", "VINTO-P1-16"], ["CONVERSION", "VINTO-P1-10"], ["CONVERSION", "VINTO-P1-29"], ["BOBINAS", "VINTO-P1-16"], ["", "VINTO-P1-10"], ["rebobinado", "VINTO-P1-10"]]) assert.equal(screenFor(sector, code), null, `${sector}/${code}`);
   // el shell deshabilita el botón sin pantalla, dice «Sin pantalla central» y solo pide los historiales compatibles con el sector
   const shell = read("components/vinto/sector-central.tsx");
   assert.ok(shell.includes("disabled={screen === null}") && shell.includes("Sin pantalla central"));

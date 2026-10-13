@@ -52,7 +52,7 @@ type FieldBase = { label: string; value: string; onChange: (value: string) => vo
 const labelOf = (label: string, required?: boolean) => required ? `${label} *` : label;
 
 // Texto de una línea. `inputMode="decimal"` + `suffix` (p. ej. "kg") sirven para números: el valor sigue siendo TEXTO; interpretarlo es del formulario.
-export function TextField({ label, value, onChange, disabled, required, hint, inputMode, suffix, type = "text" }: FieldBase & { inputMode?: "text" | "numeric" | "decimal"; suffix?: string; type?: "text" | "date" }) {
+export function TextField({ label, value, onChange, disabled, required, hint, inputMode, suffix, type = "text" }: FieldBase & { inputMode?: "text" | "numeric" | "decimal"; suffix?: string; type?: "text" | "date" | "time" }) {
     const input = <Input disabled={disabled} className="mt-2 text-slate-950" type={type} inputMode={inputMode} value={value} onChange={e => onChange(e.target.value)}/>;
     return <div><Label>{labelOf(label, required)}</Label>
         {suffix ? <div className="relative">{input}<span className="absolute right-3 top-4 text-sm font-semibold text-slate-600">{suffix}</span></div> : input}
