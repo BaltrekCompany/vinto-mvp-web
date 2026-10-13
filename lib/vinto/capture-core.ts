@@ -74,6 +74,15 @@ export function parseCaptureListOf<C>(value: unknown, parseOne: (capture: unknow
     return parsed.some((item) => item === null) ? null : (parsed as C[]);
 }
 
+// ---- intento pendiente (genérico) --------------------------------------------------------------------------------------------
+// Un UUIDv4 por intento LÓGICO de envío. Mientras no se sepa con certeza si el servidor guardó, capture_id, assignment_id, device_key y values se
+// conservan EXACTAMENTE (el payload es inmutable, también `values`) y los campos del formulario quedan bloqueados.
+export type PendingAttemptOf<P extends { capture_id: string }, D> = { readonly captureId: string; readonly payload: Readonly<P>; readonly draft: Readonly<D> };
+
+export function freezeAttempt<P extends { capture_id: string; values: object }, D extends object>(payload: P, draft: D): PendingAttemptOf<P, D> {
+    return Object.freeze({ captureId: payload.capture_id, payload: Object.freeze({ ...payload, values: Object.freeze({ ...payload.values }) }), draft: Object.freeze({ ...draft }) });
+}
+
 // ---- rutas de lectura (sin red) ----------------------------------------------------------------------------------------------
 
 // `form_code` es opcional: sin él el backend devuelve el comportamiento histórico (F6). Con él, el backend exige que el formulario esté habilitado (422 si no).
