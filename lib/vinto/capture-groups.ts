@@ -8,6 +8,9 @@
 import { DECIMAL, MAX_DECIMAL_CHARS, isRec, isStr, type Option, type Rec } from "./capture-core.ts";
 
 export const GROUPS_KEY = "_groups";
+// Tope TÉCNICO por grupo cuando la definición no declara máximo (el backend aplica el mismo, TECHNICAL_MAX_GROUP_ROWS): no es una regla industrial. La interfaz no deja preparar
+// una captura que el backend rechazaría por este motivo.
+export const TECHNICAL_MAX_GROUP_ROWS = 1000;
 
 export type GroupFieldKind = "text" | "textarea" | "integer" | "decimal" | "choice";
 export type GroupFieldSpec = { key: string; label: string; kind: GroupFieldKind; required: boolean; options?: readonly Option[]; unit?: string };
@@ -27,8 +30,8 @@ export function emptyRow(spec: GroupSpec, makeKey: () => string = newRowKey): Ro
     return { rowKey: makeKey(), cells: Object.fromEntries(spec.fields.map((f) => [f.key, ""])) };
 }
 
-const limit = (spec: GroupSpec) => (spec.repeatable ? spec.maxRows : Math.min(1, spec.maxRows ?? 1));
-export const canAddRow = (spec: GroupSpec, rows: readonly RowDraft[]): boolean => { const max = limit(spec); return max === null || rows.length < max; };
+const limit = (spec: GroupSpec): number => (spec.repeatable ? (spec.maxRows ?? TECHNICAL_MAX_GROUP_ROWS) : Math.min(1, spec.maxRows ?? 1));
+export const canAddRow = (spec: GroupSpec, rows: readonly RowDraft[]): boolean => rows.length < limit(spec);
 export const canRemoveRow = (spec: GroupSpec, rows: readonly RowDraft[]): boolean => rows.length > spec.minRows;
 
 export function addRow(spec: GroupSpec, rows: readonly RowDraft[], makeKey: () => string = newRowKey): readonly RowDraft[] {
@@ -60,7 +63,7 @@ export function validateGroup(spec: GroupSpec, rows: readonly RowDraft[]): { ok:
     const errors: RowError[] = [];
     const max = limit(spec);
     if (rows.length < spec.minRows) errors.push({ group: spec.code, row: null, message: `${spec.label}: se requieren al menos ${spec.minRows} filas.` });
-    if (max !== null && rows.length > max) errors.push({ group: spec.code, row: null, message: `${spec.label}: máximo ${max} filas.` });
+    if (rows.length > max) errors.push({ group: spec.code, row: null, message: `${spec.label}: máximo ${max} filas${spec.repeatable && spec.maxRows === null ? " (límite técnico del sistema)" : ""}.` });
     const clean: Record<string, unknown>[] = [];
     rows.forEach((row, index) => {
         const out: Record<string, unknown> = {};
@@ -111,6 +114,7 @@ export function parseGroups(specs: readonly GroupSpec[], value: unknown): Record
     for (const spec of specs) {
         const rows = value[spec.code];
         if (!Array.isArray(rows)) return null;
+        if (rows.length < spec.minRows || rows.length > limit(spec)) return null; // cardinalidad declarada (o el tope técnico): una respuesta fuera de ella no se acepta
         const clean: Rec[] = [];
         for (const row of rows) {
             if (!isRec(row) || Object.keys(row).some((k) => !spec.fields.some((f) => f.key === k))) return null;
