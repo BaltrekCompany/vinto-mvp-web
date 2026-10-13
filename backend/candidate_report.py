@@ -1,6 +1,6 @@
 """Informe de SOLO LECTURA de un bundle candidato frente al bundle aprobado (M4-B1). No accede a PostgreSQL, no escribe archivos y no promueve nada.
 
-  python candidate_report.py <directorio-del-bundle-candidato> [--json]
+  python candidate_report.py <directorio-del-bundle-candidato>   (imprime el informe en JSON)
 
 Valida el candidato con `load_bundle` (manifest, SHA-256, conteos, referencias) y compara su contenido con `backend/seed_data`: qué coincide con lo aprobado, qué es
 candidato pendiente de aprobación, qué inconsistencias hay y qué falta. No edita ni «arregla» datos.
@@ -28,7 +28,16 @@ def build_report(candidate_dir: Path, approved_dir: Path = BUNDLE_DIR) -> dict:
     def only(items, key, sector_values):
         return [i for i in items if i[key] in sector_values]
     approved_machines = {m["code"] for m in approved.machines}
+    def contained(approved_items, candidate_items, key):
+        """Todo elemento aprobado existe en el candidato con TODOS sus atributos iguales (el candidato puede añadir otros)."""
+        by_key = {i[key]: i for i in candidate_items}
+        return sorted(i[key] for i in approved_items if by_key.get(i[key]) != i)
+    changed_articles = contained(approved.articles, candidate.articles, "code")
     identical = {
+        "articulos_aprobados_identicos": not changed_articles,
+        "clases_de_material": not contained(approved.material_classes, candidate.material_classes, "code"),
+        "workflows": not contained(approved.workflows, candidate.workflows, "code"),
+        "definiciones_de_turno": not contained(approved.shifts, candidate.shifts, "code"),
         "sectores_aprobados": [s for s in candidate.sectors if s["code"] in approved_sectors] == list(approved.sectors),
         "maquinas_aprobadas": only(candidate.machines, "code", approved_machines) == list(approved.machines),
         "horarios_aprobados": [s for s in candidate.schedules if s["sector"] in approved_sectors] == list(approved.schedules),
@@ -62,6 +71,7 @@ def build_report(candidate_dir: Path, approved_dir: Path = BUNDLE_DIR) -> dict:
     form_machines = {f["code"]: sorted(f["machines"]) for f in candidate.forms}
     rebobinado_machine_codes = {m["code"] for m in candidate_machines}
     conflicts = {
+        "articulos_aprobados_modificados_o_ausentes": changed_articles,
         "relaciones_con_articulo_inexistente": sorted(l["article_code"] for l in candidate.article_machines if l["article_code"] not in article_codes),
         "articulos_sin_maquina": sorted(article_codes - set(sectors_per_article)),
         "articulos_en_mas_de_un_sector": len([a for a, s in sectors_per_article.items() if len(s) > 1]),
@@ -92,7 +102,6 @@ def build_report(candidate_dir: Path, approved_dir: Path = BUNDLE_DIR) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Informe de solo lectura de un bundle candidato (no escribe, no importa, no promueve)")
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
         report = build_report(args.bundle)

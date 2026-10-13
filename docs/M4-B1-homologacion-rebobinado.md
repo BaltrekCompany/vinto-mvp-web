@@ -72,7 +72,7 @@ Generado con `node scripts/export-seed-data.mjs --scope candidate-rebobinado --o
 
 | Categoría | Resultado |
 |---|---|
-| Coincide con lo aprobado | Sector, máquinas, horarios, relaciones artículo-máquina y los 4 formularios de Bobinas, perfiles y unidades son **idénticos** al bundle aprobado |
+| Coincide con lo aprobado | Comparación semántica completa de lo compartido: los **93 artículos aprobados** (flags, versión, descripción, unidad, clase, peso nominal y gramaje, atributo por atributo; un artículo aprobado ausente o modificado se reporta), clases de material, workflows, definiciones de turno, sector, máquinas, horarios, relaciones artículo-máquina, los 4 formularios de Bobinas, perfiles y unidades: **idénticos** al bundle aprobado (`coincide_con_lo_aprobado`, 11 controles; el informe no declara coincidencia si cambia cualquiera) |
 | Candidato pendiente de aprobación | Sector REBOBINADO; 5 máquinas; 2 horarios (DIA 06–18, NOCHE 18–06); 148 artículos relacionados solo con máquinas candidatas; 242 relaciones en total (241 artículos) |
 | Conflictos / alertas | `TB-4001` en dos sectores (MP3 y TUBETERA); DIA/NOCHE comparten código entre sectores con horas distintas (diseño previsto: horario por sector); etiquetas de unidad = código; `MACHINE_NAME_FROM_CODE`, `P1_20_PROVISIONAL_CONTRACT`, `WORKFLOW_NAME_PLACEHOLDER`, `SHIFT_VALIDITY_PROVISIONAL`, `SCOPE_PENDING_APPROVAL`; PERICHUN y TUBETERA tienen solo 2 artículos cada una |
 | Faltantes | Formularios P1-10 y P1-29 (no existen en el bundle); ningún formulario vinculado a máquinas de Rebobinado; pesos nominales y recetas |
@@ -81,12 +81,12 @@ Generado con `node scripts/export-seed-data.mjs --scope candidate-rebobinado --o
 No se editó nada para que «pase»: las inconsistencias se reportan tal cual.
 
 ## 3. Ensayo de importación en PostgreSQL efímero
-`backend/tests/rehearse_candidate_import.py <dir candidato>` (bases nuevas `*_test`, eliminadas al terminar; nunca usa `DATABASE_URL`). Resultado real (ver `vinto-backups/m4b1/ensayo.txt`):
+`backend/tests/rehearse_candidate_import.py <dir candidato>` (bases nuevas `*_test`, eliminadas al terminar; nunca usa `DATABASE_URL`). Resultado real (ver `vinto-backups/m4b1/ensayo.txt`). **El escenario B es una base nueva con el bundle aprobado importado; no es una réplica exacta de DEV** (DEV además tiene capturas, sesiones, concesiones y su propia historia de importaciones). Antes/después se comparan huellas deterministas por clave natural (sin ids generados ni marcas de tiempo) de 14 categorías y 249 filas: sector, máquinas, unidades, clases, artículos con versiones, relaciones artículo-máquina, workflows, turnos, horarios, formularios con versión, vínculos formulario-máquina, grupos, campos y opciones. En A (base vacía) se exige que esas 249 filas aprobadas existan idénticas tras importar el candidato:
 
 | Escenario | Dry-run | Apply | Segundo apply | Verificación |
 |---|---|---|---|---|
-| A · base migrada vacía | pending, 0 conflictos, 1045 filas; no escribe | `applied`, 1045 filas | `noop` (sin batch nuevo), 1 batch completado | 2 sectores, 7 máquinas, 241 artículos, 242 relaciones, 4 horarios; 0 formularios vinculados a Rebobinado; 0 concesiones; 0 capturas; dry-run final `consistent` |
-| B · base con bundle aprobado (estado de DEV) | pending, 0 conflictos, 601 filas | `applied`, 601 filas | `noop` | Mismas cardinalidades; **máquinas y relaciones de Bobinas idénticas** (hash antes/después) |
+| A · base migrada vacía | pending, 0 conflictos, 1045 filas; no escribe | `applied`, 1045 filas | `noop` (sin batch nuevo), 1 batch completado | 2 sectores, 7 máquinas, 241 artículos, 242 relaciones, 4 horarios; las 249 filas aprobadas idénticas; 0 formularios vinculados a Rebobinado; 0 concesiones; 0 capturas; dry-run final `consistent` |
+| B · base con bundle aprobado (estado de DEV) | pending, 0 conflictos, 601 filas | `applied`, 601 filas | `noop` | Mismas cardinalidades; **las 249 filas previas (artículos/versiones, turnos, formularios, etc.) presentes e idénticas**; solo se añaden filas |
 
 Barreras hacia DEV (sin abrir conexión): `assert_dev_apply_allowed` rechaza un directorio candidato y `assert_bundle_not_candidate_for_dev` rechaza el manifest candidato; `reference.apply` además rechaza un candidato en cualquier base que no termine en `_test`. No se ejecutó `--target dev --apply`.
 Lectura única de DEV (solo `SELECT`, transacción de solo lectura) para describir el punto de partida: sector BOBINAS, 2 máquinas, 93 artículos, 8 vínculos formulario–máquina, migraciones 0001–0006, 13 capturas, 5 concesiones (todas BOBINAS).
@@ -163,7 +163,7 @@ Decisión actual: **NO GO** (1–8 y 13 abiertos).
 20. ¿Rebobinar exige liberación previa de Calidad y genealogía madre/hija desde el inicio? (Sí / No, fase posterior)
 
 ## 8. Verificación realizada
-- `python candidate_report.py` sobre el candidato: íntegro; diferencias detalladas en §2.
+- `python candidate_report.py` sobre el candidato: íntegro; diferencias detalladas en §2 (prueba negativa: modificar un atributo, un flag o quitar un artículo aprobado hace que el informe lo detecte aunque las relaciones sigan idénticas).
 - Ensayo de importación e idempotencia en bases efímeras: §3 (TODO OK).
-- Pruebas: `tests/test_candidate_report.py` (3) y las suites existentes (backend, Node, exportador, barreras de importación, sector operativo, disponibilidad y coherencia de formularios y máquinas) sin regresiones.
+- Pruebas: `tests/test_candidate_report.py` (6) y las suites existentes (backend, Node, exportador, barreras de importación, sector operativo, disponibilidad y coherencia de formularios y máquinas) sin regresiones.
 - Reproducir: exportar el candidato a un directorio nuevo; `python candidate_report.py <dir>`; `python tests/rehearse_candidate_import.py <dir>` (requiere `TEST_DATABASE_URL`).
