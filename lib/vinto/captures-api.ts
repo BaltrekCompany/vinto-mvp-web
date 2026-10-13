@@ -1,4 +1,5 @@
 import { requestJson, type ApiResult } from "@/lib/vinto/central-http";
+import { capturesListPath } from "@/lib/vinto/capture-core";
 import { parseCapture, parseCaptureList, parseSubmission, type CapturePayload, type CaptureSubmission, type CentralCapture } from "@/lib/vinto/captures";
 
 // Capturas centrales F6. Cookie HttpOnly vía requestJson (credentials "include", cache "no-store"); sin tokens manuales.
@@ -14,7 +15,8 @@ export function getCapture(captureId: string, signal?: AbortSignal): Promise<Api
     return requestJson(`/api/captures/${encodeURIComponent(captureId)}`, { signal: signal ?? AbortSignal.timeout(GET_TIMEOUT_MS) }, parseCapture);
 }
 
-export function listCaptures(signal?: AbortSignal, limit = 50): Promise<ApiResult<CentralCapture[]>> {
-    return requestJson(`/api/captures?limit=${limit}`, { signal }, parseCaptureList);
+// Sin `formCode` = listado histórico F6 (la URL no cambia). Con `formCode` el backend exige que el formulario esté habilitado (422 si no).
+export function listCaptures(signal?: AbortSignal, limit = 50, formCode?: string): Promise<ApiResult<CentralCapture[]>> {
+    return requestJson(capturesListPath(limit, formCode), { signal }, parseCaptureList);
 }
 
