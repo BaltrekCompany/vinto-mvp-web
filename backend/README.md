@@ -196,6 +196,29 @@ docker compose exec backend python import_reference.py --target test --apply
 Pruebas (`tests/test_import_reference.py`): usan bases efímeras `*_test` creadas
 desde una plantilla migrada, así que no dependen de lo que contenga `vinto_test`.
 
+### Alcances CANDIDATOS del exportador (no aprobados)
+
+`node scripts/export-seed-data.mjs --scope <nombre> --out <directorio nuevo>` genera un bundle distinto del aprobado. Los alcances son `approved` (el de siempre,
+el único que escribe `backend/seed_data` y que verifica `--check`), `candidate` (Bobinas + Rebobinado + Conversión) y `candidate-rebobinado` (**Bobinas + Rebobinado**,
+M1-B2-c2a: 2 sectores, 7 máquinas, 241 artículos, 242 relaciones, 4 horarios, 3 unidades, 4 clases).
+
+- **Exclusivamente técnicos.** VINTO **no** ha aprobado sus datos (códigos y nombres de máquinas, número y horas de los turnos de Rebobinado, vigencia funcional,
+  artículos y relaciones). El manifest lo declara (`scope.candidate: true`, advertencias `SCOPE_PENDING_APPROVAL` y `SHIFT_VALIDITY_PROVISIONAL`).
+  **No está autorizado promoverlos a `backend/seed_data` ni importarlos a DEV**; solo se ensayan en bases efímeras `*_test`.
+- Los candidatos exigen `--out` explícito, nuevo o vacío, fuera de `backend/seed_data`, y no admiten `--check`.
+- **Barrera del importador.** Un catálogo candidato **no es una aprobación de VINTO**. `python import_reference.py --target dev --apply` solo admite el bundle oficial
+  `backend/seed_data`: rechaza (antes de leer el bundle y de abrir cualquier conexión) cualquier otro directorio —incluidos copias idénticas, enlaces simbólicos o
+  *junctions* a otro lugar— y, aunque el directorio sea el oficial, cualquier manifest con `scope.candidate: true`. Un alias del directorio oficial (`..`, `.`, separador
+  final, enlace al oficial) sigue siendo el oficial. No existe ninguna opción para saltarla. Además `reference.apply` rechaza un bundle candidato en cualquier base que no
+  termine en `_test`. El dry-run de DEV no escribe y no está bloqueado.
+- **El ensayo en bases `_test` sigue permitido**: `--target test --bundle <directorio>` admite dry-run, `--apply` y un segundo `--apply` idempotente con cualquier candidato.
+- **Incorporar Rebobinado a DEV** exige un incremento aparte: promover los datos a `backend/seed_data` mediante una revisión (PR) con las decisiones funcionales aprobadas
+  por VINTO, y recién entonces importar con el procedimiento normal (respaldo, dry-run, `--apply`). **Importar y habilitar operativamente** (`app/sectors.py`, concesiones,
+  formularios) son fases distintas y posteriores.
+- `candidate-rebobinado` no necesita PACK ni BLANCOS (solo Conversión los usa): no declara alias ni etiqueta de PACK, y mantiene `nominal_weights: false`, sin recetas ni
+  formularios nuevos. Los cuatro formularios centrales siguen ligados solo a MP1 y MP3 y los registros de Bobinas son idénticos a los del bundle aprobado.
+- PACK y BLANCOS siguen pendientes para Conversión. Los formularios de Rebobinado se homologarán por separado. La matriz de homologación (M1-B2-c1) vive fuera del repositorio.
+
 ## Autenticación interna
 
 `app/auth/` contiene el dominio de autenticación (service, passwords, permissions), las sesiones
