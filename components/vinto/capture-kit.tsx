@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Plus, Send, Trash2 } from "lucide-react";
 import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,4 +76,30 @@ export function SubmitBar({ onSend, sending, retry, label = "Enviar registro tra
     return <div className="flex flex-wrap justify-end gap-2 border-t p-5">
         <Button className="bg-[#146b4f]" disabled={sending} onClick={onSend}><Send className="mr-2 h-4 w-4"/>{sending ? "Enviando…" : retry ? "Reintentar envío" : label}</Button>
     </div>;
+}
+
+// ---- grupos repetibles (M3-A) --------------------------------------------------------------------------------------------------------------------
+// Piezas VISUALES de un grupo con filas repetibles. Sin lógica: el estado de las filas, los límites (canAdd/canRemove) y la validación viven en lib/vinto/capture-groups.ts;
+// aquí solo se dibuja el encabezado, cada fila numerada (el orden visible es el orden que se envía), sus errores y los botones Agregar/Eliminar.
+
+export type GroupRowView = { key: string; errors: readonly string[] };
+
+export function RepeatableGroup({ title, hint, rows, minRows, maxRows, canAdd, canRemove, disabled, groupErrors = [], onAdd, onRemove, renderRow }: {
+    title: string; hint?: string; rows: readonly GroupRowView[]; minRows: number; maxRows: number | null; canAdd: boolean; canRemove: boolean; disabled?: boolean;
+    groupErrors?: readonly string[]; onAdd: () => void; onRemove: (index: number) => void; renderRow: (index: number) => ReactNode;
+}) {
+    const limits = maxRows === null ? (minRows > 0 ? `mínimo ${minRows}` : "sin mínimo") : `${minRows > 0 ? `mínimo ${minRows}, ` : ""}máximo ${maxRows}`;
+    return <section className="border-b p-6" aria-label={title} data-group={title}>
+        <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="font-black">{title}</h2>{hint && <p className="text-sm text-slate-700">{hint}</p>}
+            <p className="mt-1 text-xs text-slate-600" data-testid="group-count">{rows.length} {rows.length === 1 ? "fila" : "filas"} · {limits}</p></div>
+            <Button type="button" variant="outline" size="sm" disabled={disabled || !canAdd} onClick={onAdd}><Plus className="mr-1 h-4 w-4"/>Agregar fila</Button></div>
+        {groupErrors.length > 0 && <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{groupErrors.map(message => <p key={message}>{message}</p>)}</div>}
+        {rows.length === 0 ? <p className="mt-4 rounded-lg border border-dashed p-3 text-sm text-slate-700">Sin filas.</p>
+            : <ol className="mt-4 space-y-4">{rows.map((row, index) => <li key={row.key} className="rounded-xl border bg-slate-50 p-4" data-row={index + 1}>
+                <div className="mb-3 flex items-center justify-between gap-2"><p className="text-sm font-black text-[#146b4f]">Fila {index + 1}</p>
+                    <Button type="button" variant="ghost" size="sm" aria-label={`Eliminar fila ${index + 1} de ${title}`} disabled={disabled || !canRemove} onClick={() => onRemove(index)}><Trash2 className="mr-1 h-4 w-4"/>Eliminar</Button></div>
+                <div className="grid gap-4 md:grid-cols-2">{renderRow(index)}</div>
+                {row.errors.length > 0 && <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-white p-3 text-sm text-amber-950">{row.errors.map(message => <p key={message}>{message}</p>)}</div>}
+            </li>)}</ol>}
+    </section>;
 }

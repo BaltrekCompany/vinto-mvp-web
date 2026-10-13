@@ -1,0 +1,137 @@
+"use client";
+// HARNESS TEMPORAL DE QA (NO es una ruta del producto): se copia a app/qa-harness/page.tsx SOLO en un worktree de QA, se construye con NEXT_PUBLIC_API_URL apuntando al backend E2E
+// aislado y se elimina después (scripts/e2e/grouped-e2e.mjs lo verifica). Es el EJEMPLO tipado de un formulario con grupos repetibles (formulario SINTÉTICO, no industrial) que usa los
+// componentes del kit, el módulo capture-groups, el núcleo común (intento inmutable + reconciliación) y las operaciones HTTP genéricas. ?mode=lose-response / lose-request solo simulan
+// fallos de red del navegador para probar la reconciliación.
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { CaptureNotice, CaptureSection, CaptureShell, ChoiceField, ContextStrip, RepeatableGroup, SubmitBar, TextAreaField, TextField, contextItems } from "@/components/vinto/capture-kit";
+import { getActiveAssignment } from "@/lib/vinto/assignments-api";
+import { getCurrentUser, login, logout } from "@/lib/vinto/auth-api";
+import { getCaptureOf, postCaptureOf } from "@/lib/vinto/captures-api";
+import { SUBMIT_MESSAGES, freezeAttempt, isRec, newCaptureId, parseCaptureOf, parseSubmissionOf, submitAttemptOf, submitMessage, type CaptureOf, type PendingAttemptOf } from "@/lib/vinto/capture-core";
+import { addRow, buildGroupedValues, buildGroups, canAddRow, canRemoveRow, errorsFor, groupedValuesParser, initialDrafts, removeRow, setCell, type GroupDrafts, type GroupSpec, type RowError } from "@/lib/vinto/capture-groups";
+import { getDeviceKey } from "@/lib/vinto/device";
+import { contextFromActive, type CaptureContext } from "@/lib/vinto/orders";
+
+const CODE = "VINTO-TEST-GRP-1";
+const SPECS: readonly GroupSpec[] = [
+    { code: "detalle", label: "Detalle", repeatable: true, minRows: 1, maxRows: 3, fields: [
+        { key: "item", label: "Ítem", kind: "text", required: true }, { key: "cantidad", label: "Cantidad", kind: "integer", required: true },
+        { key: "peso", label: "Peso", kind: "decimal", required: false }, { key: "tipo", label: "Tipo", kind: "choice", required: false, options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] }] },
+    { code: "extras", label: "Extras", repeatable: true, minRows: 0, maxRows: null, fields: [{ key: "etiqueta", label: "Etiqueta", kind: "text", required: true }, { key: "valor", label: "Valor", kind: "decimal", required: false }] },
+    { code: "unico", label: "Único", repeatable: false, minRows: 0, maxRows: 1, fields: [{ key: "ref", label: "Referencia", kind: "text", required: true }] },
+];
+type Simple = { lote: string; nota?: string };
+const parseSimple = (v: unknown): Simple | null => (isRec(v) && typeof v.lote === "string" && v.lote !== "" && (v.nota === undefined || typeof v.nota === "string") ? { lote: v.lote, ...(typeof v.nota === "string" ? { nota: v.nota } : {}) } : null);
+type Values = Simple & { _groups: Record<string, Record<string, unknown>[]> };
+type Capture = CaptureOf<Values>;
+type Submission = { created: boolean; already_submitted: boolean; capture: Capture };
+const parseCapture = (v: unknown): Capture | null => parseCaptureOf(v, groupedValuesParser(parseSimple, SPECS), CODE) as Capture | null;
+const parseSubmission = (v: unknown): Submission | null => parseSubmissionOf(v, parseCapture);
+type Payload = { capture_id: string; form_code: string; assignment_id: string; device_key: string; values: Record<string, unknown> };
+type Attempt = PendingAttemptOf<Payload, { simple: Simple; groups: GroupDrafts }>;
+
+function installNetworkFault(mode: string | null) {
+    const w = window as unknown as { __faultInstalled?: boolean; __posts?: string[] };
+    if (w.__faultInstalled) return;
+    w.__faultInstalled = true; w.__posts = [];
+    const real = window.fetch.bind(window);
+    let armed = mode === "lose-response" || mode === "lose-request";
+    window.fetch = async (input, init) => {
+        const isCapturePost = (init?.method ?? "GET") === "POST" && String(input).endsWith("/api/captures");
+        if (isCapturePost) w.__posts!.push(String(init?.body ?? ""));
+        if (isCapturePost && armed && mode === "lose-request") { armed = false; throw new TypeError("simulated: request never reached the server"); }
+        const response = await real(input, init);
+        if (isCapturePost && armed && mode === "lose-response") { armed = false; throw new TypeError("simulated: response lost after the server processed the request"); }
+        return response;
+    };
+}
+
+function GroupedForm({ context, user, onLogout }: { context: CaptureContext; user: string; onLogout: () => void }) {
+    const [simple, setSimple] = useState({ lote: "", nota: "" });
+    const [groups, setGroups] = useState<GroupDrafts>(() => initialDrafts(SPECS));
+    const [errors, setErrors] = useState<RowError[]>([]);
+    const [notice, setNotice] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState<Attempt | null>(null);
+    const [sending, setSending] = useState(false);
+    const [saved, setSaved] = useState<{ capture: Capture; message: string; readBack: string } | null>(null);
+    const locked = sending || attempt !== null || saved !== null;
+    async function send() {
+        if (sending || saved) return;
+        let current = attempt;
+        if (!current) {
+            const built = buildGroups(SPECS, groups);
+            const problems: RowError[] = built.ok ? [] : built.errors;
+            if (!simple.lote.trim()) problems.push({ group: "", row: null, message: "Lote: es obligatorio." });
+            setErrors(problems);
+            if (problems.length || !built.ok) return void setNotice([SUBMIT_MESSAGES.invalid, ...problems.filter(p => p.group === "").map(p => p.message)].join(" "));
+            const values = buildGroupedValues({ lote: simple.lote.trim(), ...(simple.nota.trim() ? { nota: simple.nota.trim() } : {}) }, built.groups);
+            current = freezeAttempt<Payload, { simple: Simple; groups: GroupDrafts }>({ capture_id: newCaptureId(), form_code: CODE, assignment_id: context.assignmentId, device_key: getDeviceKey(), values }, { simple: { lote: simple.lote, nota: simple.nota }, groups }) as Attempt;
+            setAttempt(current);
+        }
+        setSending(true); setNotice(null);
+        try {
+            const outcome = await submitAttemptOf(current, { post: (p: Payload) => postCaptureOf(p, parseSubmission), get: (id: string) => getCaptureOf(id, parseCapture) });
+            if (outcome.kind === "submitted") {
+                setAttempt(null);
+                const message = submitMessage(outcome);
+                setSaved({ capture: outcome.capture, message, readBack: "reading" });
+                const read = await getCaptureOf(outcome.capture.id, parseCapture);
+                setSaved(old => old && { ...old, readBack: !read.ok ? "error" : JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? "ok" : "mismatch" });
+                return;
+            }
+            if (outcome.kind === "rejected") { setAttempt(null); return void setNotice(outcome.message); }
+            if (outcome.kind === "session") return void onLogout();
+            setNotice(outcome.message);
+        } finally { setSending(false); }
+    }
+    return <CaptureShell kicker="Ejemplo tipado · formulario sintético" title="Captura con grupos repetibles" onBack={() => undefined}>
+        <ContextStrip items={contextItems(context)}/>
+        <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="session">Sesión: <b>{user}</b>. Formulario SINTÉTICO de prueba (no industrial).</p>
+        <CaptureSection title="Campos simples">
+            <TextField label="Lote" required disabled={locked} value={simple.lote} onChange={x => setSimple(o => ({ ...o, lote: x }))}/>
+            <TextAreaField label="Nota" disabled={locked} value={simple.nota} onChange={x => setSimple(o => ({ ...o, nota: x }))}/>
+        </CaptureSection>
+        {SPECS.map(spec => { const rows = groups[spec.code] ?? [];
+            return <RepeatableGroup key={spec.code} title={spec.label} rows={rows.map((r, i) => ({ key: r.rowKey, errors: errorsFor(errors, spec.code, i + 1) }))} minRows={spec.minRows} maxRows={spec.repeatable ? spec.maxRows : 1}
+                canAdd={canAddRow(spec, rows)} canRemove={canRemoveRow(spec, rows)} disabled={locked} groupErrors={errorsFor(errors, spec.code, null)}
+                onAdd={() => setGroups(g => ({ ...g, [spec.code]: addRow(spec, g[spec.code] ?? []) }))} onRemove={i => setGroups(g => ({ ...g, [spec.code]: removeRow(spec, g[spec.code] ?? [], (g[spec.code] ?? [])[i].rowKey) }))}
+                renderRow={i => spec.fields.map(f => f.kind === "choice"
+                    ? <ChoiceField key={f.key} label={f.label} required={f.required} options={f.options ?? []} disabled={locked} value={rows[i].cells[f.key] ?? ""} onChange={x => setGroups(g => ({ ...g, [spec.code]: setCell(g[spec.code] ?? [], rows[i].rowKey, f.key, x) }))}/>
+                    : <TextField key={f.key} label={f.label} required={f.required} inputMode={f.kind === "integer" ? "numeric" : f.kind === "decimal" ? "decimal" : "text"} disabled={locked} value={rows[i].cells[f.key] ?? ""} onChange={x => setGroups(g => ({ ...g, [spec.code]: setCell(g[spec.code] ?? [], rows[i].rowKey, f.key, x) }))}/>)}/>; })}
+        <CaptureNotice text={notice}/>
+        {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
+            <p className="font-black">{saved.message}</p><p>Captura {saved.capture.id} · revisión {saved.capture.revision}</p>
+            {SPECS.map(spec => <p key={spec.code} data-saved-group={spec.code}>{spec.label}: {(saved.capture.values._groups[spec.code] ?? []).map((r, i) => `${i + 1}) ${Object.values(r).join(" / ")}`).join(" · ") || "sin filas"}</p>)}
+            <p data-readback={saved.readBack}>{saved.readBack === "ok" ? "Verificada con una consulta posterior por id." : saved.readBack === "reading" ? "Consultando…" : "La consulta posterior no coincide o falló."}</p></div>}
+        {!saved && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}
+    </CaptureShell>;
+}
+
+function Harness() {
+    const params = useSearchParams();
+    const [user, setUser] = useState("");
+    const [context, setContext] = useState<CaptureContext | null>(null);
+    const [status, setStatus] = useState("loading");
+    const [creds, setCreds] = useState({ username: "", password: "" });
+    const load = useCallback(async () => {
+        const session = await getCurrentUser();
+        if (session.status !== "authenticated") { setContext(null); return void setStatus("anonymous"); }
+        setUser(session.user.display_name);
+        const active = await getActiveAssignment("COPASA");
+        if (!active.ok) return void setStatus(`assignment-error-${active.status}`);
+        const check = contextFromActive(active.data);
+        if (!check.ok) return void setStatus(`no-context-${check.reason}`);
+        setContext(check.context); setStatus("ready");
+    }, []);
+    useEffect(() => { installNetworkFault(params.get("mode")); void load(); }, [load, params]);
+    if (status === "anonymous") return <main className="p-6"><h1 className="font-black">Harness QA · Ingreso</h1>
+        <input id="qa-user" className="border p-2" value={creds.username} onChange={e => setCreds({ ...creds, username: e.target.value })}/>
+        <input id="qa-pass" type="password" className="border p-2" value={creds.password} onChange={e => setCreds({ ...creds, password: e.target.value })}/>
+        <button id="qa-login" onClick={async () => { const r = await login(creds.username, creds.password); if (r.status === "ok") { setStatus("loading"); void load(); } }}>Ingresar</button></main>;
+    if (status !== "ready" || !context) return <main className="p-6" id="qa-status">{status}</main>;
+    return <div><GroupedForm context={context} user={user} onLogout={() => setStatus("anonymous")}/>
+        <button id="qa-logout" onClick={async () => { await logout(); setContext(null); setStatus("anonymous"); }}>Cerrar sesión (harness)</button></div>;
+}
+export default function Page() { return <Suspense fallback={null}><Harness/></Suspense>; }
