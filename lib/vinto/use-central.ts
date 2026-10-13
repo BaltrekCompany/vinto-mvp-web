@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getActiveAssignment, listAssignments } from "@/lib/vinto/assignments-api";
+import type { Availability } from "@/lib/vinto/availability";
+import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
 import type { ActiveAssignment, Assignment, FailureKind, WorkOrder } from "@/lib/vinto/orders";
 import { listWorkOrders } from "@/lib/vinto/work-orders-api";
@@ -51,3 +53,7 @@ export const useAssignments = (enabled: boolean, onUnauthorized: () => void) =>
 
 export const useActiveAssignment = (machineCode: string, enabled: boolean, onUnauthorized: () => void) =>
     useResource<ActiveAssignment>(`active:${machineCode}`, enabled, (signal) => getActiveAssignment(machineCode, signal), onUnauthorized);
+
+// Máquinas y formularios centrales operables por la sesión (solo lectura, verificado por el backend). Con `withArticles` incluye los artículos de cada máquina.
+export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: () => void) =>
+    useResource<Availability>(`availability:${withArticles ? "articles" : "base"}`, enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized);

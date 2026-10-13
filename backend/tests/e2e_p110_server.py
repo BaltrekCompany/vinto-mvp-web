@@ -74,8 +74,11 @@ def main():
             users[name] = {"username": f"e2e.{name}", "password": password, "user_id": str(created.user_id)}
         # --- configuración de PRUEBA, solo en este proceso -------------------------------------------------------------------------------
         settings.database_url = SecretStr(database_url(database))
-        sectors._OPERATIONAL = sectors.validate_operational_sectors(ENABLED_SECTORS)
-        capture_service.CENTRAL_FORM_CODES = frozenset({F6, P110_CODE, GROUPED_CODE, P129_CODE})
+        if os.environ.get("E2E_REBOBINADO", "on") == "on":  # M4-A: con "off" se sirve la configuración REAL (Rebobinado concedido pero NO operativo, política con solo F6)
+            sectors._OPERATIONAL = sectors.validate_operational_sectors(ENABLED_SECTORS)
+            capture_service.CENTRAL_FORM_CODES = frozenset({F6, P110_CODE, GROUPED_CODE, P129_CODE})
+        else:
+            print("E2E: REBOBINADO DESHABILITADO (configuración real: solo BOBINAS operativo, política solo F6)", flush=True)
         with connect(database) as check:  # el proceso sirve exactamente esta base
             if check.execute("SELECT current_database()").fetchone()[0] != database:
                 refuse("la conexión de verificación no apunta a la base efímera")
