@@ -68,9 +68,11 @@ Se implementa exclusivamente la interpretación de la pantalla, y solo como fixt
 
 | Campo | Tipo en el motor | Validación |
 |---|---|---|
-| `cantidad_jabas` | `integer` | Solo dígitos, entero seguro. **Sin mínimo ni máximo** (0 y 100000 se aceptan) |
+| `cantidad_jabas` | `integer` | Entero con signo opcional (`-?\d+`, el mismo formato que acepta el backend) y dentro del rango seguro de JavaScript. Se rechazan decimales, exponenciales, texto y `+`. **Sin mínimo ni máximo** (0, 100000 y también `-5` se aceptan estructuralmente) |
 | `hora_inicio` | `time` | `HH:MM` (00:00–23:59) |
 | `hora_fin` | `time` | `HH:MM`. **No** se exige que sea posterior a la de inicio (un pallet puede cruzar la medianoche) |
+
+> **Aclaración:** aceptar un entero negativo en este contrato técnico **no autoriza cantidades negativas en la operación industrial**. Solo refleja que la validación es estructural y que el motor existente ya almacena el entero tal como llega. La cantidad mínima de jabas sigue **pendiente de VINTO** (decisión P-5).
 
 El backend deriva de la asignación y la sesión: máquina, turno, fecha operativa, OT, línea, artículo y usuario. El payload solo lleva `capture_id`, `form_code`, `assignment_id`, `device_key` y estos tres valores; cualquier otra clave (`numero_pallet`, `peso_total`, `maquina`, `turno`…) se rechaza con 422, y una prueba lo comprueba. PostgreSQL devuelve las horas con segundos (`08:15:00`); el historial las muestra sin ellos.
 

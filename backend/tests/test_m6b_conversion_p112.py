@@ -204,6 +204,18 @@ class WriteTests(P112Case):
         a, b = self.payload(assignment), self.payload(assignment)  # same content, distinct capture ids: two pallets, no uniqueness rule and no numbering
         self.assertEqual(((await self.post(a)).status, (await self.post(b)).status), (201, 201))
 
+    async def test_a_signed_integer_is_accepted_by_the_existing_engine_without_any_business_rule(self):
+        # Structural only: the engine stores the integer as sent. This does NOT authorize negative quantities in operation; the minimum quantity is a pending VINTO decision.
+        _, assignment = await self.assignment()
+        reply = await self.post(self.payload(assignment, values={**P112_VALUES, "cantidad_jabas": -5}))
+        self.assertEqual(reply.status, 201, reply.text)
+        capture = reply.json()["capture"]
+        self.assertEqual(capture["values"]["cantidad_jabas"], -5)
+        self.assertEqual(self.rows(capture["id"])["cantidad_jabas"], "integer:-5")
+        self.assertEqual((await self.post(self.payload(assignment, values={**P112_VALUES, "cantidad_jabas": "-7"}))).status, 201)  # signed text is accepted too
+        for bad in ("+7", "-", "--7", "-7.5", -7.5, "-1e3"):
+            self.assertEqual((await self.post(self.payload(assignment, values={**P112_VALUES, "cantidad_jabas": bad}))).status, 422, bad)
+
     async def test_200_identical_retry_creates_no_duplicate(self):
         _, assignment = await self.assignment()
         body = self.payload(assignment)

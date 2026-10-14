@@ -5,7 +5,7 @@
 // hora de inicio y hora de fin. La definición legacy de P1-12 es otra (37 campos: balances de empaque, subempaque, bolsa, segundas y asas, mermas y total de producción) y NO se implementa aquí.
 //
 // QUÉ NO HACE (decisiones pendientes de VINTO, docs/M6-B-conversion-p112.md): no calcula ni envía peso nominal ni peso total (el maestro de pesos no está homologado), no genera ni muestra un
-// número de pallet (el código `PAL-AAAAMMDD-XXXXXX` del legacy era aleatorio y NO es un correlativo), no impone mínimos ni máximos de jabas, no exige que la hora de fin sea posterior a la de
+// número de pallet (el código `PAL-AAAAMMDD-XXXXXX` del legacy era aleatorio y NO es un correlativo), no impone mínimos ni máximos de jabas (un entero negativo es estructuralmente válido; eso NO autoriza cantidades negativas en operación), no exige que la hora de fin sea posterior a la de
 // inicio (un turno nocturno cruza la medianoche), no valida contra la receta ni el artículo. Solo exige lo estructural: un entero y dos horas HH:MM.
 //
 // Todo es PURO (sin red, sin DOM). P1-12 NO está habilitado en la política de captura central del backend ni Conversión es un sector operativo: este cliente solo funciona contra un backend de
@@ -35,7 +35,7 @@ export type P112Submission = SubmissionOf<P112Capture>;
 
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/; // lo que envía el cliente
 const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQL devuelve la hora con segundos (HH:MM:SS)
-const DIGITS = /^\d+$/;
+const INTEGER = /^-?\d+$/; // entero con signo opcional: es el mismo formato que acepta el backend; NO hay mínimo industrial (ver docs/M6-B-conversion-p112.md)
 
 // Hora tal como se muestra: HH:MM (los segundos que añade PostgreSQL no se muestran).
 export const shortHour = (value: string): string => value.slice(0, 5);
@@ -65,7 +65,7 @@ export function normalizeP112Draft(draft: P112Draft): P112DraftCheck {
     const errors: string[] = [];
     const jabas = draft.cantidad_jabas.trim(), start = draft.hora_inicio.trim(), end = draft.hora_fin.trim();
     if (!jabas) errors.push(`${P112_LABELS.cantidad_jabas}: es obligatorio.`);
-    else if (!DIGITS.test(jabas) || !Number.isSafeInteger(Number(jabas))) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un número entero (solo dígitos).`);
+    else if (!INTEGER.test(jabas) || !Number.isSafeInteger(Number(jabas))) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un número entero.`);
     for (const [key, text] of [["hora_inicio", start], ["hora_fin", end]] as const) {
         if (!text) errors.push(`${P112_LABELS[key]}: es obligatorio.`);
         else if (!HOUR.test(text)) errors.push(`${P112_LABELS[key]}: debe tener formato HH:MM.`);

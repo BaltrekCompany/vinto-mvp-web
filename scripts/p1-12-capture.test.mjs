@@ -92,10 +92,12 @@ test("the P1-12 values parser is strict: integer count and two hours; unknown ke
 
 test("structural validation: an integer and two HH:MM hours; NO minimum, maximum, ordering or industrial rule is invented", () => {
   assert.deepEqual(normalizeP112Draft(draft({ cantidad_jabas: " 40 " })), { ok: true, values: { cantidad_jabas: 40, hora_inicio: "08:15", hora_fin: "09:05" } });
-  for (const jabas of ["0", "1", "007", "100000", "9007199254740991"]) assert.equal(normalizeP112Draft(draft({ cantidad_jabas: jabas })).ok, true, jabas); // no min / max
+  for (const jabas of ["0", "1", "007", "100000", "9007199254740991", "-3", "-0", "-9007199254740991"]) assert.equal(normalizeP112Draft(draft({ cantidad_jabas: jabas })).ok, true, jabas); // no min / max: a signed integer is structurally valid
+  assert.equal(normalizeP112Draft(draft({ cantidad_jabas: "-3" })).values.cantidad_jabas, -3); // structural only: it does NOT authorize negative quantities in operation (pending VINTO)
+  assert.equal(parseP112Capture(p112(ID, { ...P112_VALUES, cantidad_jabas: -3 })).values.cantidad_jabas, -3);
   assert.equal(normalizeP112Draft(draft({ hora_inicio: "22:00", hora_fin: "06:00" })).ok, true); // a pallet may cross midnight: end < start is NOT an error
   assert.equal(normalizeP112Draft(draft({ hora_inicio: "10:00", hora_fin: "10:00" })).ok, true);
-  for (const jabas of ["", "  ", "4.5", "4,5", "-3", "+3", "abc", "1e3", "40 jabas", "9007199254740993", "99999999999999999999"]) assert.equal(normalizeP112Draft(draft({ cantidad_jabas: jabas })).ok, false, jabas);
+  for (const jabas of ["", "  ", "4.5", "4,5", "+3", "--3", "- 3", "-3.5", "-", "abc", "1e3", "-1e3", "40 jabas", "9007199254740993", "-9007199254740993", "99999999999999999999"]) assert.equal(normalizeP112Draft(draft({ cantidad_jabas: jabas })).ok, false, jabas);
   for (const hour of ["", "8:15", "24:00", "12:60", "12:5", "12.30", "1230", "12:30:15", "mediodía"]) { assert.equal(normalizeP112Draft(draft({ hora_inicio: hour })).ok, false, hour); assert.equal(normalizeP112Draft(draft({ hora_fin: hour })).ok, false, hour); }
   const empty = normalizeP112Draft(EMPTY_P112_DRAFT);
   assert.equal(empty.ok, false);
