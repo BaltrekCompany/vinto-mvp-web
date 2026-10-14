@@ -220,7 +220,7 @@ test("the page routes F6 to the central component and keeps the other forms on l
   assert.ok(f6.includes("<F6Capture"));
   assert.equal(/save\(|setRecords|vinto-p1-records/.test(f6), false);
   assert.match(page, /if \(selected\)\n\s+return <Capture form=\{selected\}[^\n]*save=\{r => \{ setRecords\(x => \[r, \.\.\.x\]\)/); // los demás formularios siguen locales
-  assert.equal((page.match(/records=\{records\.filter\(r => r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID\)\}/g) ?? []).length, 2); // F6 y F3 locales históricos fuera de Seguimiento
+  assert.equal((page.match(/records=\{records\.filter\(r => r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID\)\}/g) ?? []).length, 1); // F6 y F3 locales históricos fuera de Seguimiento (PB-CLEAN: un solo Tracking, el de Bobinas)
 });
 
 test("the F6 component and API client never touch local storage for records", () => {

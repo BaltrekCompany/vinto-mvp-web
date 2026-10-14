@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CaptureCountError, getCaptureCount, type CaptureCountFailure, type CaptureFront } from "@/lib/vinto/api";
+import { captureCountView } from "@/lib/vinto/capture-count-view";
 
 // Cada resultado queda ligado a (usuario, frente, intento): si cambia el usuario, el frente o se reintenta, el resultado anterior deja de
 // aplicar y se muestra "cargando". Así nunca se muestra el conteo de otra sesión u otro frente.
@@ -29,15 +30,12 @@ export function CaptureCount({ front, localCount, userKey, onSessionLost }: { fr
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [front, attempt, userKey]);
     const current = state && state.owner === userKey && state.front === front && state.attempt === attempt ? state : { owner: userKey, front, attempt, status: "loading" as const };
+    const view = captureCountView(current, front, localCount);
     return <div className="rounded-2xl border bg-white p-5" aria-live="polite">
-        <p className="text-sm text-slate-700">{current.status === "ready" ? "Registros centrales" : "Registros locales (este navegador)"}</p>
-        <p className="mt-2 text-3xl font-black">{current.status === "ready" ? current.count : localCount}</p>
-        <p className="mt-2 text-xs text-slate-600">
-            {current.status === "ready" ? `En este navegador: ${localCount}. Sin sincronización automática.` :
-                current.status === "loading" ? "Consultando registros centrales…" :
-                    current.kind === "forbidden" ? "Tu perfil no tiene acceso al conteo central." : "Consulta central no disponible"}
-        </p>
-        {current.status !== "loading" && <Button variant="ghost" size="sm" className="mt-2" onClick={() => setAttempt(n => n + 1)}>
+        <p className="text-sm text-slate-700">{view.label}</p>
+        <p className="mt-2 text-3xl font-black">{view.value}</p>
+        <p className="mt-2 text-xs text-slate-600">{view.note}</p>
+        {view.canRetry && <Button variant="ghost" size="sm" className="mt-2" onClick={() => setAttempt(n => n + 1)}>
             {current.status === "ready" ? "Actualizar" : "Reintentar"}
         </Button>}
     </div>;
