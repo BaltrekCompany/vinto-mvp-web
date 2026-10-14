@@ -13,7 +13,7 @@ import { QUALITY_CANDIDATES } from "@/lib/vinto/quality-candidates";
 import { candidateHistoryKey } from "@/lib/vinto/resource-view";
 import { useResource } from "@/lib/vinto/use-central";
 
-// Controles de Calidad POR MÁQUINA (DEV-Q1 y DEV-Q2, candidatos P1-18, P1-22 y P1-26): sin bobina, asignación ni OT. La disponibilidad (qué formularios publica el backend para cada máquina) viene de
+// Controles de Calidad POR MÁQUINA (DEV-Q1 y DEV-Q2, candidatos P1-18, P1-22, P1-26 y P1-27): sin bobina, asignación ni OT. La disponibilidad (qué formularios publica el backend para cada máquina) viene de
 // GET /api/quality/machine-forms; con la política real el backend no publica ninguno y este panel no ofrece nada. Los recursos llevan el identificador de sesión en la clave (nunca se ve la vista de otra
 // cuenta). Nunca se usa localStorage ni listas estáticas; un control registrado no libera, aprueba ni rechaza ninguna bobina.
 type Props = {
@@ -34,6 +34,7 @@ export function QualityMachineControls({ scope, canCapture, mode, refreshKey, on
     const code = machine?.code ?? "";
     const history = {
         p118: useResource<CandidateCapture[]>(candidateHistoryKey(`p118-${code}`, scope, refreshKey), canCapture && offered.includes("p118"), signal => QUALITY_CANDIDATES.p118.machineApi.list(code, signal), onSessionLost),
+        p127: useResource<CandidateCapture[]>(candidateHistoryKey(`p127-${code}`, scope, refreshKey), canCapture && offered.includes("p127"), signal => QUALITY_CANDIDATES.p127.machineApi.list(code, signal), onSessionLost),
         p122: useResource<CandidateCapture[]>(candidateHistoryKey(`p122-${code}`, scope, refreshKey), canCapture && offered.includes("p122"), signal => QUALITY_CANDIDATES.p122.machineApi.list(code, signal), onSessionLost),
         p126: useResource<CandidateCapture[]>(candidateHistoryKey(`p126-${code}`, scope, refreshKey), canCapture && offered.includes("p126"), signal => QUALITY_CANDIDATES.p126.machineApi.list(code, signal), onSessionLost),
     };

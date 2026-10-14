@@ -15,5 +15,8 @@ export type CandidateScreen = {
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
     sections?: readonly { title: string; hint?: string; keys: readonly string[] }[]; // agrupación SOLO visual de los campos (cada campo en exactamente una sección); no cambia la estructura guardada
+    actionLabel?: string; // texto inequívoco de la acción en el inbox (por defecto «<título> (candidato)»)
+    officialStatusNote?: string; // contexto "bobbin": aviso de que el estado oficial de Calidad de la bobina se muestra aparte (solo lectura) y esta captura no lo cambia
+    hints?: Readonly<Record<string, string>>; // pistas por campo (clave -> texto); no cambian el contrato
     historyNote: string;
 };

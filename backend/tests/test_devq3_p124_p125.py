@@ -71,8 +71,8 @@ class Base(q2.BobbinBase):
 class ConfigurationTests(Base):
     async def test_the_shipped_policy_is_empty_and_the_candidates_are_known_but_unreachable_without_the_test_policy(self):
         self.assertEqual(SHIPPED_POLICY, frozenset())
-        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset({P121_CODE, P124_CODE, P125_CODE}))
-        self.assertEqual({k: v for k, v in _quality_service.BOBBIN_CODE_FIELDS.items()}, {P121_CODE: "numero_de_bobina", P124_CODE: "numero_de_bobina", P125_CODE: "numero_de_bobina"})
+        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset({P121_CODE, P124_CODE, P125_CODE, "VINTO-P1-28"}))  # P1-28 added by DEV-CLOSE
+        self.assertEqual({k: v for k, v in _quality_service.BOBBIN_CODE_FIELDS.items()}, {P121_CODE: "numero_de_bobina", P124_CODE: "numero_de_bobina", P125_CODE: "numero_de_bobina", "VINTO-P1-28": "numero_de_bobina"})
         _, bobbin = await self.bobbin()
         before = self.counts()
         with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_POLICY):

@@ -8,7 +8,7 @@ import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
-import type { QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
+import { qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 
 // Pantalla de captura CENTRAL CANDIDATA de un formulario declarativo (candidate-form.ts): la usan P1-05 y P1-31 y la usarán las fichas simples siguientes. Envía SOLO a la API central
 // (POST /api/captures con el código del formulario) y se reconcilia con GET por id; nunca escribe en vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El contexto (OT,
@@ -43,7 +43,8 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         ? [{ label: "Bobina", value: bobbin ? `${bobbin.bobbin.code} · ${bobbin.bobbin.id}` : "—" }, { label: "Máquina", value: bobbin ? `${bobbin.bobbin.machine.code} · ${bobbin.bobbin.machine.name}` : "—" },
             { label: "OT", value: bobbin ? bobbin.production.work_order.number : "—" }, { label: "Línea / PV", value: bobbin ? `${bobbin.production.line.line_code} / ${bobbin.production.line.pv_reference}` : "—" },
             { label: "Artículo", value: bobbin ? `${bobbin.production.line.article.code} · ${bobbin.production.line.article.description}` : "—" }, { label: "Turno y fecha operativa", value: "Los deriva el backend de la producción de la bobina" },
-            { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Hora", value: "Hora de registro (no del ensayo)" }]
+            { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Hora", value: "Hora de registro (no del ensayo)" },
+            ...(candidate.officialStatusNote && bobbin ? [{ label: "Estado oficial de Calidad de la bobina (solo lectura)", value: qualityStatusLabel(bobbin.quality.status) }] : [])]
         : form.context === "machine"
         ? [{ label: "Máquina", value: machine ? `${machine.code} · ${machine.name}` : "—" }, { label: "Turno y fecha operativa", value: "Los resuelve el backend al registrar" }, { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Bobina / OT / asignación", value: "No aplica" }, { label: "Hora", value: "Hora de registro (no del ensayo)" }]
         : context ? contextItems(context) : [];
@@ -94,9 +95,9 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     }
 
     const renderField = (field: (typeof form.fields)[number]) => field.kind === "textarea"
-        ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)}/>
+        ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} hint={candidate.hints?.[field.key]}/>
         : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
-            inputMode={field.kind === "decimal" ? "decimal" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"}/>;
+            inputMode={field.kind === "decimal" ? "decimal" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"} hint={candidate.hints?.[field.key]}/>;
     // Agrupación solo visual (candidate.sections): cada campo se dibuja una vez y la estructura guardada no cambia. Sin secciones: un único bloque con todos los campos.
     const groups = candidate.sections
         ? candidate.sections.map(s => ({ title: s.title, hint: s.hint, fields: s.keys.map(k => form.fields.find(f => f.key === k)).filter((f): f is (typeof form.fields)[number] => f !== undefined) }))
@@ -108,6 +109,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             <p className="mt-1">Los campos son los de la definición legacy como punto de partida técnico. Esta captura solo funciona donde el formulario esté habilitado explícitamente y no sustituye ninguna decisión de VINTO.</p>
         </div>
         <ContextStrip items={items}/>
+        {candidate.officialStatusNote && <p role="note" className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-950" data-section="official-status">{candidate.officialStatusNote}</p>}
         <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
             {candidate.pending.map(note => <div key={note.label}><p className="text-xs font-semibold text-emerald-800">{note.label}</p><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
         </div>
