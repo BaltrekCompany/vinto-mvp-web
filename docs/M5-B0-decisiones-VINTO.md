@@ -1,5 +1,7 @@
 # M5-B0 · Paquete único de decisiones para VINTO (Rebobinado, P1-10, P1-29, P1-07 y genealogía)
 
+> Navegación: la homologación de Conversión (36 decisiones, clave `CV:`) está en el [paquete M7-A](M7-A-homologacion-indice.md). Este documento, sus decisiones, estados y evidencias no cambian.
+
 **Estado: documental. Ninguna decisión está aprobada.** No se implementa ninguna regla industrial, no se tocó DEV, catálogos, permisos ni configuración, no hay migraciones, Rebobinado sigue NO homologado y NO operativo y P1-07 no está publicado.
 Consolida `docs/M4-B1-homologacion-rebobinado.md` (20 preguntas) y `docs/M5-A-p107-genealogia.md` (18 decisiones). Complementos: [agenda](M5-B0-agenda-homologacion.md) y [acta](M5-B0-acta-homologacion.md).
 Base: `08fd3f3` (PR #28).

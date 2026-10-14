@@ -1,5 +1,7 @@
 # M6-C — Producción diaria de servilletas y especiales CANDIDATA (VINTO-P1-13)
 
+> Estas decisiones están consolidadas, con su clave única `CV:`, en el paquete de homologación de Conversión: [M7-A](M7-A-conversion-decisiones-VINTO.md).
+
 Estado: **candidato técnico, NO homologado, NO habilitado.** Conversión sigue sin ser un sector operativo y VINTO-P1-13 (como P1-12 y P1-16) sigue fuera de la política de captura central. Todo funciona únicamente en una base efímera `*_test` y en un proceso de prueba que lo habilita explícitamente. Continúa a [M6-A](M6-A-conversion-central-p116.md) y [M6-B](M6-B-conversion-p112.md); las decisiones C-1 a C-11 y P-1 a P-11 no se alteran.
 
 Base: `origin/main` `0150a03` (PR #31).
