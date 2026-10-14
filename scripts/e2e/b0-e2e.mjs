@@ -80,6 +80,8 @@ if (!SELF_TEST) {
   const probe = await fetch(`${API}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", Origin: WEB }, body: JSON.stringify({ username: users.jefatura.username, password: users.jefatura.password }) });
   const probeJson = await probe.json().catch(() => null);
   const servedUser = probeJson?.user?.id;
+  const probeCookie = probe.headers.get("set-cookie")?.split(";")[0];
+  if (probeCookie) await fetch(`${API}/api/auth/logout`, { method: "POST", headers: { Origin: WEB, Cookie: probeCookie } }); // la sesión de la sonda de identidad no queda abierta
   check("S0d la API sirve EXACTAMENTE la base de esta corrida: el usuario ficticio que devuelve el login existe en esa base (y solo en ella)", probe.status === 200 && servedUser === users.jefatura.user_id && q(`SELECT count(*) FROM vinto_master."user" WHERE id = '${servedUser}'`)[0] === "1", String(probe.status), "sql");
   if (!(probe.status === 200 && servedUser === users.jefatura.user_id)) abort("la API no sirve la base de esta corrida");
 }
