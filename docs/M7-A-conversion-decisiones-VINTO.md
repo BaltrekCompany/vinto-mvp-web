@@ -12,7 +12,8 @@ Base: `26472007d5dfed89842fa2b5ea2920cdec115d81` (PR #33).
 - **Responsables propuestos** (roles por confirmar por VINTO, como en M5-B0): **JP** Jefatura de Producción, **CAL** Calidad, **DB** Data Baltrek, **TI** Baltrek TI, **DIR** Dirección/sponsor de VINTO.
 - **Desbloquea:** incrementos del roadmap del [índice](M7-A-homologacion-indice.md) §9 (M7-B maestros, M7-C contratos, M7-D cálculo, M7-E bobinas y genealogía, M7-F Calidad e inventario, M7-G piloto aislado, M7-H activación controlada).
 - **Frentes:** **A** Maestros (máquinas, artículos, relaciones, turnos, pesos nominales, recetas); **B** Formularios (unidad de registro, obligatoriedad, campos, firmas, numeración); **C** Cálculos industriales (pesos, consumos, balances, mermas, producción); **D** Integración (genealogía, Calidad, inventario, doble conteo).
-- **Clase propuesta PF / OP / LT** (definiciones en el [índice](M7-A-homologacion-indice.md) §5): es una **clasificación propuesta, condicional al alcance que VINTO confirme**. Cada decisión tiene **una sola** clase base; las condiciones que la cambiarían se anotan aparte y **no duplican** la decisión en los conteos.
+- **Clase propuesta PF / OP / LT** (definiciones en el [índice](M7-A-homologacion-indice.md) §5): es una **clasificación propuesta, condicional al alcance que VINTO confirme**. Cada decisión tiene **una sola** clase base; las condiciones que la cambiarían se anotan aparte y **no duplican** la decisión en los conteos. **Clasificar una decisión como LT no la hace dejar de ser bloqueante:** puede resolverse después del piloto, pero sigue pendiente y, para activar, su diferimiento exige una resolución formal de VINTO (índice §9, M7-H).
+- **Dependencia dura frente a «responder junto con».** Una **dependencia dura** (`Depende de`) se declara solo si existe una **necesidad técnica demostrable** de resolver una decisión antes de implementar o aprobar otra, y cada una cita su evidencia (columna «Justificación»). **«Responder junto con»** recoge la relación funcional o temática —incluidas las columnas «Relacionada con» de M6-B, M6-C y M6-D—, donde ambas preguntas pueden resolverse sin una precedencia obligatoria; es **simétrica**. Una relación «Relacionada con» de M6 **no** se convierte en dependencia dura por sí sola, y ninguna justificación inventa reglas industriales: solo cita hechos de las definiciones legacy o del esquema.
 
 ## 2. Matriz de decisiones
 | ID | Formulario / sector | Pregunta que VINTO debe responder | Alternativas de respuesta | Fuente y evidencia existente | Resp. | Estado | Evidencia necesaria | Desbloquea |
@@ -55,46 +56,51 @@ Base: `26472007d5dfed89842fa2b5ea2920cdec115d81` (PR #33).
 | CV:B-6 | P1-11 y P1-13 (Calidad) | ¿El consumo exige que la bobina esté liberada por Calidad? ¿Cómo se trata una bobina rechazada? | Exige liberada / Permite pendiente / Bloquea rechazada | M6-D §10 y §11. Existente: sin servicio de liberación ni consumo | CAL, JP | Pendiente | Política escrita | M7-E y M7-F |
 
 ## 3. Clasificación, dependencias y vínculos
-**Depende de** = prerrequisito duro dentro de Conversión. **Responder junto con** = preguntas relacionadas que conviene contestar en el mismo bloque; **no se fusionan** (cada una conserva su ID, su fuente y su estado) y la relación es simétrica. **Vínculos con Rebobinado** = solo referencias a M5-B0; no cambian sus estados.
+**Depende de** = prerrequisito duro dentro de Conversión, **solo** con una necesidad técnica demostrable y su evidencia en la columna siguiente. **Responder junto con** = preguntas relacionadas que conviene contestar en el mismo bloque (incluye todas las relaciones «Relacionada con» de M6-B, M6-C y M6-D); **no se fusionan** (cada una conserva su ID, su fuente y su estado), no implican precedencia y la relación es simétrica. **Vínculos con Rebobinado** = solo referencias a M5-B0; no cambian sus estados.
 
-| ID | Frente | Clase propuesta | Condición de reclasificación | Depende de | Responder junto con | Vínculos con Rebobinado (solo enlaces) |
-|---|---|---|---|---|---|---|
-| CV:C-1 | B · Formularios | PF | — | — | CV:P-1, CV:N-1 | — |
-| CV:C-2 | B · Formularios | OP | PF si VINTO decide numeración central (requiere numerador y migración) | CV:C-1 | CV:P-2 | RB:H1-13, RB:H1-14, RB:H2-13 |
-| CV:C-3 | C · Cálculos | OP | — | CV:C-1 | CV:P-4, CV:P-8, CV:N-5 | RB:H3-01 |
-| CV:C-4 | B · Formularios | OP | PF si la ficha exige firma o aprobación para ser válida | — | CV:P-9 | RB:H1-16, RB:H1-21, RB:H2-17 |
-| CV:C-5 | C · Cálculos | OP | — | — | CV:P-3, CV:P-4, CV:P-5, CV:N-6 | RB:H1-15, RB:P-02, RB:H3-02 |
-| CV:C-6 | A · Maestros | PF | — | — | CV:P-11, CV:N-8 | RB:H1-01, RB:H1-03, RB:H1-04, RB:H2-16 |
-| CV:C-7 | A · Maestros | PF | — | — | CV:C-8, CV:P-6 | RB:H1-05, RB:H1-07, RB:H1-08, RB:H1-09 |
-| CV:C-8 | A · Maestros | PF | — | CV:C-7 | CV:C-7 | RB:H1-06 |
-| CV:C-9 | A · Maestros | PF | — | — | CV:C-11, CV:P-3, CV:N-2 | RB:H1-10, RB:H1-11, RB:P-03 |
-| CV:C-10 | B · Formularios | OP | — | — | — | — |
-| CV:C-11 | A · Maestros | OP | PF si el peso es obligatorio en alguna ficha | CV:C-9 | CV:C-9, CV:P-3 | RB:P-03 |
-| CV:P-1 | B · Formularios | PF | — | — | CV:C-1, CV:P-7, CV:N-1, CV:B-4 | — |
-| CV:P-2 | B · Formularios | OP | PF si VINTO decide numeración central | — | CV:C-2 | RB:H1-13, RB:H1-14 |
-| CV:P-3 | A · Maestros | OP | PF si el peso es obligatorio en la ficha | CV:C-9, CV:C-11 | CV:C-5, CV:C-9, CV:C-11, CV:P-4 | RB:P-03 |
-| CV:P-4 | C · Cálculos | OP | — | CV:P-3, CV:C-3 | CV:C-3, CV:C-5, CV:P-3 | — |
-| CV:P-5 | B · Formularios | LT | OP si VINTO exige límites en la validación | CV:C-5 | CV:C-5 | RB:P-02 |
-| CV:P-6 | B · Formularios | LT | OP si VINTO exige reglas de horas | CV:C-7 | CV:C-7 | — |
-| CV:P-7 | B · Formularios | PF | — | CV:P-1 | CV:P-1, CV:N-7 | — |
-| CV:P-8 | C · Cálculos | OP | PF si se exigen en la primera versión | CV:P-1 | CV:C-3, CV:B-4 | — |
-| CV:P-9 | B · Formularios | OP | PF si la ficha exige aprobación para ser válida | CV:C-4 | CV:C-4 | RB:H1-16, RB:H2-17 |
-| CV:P-10 | D · Integración | OP | — | CV:N-3, CV:B-6 | CV:N-3, CV:B-6 | RB:H3-03 |
-| CV:P-11 | A · Maestros | PF | — | CV:C-6 | CV:C-6, CV:N-8 | — |
-| CV:N-1 | B · Formularios | PF | — | — | CV:C-1, CV:P-1, CV:B-1 | — |
-| CV:N-2 | A · Maestros | OP | PF si la receta es obligatoria | CV:C-9 | CV:C-9 | RB:P-03 |
-| CV:N-3 | D · Integración | OP | PF si VINTO exige una bobina real para el piloto | — | CV:P-10, CV:B-6 | RB:H2-02, RB:H2-03, RB:H2-10 |
-| CV:N-4 | B · Formularios | PF | — | CV:N-1 | CV:B-5 | — |
-| CV:N-5 | C · Cálculos | OP | — | CV:C-3 | CV:C-3 | RB:H3-01, RB:H3-03 |
-| CV:N-6 | C · Cálculos | OP | — | CV:C-5 | CV:C-5, CV:B-3 | — |
-| CV:N-7 | B · Formularios | PF | — | CV:P-7 | CV:P-7 | — |
-| CV:N-8 | A · Maestros | PF | — | CV:C-6 | CV:C-6, CV:P-11 | — |
-| CV:B-1 | B · Formularios | PF | — | — | CV:N-1, CV:B-2 | — |
-| CV:B-2 | B · Formularios | LT | PF si VINTO incluye las rodelas en la primera versión | CV:B-1 | CV:B-1 | — |
-| CV:B-3 | B · Formularios | LT | PF si VINTO los incluye en la primera versión | — | CV:N-6 | — |
-| CV:B-4 | B · Formularios | LT | PF si VINTO incluye la producción en la primera versión | CV:P-1 | CV:P-1, CV:P-8 | — |
-| CV:B-5 | B · Formularios | OP | — | CV:N-4 | CV:N-4 | RB:H3-02 |
-| CV:B-6 | D · Integración | OP | PF si la política exige liberación para el piloto | CV:N-3 | CV:P-10, CV:N-3 | RB:H2-10, RB:H2-11, RB:H2-12 |
+| ID | Frente | Clase propuesta | Condición de reclasificación | Depende de (dependencia dura) | Justificación de la dependencia dura | Responder junto con | Vínculos con Rebobinado (solo enlaces) |
+|---|---|---|---|---|---|---|---|
+| CV:C-1 | B · Formularios | PF | — | — | — | CV:P-1, CV:P-7, CV:P-10, CV:N-1, CV:N-4, CV:B-1, CV:B-2 | — |
+| CV:C-2 | B · Formularios | OP | PF si VINTO decide numeración central (requiere numerador y migración) | CV:C-1 | `numero_correlativo` existe solo en la definición legacy de P1-16, no en la pantalla (M6-A §3): si `CV:C-1` elige la pantalla no hay correlativo que numerar | CV:P-2 | RB:H1-13, RB:H1-14, RB:H2-13 |
+| CV:C-3 | C · Cálculos | OP | — | CV:C-1 | `total_merma_kg` existe solo en la definición legacy de P1-16, no en la pantalla (M6-A §3): si `CV:C-1` elige la pantalla no hay total que calcular | CV:P-4, CV:P-8, CV:N-5 | RB:H3-01 |
+| CV:C-4 | B · Formularios | OP | PF si la ficha exige firma o aprobación para ser válida | — | — | CV:P-9 | RB:H1-16, RB:H1-21, RB:H2-17 |
+| CV:C-5 | C · Cálculos | OP | — | — | — | CV:P-3, CV:P-4, CV:P-5, CV:N-6 | RB:H1-15, RB:P-02, RB:H3-02 |
+| CV:C-6 | A · Maestros | PF | — | — | — | CV:P-10, CV:P-11, CV:N-3, CV:N-8 | RB:H1-01, RB:H1-03, RB:H1-04, RB:H2-16 |
+| CV:C-7 | A · Maestros | PF | — | — | — | CV:C-8, CV:P-6 | RB:H1-05, RB:H1-07, RB:H1-08, RB:H1-09 |
+| CV:C-8 | A · Maestros | PF | — | — | — | CV:C-7 | RB:H1-06 |
+| CV:C-9 | A · Maestros | PF | — | — | — | CV:C-11, CV:P-3, CV:P-8, CV:N-2, CV:B-3 | RB:H1-10, RB:H1-11, RB:P-03 |
+| CV:C-10 | B · Formularios | OP | — | — | — | — | — |
+| CV:C-11 | A · Maestros | OP | PF si el peso es obligatorio en alguna ficha | CV:C-9 | Los pesos nominales son un atributo por artículo, indexado por código de artículo (`NOMINAL_WEIGHT_BY_PRODUCT`): no se puede aprobar un maestro de pesos sin el maestro de artículos que referencia | CV:C-9, CV:P-3 | RB:P-03 |
+| CV:P-1 | B · Formularios | PF | — | — | — | CV:C-1, CV:P-7, CV:N-1, CV:B-4 | — |
+| CV:P-2 | B · Formularios | OP | PF si VINTO decide numeración central | — | — | CV:C-2 | RB:H1-13, RB:H1-14 |
+| CV:P-3 | A · Maestros | OP | PF si el peso es obligatorio en la ficha | CV:C-9 | Mismo motivo que `CV:C-11`: el peso nominal es un atributo por código de artículo, que debe existir en el maestro oficial (M6-B §4) | CV:C-5, CV:C-9, CV:C-11, CV:P-4 | RB:P-03 |
+| CV:P-4 | C · Cálculos | OP | — | — | — | CV:C-3, CV:C-5, CV:P-3 | — |
+| CV:P-5 | B · Formularios | LT | OP si VINTO exige límites en la validación | — | — | CV:C-5 | RB:P-02 |
+| CV:P-6 | B · Formularios | LT | OP si VINTO exige reglas de horas | — | — | CV:C-7 | — |
+| CV:P-7 | B · Formularios | PF | — | — | — | CV:C-1, CV:P-1, CV:N-7 | — |
+| CV:P-8 | C · Cálculos | OP | PF si se exigen en la primera versión | CV:P-1 | Los balances y los 8 campos calculados existen solo en la definición legacy de 37 campos, no en la pantalla de pallet (M6-B §2 y §3): solo tienen objeto según lo que decida `CV:P-1` | CV:C-3, CV:C-9, CV:B-4 | — |
+| CV:P-9 | B · Formularios | OP | PF si la ficha exige aprobación para ser válida | — | — | CV:C-4 | RB:H1-16, RB:H2-17 |
+| CV:P-10 | D · Integración | OP | — | — | — | CV:C-1, CV:C-6, CV:N-3, CV:B-6 | RB:H3-03 |
+| CV:P-11 | A · Maestros | PF | — | — | — | CV:C-6, CV:N-8 | — |
+| CV:N-1 | B · Formularios | PF | — | — | — | CV:C-1, CV:P-1, CV:N-4, CV:B-1 | — |
+| CV:N-2 | A · Maestros | OP | PF si la receta es obligatoria | CV:C-9 | Las recetas legacy se indexan por código de producto (`RECIPES_BY_PRODUCT`, M6-C §7): no se puede validar contra una receta sin el maestro de artículos aprobado | CV:C-9 | RB:P-03 |
+| CV:N-3 | D · Integración | OP | PF si VINTO exige una bobina real para el piloto | — | — | CV:C-6, CV:P-10, CV:B-6 | RB:H2-02, RB:H2-03, RB:H2-10 |
+| CV:N-4 | B · Formularios | PF | — | — | — | CV:C-1, CV:N-1, CV:B-5 | — |
+| CV:N-5 | C · Cálculos | OP | — | — | — | CV:C-3 | RB:H3-01, RB:H3-03 |
+| CV:N-6 | C · Cálculos | OP | — | — | — | CV:C-5, CV:B-3 | — |
+| CV:N-7 | B · Formularios | PF | — | — | — | CV:P-7 | — |
+| CV:N-8 | A · Maestros | PF | — | — | — | CV:C-6, CV:P-11 | — |
+| CV:B-1 | B · Formularios | PF | — | — | — | CV:C-1, CV:N-1, CV:B-2 | — |
+| CV:B-2 | B · Formularios | LT | PF si VINTO incluye las rodelas en la primera versión | — | — | CV:C-1, CV:B-1 | — |
+| CV:B-3 | B · Formularios | LT | PF si VINTO los incluye en la primera versión | — | — | CV:C-9, CV:N-6 | — |
+| CV:B-4 | B · Formularios | LT | PF si VINTO incluye la producción en la primera versión | — | — | CV:P-1, CV:P-8 | — |
+| CV:B-5 | B · Formularios | OP | — | — | — | CV:N-4 | RB:H3-02 |
+| CV:B-6 | D · Integración | OP | PF si la política exige liberación para el piloto | CV:N-3 | Una política de liberación de Calidad solo puede aplicarse a una bobina identificada como entidad real: `quality_release` es una fila por bobina (M5-A §3); si `CV:N-3` deja el número como texto libre no hay estado de Calidad que consultar | CV:P-10, CV:N-3 | RB:H2-10, RB:H2-11, RB:H2-12 |
+
+### Revisión de las dependencias
+Solo se conservan **7 dependencias duras**, todas con evidencia: `CV:C-2` y `CV:C-3` → `CV:C-1` (correlativo y total existen solo en la definición legacy de P1-16); `CV:C-11`, `CV:P-3` y `CV:N-2` → `CV:C-9` (pesos y recetas se indexan por código de artículo); `CV:P-8` → `CV:P-1` (los balances existen solo en la definición de 37 campos); `CV:B-6` → `CV:N-3` (la liberación de Calidad es una fila por bobina real).
+
+Se **reclasificaron a «responder junto con»** las relaciones que carecen de una precedencia demostrable, entre ellas las señaladas en la auditoría: `CV:P-4` ↔ `CV:C-3` y `CV:N-5` ↔ `CV:C-3` (fórmulas de fichas distintas: la de merma de P1-16 no es insumo de la de peso total de P1-12 ni de la de consumo de P1-13), `CV:N-7` ↔ `CV:P-7` (la misma pregunta planteada en dos formularios), y `CV:P-10` ↔ `CV:N-3` y `CV:B-6` (M6-B relaciona `CV:P-10` con `CV:C-1` y `CV:C-6`, no con ellas, y `CV:P-10` abarca inventario y merma, no solo bobinas; si VINTO decide vincular el pallet a una bobina real, `CV:N-3` pasaría a ser prerrequisito). También se reclasificaron `CV:C-8`, `CV:P-3` ↔ `CV:C-11`, `CV:P-4` ↔ `CV:P-3`, `CV:P-5`, `CV:P-6`, `CV:P-7` ↔ `CV:P-1`, `CV:P-9`, `CV:P-11`, `CV:N-4`, `CV:N-6`, `CV:N-8`, `CV:B-2`, `CV:B-4` y `CV:B-5`. El grafo de dependencias duras no tiene ciclos.
 
 ### Conteo de la clasificación propuesta (cada decisión cuenta una sola vez)
 | Frente | PF | OP | LT | Total |

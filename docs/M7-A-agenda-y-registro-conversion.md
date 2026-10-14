@@ -61,44 +61,44 @@ Una fila por **cambio de estado** (el historial se conserva; no se borran filas)
 
 **Cabecera de cada sesión:** sesión, fecha y hora, participantes (nombre, cargo, rol), quién tiene autoridad para aprobar, facilitador, y versión del material enviado previamente (commit del paquete).
 
-| ID | Estado | Respuesta de VINTO (literal o resumen fiel) | Alternativa elegida | Responsable que respondió | Fecha | Evidencia (tipo, referencia, SHA-256 si aplica) | Aprobó (nombre y cargo) |
-|---|---|---|---|---|---|---|---|
-| CV:C-1 | Pendiente | | | | | | |
-| CV:C-2 | Pendiente | | | | | | |
-| CV:C-3 | Pendiente | | | | | | |
-| CV:C-4 | Pendiente | | | | | | |
-| CV:C-5 | Pendiente | | | | | | |
-| CV:C-6 | Pendiente | | | | | | |
-| CV:C-7 | Pendiente | | | | | | |
-| CV:C-8 | Pendiente | | | | | | |
-| CV:C-9 | Pendiente | | | | | | |
-| CV:C-10 | Pendiente | | | | | | |
-| CV:C-11 | Pendiente | | | | | | |
-| CV:P-1 | Pendiente | | | | | | |
-| CV:P-2 | Pendiente | | | | | | |
-| CV:P-3 | Pendiente | | | | | | |
-| CV:P-4 | Pendiente | | | | | | |
-| CV:P-5 | Pendiente | | | | | | |
-| CV:P-6 | Pendiente | | | | | | |
-| CV:P-7 | Pendiente | | | | | | |
-| CV:P-8 | Pendiente | | | | | | |
-| CV:P-9 | Pendiente | | | | | | |
-| CV:P-10 | Pendiente | | | | | | |
-| CV:P-11 | Pendiente | | | | | | |
-| CV:N-1 | Pendiente | | | | | | |
-| CV:N-2 | Pendiente | | | | | | |
-| CV:N-3 | Pendiente | | | | | | |
-| CV:N-4 | Pendiente | | | | | | |
-| CV:N-5 | Pendiente | | | | | | |
-| CV:N-6 | Pendiente | | | | | | |
-| CV:N-7 | Pendiente | | | | | | |
-| CV:N-8 | Pendiente | | | | | | |
-| CV:B-1 | Pendiente | | | | | | |
-| CV:B-2 | Pendiente | | | | | | |
-| CV:B-3 | Pendiente | | | | | | |
-| CV:B-4 | Pendiente | | | | | | |
-| CV:B-5 | Pendiente | | | | | | |
-| CV:B-6 | Pendiente | | | | | | |
+| ID | Estado | Respuesta de VINTO (literal o resumen fiel) | Alternativa elegida | Responsable que respondió | Fecha | Evidencia (tipo, referencia, SHA-256 si aplica) | Aprobó (nombre y cargo) | Decisiones afectadas | Pendientes / acciones |
+|---|---|---|---|---|---|---|---|---|---|
+| CV:C-1 | Pendiente | | | | | | | | |
+| CV:C-2 | Pendiente | | | | | | | | |
+| CV:C-3 | Pendiente | | | | | | | | |
+| CV:C-4 | Pendiente | | | | | | | | |
+| CV:C-5 | Pendiente | | | | | | | | |
+| CV:C-6 | Pendiente | | | | | | | | |
+| CV:C-7 | Pendiente | | | | | | | | |
+| CV:C-8 | Pendiente | | | | | | | | |
+| CV:C-9 | Pendiente | | | | | | | | |
+| CV:C-10 | Pendiente | | | | | | | | |
+| CV:C-11 | Pendiente | | | | | | | | |
+| CV:P-1 | Pendiente | | | | | | | | |
+| CV:P-2 | Pendiente | | | | | | | | |
+| CV:P-3 | Pendiente | | | | | | | | |
+| CV:P-4 | Pendiente | | | | | | | | |
+| CV:P-5 | Pendiente | | | | | | | | |
+| CV:P-6 | Pendiente | | | | | | | | |
+| CV:P-7 | Pendiente | | | | | | | | |
+| CV:P-8 | Pendiente | | | | | | | | |
+| CV:P-9 | Pendiente | | | | | | | | |
+| CV:P-10 | Pendiente | | | | | | | | |
+| CV:P-11 | Pendiente | | | | | | | | |
+| CV:N-1 | Pendiente | | | | | | | | |
+| CV:N-2 | Pendiente | | | | | | | | |
+| CV:N-3 | Pendiente | | | | | | | | |
+| CV:N-4 | Pendiente | | | | | | | | |
+| CV:N-5 | Pendiente | | | | | | | | |
+| CV:N-6 | Pendiente | | | | | | | | |
+| CV:N-7 | Pendiente | | | | | | | | |
+| CV:N-8 | Pendiente | | | | | | | | |
+| CV:B-1 | Pendiente | | | | | | | | |
+| CV:B-2 | Pendiente | | | | | | | | |
+| CV:B-3 | Pendiente | | | | | | | | |
+| CV:B-4 | Pendiente | | | | | | | | |
+| CV:B-5 | Pendiente | | | | | | | | |
+| CV:B-6 | Pendiente | | | | | | | | |
 
 ## 4. Resumen de avance (se actualiza después de cada sesión)
 | Incremento | Decisiones requeridas (ver índice §9) | Aprobadas con evidencia | Estado |
@@ -109,12 +109,13 @@ Una fila por **cambio de estado** (el historial se conserva; no se borran filas)
 | M7-E Bobinas y genealogía | CV:N-3, CV:B-6, CV:P-10 + `RB:H2` requeridas | 0 | **NO GO** |
 | M7-F Calidad e inventario | `RB:H3-01` a `RB:H3-03` | 0 | **NO GO** |
 | M7-G Piloto aislado | Todas las PF aplicables + checklist + aprobación explícita | 0 | **NO GO** |
-| M7-H Activación controlada en DEV | M7-G + aprobación explícita | 0 | **NO GO** |
+| M7-H Activación controlada en DEV | M7-G aprobado; todas las PF **y OP** aplicables; resolución formal de VINTO para cada LT diferida; M7-D / M7-E / M7-F si están en alcance; checklist técnico; autorización expresa; PRs de activación revisados | 0 | **NO GO** |
 
 ## 5. Documentos y catálogos solicitados
 La lista está en el [índice §10](M7-A-homologacion-indice.md). Se registra aquí su estado de entrega **solo cuando VINTO los aporte**; hoy todos están **por solicitar**.
 
 ## 6. Reglas de uso
-- Una fase pasa a **GO** solo cuando **todas** sus decisiones requeridas están **Aprobadas con evidencia** y el checklist técnico correspondiente está completo.
+- Una fase pasa a **GO** solo cuando **todas** sus decisiones requeridas están **Aprobadas con evidencia** y el checklist técnico correspondiente está completo. Para M7-H se exigen además las OP aplicables y, por cada decisión LT diferida, una **resolución formal de VINTO** (no aplicabilidad o diferimiento, responsable, riesgo aceptado y condición de resolución posterior): estar clasificada como LT no la hace dejar de ser bloqueante.
+- La columna «Decisiones afectadas» registra qué otras decisiones se ven afectadas por una respuesta (si cambia otra, la afectada vuelve a **En revisión**) y «Pendientes / acciones» las tareas abiertas; en la plantilla ambas están **vacías**.
 - Si una decisión aprobada cambia otra, la afectada vuelve a **En revisión** con una fila nueva.
 - Este registro **no autoriza** por sí solo activar Conversión o Rebobinado, importar a DEV ni publicar formularios: esos pasos requieren sus PR revisados y la aprobación explícita de VINTO.

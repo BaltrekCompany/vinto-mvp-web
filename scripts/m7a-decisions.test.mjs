@@ -64,8 +64,11 @@ test("every decision is Pendiente with all the required columns and no approval 
 
 test("the registry template carries one Pendiente row per decision and EMPTY answer cells: no invented answers, approvals or dates", () => {
   assert.equal(registry.length, 36);
+  const header = cells(section(agendaDoc, "## 3. Formato breve de registro", "## 4. Resumen").split("\n").find((l) => l.startsWith("| ID |")));
+  assert.equal(header.length, 10);
+  assert.deepEqual(header.slice(-2), ["Decisiones afectadas", "Pendientes / acciones"]);
   for (const row of registry) {
-    assert.equal(row.length, 8, row[0]);
+    assert.equal(row.length, 10, row[0]); // ID, Estado, Respuesta, Alternativa, Responsable, Fecha, Evidencia, Aprobó, Decisiones afectadas, Pendientes / acciones
     assert.equal(row[1], "Pendiente");
     assert.ok(row.slice(2).every((cell) => cell === ""), `${row[0]} debe tener las celdas de respuesta vacías`);
   }
@@ -88,7 +91,7 @@ test("states and evidence criteria are reused from the M5-B0 acta, never redefin
 test("PF / OP / LT: one class per decision, valid frentes, and counts that do not duplicate conditional decisions", () => {
   const classes = new Map();
   for (const row of meta) {
-    assert.equal(row.length, 7, row[0]);
+    assert.equal(row.length, 8, row[0]); // ID, Frente, Clase, Condición, Depende de, Justificación, Responder junto con, Vínculos RB
     assert.ok(row.every((cell) => cell.length > 0), `${row[0]} tiene celdas vacías`);
     assert.match(row[1], /^[ABCD] · /);
     assert.ok(["PF", "OP", "LT"].includes(row[2]), `${row[0]}: clase inválida`);
@@ -118,10 +121,10 @@ test("dependencies and «responder junto con» only cite existing Conversión ke
   const dep = new Map(), together = new Map();
   for (const row of meta) {
     dep.set(row[0], refs(row[4], "CV").map((id) => `CV:${id}`));
-    together.set(row[0], refs(row[5], "CV").map((id) => `CV:${id}`));
+    together.set(row[0], refs(row[6], "CV").map((id) => `CV:${id}`));
     for (const id of [...dep.get(row[0]), ...together.get(row[0])]) { assert.ok(ids.includes(id), `${row[0]} cita ${id} que no existe`); assert.notEqual(id, row[0]); }
     assert.ok(row[4] === "—" || dep.get(row[0]).length > 0);
-    assert.ok(row[5] === "—" || together.get(row[0]).length > 0);
+    assert.ok(row[6] === "—" || together.get(row[0]).length > 0);
   }
   for (const [id, others] of together) for (const other of others) assert.ok(together.get(other).includes(id), `${id} ↔ ${other} debe ser simétrica`);
   const visiting = new Set(), done = new Set();
@@ -133,8 +136,8 @@ test("dependencies and «responder junto con» only cite existing Conversión ke
 test("links to Rebobinado exist in M5-B0 (the single source of truth), are links only, and no M5-B0 decision is copied", () => {
   assert.equal(rb.size, 47);
   for (const text of [matrixDoc, indexDoc, agendaDoc]) for (const id of refs(text, "RB")) assert.ok(rb.has(id), `RB:${id} no existe en M5-B0`);
-  assert.ok(meta.some((r) => refs(r[6], "RB").length > 0));
-  for (const row of meta) assert.ok(row[6] === "—" || refs(row[6], "RB").length > 0);
+  assert.ok(meta.some((r) => refs(r[7], "RB").length > 0));
+  for (const row of meta) assert.ok(row[7] === "—" || refs(row[7], "RB").length > 0);
   // ninguna fila de la matriz M7-A es una decisión de M5-B0: ni IDs H1/H2/H3 como clave ni copia de sus preguntas
   assert.equal(matrixDoc.split("\n").some((l) => /^\| (RB:)?(H[123]|P)-\d+ \|/.test(l)), false);
   assert.match(matrixDoc, /no copia/);
@@ -159,7 +162,7 @@ test("M5-B0 keeps its 47 decisions, their states and evidence: only one navigati
 test("the roadmap lists M7-B to M7-H with explicit GO and NO GO conditions, all NO GO today, with no dates or activation promises", () => {
   const roadmap = rowsOf(section(indexDoc, "## 9. Roadmap", "## 10."), "| **M7-");
   assert.deepEqual(roadmap.map((r) => r[0].match(/M7-[A-H]/)[0]), ["M7-B", "M7-C", "M7-D", "M7-E", "M7-F", "M7-G", "M7-H"]);
-  for (const row of roadmap) { assert.equal(row.length, 6); assert.ok(row.slice(1).every((c) => c.length > 0), row[0]); assert.match(row[3], /^(Aprobadas|Aprobada|M7-|`RB|Aprobación|M7)/); assert.ok(row[4].length > 0); }
+  for (const row of roadmap) { assert.equal(row.length, 6); assert.ok(row.slice(1).every((c) => c.length > 0), row[0]); assert.match(row[3], /^(Aprobadas|Aprobada|M7-|`RB|Aprobación|M7|\*\*Todas\*\* estas condiciones)/); assert.ok(row[4].length > 0); }
   assert.match(indexDoc, /Estado actual de todos los incrementos: NO GO/);
   const summary = rowsOf(section(agendaDoc, "## 4. Resumen de avance", "## 5."), "| M7-");
   assert.equal(summary.length, 7);
@@ -206,4 +209,70 @@ test("the package is documentation only: it changes no code, policy, migration, 
   assert.match(sectors, /DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)/);
   assert.match(policy, /CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)/);
   for (const text of [matrixDoc, indexDoc, agendaDoc]) assert.match(text, /Ninguna decisión está aprobada|Las 36 decisiones están en Pendiente|No contiene respuestas, aprobaciones ni fechas/);
+});
+
+test("hard dependencies are few, justified with evidence and never inferred from a «Relacionada con» column; thematic relations are «responder junto con»", () => {
+  const hard = meta.filter((r) => r[4] !== "—");
+  assert.deepEqual(hard.map((r) => `${r[0]}→${r[4]}`), ["CV:C-2→CV:C-1", "CV:C-3→CV:C-1", "CV:C-11→CV:C-9", "CV:P-3→CV:C-9", "CV:P-8→CV:P-1", "CV:N-2→CV:C-9", "CV:B-6→CV:N-3"]);
+  for (const row of meta) {
+    if (row[4] === "—") { assert.equal(row[5], "—", `${row[0]}: sin dependencia dura no hay justificación`); continue; }
+    assert.ok(row[5].length > 60, `${row[0]}: la dependencia dura exige una justificación`);
+    assert.match(row[5], /M6-[ABCD] §\d|M5-A §\d|`[A-Za-z_]+`/, `${row[0]}: la justificación debe citar evidencia (documento y sección, esquema o código)`);
+  }
+  // las relaciones señaladas por la auditoría NO son dependencias duras, sino «responder junto con» simétrico
+  const depOf = new Map(meta.map((r) => [r[0], refs(r[4], "CV")])), togetherOf = new Map(meta.map((r) => [r[0], refs(r[6], "CV")]));
+  for (const [a, b] of [["P-4", "C-3"], ["N-5", "C-3"], ["N-7", "P-7"], ["P-10", "N-3"], ["P-10", "B-6"], ["C-8", "C-7"], ["P-4", "P-3"], ["P-7", "P-1"]]) {
+    assert.equal(depOf.get(`CV:${a}`).includes(b), false, `CV:${a} no debe depender de CV:${b}`);
+    assert.ok(togetherOf.get(`CV:${a}`).includes(b) && togetherOf.get(`CV:${b}`).includes(a), `CV:${a} ↔ CV:${b} debe ser «responder junto con»`);
+  }
+  // toda relación «Relacionada con» de M6-B, M6-C y M6-D está representada (como dependencia dura justificada o como «responder junto con»)
+  const related = new Map();
+  for (const [letter, file] of [["P", SOURCES.P], ["N", SOURCES.N], ["B", SOURCES.B]]) {
+    for (const line of read(file).split("\n").filter((l) => new RegExp(`^\\| ${letter}-\\d+ \\|`).test(l))) {
+      const c = cells(line);
+      related.set(c[0], [...c[2].matchAll(/\b([CPNB]-\d+)\b/g)].map((m) => m[1]));
+    }
+  }
+  assert.equal(related.size, 25);
+  for (const [id, others] of related) for (const other of others) assert.ok(togetherOf.get(`CV:${id}`).includes(other) || depOf.get(`CV:${id}`).includes(other), `la relación ${id} ↔ ${other} de M6 no está representada`);
+  assert.match(matrixDoc, /Dependencia dura frente a «responder junto con»/);
+  assert.match(matrixDoc, /Solo se conservan \*\*7 dependencias duras\*\*/);
+});
+
+test("M7-H demands every PF and OP applicable, a formal VINTO resolution for each deferred LT, M7-G, the technical checklist, express authorization and independently reviewed activation PRs; LT never means non-blocking", () => {
+  const roadmap = rowsOf(section(indexDoc, "## 9. Roadmap", "## 10."), "| **M7-");
+  const row = (name) => roadmap.find((r) => r[0].includes(name));
+  const go = row("M7-H")[3], nogo = row("M7-H")[4];
+  assert.match(go, /M7-G concluido y aprobado/);
+  assert.match(go, /\*\*todas\*\* las decisiones PF \*\*y OP\*\* aplicables/);
+  assert.match(go, /Aprobadas con evidencia identificable/);
+  assert.match(go, /decisión LT diferida/);
+  assert.match(go, /resolución formal de VINTO/);
+  for (const piece of ["no aplicabilidad", "diferimiento", "responsable", "riesgo aceptado", "condición de resolución posterior", "clasificar una decisión como LT no la hace dejar de ser bloqueante"]) assert.ok(go.includes(piece), `M7-H GO debe incluir «${piece}»`);
+  assert.match(go, /M7-D, M7-E y M7-F concluidos cuando sean parte del alcance aprobado/);
+  assert.match(go, /checklist técnico completo/);
+  assert.match(go, /autorización expresa de VINTO/);
+  assert.match(go, /PRs de activación revisados de forma independiente/);
+  assert.match(nogo, /OP o LT aplicable sin resolver/);
+  // la puerta del piloto sigue exigiendo las PF y declara las OP/LT pendientes como limitaciones, nunca como aprobadas
+  assert.match(row("M7-G")[3], /\*\*todas\*\* las decisiones PF aplicables/);
+  assert.match(row("M7-G")[3], /limitaciones del piloto/);
+  // el resumen de la agenda repite la misma exigencia y todo sigue en NO GO
+  const summary = rowsOf(section(agendaDoc, "## 4. Resumen de avance", "## 5."), "| M7-H");
+  assert.equal(summary.length, 1);
+  for (const piece of ["PF **y OP**", "resolución formal de VINTO para cada LT diferida", "autorización expresa", "PRs de activación revisados"]) assert.ok(summary[0][1].includes(piece), piece);
+  assert.equal(summary[0][3], "**NO GO**");
+  for (const text of [indexDoc, agendaDoc, matrixDoc]) assert.match(text, /no deja de ser bloqueante|no la hace dejar de ser bloqueante|no hace dejar de ser bloqueante/);
+  assert.equal(/M7-H[^\n]*solo las PF/i.test(indexDoc), false);
+});
+
+test("the roadmap keeps the sector gates independent: CV decisions cover Conversión and the forms VINTO formally includes, Rebobinado keeps its M5-B0 / M4-B2 gates, and nothing is promoted without approved evidence", () => {
+  const scope = indexDoc.split("**Alcance de M7-B y M7-C por sector.**")[1].split("## 10.")[0];
+  assert.match(scope, /aplican a \*\*Conversión\*\* y a los formularios que VINTO incluya \*\*formalmente\*\* en su alcance/);
+  assert.match(scope, /Rebobinado mantiene sus propias puertas de homologación/);
+  assert.match(scope, /M5-B0-decisiones-VINTO\.md/);
+  assert.match(scope, /M4-B2/);
+  assert.match(scope, /no equivale a aprobar\*\* el otro/);
+  assert.match(scope, /No se promueven maestros, contratos ni paquetes sin evidencia aprobada/);
+  assert.equal(/Rebobinado primero/.test(indexDoc), false, "el roadmap no prioriza un sector sin aprobación");
 });

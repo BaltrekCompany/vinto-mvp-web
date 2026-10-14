@@ -45,6 +45,8 @@ Base: `26472007d5dfed89842fa2b5ea2920cdec115d81` (PR #33). Antecedentes: [M4-B1]
 | D · Integración | 0 | 3 | 0 | 3 |
 | **Total** | **13** | **18** | **5** | **36** |
 
+- **Una decisión LT no deja de ser bloqueante por estar clasificada como LT:** el piloto puede avanzar sin ella, pero sigue pendiente y para la activación (M7-H) requiere una **resolución formal de VINTO** (no aplicabilidad o diferimiento, con responsable, riesgo aceptado y condición de resolución posterior). Las decisiones OP aplicables al alcance operativo deben estar **Aprobadas con evidencia** antes de M7-H.
+
 Responder las decisiones PF **no equivale por sí solo a GO** para un piloto: GO exige además los criterios del roadmap (§9).
 
 ## 6. Frentes
@@ -99,11 +101,16 @@ Las preguntas maestras ordenan la conversación; **no sustituyen** la aprobació
 | **M7-D** Reglas de cálculo industrial | — | Cálculos en servidor con decimales exactos; probable extensión del motor (campos calculados) y migración | Aprobadas con evidencia las fórmulas, unidades y redondeos (CV:C-3, CV:C-5, CV:P-4, CV:N-5, CV:N-6, CV:P-8, CV:B-5, CV:C-11, CV:P-3) y el alcance (`RB:H3-03`) | No hay fórmulas homologadas o los cálculos están fuera de alcance | M7-C |
 | **M7-E** Integración de bobinas y genealogía | M5-B | Identidad de bobina, consumo y genealogía; migración | Aprobadas con evidencia CV:N-3, CV:B-6, CV:P-10 y las `RB:H2` que exige M5-B0 §5 (siempre `RB:H2-10`) | `RB:H2-10` sin resolver | M7-C |
 | **M7-F** Calidad e inventario | H3+ | Liberación, balance e inventario, si están en alcance | `RB:H3-01` a `RB:H3-03` aprobadas con confirmación expresa del alcance | El inventario está fuera de alcance | M7-D, M7-E |
-| **M7-G** Piloto en entorno aislado | — | Entorno separado de DEV con datos aprobados | M7-B y M7-C cerrados para el alcance del piloto; **todas** las decisiones PF aplicables Aprobadas con evidencia; checklist técnico (respaldo, dry-run) y aprobación explícita de VINTO | Cualquier PF aplicable pendiente | M7-B, M7-C |
-| **M7-H** Activación controlada en DEV | M4-B3 | PRs revisados (sector operativo, política, concesiones), con respaldo restaurado y validado | Aprobación explícita de VINTO, piloto concluido y M7-D / M7-E / M7-F si están en alcance | Falta cualquiera | M7-G |
-- M7-B y M7-C pueden avanzar por sector (Rebobinado primero) con sus propias aprobaciones.
+| **M7-G** Piloto en entorno aislado | — | Entorno separado de DEV con datos aprobados | M7-B y M7-C cerrados para el alcance del piloto; **todas** las decisiones PF aplicables Aprobadas con evidencia; checklist técnico (respaldo, dry-run) y aprobación explícita de VINTO. Las OP y LT que queden pendientes se listan expresamente como limitaciones del piloto | Cualquier PF aplicable pendiente | M7-B, M7-C |
+| **M7-H** Activación controlada en DEV | M4-B3 | PRs de activación (sector operativo, política, concesiones), con respaldo restaurado y validado | **Todas** estas condiciones: (1) M7-G concluido y aprobado; (2) **todas** las decisiones PF **y OP** aplicables al alcance operativo Aprobadas con evidencia identificable; (3) cada decisión LT diferida con una **resolución formal de VINTO** que documente su no aplicabilidad o su diferimiento, el responsable, el riesgo aceptado y la condición de resolución posterior (clasificar una decisión como LT no la hace dejar de ser bloqueante); (4) M7-D, M7-E y M7-F concluidos cuando sean parte del alcance aprobado; (5) checklist técnico completo; (6) autorización expresa de VINTO; (7) PRs de activación revisados de forma independiente | Falta cualquiera de las siete condiciones, o hay una OP o LT aplicable sin resolver | M7-G |
 - M7-D, M7-E y M7-F solo se abren si VINTO confirma que están en el alcance (Q9).
 - Los GO de arriba son condiciones necesarias, no una promesa de fecha ni de activación.
+
+**Alcance de M7-B y M7-C por sector.**
+- Las decisiones `CV:` aplican a **Conversión** y a los formularios que VINTO incluya **formalmente** en su alcance; un formulario fuera de ese alcance no se promueve.
+- **Rebobinado mantiene sus propias puertas de homologación**, establecidas en [M5-B0](M5-B0-decisiones-VINTO.md) §5 y en M4-B2; este paquete no las cambia ni las sustituye.
+- El avance de un sector **no equivale a aprobar** el otro: el cierre de M7-B o M7-C para Conversión no aprueba nada de Rebobinado, ni al revés.
+- **No se promueven maestros, contratos ni paquetes sin evidencia aprobada** (criterios del acta de M5-B0 §2).
 
 ## 10. Documentos y catálogos a solicitar al cliente
 Se **solicitan**; este paquete no afirma que existan ni los incorpora.
