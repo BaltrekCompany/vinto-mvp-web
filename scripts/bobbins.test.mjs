@@ -312,7 +312,7 @@ test("F3 is rendered by its own component before the generic Capture and never c
 
 test("session loss clears the F3 attempt and old local F3 records are not shown as central tracking", () => {
   assert.ok((page.match(/setF3Attempt\(null\)/g) ?? []).length >= 2);
-  assert.ok((page.match(/r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID/g) ?? []).length >= 2);
+  assert.ok((page.match(/r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID/g) ?? []).length >= 1);
 });
 
 test("the old F3 override (codigo_tubete, manual grammage/description) is gone from effectiveForms", () => {

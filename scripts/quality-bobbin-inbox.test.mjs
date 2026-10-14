@@ -120,7 +120,7 @@ const lib = strip(read("../lib/vinto/quality-bobbins.ts"));
 const component = strip(read("../components/vinto/quality-bobbin-inbox.tsx"));
 const executionBody = page.slice(page.indexOf("function Execution("), page.indexOf("function Cards("));
 const programmingBody = page.slice(page.indexOf("function Programming("), page.indexOf("function Execution("));
-const trackingBody = page.slice(page.indexOf("function Tracking("), page.indexOf("function ReleaseCards("));
+const trackingBody = page.slice(page.indexOf("function Tracking("), page.indexOf("function downloadRows("));
 
 test("the API consumes GET /api/quality/bobbins and nothing else", () => {
   assert.match(api, /"\/api\/quality\/bobbins"/);
@@ -182,8 +182,10 @@ test("no local state setter decides anything for Calidad", () => {
 test("Programming and Tracking do not present demo releases as Calidad state", () => {
   assert.equal(/ReleaseCards/.test(programmingBody), false);
   assert.match(programmingBody, /se gestionan desde Ejecución/);
-  assert.match(trackingBody, /front !== "Calidad" && <Metric label="Bobinas liberadas"/);
-  assert.match(trackingBody, /front === "Calidad" \? <Panel title="Bobinas de Calidad"[\s\S]*?: <Panel title="Genealogía y calidad"/);
+  // PB-CLEAN: sin estado demo; las liberaciones son «funcionalidad pendiente» y Calidad no usa Tracking
+  assert.equal(/ReleaseCards|releases/.test(trackingBody), false);
+  assert.match(trackingBody, /<PendingMetric label="Bobinas liberadas"/);
+  assert.match(page, /: <QualityTrackingPending\/>\)\}<\/>\}/);
 });
 
 test("the resource is enabled only for Calidad + quality.capture in Ejecución, with sessionLost, and ignores the active assignment", () => {
