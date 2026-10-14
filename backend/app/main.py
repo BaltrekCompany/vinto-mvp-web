@@ -14,6 +14,7 @@ from app.assignments.router import router as assignments_router
 from app.bobbins.router import router as bobbins_router
 from app.captures import router as captures_router
 from app.production_access import router as production_router
+from app.quality.machine_router import router as quality_machine_router
 from app.quality.router import router as quality_router
 from app.shifts import SHIFT_AMBIGUOUS, SHIFT_NOT_CONFIGURED, ShiftResolutionError
 from app.work_orders.errors import WorkOrderError
@@ -31,6 +32,7 @@ app.include_router(captures_router)
 app.include_router(production_router)
 app.include_router(bobbins_router)
 app.include_router(quality_router)
+app.include_router(quality_machine_router)
 app.include_router(auth_router)
 app.include_router(work_orders_router)
 app.include_router(assignments_router)
