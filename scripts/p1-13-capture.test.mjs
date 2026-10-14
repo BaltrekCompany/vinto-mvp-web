@@ -250,6 +250,8 @@ test("component: eight candidate fields labelled as DECLARED, the mandatory advi
     "Hora fin del pallet *", "Observaciones", "OT-2026-0001", "WALLY", "SERVILLETA DECO BULLA 3*333", "Mañana (ficticio) · 2026-10-06", "Ficha NO homologada · solo entorno de prueba", "No es la definición de 31 campos",
     "Número oficial de pallet", "— pendiente de definición —", "se asigna al enviar", "no se consulta ni se valida contra ninguna bobina", "Sin cálculo de consumo", "Enviar registro trazable"]) assert.ok(plain.includes(piece), piece);
   for (const note of PENDING_NOTES) assert.ok(plain.includes(note.label) && plain.includes(note.pending), note.key);
+  assert.equal((markup.match(/data-section="pallet-id"/g) ?? []).length, 1); // the technical-id block appears exactly ONCE, right before the «Pallet» section
+  assert.ok(markup.indexOf('data-section="pallet-id"') > markup.indexOf("Bobina declarada") && markup.indexOf('data-section="pallet-id"') < markup.indexOf("Mismos campos y validaciones que P1-12"));
   assert.equal((markup.match(/<input/g) ?? []).length, 7);
   assert.equal((markup.match(/<textarea/g) ?? []).length, 1);
   assert.equal((markup.match(/type="time"/g) ?? []).length, 2);
@@ -263,6 +265,7 @@ test("component: a pending attempt locks every field, keeps the typed draft, sho
   const made = createP113Attempt(draft(), ASSIGNMENT, DEVICE, () => ID).attempt;
   const markup = html({ attempt: made }), plain = text(markup);
   assert.ok(plain.includes("Reintentar envío") && plain.includes("No se pudo confirmar el envío.") && plain.includes(ID));
+  assert.equal((markup.match(/data-section="pallet-id"/g) ?? []).length, 1); // still a single block while the attempt is pending (the technical id is the attempt's)
   assert.equal(disabledCount(markup, "input"), 7);
   assert.equal(disabledCount(markup, "textarea"), 1);
   assert.equal(disabledCount(markup, "button"), 0);

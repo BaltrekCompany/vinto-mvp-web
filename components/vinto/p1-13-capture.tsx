@@ -91,10 +91,6 @@ export function P113CaptureForm({ context, online, attempt, setAttempt, back, on
             {PENDING_NOTES.map(note => <div key={note.key}><p className="text-xs font-semibold text-emerald-800">{note.label}</p><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
         </div>
         {user && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="session">Sesión iniciada como <b>{user.display_name}</b>. Es solo la identificación del usuario autenticado: no es una firma ni un grupo.</p>}
-        <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pallet-id">
-            <ContextValue label="Número oficial de pallet" value="— pendiente de definición —"/>
-            <ContextValue label="Identificador técnico de la captura" value={attempt ? attempt.captureId : saved ? saved.capture.id : "se asigna al enviar"}/>
-        </div>
         <CaptureSection title="Bobina declarada" hint="Declaraciones de prueba del operador. No generan consumo, no modifican inventario y no se vinculan con una bobina real. La unidad «kg» es la etiqueta de la hipótesis legacy; la unidad oficial está pendiente.">
             <TextField label={P113_LABELS.numero_bobina} required disabled={locked} hint="Texto libre: no se consulta ni se valida contra ninguna bobina." value={draft.numero_bobina} onChange={set("numero_bobina")}/>
             <div className="hidden md:block"/>
