@@ -5,7 +5,7 @@ Nada de esto libera ni rechaza: quality_release no se modifica."""
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.auth.dependencies import require_permission
 from app.auth.permissions import QUALITY_CAPTURE
@@ -13,6 +13,7 @@ from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.quality import capture_service, service
 from app.quality.capture_schemas import QualityCaptureIn, QualityCaptureOut, QualityCaptureResultOut, quality_capture_out, quality_capture_result_out
+from app.production_access import ProductionMachinesOut
 from app.quality.schemas import QualityBobbinOut, quality_bobbin_out
 
 router = APIRouter(prefix="/api/quality", tags=["Calidad"])
@@ -54,9 +55,16 @@ def submit_quality_capture(bobbin_id: str, body: QualityCaptureIn, response: Res
     return quality_capture_result_out(result)
 
 
+@router.get("/bobbin-forms", response_model=ProductionMachinesOut, response_model_exclude_none=True, responses={401: _ERRORS[401], 403: _ERRORS[403]})
+def bobbin_candidate_forms(user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
+    """Máquinas del alcance y candidatos de Calidad por Bobina (DEV-Q2) que el backend publica (vacío con la política real)."""
+    return {"sectors": capture_service.available_bobbin_forms(connection, sectors=user.sectors)}
+
+
 @router.get("/bobbins/{bobbin_id}/captures", response_model=list[QualityCaptureOut], responses=_CAPTURE_ERRORS)
-def list_bobbin_quality_captures(bobbin_id: str, user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
-    return [quality_capture_out(v) for v in capture_service.list_bobbin_quality_captures(connection, bobbin_id, sectors=user.sectors)]
+def list_bobbin_quality_captures(bobbin_id: str, form_code: str | None = Query(default=None, min_length=1, max_length=64),
+                                 user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
+    return [quality_capture_out(v) for v in capture_service.list_bobbin_quality_captures(connection, bobbin_id, form_code=form_code, sectors=user.sectors)]
 
 
 @router.get("/captures/{capture_id}", response_model=QualityCaptureOut, responses=_CAPTURE_ERRORS)

@@ -140,7 +140,7 @@ test("flujo de envío: 201, 200 idempotente, rechazos definitivos, sesión y rec
 test("los controles se ofrecen solo si el backend los publica para la máquina; con la política real no se ofrece nada", () => {
   const form = (c) => ({ code: c, name: c, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
-  assert.deepEqual([...QUALITY_CANDIDATE_SCREENS], ["p122", "p126"]);
+  assert.deepEqual([...QUALITY_CANDIDATE_SCREENS], ["p118", "p122", "p126"]); // p118 se añadió en DEV-Q2
   const real = avail([{ code: "MP1", name: "MP1", forms: [] }, { code: "MP3", name: "MP3", forms: [] }]);
   assert.deepEqual([qualityMachines(real), qualityScreensFor(real, "MP1"), publishedQualityScreens(real)], [[], [], []], "configuración real: el backend no publica ningún control por máquina");
   const published = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-22"), form("VINTO-P1-26")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-22")] }]);
