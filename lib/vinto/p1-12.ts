@@ -49,6 +49,9 @@ function parseValues(value: unknown): P112Values | null {
     return { cantidad_jabas: jabas, hora_inicio: start, hora_fin: end };
 }
 
+// Reutilizable por P1-13 (M6-C): el parser puro de los tres valores del pallet, sin cambiar su comportamiento.
+export const parsePalletValues = parseValues;
+
 export const parseP112Capture = (value: unknown): P112Capture | null => parseCaptureOf(value, parseValues, P1_12_CODE);
 export const parseP112Submission = (value: unknown): P112Submission | null => parseSubmissionOf(value, parseP112Capture);
 export const parseP112List = (value: unknown): P112Capture[] | null => parseCaptureListOf(value, parseP112Capture);

@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { failureMessage } from "@/lib/vinto/orders";
 import type { P110Capture } from "@/lib/vinto/p1-10";
 import { shortHour, type P112Capture } from "@/lib/vinto/p1-12";
+import type { P113Capture } from "@/lib/vinto/p1-13";
 import { ORIGEN_MERMA_OPTIONS, TIPO_MERMA_OPTIONS, type P116Capture } from "@/lib/vinto/p1-16";
 import { optionLabel } from "@/lib/vinto/capture-core";
 import type { P129Capture } from "@/lib/vinto/p1-29";
 import type { Resource } from "@/lib/vinto/use-central";
 
-// Historial CENTRAL (PostgreSQL) de P1-10, P1-12, P1-16 y P1-29, con el parser ESTRICTO de cada formulario: nunca datos demo ni locales. Sin polling; se refresca al entrar y tras cada envío.
+// Historial CENTRAL (PostgreSQL) de P1-10, P1-12, P1-13, P1-16 y P1-29, con el parser ESTRICTO de cada formulario: nunca datos demo ni locales. Sin polling; se refresca al entrar y tras cada envío.
 // Un 422 al listar significa que el backend no habilita ese formulario: se informa tal cual, sin lista vacía engañosa.
 
 function Shell({ title, note, resource, refresh, headers, children }: { title: string; note: string; resource: Resource<unknown[]>; refresh: () => void; headers: string[]; children: React.ReactNode }) {
@@ -22,7 +23,7 @@ function Shell({ title, note, resource, refresh, headers, children }: { title: s
     </div>;
 }
 
-const common = (c: P110Capture | P112Capture | P116Capture | P129Capture) => <><td className="px-2 py-2">{c.operating_date}</td><td className="px-2 py-2">{c.work_order.number}</td><td className="px-2 py-2">{c.line.line_code} / {c.line.pv_reference}</td><td className="px-2 py-2">{c.machine.code}</td><td className="px-2 py-2">{c.shift.name}</td></>;
+const common = (c: P110Capture | P112Capture | P113Capture | P116Capture | P129Capture) => <><td className="px-2 py-2">{c.operating_date}</td><td className="px-2 py-2">{c.work_order.number}</td><td className="px-2 py-2">{c.line.line_code} / {c.line.pv_reference}</td><td className="px-2 py-2">{c.machine.code}</td><td className="px-2 py-2">{c.shift.name}</td></>;
 
 export function P110History({ resource, refresh }: { resource: Resource<P110Capture[]>; refresh: () => void }) {
     return <Shell title="Registro de fardos (P1-10) · registros centrales" note="Ficha candidata: registros guardados en PostgreSQL." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Código / producto", "N.º de fardo", "Peso fardo", "Rev."]}>
@@ -45,5 +46,11 @@ export function P116History({ resource, refresh }: { resource: Resource<P116Capt
 export function P112History({ resource, refresh }: { resource: Resource<P112Capture[]>; refresh: () => void }) {
     return <Shell title="Producción por pallet (P1-12) · registros centrales" note="Ficha candidata (hipótesis de prueba, un pallet por captura): registros guardados en PostgreSQL. El número oficial de pallet está pendiente." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Jabas", "Hora inicio", "Hora fin", "Rev."]}>
         {resource.status === "ready" && resource.data.map(c => <tr key={c.id} className="border-b last:border-0" data-capture={c.id}>{common(c)}<td className="px-2 py-2">{c.values.cantidad_jabas}</td><td className="px-2 py-2">{shortHour(c.values.hora_inicio)}</td><td className="px-2 py-2">{shortHour(c.values.hora_fin)}</td><td className="px-2 py-2">{c.revision}</td></tr>)}
+    </Shell>;
+}
+
+export function P113History({ resource, refresh }: { resource: Resource<P113Capture[]>; refresh: () => void }) {
+    return <Shell title="Servilletas y especiales (P1-13) · registros centrales" note="Ficha candidata (hipótesis de prueba): los saldos y el N.º de bobina son declaraciones; no hay consumo ni inventario. Número oficial de pallet pendiente." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "N.º bobina (decl.)", "Saldo inicial (decl.)", "Ingreso (decl.)", "Saldo final (decl.)", "Jabas", "Hora inicio", "Hora fin", "Rev."]}>
+        {resource.status === "ready" && resource.data.map(c => <tr key={c.id} className="border-b last:border-0" data-capture={c.id}>{common(c)}<td className="px-2 py-2">{c.values.numero_bobina}</td><td className="px-2 py-2">{c.values.saldo_inicial_kg}</td><td className="px-2 py-2">{c.values.ingreso_kg}</td><td className="px-2 py-2">{c.values.saldo_final_kg}</td><td className="px-2 py-2">{c.values.cantidad_jabas}</td><td className="px-2 py-2">{shortHour(c.values.hora_inicio)}</td><td className="px-2 py-2">{shortHour(c.values.hora_fin)}</td><td className="px-2 py-2">{c.revision}</td></tr>)}
     </Shell>;
 }
