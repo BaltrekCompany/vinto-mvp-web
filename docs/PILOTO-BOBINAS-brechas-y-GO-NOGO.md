@@ -11,12 +11,13 @@
 3. **Aun con el servicio hecho, el criterio de liberación es una decisión industrial de VINTO** que hoy no está en el repositorio (qué mediciones se exigen, qué límites, quién decide, si se puede revertir, qué efecto tiene). No debe implementarse suponiéndola.
 4. **No existe una matriz de decisiones de homologación para Bobinas** (M5-B0 es de Rebobinado, M7-A de Conversión). El contrato de F3, P1-06, P1-19 y P1-20, los maestros MP1/MP3 y los turnos de Bobinas no tienen registro de aprobación identificable en el repositorio, y P1-20 declara unidades provisionales. Esto, y no el código, es el segundo bloqueo.
 5. **Faltan además piezas de entrega:** ninguna prueba E2E de navegador para Bobinas ni Calidad, ningún procedimiento de despliegue/restauración del entorno aislado, ningún plan de UAT, reportes sin servicio central y sin definición de offline para captura central.
-6. **Distinción obligatoria:** completar el piloto (Entrega A) **no** completa el MVP integral de 25 formularios (Entrega B).
+6. **Conteo:** la matriz contiene **27 brechas únicas**: 9 de flujo productivo (PB-A1 a PB-A9), 8 de Calidad (PB-B1 a PB-B8) y 10 transversales (PB-C1 a PB-C10).
+7. **Distinción obligatoria:** completar el piloto (Entrega A) **no** completa el MVP integral de 25 formularios (Entrega B).
 
 ## 2. Convenciones de la matriz
 
 - **Estado:** `implementado` (existe y tiene cobertura de pruebas definida), `parcial`, `pendiente` (no existe), `no verificado` (no se pudo comprobar con lo inspeccionado; no equivale a «faltante»).
-- **Severidad:** `B` = bloqueante del piloto; `A` = alta (el piloto es posible pero con riesgo operativo o de datos que debe aceptarse expresamente); `M` = media; `Mejora` = opcional, no bloquea.
+- **Severidad:** `B` = bloqueante del piloto; `A` = alta (el piloto es posible solo con una mitigación o decisión explícita, según la regla de §4 y §10); `M` = media; `Mejora` = opcional, no bloquea.
 - **Tipo de dependencia de VINTO:** `D` = decisión/aprobación de VINTO; `E` = evidencia o documento a aportar; `—` = ninguna.
 - «Evidencia» cita ruta y, cuando es posible, línea. Una prueba que existe **no** acredita aprobación industrial (criterio de M5-B0 acta §2).
 
@@ -55,7 +56,7 @@
 |---|---|---|---|---|---|---|---|---|---|
 | PB-C1 | Seguridad y sesiones | implementado en local; **no verificado en entorno real** | Cookie `HttpOnly`, `SameSite=Lax`, `Secure` salvo `APP_ENV=local` (`auth/router.py:24-25`); sesiones de servidor con token opaco (`auth/sessions.py`); CORS con orígenes explícitos (`main.py:24-26`, `config.py:19`); `test_auth_*.py` | `Secure` solo se comprueba con HTTPS | A | Entorno aislado con HTTPS | **D**: política de contraseñas y bloqueo, si VINTO la exige | En el entorno aislado: cookie `Secure` activa, orígenes correctos, logout y expiración probados; sin credenciales en repositorio ni logs | PB-ENV |
 | PB-C2 | Perfiles, permisos y concesiones por sector | implementado | `auth/permissions.py` (JEFATURA gestiona OT, SUPERVISION asigna, OPERACION captura producción, CALIDAD captura y libera, DATA_BALTREK administra sin permisos de planta); `auth/grants.py`; API y UI de administración (PR #19, #20); `test_sector_*.py`, `test_admin_sector_api.py` | Los perfiles existen; **faltan los usuarios reales del piloto** | A | — | **D/E**: lista nominal de usuarios, perfil y sector; confirmar que la separación de funciones coincide con la organización | Cada usuario de la lista accede solo a lo permitido y recibe 403 en lo contrario (matriz perfil × acción probada en el entorno aislado) | PB-ENV / UAT |
-| PB-C3 | Catálogos y maestros de Bobinas | implementado como **candidato** | `seed_data/manifest.json`: 2 máquinas (MP1, MP3), 93 artículos, 91 también materiales, 2 sin clase de material, 1 sin gramaje, **0 con peso nominal**, 30 campos de formulario; advertencias `MACHINE_NAME_FROM_CODE` (el nombre de máquina repite el código), turnos con vigencia provisional | Datos sin aprobación; no se promueve a DEV | A | — | **E/D**: lista oficial de máquinas y artículos con nombres, unidades y vigencias, y confirmar si el peso nominal es obligatorio | Bundle regenerado con las fuentes aprobadas, SHA-256 registrado, ensayo de importación en base `*_test` sin diferencias respecto a la lista oficial | M7-B parcial para Bobinas |
+| PB-C3 | Catálogos y maestros de Bobinas | implementado como **candidato** | `seed_data/manifest.json`: 2 máquinas (MP1, MP3), 93 artículos, 91 también materiales, 2 sin clase de material, 1 sin gramaje, **0 con peso nominal**, 30 campos de formulario; advertencias `MACHINE_NAME_FROM_CODE` (el nombre de máquina repite el código), turnos con vigencia provisional | Datos sin aprobación; no se promueve a DEV | A | — | **E/D**: lista oficial de máquinas y artículos con nombres, unidades y vigencias, y confirmar si el peso nominal es obligatorio | Bundle regenerado con las fuentes aprobadas, SHA-256 registrado, ensayo de importación en base `*_test` sin diferencias respecto a la lista oficial | PB-MAESTROS (independiente de M7-B, ver §6) |
 | PB-C4 | Reportes | **pendiente** | `REPORT_DEFINITIONS` (`lib/vinto/form-definitions.ts:8888-8908`) define **4** reportes por nombre y descripción (productos rebobinados, bobinas por camión, consolidado PH y consolidado de servilletas; el README dice 3); en la UI solo figuran como tarjetas y los únicos archivos son descargas CSV de registros locales (`app/page.tsx:448`); no hay endpoint central de reportes | **No se verificó** cuáles son obligatorios para Bobinas; «Bobinas por camión» es el candidato evidente pero requiere un dato (camión) que ningún formulario central de Bobinas captura | A | Definir fuente de datos | **D/E**: reportes exigidos en el piloto y su formato; si «camión» entra | Para cada reporte exigido: salida generada desde datos centrales, cuadrada contra la base en una muestra y aprobada por VINTO | Posterior; depende de la decisión |
 | PB-C5 | Operación sin conexión | pendiente para captura central | F3, P1-19 y P1-20 exigen conexión (`lib/vinto/bobbins.ts:233`, `quality-captures.ts:210`); la propuesta original contemplaba cola offline | Si la planta no tiene conectividad estable, la captura se detiene | A | Diseño de cola local si se requiere | **D**: si el piloto exige offline y con qué garantías | VINTO declara por escrito que el piloto opera con conexión, o existe cola probada sin pérdida ni duplicados | Decisión previa; cola solo si se exige |
 | PB-C6 | Pruebas backend, Node y E2E | parcial | Backend: definiciones de prueba (aprox.) F3 52, F6 66, Calidad 61, revisión 26, asignaciones 65, OT 57, turnos 38; Node: `bobbins` 45, `quality-*` 133, `orders` 21; **ninguna E2E de navegador para F3, P1-06, P1-19, P1-20 ni para el flujo OT → asignación → captura → Calidad** (`scripts/e2e/` solo cubre Rebobinado y Conversión) | El circuito completo nunca se ha probado como un usuario | A | Servidor de pruebas y fixtures como los de M6 | — | Un E2E con base `*_test` recorre OT → publicación → asignación → F3 → P1-19 → P1-20 → liberación y verifica el estado en base | Incremento E2E-B (tras PB-B4) |
@@ -73,14 +74,17 @@
 4. **PB-C7** entorno aislado con respaldo restaurado y validado.
 5. **PB-C8** UAT y aprobación expresa de VINTO.
 
-**Riesgos que el piloto solo puede asumir con aceptación escrita de VINTO:** PB-A8 (corrección), PB-C1 (seguridad en entorno real), PB-C2 (usuarios reales), PB-C4 (reportes), PB-C5 (offline), PB-C6 (E2E), PB-A5/PB-C10 (datos demo en pantalla).
+**Clasificación de lo demás (la aceptación genérica de riesgo no sustituye nada de la primera categoría):**
+- **Requisitos técnicos y de seguridad obligatorios (no excluibles ni aceptables como riesgo):** circuito productivo y de Calidad verificable (PB-A1 a PB-A4, PB-A6, PB-B1 a PB-B4); seguridad, roles y concesiones verificados (PB-C1, PB-C2); auditoría y trazabilidad funcionales y comprobadas (PB-A9); QA integral con evidencia de ejecución (PB-C6); eliminación de datos ficticios (PB-A5, PB-C10); entorno aislado y recuperación validada (PB-C7).
+- **Decisiones de alcance que VINTO puede excluir formalmente** (por escrito, con persona de autoridad y evidencia identificable): reportes (PB-C4, solo como «no aplicable» si VINTO los excluye del piloto), offline (PB-C5), Expertus (PB-C9).
+- **Riesgo operativo acotado, aceptable solo con procedimiento temporal documentado:** ausencia de corrección de capturas (PB-A8). Exige política temporal explícita con responsable, procedimiento de incidencias y tratamiento de los registros incorrectos; sin ella, no se acepta.
 
-**Mejoras opcionales (no bloquean):** PB-A9 (consulta de auditoría), PB-B8 (indicadores de Calidad), PB-C9 si VINTO confirma que no hay integración.
+**Mejoras opcionales (no bloquean):** la vista de consulta de auditoría (el registro de auditoría en sí es obligatorio, ver arriba), PB-B8 (indicadores de Calidad), PB-C9 si VINTO confirma que no hay integración.
 
 ## 5. Dos niveles de entrega
 
 ### Entrega A: piloto funcional aislado de Bobinas MP1/MP3
-Mínimo verificable: en un entorno separado de DEV y PROD, usuarios autorizados nominalmente ejecutan con datos aprobados el flujo OT → publicación → asignación → F3 (y P1-06) → P1-19 / P1-20 → liberación o rechazo → Seguimiento, con evidencia de trazabilidad, recuperación de datos probada y UAT firmado. Requiere cerrar PB-B4, PB-B5, PB-H, PB-C7 y PB-C8, y que cada riesgo de §4 esté cerrado o aceptado por escrito.
+Mínimo verificable: en un entorno separado de DEV y PROD, usuarios autorizados nominalmente ejecutan con datos aprobados el flujo OT → publicación → asignación → F3 (y P1-06) → P1-19 / P1-20 → liberación o rechazo → Seguimiento, con evidencia de trazabilidad, recuperación de datos probada y UAT firmado. Requiere cerrar PB-B4, PB-B5, PB-H, PB-C7 y PB-C8, y que cada punto de §10 esté Completo, formalmente excluido por VINTO (solo los de alcance) o cubierto por una política temporal documentada (solo PB-A8).
 
 ### Entrega B: MVP integral VINTO (referencia)
 Conserva el alcance original: 25 formularios y 602 campos activos, 3 reportes (el repositorio define 4, ver PB-C4), Rebobinado y Conversión homologados (47 + 36 decisiones pendientes), formularios restantes, integraciones, offline, QA integral, despliegue y aceptación. Hoy el bundle de referencia exporta **4 formularios** (`manifest.json`: 30 campos) y 21 definiciones quedan fuera de alcance.
@@ -99,9 +103,11 @@ Criterios de orden: dependencias, riesgo operativo, esfuerzo técnico, necesidad
 | 4 | **Q-LIB**: servicio y UI de liberación/rechazo con pruebas backend, Node y E2E | Técnico | M | Política aprobada | Sí |
 | 5 | **E2E-B**: E2E de navegador del flujo completo | Técnico | M | — | Sí |
 | 6 | **PB-ENV**: entorno aislado, migraciones, respaldo y restauración documentados y probados | Infra | M | Dónde alojar y quién opera | Sí |
-| 7 | **PB-MAESTROS**: bundle Bobinas con fuentes aprobadas e importación en `*_test` (equivale a un M7-B acotado a Bobinas) | Técnico | S–M | Listas oficiales aprobadas | Sí |
+| 7 | **PB-MAESTROS**: bundle Bobinas con fuentes aprobadas e importación en `*_test` (incremento propio de Bobinas, **no** es M7-B) | Técnico | S–M | Listas oficiales aprobadas | Sí |
 | 8 | **UAT**: guion, ejecución, acta | Mixto | M | Participantes y firma | Sí |
 | 9 | Decisiones sobre PB-A8, PB-C4, PB-C5 y PB-C9 (corrección, reportes, offline, Expertus) y su implementación si se exigen | Mixto | S a L cada una | Decidir | Sí, caso por caso |
+
+**Sobre PB-MAESTROS y M7-B:** M7-B pertenece al roadmap de Conversión ([M7-A índice §9](M7-A-homologacion-indice.md)) y sus puertas (`CV:C-6` a `CV:C-9`, `CV:P-11`, `CV:N-8`) no se aplican a Bobinas. PB-MAESTROS es un incremento independiente con sus propias aprobaciones de Bobinas (preguntas B-2 y B-3) y su propio criterio de aceptación (PB-C3); puede reutilizar herramientas y patrones existentes (exportador, bundle con SHA-256, ensayo de importación en `*_test`), pero **no hereda ni cierra** decisiones de M7-B, M5-B0 ni M7-A, y su cierre no aprueba nada de Conversión ni de Rebobinado.
 
 **Camino crítico del piloto:** PB-H0 → homologación de Calidad → Q-LIB → E2E-B → PB-ENV/PB-MAESTROS → UAT → aprobación expresa. Los pasos 2, 5 (parcialmente) y 6 pueden avanzar en paralelo sin decisiones industriales nuevas; el 4 y el 7 no.
 
@@ -154,30 +160,36 @@ Criterios de orden: dependencias, riesgo operativo, esfuerzo técnico, necesidad
 
 ## 10. Checklist GO / NO GO del piloto
 
-Leyenda: **Completo** (hay evidencia verificable), **Pendiente** (no existe o no está aprobado), **No verificado** (no se pudo comprobar). **Estado actual: NO GO.**
+Leyenda de estado: **Completo** (hay evidencia verificable), **Pendiente** (no existe o no está aprobado), **No verificado** (no se pudo comprobar), **Parcial**. **Estado actual: NO GO.**
+Tipo de condición: **T** = técnica o de seguridad obligatoria (requiere verificación; **no** puede omitirse ni sustituirse por una aceptación de riesgo); **A** = decisión de alcance que VINTO puede excluir formalmente; **R** = riesgo operativo acotado, aceptable solo con procedimiento temporal documentado; **V** = aprobación de VINTO (decisión, no verificación técnica).
 
-| # | Condición | Estado | Detalle |
-|---|---|---|---|
-| 1 | Alcance del piloto aprobado por VINTO (máquinas, turnos, duración, reportes, offline, Expertus) | Pendiente | O-1 a O-5 |
-| 2 | Maestros aplicables confirmados (máquinas, artículos, unidades, turnos, vigencias) | Pendiente | PB-C3, PB-A7: bundle candidato, sin evidencia de aprobación |
-| 3 | Contratos de F3, P1-06, P1-19 y P1-20 homologados | Pendiente | PB-H; P1-20 con unidades provisionales |
-| 4 | Flujo de producción completo: OT, publicación, asignación, F3, P1-06 | **Completo técnicamente** (sin aprobación industrial) | PB-A1 a PB-A4, PB-A6; no recorrido de punta a punta por E2E de navegador |
-| 5 | Política de Calidad aprobada (Q-1 a Q-8) | Pendiente | PB-B5 |
-| 6 | Servicio de liberación y rechazo implementado y probado | Pendiente | PB-B4 |
-| 7 | Capturas P1-19 y P1-20, bandeja e historial | **Completo técnicamente** (contrato sin aprobar) | PB-B1 a PB-B3 |
-| 8 | Roles, permisos y concesiones validados con los usuarios reales del piloto | Pendiente | Mecanismo completo (PB-C2); usuarios reales no definidos |
-| 9 | Auditoría y trazabilidad verificadas | Parcial | Registro en base completo (PB-A9); sin consulta ni verificación en el entorno aislado |
-| 10 | Seguridad y sesiones verificadas en el entorno real (HTTPS, `Secure`, CORS) | No verificado | PB-C1 |
-| 11 | QA técnico: suites backend, Node y E2E satisfactorias en una ejecución nueva | No verificado | Esta auditoría no ejecutó pruebas; sin E2E de navegador para el circuito (PB-C6) |
-| 12 | Seguimiento sin datos ficticios y con estado real de Calidad | Pendiente | PB-A5, PB-B8, PB-C10 |
-| 13 | Reportes exigidos entregados y cuadrados | Pendiente | PB-C4 (depende de la decisión) |
-| 14 | Corrección de capturas definida (implementada o aceptada su ausencia) | Pendiente | PB-A8 |
-| 15 | UAT completado y firmado | Pendiente | PB-C8 |
-| 16 | Entorno aislado, migraciones verificadas y recuperación (respaldo restaurado y validado) | Pendiente | PB-C7 |
-| 17 | Rebobinado y Conversión permanecen deshabilitados; `DEFAULT_OPERATIONAL_SECTORS = (BOBINAS,)` y `CENTRAL_FORM_CODES = {P1-06}` sin cambios | **Completo** (verificado en `sectors.py:28` y `capture_service.py:39` sobre `416f877`) | Debe repetirse antes de cualquier GO |
-| 18 | Aprobación expresa de VINTO con persona de autoridad y evidencia identificable | Pendiente | M5-B0 acta §2 |
+| # | Tipo | Condición | Estado | Detalle |
+|---|---|---|---|---|
+| 1 | V | Alcance del piloto aprobado por VINTO (máquinas, turnos, duración y la decisión sobre reportes, offline y Expertus) | Pendiente | O-1 a O-5 |
+| 2 | V | Maestros aplicables confirmados (máquinas, artículos, unidades, turnos, vigencias) | Pendiente | PB-C3, PB-A7: bundle candidato, sin evidencia de aprobación |
+| 3 | V | Contratos de F3, P1-06, P1-19 y P1-20 homologados | Pendiente | PB-H; P1-20 con unidades provisionales |
+| 4 | T | Flujo de producción: OT, publicación, asignación, F3, P1-06 | **Implementado; verificación integral pendiente** | PB-A1 a PB-A4, PB-A6: existe y tiene pruebas de backend y Node definidas, **sin** una ejecución nueva ni un E2E de navegador del circuito (PB-C6) y **sin** aprobación industrial |
+| 5 | V | Política de Calidad aprobada (Q-1 a Q-8) | Pendiente | PB-B5 |
+| 6 | T | Servicio de liberación y rechazo implementado y probado | Pendiente | PB-B4 |
+| 7 | T | Capturas P1-19 y P1-20, bandeja e historial | **Implementado; verificación integral pendiente** | PB-B1 a PB-B3: existe y tiene pruebas definidas, **sin** ejecución nueva ni E2E, y con contrato sin aprobar |
+| 8 | T | Roles, permisos y concesiones validados con los usuarios reales del piloto | Pendiente | Mecanismo implementado (PB-C2); usuarios reales no definidos; matriz perfil × acción sin probar en el entorno aislado |
+| 9 | T | Auditoría y trazabilidad funcionales y verificadas | Parcial | Registro en base implementado (PB-A9); sin verificación en el entorno aislado ni forma documentada de reconstruir quién, cuándo y por qué |
+| 10 | T | Seguridad y sesiones verificadas en el entorno real (HTTPS, `Secure`, CORS, expiración) | No verificado | PB-C1 |
+| 11 | T | QA integral: suites backend, Node y E2E ejecutadas con evidencia (registro de ejecución) | No verificado | Esta auditoría no ejecutó pruebas; sin E2E de navegador del circuito (PB-C6) |
+| 12 | T | Sin datos ficticios en el piloto; Seguimiento con estado real de Calidad | Pendiente | PB-A5, PB-B8, PB-C10 |
+| 13 | A | Reportes: entregados y cuadrados contra la base **o** formalmente excluidos del alcance del piloto por VINTO (marcados «no aplicable») | Pendiente | PB-C4; solo la exclusión formal permite «no aplicable» |
+| 14 | R | Corrección de capturas: implementada **o** política temporal explícita con responsable, procedimiento de incidencias y tratamiento de registros incorrectos | Pendiente | PB-A8; una aceptación genérica no basta |
+| 15 | V | UAT completado y firmado | Pendiente | PB-C8 |
+| 16 | T | Entorno aislado, migraciones verificadas y recuperación (respaldo restaurado y validado) | Pendiente | PB-C7 |
+| 17 | T | Rebobinado y Conversión permanecen deshabilitados; `DEFAULT_OPERATIONAL_SECTORS = (BOBINAS,)` y `CENTRAL_FORM_CODES = {P1-06}` sin cambios | **Completo** (verificado en `sectors.py:28` y `capture_service.py:39` sobre `416f877`) | Debe repetirse antes de cualquier GO |
+| 18 | V | Aprobación expresa de VINTO con persona de autoridad y evidencia identificable | Pendiente | M5-B0 acta §2 |
 
-**Regla de decisión:** el piloto es GO solo cuando los puntos 1 a 3, 5, 6, 8 y 15 a 18 estén **Completo** y cada punto restante esté Completo o con aceptación escrita de VINTO del riesgo correspondiente.
+**Regla de decisión (el piloto sigue en NO GO):**
+1. **Condiciones T (4 a 12, 16 y 17): todas deben estar Completo, con evidencia de verificación.** No pueden omitirse ni sustituirse por una aceptación de riesgo, por genérica o expresa que sea. Un punto «Implementado; verificación integral pendiente» no cuenta como Completo.
+2. **Condiciones V (1 a 3, 5, 15 y 18): todas deben estar aprobadas por VINTO** con evidencia identificable.
+3. **Condición A (13):** se cumple entregando el reporte o con la exclusión formal de VINTO del alcance del piloto (persona de autoridad, fecha y evidencia). Ninguna otra vía lo marca «no aplicable».
+4. **Condición R (14):** se cumple con la corrección implementada o con una política temporal escrita que identifique responsable, procedimiento de incidencias y tratamiento de los registros incorrectos.
+5. La exclusión formal de offline (PB-C5) y de Expertus (PB-C9) se registra dentro del punto 1; no sustituye ninguna condición T.
 
 ## 11. Límites de esta auditoría
 - No se ejecutaron pruebas, migraciones ni conexiones a bases de datos; todos los estados son resultado de lectura.
