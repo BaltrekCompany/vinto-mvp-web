@@ -1,0 +1,12 @@
+{
+  "postgres": "17.11 (Debian 17.11-1.pgdg13+2)",
+  "python": "Python 3.12.10",
+  "node": "v24.20.0",
+  "chrome": "155.0.8059.40",
+  "commit": "911b7cbb6a5c31aaabbf11a7602f31e6e3705d28",
+  "database": "vinto_e2eb0_b6ce9593d9f2_test",
+  "api": "http://127.0.0.1:8190",
+  "web": "http://127.0.0.1:8796",
+  "postgresContainer": "vinto-e2eb0-pg",
+  "postgresPort": 55432
+}
