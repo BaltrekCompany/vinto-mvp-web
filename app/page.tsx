@@ -27,6 +27,7 @@ import { CentralCaptures } from "@/components/vinto/central-captures";
 import { F3BobbinCapture } from "@/components/vinto/f3-bobbin-capture";
 import { F6Capture } from "@/components/vinto/f6-capture";
 import { P110CaptureForm } from "@/components/vinto/p1-10-capture";
+import { P112CaptureForm } from "@/components/vinto/p1-12-capture";
 import { P116CaptureForm } from "@/components/vinto/p1-16-capture";
 import { P129CaptureForm } from "@/components/vinto/p1-29-capture";
 import { ConversionCentral } from "@/components/vinto/conversion-central";
@@ -42,6 +43,7 @@ import { F3_FORM_ID, type PendingBobbinAttempt } from "@/lib/vinto/bobbins";
 import { F6_FORM_ID, type CentralCapture, type PendingAttempt } from "@/lib/vinto/captures";
 import type { FormScreen } from "@/lib/vinto/availability";
 import type { P110Attempt } from "@/lib/vinto/p1-10";
+import type { P112Attempt } from "@/lib/vinto/p1-12";
 import type { P116Attempt } from "@/lib/vinto/p1-16";
 import type { P129Attempt } from "@/lib/vinto/p1-29";
 import { useActiveAssignment, useAssignments, useResource, useWorkOrders } from "@/lib/vinto/use-central";
@@ -215,6 +217,7 @@ export default function Home() {
     // Conversión CENTRAL (M6-A, candidato): formulario abierto (P1-16) con el contexto de la asignación central e intento pendiente PROPIO (el contexto original se conserva con el intento).
     const [convCapture, setConvCapture] = useState<{ screen: FormScreen; context: CaptureContext } | null>(null), [convRefresh, setConvRefresh] = useState(0);
     const [p116Attempt, setP116Attempt] = useState<P116Attempt | null>(null), [p116Context, setP116Context] = useState<CaptureContext | null>(null);
+    const [p112Attempt, setP112Attempt] = useState<P112Attempt | null>(null), [p112Context, setP112Context] = useState<CaptureContext | null>(null);
     // Autenticación: la autoridad es GET /api/auth/me (cookie HttpOnly). Nada de esto se persiste en el navegador.
     const { view, retry, setSession } = useSession();
     const user = view.status === "authenticated" ? view.user : null;
@@ -228,7 +231,7 @@ export default function Home() {
     const canCapture = hasPermission(user, front === "Calidad" ? "quality.capture" : "production.capture");
     // Sesión perdida (401 de una API central): vuelve al Login por el mecanismo de autenticación existente.
     function sessionLost() {
-        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null); setF3Attempt(null); setSelectedQualityBobbin(null); setHumidityAttempt(null); setQualityHistory(null); setSelectedPhysicalBobbin(null); setPhysicalAttempt(null); setRebCapture(null); setP110Attempt(null); setP110Context(null); setP129Attempt(null); setP129Context(null); setConvCapture(null); setP116Attempt(null); setP116Context(null);
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null); setF3Attempt(null); setSelectedQualityBobbin(null); setHumidityAttempt(null); setQualityHistory(null); setSelectedPhysicalBobbin(null); setPhysicalAttempt(null); setRebCapture(null); setP110Attempt(null); setP110Context(null); setP129Attempt(null); setP129Context(null); setConvCapture(null); setP116Attempt(null); setP116Context(null); setP112Attempt(null); setP112Context(null);
         setLogoutNotice(false);
         setSession({ status: "anonymous" });
     }
@@ -251,7 +254,7 @@ export default function Home() {
     async function endSession() {
         setLoggingOut(true);
         const result = await logout();
-        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null); setF3Attempt(null); setSelectedQualityBobbin(null); setHumidityAttempt(null); setQualityHistory(null); setSelectedPhysicalBobbin(null); setPhysicalAttempt(null); setRebCapture(null); setP110Attempt(null); setP110Context(null); setP129Attempt(null); setP129Context(null); setConvCapture(null); setP116Attempt(null); setP116Context(null);
+        setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null); setF3Attempt(null); setSelectedQualityBobbin(null); setHumidityAttempt(null); setQualityHistory(null); setSelectedPhysicalBobbin(null); setPhysicalAttempt(null); setRebCapture(null); setP110Attempt(null); setP110Context(null); setP129Attempt(null); setP129Context(null); setConvCapture(null); setP116Attempt(null); setP116Context(null); setP112Attempt(null); setP112Context(null);
         setLogoutNotice(!result.confirmed);
         setSession({ status: "anonymous" });
         setLoggingOut(false);
@@ -312,6 +315,9 @@ export default function Home() {
         return <P110CaptureForm context={p110Attempt && p110Context ? p110Context : rebCapture.context} online={online} attempt={p110Attempt} setAttempt={a => { setP110Attempt(a); setP110Context(a ? (p110Context ?? rebCapture.context) : null); }} back={() => setRebCapture(null)} onSubmitted={() => setRebRefresh(n => n + 1)} onAssignmentChanged={() => setRebCapture(null)} onSessionLost={sessionLost} user={user}/>;
     if (rebCapture && front === "Rebobinado" && rebCapture.screen === "p129")
         return <P129CaptureForm context={p129Attempt && p129Context ? p129Context : rebCapture.context} online={online} attempt={p129Attempt} setAttempt={a => { setP129Attempt(a); setP129Context(a ? (p129Context ?? rebCapture.context) : null); }} back={() => setRebCapture(null)} onSubmitted={() => setRebRefresh(n => n + 1)} onAssignmentChanged={() => setRebCapture(null)} onSessionLost={sessionLost} user={user}/>;
+    // Conversión CENTRAL: P1-12 (candidato, un pallet por captura) se envía solo a la API central. Con un intento pendiente se reabre con SU contexto original.
+    if (convCapture && front === "Conversión" && convCapture.screen === "p112")
+        return <P112CaptureForm context={p112Attempt && p112Context ? p112Context : convCapture.context} online={online} attempt={p112Attempt} setAttempt={a => { setP112Attempt(a); setP112Context(a ? (p112Context ?? convCapture.context) : null); }} back={() => setConvCapture(null)} onSubmitted={() => setConvRefresh(n => n + 1)} onAssignmentChanged={() => setConvCapture(null)} onSessionLost={sessionLost} user={user}/>;
     // Conversión CENTRAL: P1-16 (candidato) se envía solo a la API central (nunca Capture/save() ni vinto-p1-records). Con un intento pendiente se reabre con SU contexto original.
     if (convCapture && front === "Conversión" && convCapture.screen === "p116")
         return <P116CaptureForm context={p116Attempt && p116Context ? p116Context : convCapture.context} online={online} attempt={p116Attempt} setAttempt={a => { setP116Attempt(a); setP116Context(a ? (p116Context ?? convCapture.context) : null); }} back={() => setConvCapture(null)} onSubmitted={() => setConvRefresh(n => n + 1)} onAssignmentChanged={() => setConvCapture(null)} onSessionLost={sessionLost} user={user}/>;
