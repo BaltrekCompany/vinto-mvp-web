@@ -38,15 +38,25 @@ test("3 · un estado real desconocido no se muestra como cero ni como el conteo 
   // el conteo local solo aparece como dato secundario rotulado y aclarando que no representa la producción
   const failed = captureCountView({ status: "failed", kind: "unavailable" }, "Bobinas", 7);
   assert.match(failed.note, new RegExp(`${LOCAL_LABEL.replace(/[()]/g, "\\$&")}: 7`));
-  assert.match(failed.note, /No representan la producción de Bobinas/);
+  assert.match(failed.note, /No representan la producción central de Bobinas ni se suman al conteo central/);
   assert.match(failed.note, /Consulta central no disponible/);
   assert.match(captureCountView({ status: "failed", kind: "forbidden" }, "Bobinas", 7).note, /Tu perfil no tiene acceso al conteo central/);
   assert.equal(captureCountView({ status: "loading" }, "Bobinas", 7).canRetry, false);
   // un cero central real sigue siendo un cero válido y el conteo local no se suma
   const zero = captureCountView({ status: "ready", count: 0 }, "Bobinas", 7);
   assert.deepEqual([zero.label, zero.value], [CENTRAL_LABEL, "0"]);
-  assert.match(zero.note, /En este navegador: 7\. Sin sincronización automática/);
+  assert.match(zero.note, /Registros locales \(este navegador\): 7\. No representan la producción central de Bobinas ni se suman al conteo central\. Sin sincronización automática/);
+  assert.equal(zero.canRetry, true);
   assert.equal(captureCountView({ status: "ready", count: 12 }, "Bobinas", 3).value, "12");
+  // rotulación consistente del dato secundario en TODOS los estados: local, no central, no sumado
+  const all = [{ status: "loading" }, { status: "ready", count: 0 }, { status: "ready", count: 12 }, { status: "failed", kind: "unavailable" }, { status: "failed", kind: "forbidden" }, { status: "failed", kind: "session" }];
+  for (const state of all) {
+    const { note } = captureCountView(state, "Bobinas", 4);
+    if (state.status === "loading") { assert.match(note, /Consultando registros centrales/); continue; }
+    assert.match(note, /Registros locales \(este navegador\): 4\./, JSON.stringify(state));
+    assert.match(note, /No representan la producción central/, JSON.stringify(state));
+    assert.match(note, /ni se suman al conteo central/, JSON.stringify(state));
+  }
 });
 
 test("4 · las OT y asignaciones centrales de Bobinas siguen visibles y solo se muestran cuando ambas cargaron", () => {
@@ -109,4 +119,17 @@ test("9 · Rebobinado y Conversión no se alteran y los datos locales histórico
   assert.match(page, /localStorage\.setItem\("vinto-ot"/);
   assert.match(page, /localStorage\.setItem\("vinto-asg"/);
   assert.equal(/localStorage\.(removeItem|clear)\("vinto-(p1-records|ot|asg)"\)|localStorage\.clear/.test(page), false, "no se borra ni migra el almacenamiento local");
+});
+
+test("10 · no se ofrece una descarga basada en datos imposibles de obtener (historial de tubetes)", () => {
+  // Tracking recibe registros SIN F3 ni P1-06 y los registros F3 locales eran la única fuente del historial de tubetes: la descarga siempre saldría vacía.
+  assert.match(page, /records=\{records\.filter\(r => r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID\)\}/);
+  assert.equal(/downloadTubetes|Historial de tubetes|historial-uso-tubetes|tubetes\s*=/.test(page), false);
+  assert.equal(/codigo_tubete/.test(trackingBody), false);
+  // regla general: ningún botón de descarga filtra por un formulario que el propio Tracking excluye
+  const excluded = ["F3_FORM_ID", "F6_FORM_ID", "form_3_registro_de_produccion_de_bobinas"];
+  for (const id of excluded) assert.equal(new RegExp(String.raw`records\.filter\([^)]*formId === ${id}`).test(trackingBody), false, `Tracking no puede filtrar por ${id}`);
+  assert.equal(/Descargas de registros locales[\s\S]*Historial/.test(trackingBody), false);
+  // los datos locales no se borran ni se migran
+  assert.match(page, /localStorage\.setItem\("vinto-p1-records"/);
 });

@@ -10,8 +10,8 @@ export const CENTRAL_LABEL = "Registros centrales";
 export const VALUE_UNKNOWN = "—";
 
 export function captureCountView(state: CaptureCountViewState, front: CaptureFront, localCount: number): CaptureCountView {
-    const local = `${LOCAL_LABEL}: ${localCount}. No representan la producción de ${front} ni se suman al conteo central.`;
-    if (state.status === "ready") return { label: CENTRAL_LABEL, value: String(state.count), note: `En este navegador: ${localCount}. Sin sincronización automática.`, canRetry: true };
+    const local = `${LOCAL_LABEL}: ${localCount}. No representan la producción central de ${front} ni se suman al conteo central.`;
+    if (state.status === "ready") return { label: CENTRAL_LABEL, value: String(state.count), note: `${local} Sin sincronización automática.`, canRetry: true };
     if (state.status === "loading") return { label: CENTRAL_LABEL, value: VALUE_UNKNOWN, note: "Consultando registros centrales…", canRetry: false };
     const reason = state.kind === "forbidden" ? "Tu perfil no tiene acceso al conteo central." : "Consulta central no disponible.";
     return { label: CENTRAL_LABEL, value: VALUE_UNKNOWN, note: `${reason} ${local}`, canRetry: true };
