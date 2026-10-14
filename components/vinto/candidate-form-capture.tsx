@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CaptureNotice, CaptureSection, CaptureShell, ContextStrip, SubmitBar, TextAreaField, TextField, contextItems } from "@/components/vinto/capture-kit";
+import { CaptureNotice, CaptureSection, CaptureShell, ContextStrip, SubmitBar, TextAreaField, TextField, contextItems, type ContextItem } from "@/components/vinto/capture-kit";
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
-import type { BobinasCandidate } from "@/lib/vinto/bobinas-candidates";
+import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
@@ -15,8 +15,9 @@ import type { CaptureContext } from "@/lib/vinto/orders";
 // NO es una ficha homologada: las decisiones pendientes de VINTO se muestran en pantalla.
 
 type Props = {
-    candidate: BobinasCandidate;
-    context: CaptureContext;
+    candidate: CandidateScreen;
+    context?: CaptureContext; // contexto "assignment" (Producción): la asignación activa
+    machine?: { code: string; name: string }; // contexto "machine" (Calidad por máquina): sin bobina, asignación ni OT; el backend resuelve turno, fecha operativa y usuario al registrar
     online: boolean;
     attempt: CandidateAttempt | null;
     setAttempt: (attempt: CandidateAttempt | null) => void;
@@ -30,8 +31,12 @@ type Props = {
 
 type ReadBack = { state: "reading" } | { state: "ok" } | { state: "mismatch" } | { state: "error" };
 
-export function CandidateFormCapture({ candidate, context, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps }: Props) {
+export function CandidateFormCapture({ candidate, context, machine, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps }: Props) {
     const { form, api } = candidate;
+    const contextId = form.context === "machine" ? machine?.code : context?.assignmentId; // assignment_id o código de máquina, según el formulario
+    const items: ContextItem[] = form.context === "machine"
+        ? [{ label: "Máquina", value: machine ? `${machine.code} · ${machine.name}` : "—" }, { label: "Turno y fecha operativa", value: "Los resuelve el backend al registrar" }, { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Bobina / OT / asignación", value: "No aplica" }, { label: "Hora", value: "Hora de registro (no del ensayo)" }]
+        : context ? contextItems(context) : [];
     const realDeps: CandidateSubmitDeps = { post: api.submit, get: (id) => api.get(id) };
     const io = deps ?? realDeps;
     const [draft, setDraft] = useState<CandidateDraft>(attempt ? { ...attempt.draft } : form.emptyDraft());
@@ -47,7 +52,8 @@ export function CandidateFormCapture({ candidate, context, online, attempt, setA
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
         if (!current) {
-            const created = form.createAttempt(draft, context.assignmentId, getDeviceKey());
+            if (!contextId) return void setNotice(SUBMIT_MESSAGES.notFound);
+            const created = form.createAttempt(draft, contextId, getDeviceKey());
             if (!created.ok) return void setNotice(created.errors.join(" "));
             current = created.attempt;
             setAttempt(current); // se conserva desde el primer POST: si la respuesta es incierta, el reintento usa el mismo capture_id
@@ -81,7 +87,7 @@ export function CandidateFormCapture({ candidate, context, online, attempt, setA
             <p className="font-black">Ficha NO homologada · solo donde el backend la publique</p>
             <p className="mt-1">Los campos son los de la definición legacy como punto de partida técnico. Esta captura solo funciona donde el formulario esté habilitado explícitamente y no sustituye ninguna decisión de VINTO.</p>
         </div>
-        <ContextStrip items={contextItems(context)}/>
+        <ContextStrip items={items}/>
         <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
             {candidate.pending.map(note => <div key={note.label}><p className="text-xs font-semibold text-emerald-800">{note.label}</p><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
         </div>
@@ -100,7 +106,7 @@ export function CandidateFormCapture({ candidate, context, online, attempt, setA
         <CaptureNotice text={notice}/>
         {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
             <p className="font-black">{saved.message}</p>
-            <p className="mt-1">Captura {saved.capture.id} · revisión {saved.capture.revision} · {saved.capture.machine.code} · OT {saved.capture.work_order.number}</p>
+            <p className="mt-1">Captura {saved.capture.id} · revisión {saved.capture.revision} · {saved.capture.machine.code} · {saved.capture.work_order ? `OT ${saved.capture.work_order.number}` : `Turno ${saved.capture.shift.name} · fecha operativa ${saved.capture.operating_date}`}</p>
             <p className="mt-1" data-readback={saved.readBack.state}>{saved.readBack.state === "reading" ? "Consultando la captura en la API central…" : saved.readBack.state === "ok" ? "Verificada con una consulta posterior por id en la API central." : saved.readBack.state === "mismatch" ? "La consulta posterior no coincide con lo enviado; revisa el registro." : "No se pudo verificar con una consulta posterior; el envío ya fue confirmado por el servidor."}</p>
         </div>}
         {!saved && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}

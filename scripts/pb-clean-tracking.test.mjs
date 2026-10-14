@@ -82,7 +82,7 @@ test("5 · error, carga, falta de permisos y sesión perdida no generan datos de
 });
 
 test("6 · Seguimiento de Calidad no simula liberaciones ni usa OT o registros locales: muestra que el resumen no está disponible", () => {
-  assert.match(page, /: <QualityTrackingPending\/>\)\}<\/>\}/);
+  assert.match(page, /: <><QualityTrackingPending\/><QualityMachineControls scope=\{scope\} canCapture=\{canReadQualityInbox\} mode="tracking"[^\n]*\/><\/>\)\}<\/>\}/); // DEV-Q1: el resumen sigue «no disponible»; los controles por máquina candidatos son un panel aparte
   assert.equal((page.match(/<Tracking /g) ?? []).length, 1, "Tracking solo se usa para el Seguimiento central de Bobinas");
   assert.match(pending, /Resumen central todavía no disponible/);
   assert.match(pending, /no existe una fuente central de estados de liberación/);

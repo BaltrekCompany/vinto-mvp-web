@@ -185,7 +185,7 @@ test("Programming and Tracking do not present demo releases as Calidad state", (
   // PB-CLEAN: sin estado demo; las liberaciones son «funcionalidad pendiente» y Calidad no usa Tracking
   assert.equal(/ReleaseCards|releases/.test(trackingBody), false);
   assert.match(trackingBody, /<PendingMetric label="Bobinas liberadas"/);
-  assert.match(page, /: <QualityTrackingPending\/>\)\}<\/>\}/);
+  assert.match(page, /: <><QualityTrackingPending\/><QualityMachineControls /); // DEV-Q1: el resumen sigue «no disponible»; los controles por máquina son un panel aparte
 });
 
 test("the resource is enabled only for Calidad + quality.capture in Ejecución, with sessionLost, and ignores the active assignment", () => {
