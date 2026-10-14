@@ -28,9 +28,9 @@ export function publishedQualityScreens(availability: Availability): QualityCand
 // ---- candidatos de Calidad POR BOBINA (DEV-Q2) --------------------------------------------------------------------------------
 // La disponibilidad sale de GET /api/quality/bobbin-forms (política habilitada, versión publicada de área quality y vínculo con la máquina); se ofrece para la MÁQUINA de la bobina seleccionada. Es independiente
 // de la de Calidad por máquina: un formulario de una no se ofrece en la otra.
-export const QUALITY_BOBBIN_SCREENS = ["p121"] as const;
+export const QUALITY_BOBBIN_SCREENS = ["p121", "p124", "p125"] as const;
 export type QualityBobbinScreen = (typeof QUALITY_BOBBIN_SCREENS)[number];
-export const BOBBIN_SCREEN_BY_FORM: Readonly<Record<string, QualityBobbinScreen>> = { "VINTO-P1-21": "p121" };
+export const BOBBIN_SCREEN_BY_FORM: Readonly<Record<string, QualityBobbinScreen>> = { "VINTO-P1-21": "p121", "VINTO-P1-24": "p124", "VINTO-P1-25": "p125" };
 
 export function bobbinScreensFor(availability: Availability, machineCode: string): QualityBobbinScreen[] {
     const machine = availability.sectors.flatMap((s) => s.machines).find((m) => m.code === machineCode);
