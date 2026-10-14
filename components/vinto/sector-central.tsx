@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
-import { P110History, P112History, P116History, P129History } from "@/components/vinto/central-form-history";
+import { P110History, P112History, P113History, P116History, P129History } from "@/components/vinto/central-form-history";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
 import { Panel } from "@/components/vinto/panels";
@@ -14,6 +14,7 @@ import { listCapturesOf } from "@/lib/vinto/captures-api";
 import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActive, failureMessage, type CaptureContext } from "@/lib/vinto/orders";
 import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_12_CODE, parseP112List } from "@/lib/vinto/p1-12";
+import { P1_13_CODE, parseP113List } from "@/lib/vinto/p1-13";
 import { P1_16_CODE, parseP116List } from "@/lib/vinto/p1-16";
 import { P1_29_CODE, parseP129List } from "@/lib/vinto/p1-29";
 import { useActiveAssignment, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
@@ -104,9 +105,10 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
     // Un historial por formulario que el backend publica en ESTE sector: los demás no se consultan (el recurso queda deshabilitado).
     const p110 = useResource(`captures-p110:${refreshKey}`, canCapture && offered.has(P1_10_CODE), signal => listCapturesOf(parseP110List, signal, 50, P1_10_CODE), onSessionLost);
     const p112 = useResource(`captures-p112:${refreshKey}`, canCapture && offered.has(P1_12_CODE), signal => listCapturesOf(parseP112List, signal, 50, P1_12_CODE), onSessionLost);
+    const p113 = useResource(`captures-p113:${refreshKey}`, canCapture && offered.has(P1_13_CODE), signal => listCapturesOf(parseP113List, signal, 50, P1_13_CODE), onSessionLost);
     const p116 = useResource(`captures-p116:${refreshKey}`, canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);
     const p129 = useResource(`captures-p129:${refreshKey}`, canCapture && offered.has(P1_29_CODE), signal => listCapturesOf(parseP129List, signal, 50, P1_29_CODE), onSessionLost);
-    const refresh = () => { workOrders.refresh(); assignments.refresh(); p110.refresh(); p112.refresh(); p116.refresh(); p129.refresh(); };
+    const refresh = () => { workOrders.refresh(); assignments.refresh(); p110.refresh(); p112.refresh(); p113.refresh(); p116.refresh(); p129.refresh(); };
     if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;
     const orders = workOrders.view.data.filter(o => machines.has(o.machine.code)), asg = assignments.view.data.filter(a => machines.has(a.machine.code));
     return <div className="space-y-5" {...tag(code, "seguimiento")}>
@@ -122,6 +124,7 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
         </Panel>
         {canCapture && offered.has(P1_10_CODE) && <P110History resource={p110.view} refresh={p110.refresh}/>}
         {canCapture && offered.has(P1_12_CODE) && <P112History resource={p112.view} refresh={p112.refresh}/>}
+        {canCapture && offered.has(P1_13_CODE) && <P113History resource={p113.view} refresh={p113.refresh}/>}
         {canCapture && offered.has(P1_16_CODE) && <P116History resource={p116.view} refresh={p116.refresh}/>}
         {canCapture && offered.has(P1_29_CODE) && <P129History resource={p129.view} refresh={p129.refresh}/>}
     </div>;
