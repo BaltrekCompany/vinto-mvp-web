@@ -14,5 +14,6 @@ export type CandidateScreen = {
     bobbinCodeField?: string; // contexto "bobbin": campo manual que declara el número de bobina; se precarga con el código de la bobina seleccionada y el backend rechaza cualquier otro valor
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
+    sections?: readonly { title: string; hint?: string; keys: readonly string[] }[]; // agrupación SOLO visual de los campos (cada campo en exactamente una sección); no cambia la estructura guardada
     historyNote: string;
 };
