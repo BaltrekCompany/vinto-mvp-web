@@ -3,7 +3,7 @@
 // listas estáticas ni localStorage como respaldo. Sin red ni DOM.
 import { BOBINAS_SECTOR, offeredForms, sectorOf, type Availability, type FormScreen } from "./availability.ts";
 
-export const BOBINAS_CANDIDATE_SCREENS = ["p104", "p105", "p131"] as const;
+export const BOBINAS_CANDIDATE_SCREENS = ["p104", "p105", "p131", "p102", "p101"] as const;
 export type BobinasCandidateScreen = (typeof BOBINAS_CANDIDATE_SCREENS)[number];
 
 export const isBobinasCandidate = (screen: FormScreen | null): screen is BobinasCandidateScreen => screen !== null && (BOBINAS_CANDIDATE_SCREENS as readonly string[]).includes(screen);

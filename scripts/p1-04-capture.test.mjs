@@ -111,7 +111,7 @@ test("flujo de envío: 201, 200 idempotente, rechazos, sesión y reconciliación
 test("la ficha se ofrece solo si el backend la publica para la máquina, junto a P1-05 y P1-31, y el legacy no cambia el orden ni las demás pantallas", () => {
   const form = (code) => ({ code, name: code, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
-  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131"]);
+  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101"]); // p102 / p101 se añadieron en DEV-B3 (no cambian el orden de las anteriores)
   const real = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06")] }]);
   assert.deepEqual([candidateScreensFor(real, "MP1"), publishedCandidateScreens(real)], [[], []], "configuración real: ninguna ficha candidata");
   const published = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-04"), form("VINTO-P1-05"), form("VINTO-P1-06"), form("VINTO-P1-31")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-04"), form("VINTO-P1-06")] }]);

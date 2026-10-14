@@ -47,6 +47,8 @@ MAX_TEXT_LENGTH = 10_000  # límites técnicos, no funcionales
 MAX_DECIMAL_CHARS = 40
 INT_LIMIT = 9_223_372_036_854_775_807
 DECIMAL_PATTERN = re.compile(r"-?[0-9]+(\.[0-9]+)?")
+# Hora de un campo `time`: solo HH:MM o HH:MM:SS (00-23 / 00-59). `time.fromisoformat` aceptaría también «07», «0700», «T07:00», fracciones y zonas horarias (la zona se perdería al guardar en una columna `time`).
+TIME_PATTERN = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?")
 INTEGER_PATTERN = re.compile(r"-?[0-9]+")
 
 
@@ -228,6 +230,8 @@ def _normalize(definition: FieldDef, raw):
             return None, "debe ser una fecha AAAA-MM-DD"
     if kind == "time":
         try:
+            if not isinstance(raw, str) or not TIME_PATTERN.fullmatch(raw):
+                raise ValueError(raw)
             return time.fromisoformat(raw), None
         except (ValueError, TypeError):
             return None, "debe ser una hora HH:MM"

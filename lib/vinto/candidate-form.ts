@@ -17,7 +17,7 @@ import {
 
 export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no una regla funcional
 
-export type FieldKind = "text" | "decimal" | "textarea";
+export type FieldKind = "text" | "decimal" | "textarea" | "time"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
 export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string };
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
@@ -34,6 +34,9 @@ export type CandidateDraftCheck = { ok: true; values: CandidateValues } | { ok: 
 export type CandidateSubmitDeps = SubmitDepsOf<CandidatePayload, CandidateSubmission, CandidateCapture>;
 export type CandidateSubmitOutcome = SubmitOutcomeOf<CandidateCapture>;
 
+// Hora estructural: HH:MM o HH:MM:SS (el backend devuelve HH:MM:SS), 00-23 y 00-59. Sin zona, fracciones ni formatos alternativos; no se interpreta ni se compara con otra hora.
+export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+const isTimeText = (value: unknown): value is string => typeof value === "string" && TIME_PATTERN.test(value);
 const isDecimalText = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_DECIMAL_CHARS && DECIMAL.test(value);
 const pair = (value: unknown): { code: string; name: string } | null => isRec(value) && isStr(value.code) && typeof value.name === "string" ? { code: value.code, name: value.name } : null;
 
@@ -86,6 +89,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (typeof raw !== "string") return null;
             if (field.required && raw === "") return null;
             if (field.kind === "decimal" && !isDecimalText(raw)) return null;
+            if (field.kind === "time" && !isTimeText(raw)) return null;
             clean[field.key] = raw;
         }
         return clean;
@@ -105,6 +109,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (field.kind === "decimal") text = text.replace(",", ".");
             if (!text) { if (field.required) errors.push(`${field.label}: es obligatorio.`); continue; }
             if (field.kind === "decimal" && !isDecimalText(text)) { errors.push(`${field.label}: debe ser un número decimal (por ejemplo 12.5).`); continue; }
+            if (field.kind === "time" && !isTimeText(text)) { errors.push(`${field.label}: debe ser una hora válida HH:MM (por ejemplo 07:30).`); continue; }
             if (text.length > MAX_TEXT_LENGTH) { errors.push(`${field.label}: supera ${MAX_TEXT_LENGTH} caracteres.`); continue; }
             values[field.key] = text;
         }

@@ -164,7 +164,7 @@ test("la oferta sale del backend por máquina: las pantallas se registran solo p
   assert.deepEqual([screenFor(REBOBINADO_SECTOR, "VINTO-P1-10"), screenFor(REBOBINADO_SECTOR, "VINTO-P1-29")], ["p110", "p129"]);
   for (const sector of ["CONVERSION", "BOBINAS"]) for (const formCode of ["VINTO-P1-30", "VINTO-P1-07"]) assert.equal(screenFor(sector, formCode), null, `${sector}: ${formCode} no tiene pantalla`);
   assert.deepEqual(SECTOR_SCREENS.CONVERSION, { "VINTO-P1-11": "p111", "VINTO-P1-12": "p112", "VINTO-P1-13": "p113", "VINTO-P1-16": "p116" });
-  assert.deepEqual(SECTOR_SCREENS.BOBINAS, { "VINTO-P1-04": "p104", "VINTO-P1-05": "p105", "VINTO-P1-31": "p131" });
+  assert.deepEqual(SECTOR_SCREENS.BOBINAS, { "VINTO-P1-04": "p104", "VINTO-P1-05": "p105", "VINTO-P1-31": "p131", "VINTO-P1-02": "p102", "VINTO-P1-01": "p101" }); // DEV-B3 añade P1-02 y P1-01
   // con la configuración real el backend no expone Rebobinado: la vista queda deshabilitada y no se ofrece nada
   assert.deepEqual(rebobinadoView(parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines: [{ code: "MP1", name: "MP1", forms: [] }, { code: "MP3", name: "MP3", forms: [] }] }] })), { kind: "disabled" });
   const published = parseAvailability({ sectors: [{ code: "REBOBINADO", name: "Rebobinado", machines: [{ code: "PERICHUN", name: "Perichun", forms: [{ code: "VINTO-P1-30", name: "x", version_number: 1 }] }, { code: "COPASA", name: "Copasa", forms: [{ code: "VINTO-P1-07", name: "y", version_number: 1 }, { code: "VINTO-P1-99", name: "z", version_number: 1 }] }] }] });
