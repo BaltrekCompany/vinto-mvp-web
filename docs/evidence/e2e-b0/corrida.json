@@ -1,0 +1,22 @@
+{
+  "runId": "20261014T182540Z-a6d9c19a",
+  "commit": "ae0d84c943ad86b8b1b61c8e9bc9422e9a9ee67b",
+  "dirty": false,
+  "startedAt": "2026-10-14T18:25:40.622Z",
+  "status": "passed",
+  "note": "Una corrida es válida solo si status = passed; resultados-e2e-b0.json de otra corrida no la hace exitosa.",
+  "finishedAt": "2026-10-14T18:27:45.740Z",
+  "exitCode": 0,
+  "results": {
+    "ok": true,
+    "reason": "ok",
+    "total": 109,
+    "pass": 109,
+    "fail": 0
+  },
+  "cleanup": {
+    "ok": true,
+    "pending": []
+  },
+  "database": "vinto_e2eb0_4f14b242d411_test"
+}
