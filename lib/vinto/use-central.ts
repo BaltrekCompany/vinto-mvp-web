@@ -5,16 +5,11 @@ import { getActiveAssignment, listAssignments } from "@/lib/vinto/assignments-ap
 import type { Availability } from "@/lib/vinto/availability";
 import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
-import type { ActiveAssignment, Assignment, FailureKind, WorkOrder } from "@/lib/vinto/orders";
+import type { ActiveAssignment, Assignment, WorkOrder } from "@/lib/vinto/orders";
+import { availabilityKey, deriveView, type Resource, type Stored } from "@/lib/vinto/resource-view";
 import { listWorkOrders } from "@/lib/vinto/work-orders-api";
 
-export type Resource<T> =
-    | { status: "idle" }
-    | { status: "loading" }
-    | { status: "ready"; data: T; refreshing: boolean }
-    | { status: "error"; kind: FailureKind; refreshing: boolean };
-
-type Stored<T> = { key: string; attempt: number; result: { ok: true; data: T } | { ok: false; kind: FailureKind } };
+export type { Resource } from "@/lib/vinto/resource-view";
 
 // Recurso central con estados idle | loading | ready | error. La carga ocurre solo al habilitarse, al cambiar la clave o al
 // llamar a refresh() (después de una mutación o desde "Reintentar"): no hay polling. Nunca se cae a datos locales ni a demo.
@@ -36,11 +31,7 @@ export function useResource<T>(key: string, enabled: boolean, load: (signal: Abo
             .catch(() => { if (!controller.signal.aborted) setStored({ key, attempt, result: { ok: false, kind: "unavailable" } }); });
         return () => controller.abort();
     }, [key, enabled, attempt]);
-    let view: Resource<T>;
-    if (!enabled) view = { status: "idle" };
-    else if (!stored || stored.key !== key) view = { status: "loading" };
-    else if (stored.result.ok) view = { status: "ready", data: stored.result.data, refreshing: stored.attempt !== attempt };
-    else view = { status: "error", kind: stored.result.kind, refreshing: stored.attempt !== attempt };
+    const view: Resource<T> = deriveView(key, enabled, attempt, stored);
     const refresh = useCallback(() => setAttempt((n) => n + 1), []);
     return { view, refresh };
 }
@@ -55,5 +46,6 @@ export const useActiveAssignment = (machineCode: string, enabled: boolean, onUna
     useResource<ActiveAssignment>(`active:${machineCode}`, enabled, (signal) => getActiveAssignment(machineCode, signal), onUnauthorized);
 
 // Máquinas y formularios centrales operables por la sesión (solo lectura, verificado por el backend). Con `withArticles` incluye los artículos de cada máquina.
-export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: () => void) =>
-    useResource<Availability>(`availability:${withArticles ? "articles" : "base"}`, enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized);
+// `scope` (opcional) liga el resultado a la sesión: al cambiar de usuario en el mismo navegador la vista anterior no se reutiliza. Sin `scope` la clave es la de siempre (otros llamadores no cambian).
+export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: () => void, scope?: string) =>
+    useResource<Availability>(availabilityKey(withArticles, scope), enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized);
