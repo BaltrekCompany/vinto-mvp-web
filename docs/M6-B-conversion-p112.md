@@ -1,5 +1,7 @@
 # M6-B — Producción por pallet CANDIDATA (VINTO-P1-12)
 
+> Estas decisiones están consolidadas, con su clave única `CV:`, en el paquete de homologación de Conversión: [M7-A](M7-A-conversion-decisiones-VINTO.md).
+
 Estado: **candidato técnico, NO homologado, NO habilitado.** Conversión sigue sin ser un sector operativo y VINTO-P1-12 (como VINTO-P1-16) sigue fuera de la política de captura central. Todo funciona únicamente en una base efímera `*_test` y en un proceso de prueba que lo habilita explícitamente. Continúa a [M6-A](M6-A-conversion-central-p116.md); las decisiones C-1 a C-11 de esa matriz no se alteran.
 
 Base: `origin/main` `5244d25` (PR #30).

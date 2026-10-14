@@ -1,5 +1,7 @@
 # M6-D — Consumo declarado de bobinas CANDIDATO (VINTO-P1-11)
 
+> Estas decisiones están consolidadas, con su clave única `CV:`, en el paquete de homologación de Conversión: [M7-A](M7-A-conversion-decisiones-VINTO.md).
+
 Estado: **candidato técnico, NO homologado, NO habilitado.** Conversión sigue sin ser un sector operativo y VINTO-P1-11 (como P1-12, P1-13 y P1-16) sigue fuera de la política de captura central. Todo funciona únicamente en una base efímera `*_test` y en un proceso de prueba que lo habilita explícitamente. Continúa a [M6-A](M6-A-conversion-central-p116.md), [M6-B](M6-B-conversion-p112.md) y [M6-C](M6-C-conversion-p113.md); las decisiones C-1 a C-11, P-1 a P-11 y N-1 a N-8 no se alteran.
 
 Base: `origin/main` `4b29835` (PR #32).

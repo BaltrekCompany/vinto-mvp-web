@@ -1,5 +1,7 @@
 # M6-A — Primer circuito central CANDIDATO de Conversión (VINTO-P1-16)
 
+> Estas decisiones están consolidadas, con su clave única `CV:`, en el paquete de homologación de Conversión: [M7-A](M7-A-conversion-decisiones-VINTO.md).
+
 Estado: **candidato técnico, NO homologado, NO habilitado.** Conversión sigue sin ser un sector operativo y VINTO-P1-16 sigue fuera de la política de captura central. Todo lo que sigue funciona únicamente en una base efímera `*_test` y en un proceso de prueba que lo habilita explícitamente.
 
 Base: `origin/main` `575ee05` (PR #29). La homologación de Conversión es **independiente** del paquete M5-B0 (que solo cubre Bobinas y Rebobinado).
