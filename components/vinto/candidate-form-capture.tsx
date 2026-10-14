@@ -88,6 +88,9 @@ export function CandidateFormCapture({ candidate, context, online, attempt, setA
         <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="automatic">
             Campos automáticos (no se digitan): {candidate.automatic.join(", ")}.{user ? <> Sesión iniciada como <b>{user.display_name}</b>: es solo la identificación del usuario autenticado, no una firma.</> : null}
         </p>
+        {(candidate.unresolved || candidate.calculated) && <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-950" data-section="gaps">
+            {candidate.unresolved && <p>Automáticos sin fuente confirmada (no se generan ni se sustituyen por la hora de envío): <b>{candidate.unresolved.join(", ")}</b>.</p>}
+            {candidate.calculated && <p>Calculados sin fórmula aprobada (no se calculan, no se guardan ni se muestran como oficiales): <b>{candidate.calculated.join(", ")}</b>.</p>}</div>}
         <CaptureSection title={candidate.title} hint="Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.">
             {form.fields.map(field => field.kind === "textarea"
                 ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)}/>

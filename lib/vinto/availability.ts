@@ -50,13 +50,13 @@ export const BOBINAS_SECTOR = "BOBINAS";
 export const sectorOf = (availability: Availability, code: string): SectorAvailability | null => availability.sectors.find((s) => s.code === code) ?? null;
 
 // Pantalla central que implementa cada formulario. Solo los formularios con pantalla (y que el backend habilita para la máquina) se pueden abrir.
-export type FormScreen = "p110" | "p111" | "p112" | "p113" | "p116" | "p129" | "p105" | "p131";
+export type FormScreen = "p110" | "p111" | "p112" | "p113" | "p116" | "p129" | "p104" | "p105" | "p131";
 // Una pantalla solo se ofrece para el par (sector, formulario) que Home sabe enrutar: P1-10 y P1-29 en Rebobinado, P1-11, P1-12, P1-13 y P1-16 en Conversión. Un formulario que el backend publique en otro sector
 // (p. ej. P1-16 en Rebobinado) se informa como «sin pantalla central» y no se abre. El backend sigue decidiendo qué se publica; esto solo limita lo que la interfaz sabe dibujar.
 export const SECTOR_SCREENS: Readonly<Record<string, Readonly<Record<string, FormScreen>>>> = {
     [REBOBINADO_SECTOR]: { "VINTO-P1-10": "p110", "VINTO-P1-29": "p129" },
     [CONVERSION_SECTOR]: { "VINTO-P1-11": "p111", "VINTO-P1-12": "p112", "VINTO-P1-13": "p113", "VINTO-P1-16": "p116" },
-    [BOBINAS_SECTOR]: { "VINTO-P1-05": "p105", "VINTO-P1-31": "p131" }, // DEV-B1: fichas candidatas de Bobinas; solo se ofrecen si el backend las publica para la máquina
+    [BOBINAS_SECTOR]: { "VINTO-P1-04": "p104", "VINTO-P1-05": "p105", "VINTO-P1-31": "p131" }, // DEV-B1/B2: fichas candidatas de Bobinas; solo se ofrecen si el backend las publica para la máquina
 };
 export const screenFor = (sectorCode: string, formCode: string): FormScreen | null => SECTOR_SCREENS[sectorCode]?.[formCode] ?? null;
 
