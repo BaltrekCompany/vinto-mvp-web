@@ -110,7 +110,11 @@ test("todas las decisiones siguen Pendiente y el registro tiene una fila por dec
     assert.deepEqual(row.filter((_, i) => i !== 0 && i !== 2), Array(8).fill(""), `${row[0]}: el registro inicial debe tener las respuestas vacías`);
   }
   for (const text of [indexDoc, matrixDoc, agendaDoc]) assert.equal(/\|\s*(Aprobado|Respondido, sin evidencia|En revisión|Rechazado[^|]*)\s*\|/.test(text), false, "ningún estado distinto de Pendiente en las tablas");
-  assert.match(agendaDoc, /Pendiente, Respondido sin evidencia, En revisión, Aprobado, Rechazado \/ requiere rediseño/);
+  // nombre exacto del estado, como en M5-B0 acta §1 (la variante sin coma es incorrecta)
+  const actaStates = read("docs/M5-B0-acta-homologacion.md").split("\n").filter((l) => /^\| \*\*[^*]+\*\* \|/.test(l)).map((l) => cells(l)[0].replace(/\*/g, ""));
+  assert.deepEqual(actaStates, ["Pendiente", "Respondido, sin evidencia", "En revisión", "Aprobado", "Rechazado / requiere rediseño"]);
+  assert.ok(agendaDoc.includes(`${actaStates.slice(0, 4).join(", ")}, ${actaStates[4]}`), "la lista de estados del registro usa los nombres exactos de M5-B0");
+  for (const text of [indexDoc, matrixDoc, agendaDoc]) assert.equal(/Respondido sin evidencia/.test(text), false, "«Respondido sin evidencia» (sin coma) es una variante incorrecta");
   assert.match(agendaDoc, /M5-B0-acta-homologacion\.md/);
 });
 
@@ -156,6 +160,41 @@ test("los bloqueos de Q-LIB, PB-MAESTROS y PB-ENV están clasificados, derivados
   const row = (name) => summary.find((r) => r[0].startsWith(name));
   for (const name of ["Q-LIB", "PB-MAESTROS", "PB-ENV", "UAT", "GO del piloto"]) assert.ok(row(name)[3].includes("NO GO") && row(name)[2] === "0", name);
   for (const id of qb) assert.ok(row("Q-LIB")[1].includes(id));
+});
+
+test("la puerta de Q-LIB distingue regla industrial, validación automática, comprobación manual y no aplicabilidad formal, y no admite «no aplicable» por falta de automatización", () => {
+  for (const word of ["regla industrial exigida por VINTO", "validación automática", "comprobación manual", "decisión formal de no aplicabilidad"]) { assert.ok(indexDoc.includes(word), `índice: ${word}`); assert.ok(matrixDoc.includes(word), `matriz: ${word}`); }
+  assert.match(indexDoc, /no\*\* pasa a «no aplicable» porque el sistema no la automatice/);
+  assert.match(indexDoc, /\*\*aprobación identificable\*\*[^.]*antes de implementar el flujo/);
+  assert.match(indexDoc, /nunca por falta de automatización/);
+  const cond = (id) => byId.get(id).cond;
+  for (const id of ["BO:CAL-02", "BO:CAL-03", "BO:CAL-10", "BO:CAL-11"]) {
+    assert.equal(byId.get(id).qlib, "B", `${id}: una regla industrial aplicable no es condicional por el grado de automatización`);
+    assert.match(cond(id), /aunque|incluso/, `${id}: la condición aclara que rige sin automatización`);
+  }
+  for (const id of ["BO:CAL-02", "BO:CAL-03"]) assert.match(main.find((r) => r[0] === id)[3], /Verificación: automática en el sistema \/ manual por persona autorizada: … \/ no aplica \(decisión formal de VINTO con evidencia\)/);
+  const cal10 = main.find((r) => r[0] === "BO:CAL-10"), cal11 = main.find((r) => r[0] === "BO:CAL-11");
+  assert.ok(/solo informativo o produce efectos operativos/.test(cal10[2]) && /Solo informativo \(sin efecto operativo\)/.test(cal10[3]));
+  assert.ok(/aunque el sistema únicamente registre su estado/.test(cal11[2]));
+  // CAL-04 es condicional únicamente por aplicabilidad real frente a CAL-03
+  assert.equal(byId.get("BO:CAL-04").qlib, "C");
+  assert.deepEqual(byId.get("BO:CAL-04").dep, ["BO:CAL-03"]);
+  assert.match(cond("BO:CAL-04"), /solo por aplicabilidad[\s\S]*nunca por falta de automatización/);
+  // OPS-19: condicional solo para vistas adicionales; los controles mínimos de la pantalla de decisión salen de CAL-05..09
+  assert.equal(byId.get("BO:OPS-19").qlib, "C");
+  assert.match(cond("BO:OPS-19"), /solo para vistas e indicadores adicionales/);
+  assert.match(cond("BO:OPS-19"), /controles mínimos de la pantalla de decisión/);
+  for (const id of ["BO:CAL-05", "BO:CAL-06", "BO:CAL-07", "BO:CAL-08", "BO:CAL-09"]) assert.equal(byId.get(id).qlib, "B", `${id} sostiene los controles mínimos de la pantalla de decisión`);
+  // ninguna decisión condicional de Calidad se justifica por «el sistema no lo valida»
+  for (const id of ids.filter((x) => x.startsWith("BO:CAL-") && byId.get(x).qlib === "C")) assert.equal(/si el sistema (debe )?valid|solo si el sistema/i.test(cond(id)), false, `${id}: condicional por automatización`);
+  assert.match(indexDoc, /puerta 2 \*\*NO GO\*\*/);
+});
+
+test("BO:MAE-03 no depende de forma dura de BO:MAE-02: se responden juntas y la homologación de pesos por artículo exige los artículos oficiales", () => {
+  assert.deepEqual(byId.get("BO:MAE-03").dep, []);
+  assert.ok(byId.get("BO:MAE-03").soft.includes("BO:MAE-02") && byId.get("BO:MAE-02").soft.includes("BO:MAE-03"));
+  assert.match(byId.get("BO:MAE-03").cond, /Puede resolverse antes de aprobar la lista de artículos/);
+  assert.match(byId.get("BO:MAE-03").cond, /por artículo\*\* sí requerirá la correspondencia con los artículos oficiales/);
 });
 
 test("las tres puertas están separadas y la aprobación documental no autoriza la activación; Q-LIB sigue NO GO con la política pendiente", () => {

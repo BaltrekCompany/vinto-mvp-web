@@ -70,7 +70,7 @@ Base: `51ec39be4f6b70267bf80e742b650c54d1e4d5f9` (PR #35).
 Las sesiones 1 y 3 destraban la mayor parte de lo que bloquea Q-LIB y el piloto; el orden puede ajustarse si VINTO responde varias preguntas maestras en un mismo bloque.
 
 ## 3. Formato breve de registro
-Una fila por **cambio de estado** (el historial se conserva; no se borran filas ni respuestas anteriores). Los estados son los de M5-B0 acta §1: Pendiente, Respondido sin evidencia, En revisión, Aprobado, Rechazado / requiere rediseño.
+Una fila por **cambio de estado** (el historial se conserva; no se borran filas ni respuestas anteriores). Los estados son los de M5-B0 acta §1: Pendiente, Respondido, sin evidencia, En revisión, Aprobado, Rechazado / requiere rediseño.
 
 **Cabecera de cada sesión:** sesión, fecha y hora, participantes (nombre, cargo, rol), quién tiene autoridad para aprobar, facilitador y versión del material enviado previamente (commit del paquete).
 
@@ -132,7 +132,7 @@ Una fila por **cambio de estado** (el historial se conserva; no se borran filas 
 ## 4. Resumen de avance (se actualiza después de cada sesión)
 | Incremento | Decisiones requeridas | Aprobadas con evidencia | Estado |
 |---|---|--:|---|
-| Q-LIB (puerta 2) | BO:CAL-01, BO:CAL-05, BO:CAL-06, BO:CAL-07, BO:CAL-08, BO:CAL-09, BO:CAL-12 (+ condicionales BO:CAL-02, BO:CAL-03, BO:CAL-04, BO:CAL-10, BO:CAL-11, BO:OPS-19 si aplican) | 0 | **NO GO** |
+| Q-LIB (puerta 2) | BO:CAL-01, BO:CAL-02, BO:CAL-03, BO:CAL-05, BO:CAL-06, BO:CAL-07, BO:CAL-08, BO:CAL-09, BO:CAL-10, BO:CAL-11, BO:CAL-12 (+ condicionales BO:CAL-04, BO:OPS-19, Aprobadas o con decisión formal de no aplicabilidad) | 0 | **NO GO** |
 | PB-MAESTROS | BO:MAE-01, BO:MAE-02, BO:MAE-05, BO:MAE-06, BO:MAE-07, BO:MAE-08 (+ condicionales BO:MAE-03, BO:MAE-04, BO:OPS-01 si aplican) | 0 | **NO GO** |
 | PB-ENV | BO:OPS-13, BO:OPS-14 (+ condicionales BO:OPS-02, BO:OPS-11, BO:OPS-17 si aplican) | 0 | **NO GO** |
 | UAT | BO:OPS-15, BO:OPS-16 | 0 | **NO GO** |
