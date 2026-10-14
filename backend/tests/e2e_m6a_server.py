@@ -5,6 +5,7 @@ Crea una base EFÍMERA nueva (`*_test`) a partir de la plantilla migrada, instal
 tests/m2b2_fixtures.py), crea usuarios de prueba y sirve la API real (`app.main:app`) con la configuración de prueba habilitada SOLO en este proceso:
     - E2E_REBOBINADO=on (por defecto): sectors._OPERATIONAL incluye REBOBINADO y la política incluye VINTO-P1-10, el formulario SINTÉTICO agrupado de M3-A y la ficha CANDIDATA P1-29 de M3-B
     - E2E_CONVERSION=on (por defecto): sectors._OPERATIONAL incluye CONVERSION y la política incluye la ficha CANDIDATA VINTO-P1-16 (M6-A)
+    - E2E_P111=on (por defecto "off"; requiere E2E_CONVERSION=on): instala y habilita la ficha CANDIDATA VINTO-P1-11 (M6-D, un grupo repetible de bobinas declaradas) SOLO en GAMBINI y un formulario vinculado a GAMBINI SIN publicar; con "off" GAMBINI conserva exactamente sus formularios
     - E2E_P113=on (por defecto "off"; requiere E2E_CONVERSION=on): instala y habilita la ficha CANDIDATA VINTO-P1-13 (M6-C) SOLO en WALLY y un formulario vinculado a WALLY SIN publicar; con "off" WALLY no tiene formularios
     - E2E_P112=on (por defecto "off"; requiere E2E_CONVERSION=on): la política incluye además la ficha CANDIDATA VINTO-P1-12 (M6-B) y un formulario vinculado SIN publicar
     - con ambos en "off" se sirve la configuración REAL (solo BOBINAS operativo, política solo F6) con los sectores CONCEDIDOS pero no operativos
@@ -41,6 +42,7 @@ from m3b_fixtures import P129_CODE, install_p129, install_tubetera_machine  # no
 from m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, P116_CODE, install_conversion_fixture, install_p116  # noqa: E402
 from m6b_fixtures import P112_CODE, P112_DRAFT_CODE, install_p112, install_p112_draft  # noqa: E402
 from m6c_fixtures import P113_CODE, P113_DRAFT_CODE, install_p113, install_p113_draft  # noqa: E402
+from m6d_fixtures import P111_CODE, P111_DRAFT_CODE, install_p111, install_p111_draft  # noqa: E402
 
 F6 = "VINTO-P1-06"
 DEV_PORTS = {8000}
@@ -78,6 +80,9 @@ def main():
         install_p116(connection)
         install_p112(connection)  # M6-B: ficha CANDIDATA P1-12 (un pallet por captura) vinculada a GAMBINI; solo se ofrece si E2E_P112=on
         install_p112_draft(connection)  # M6-B: formulario vinculado a GAMBINI pero SIN publicar (caso negativo)
+        if os.environ.get("E2E_P111", "off") == "on":  # M6-D: con "off" (por defecto) GAMBINI conserva exactamente sus formularios de M6-A/B/C
+            install_p111(connection)  # ficha CANDIDATA P1-11 (un grupo repetible de bobinas declaradas) vinculada SOLO a GAMBINI
+            install_p111_draft(connection)  # formulario vinculado a GAMBINI pero SIN publicar (caso negativo)
         if os.environ.get("E2E_P113", "off") == "on":  # M6-C: con "off" (por defecto) WALLY queda SIN formularios, exactamente como en M6-A/M6-B
             install_p113(connection)  # ficha CANDIDATA P1-13 vinculada SOLO a WALLY
             install_p113_draft(connection)  # formulario vinculado a WALLY pero SIN publicar (caso negativo)
@@ -99,6 +104,8 @@ def main():
             policy.add(P116_CODE)
             if os.environ.get("E2E_P112", "off") == "on":  # M6-B: P1-12 (y el código del borrador, que nunca se publica) entran en la política SOLO de este proceso
                 policy |= {P112_CODE, P112_DRAFT_CODE}
+            if os.environ.get("E2E_P111", "off") == "on":  # M6-D: P1-11 (y el código de su borrador) entran en la política SOLO de este proceso y solo con Conversión habilitada
+                policy |= {P111_CODE, P111_DRAFT_CODE}
             if os.environ.get("E2E_P113", "off") == "on":  # M6-C: P1-13 (y el código de su borrador) entran en la política SOLO de este proceso y solo con Conversión habilitada
                 policy |= {P113_CODE, P113_DRAFT_CODE}
         sectors._OPERATIONAL = sectors.validate_operational_sectors(tuple(operational))
@@ -108,7 +115,7 @@ def main():
             if check.execute("SELECT current_database()").fetchone()[0] != database:
                 refuse("la conexión de verificación no apunta a la base efímera")
         with open(out, "w", encoding="utf-8") as handle:
-            json.dump({"database": database, "article_code": article, "machine_code": "COPASA", "conversion_machine": CONV_MACHINE, "conversion_machine_no_form": CONV_MACHINE_NO_FORM, "draft_form_code": P112_DRAFT_CODE, "draft_form_code_p113": P113_DRAFT_CODE, "users": users}, handle)
+            json.dump({"database": database, "article_code": article, "machine_code": "COPASA", "conversion_machine": CONV_MACHINE, "conversion_machine_no_form": CONV_MACHINE_NO_FORM, "draft_form_code": P112_DRAFT_CODE, "draft_form_code_p113": P113_DRAFT_CODE, "draft_form_code_p111": P111_DRAFT_CODE, "users": users}, handle)
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         from app.main import app  # noqa: E402  (after the test configuration; CORS_ORIGINS was read from the environment at import)
         print(f"E2E LISTO base={database} puerto={port} origen={origin}", flush=True)
