@@ -6,6 +6,8 @@ import { candidateApi } from "./candidate-form-api.ts";
 import type { CandidateForm } from "./candidate-form.ts";
 import { BOBINAS_CANDIDATE_SCREENS, type BobinasCandidateScreen } from "./bobinas-offers.ts";
 import { P104, P104_AUTOMATIC, P104_CALCULATED, P104_PENDING, P104_UNRESOLVED_AUTOMATIC, P1_04_CODE } from "./p1-04.ts";
+import { P101, P101_AUTOMATIC, P101_PENDING, P101_SECTIONS, P101_UNRESOLVED_AUTOMATIC, P1_01_CODE } from "./p1-01.ts";
+import { P102, P102_AUTOMATIC, P102_PENDING, P102_SECTIONS, P102_UNRESOLVED_AUTOMATIC, P1_02_CODE } from "./p1-02.ts";
 import { P105, P105_AUTOMATIC, P105_PENDING, P1_05_CODE } from "./p1-05.ts";
 import { P131, P131_AUTOMATIC, P131_PENDING, P1_31_CODE } from "./p1-31.ts";
 
@@ -19,6 +21,7 @@ export type BobinasCandidate = {
     pending: readonly { label: string; pending: string }[]; // decisiones pendientes de VINTO
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
+    sections?: readonly { title: string; hint?: string; keys: readonly string[] }[]; // agrupación SOLO visual (cada campo en una sección)
     historyNote: string;
 };
 
@@ -29,6 +32,10 @@ export const BOBINAS_CANDIDATES = {
         historyNote: "Ficha candidata: registros guardados en PostgreSQL. Catálogo de tubetes, cantidades y asociación con la bobina pendientes de VINTO." },
     p131: { code: P1_31_CODE, form: P131, api: candidateApi(P131), kicker: "Químicos · Bobinas", title: "Consumo de químicos", automatic: P131_AUTOMATIC, pending: P131_PENDING,
         historyNote: "Ficha candidata: los consumos son los digitados (texto); no se calculan desde los caudales ni forman inventario." },
+    p102: { code: P1_02_CODE, form: P102, api: candidateApi(P102), kicker: "Parámetros · Bobinas MP1", title: "Parámetros de operación de máquina MP1", automatic: P102_AUTOMATIC, pending: P102_PENDING, unresolved: P102_UNRESOLVED_AUTOMATIC, sections: P102_SECTIONS,
+        historyNote: "Ficha candidata construida desde la definición original: los valores se muestran tal como se digitaron (sin rangos ni cálculos) y la hora de registro no es la hora de la medición." },
+    p101: { code: P1_01_CODE, form: P101, api: candidateApi(P101), kicker: "Operación e inspección · Bobinas MP3", title: "Operación e inspección de máquina MP3", automatic: P101_AUTOMATIC, pending: P101_PENDING, unresolved: P101_UNRESOLVED_AUTOMATIC, sections: P101_SECTIONS,
+        historyNote: "Ficha candidata construida desde la definición original: valores tal como se digitaron; sin velocidad, firma ni revisión automáticas; las tres horas de cambio de cuchilla son manuales." },
 } as const satisfies Record<BobinasCandidateScreen, BobinasCandidate>;
 
 export { BOBINAS_CANDIDATE_SCREENS, type BobinasCandidateScreen };

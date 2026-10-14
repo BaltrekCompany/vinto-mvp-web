@@ -1,0 +1,121 @@
+// VINTO-P1-01 «Operación e inspección de máquina MP3» (Bobinas, MP3): contrato técnico CANDIDATO sobre el contexto de ASIGNACIÓN central (POST /api/captures). Los 86 campos manuales son EXACTAMENTE los de la
+// definición legacy (form_1_operacion_e_inspeccion_de_maquina, 93 campos: 86 manuales y 7 automáticos), con sus claves, etiquetas, orden, tipos, obligatoriedad y unidades declaradas. Se generaron desde esa
+// definición, sin corregir su ortografía (se conserva `opertado`). Son TEXTO (no se convierten a decimal aunque sean pesos o tiempos): peso_balas_fibra_corta / larga, tiempo_de_pulpeo_fibra_corta / larga y todo
+// campo que la definición declara text. Son HORA MANUAL (`time`, obligatorias): hora_cambio_cuchilla_de_cambio, hora_cambio_cuchilla_de_crepado y hora_cambio_cuchilla_de_limpieza (HH:MM, se guardan como hora real).
+//
+// Nombre del operador, fecha, hora y turno son automáticos: el backend resuelve la fecha operativa y el turno de la asignación y registra al usuario autenticado (informativo; NO es una firma). La hora de REGISTRO
+// (captured_at) no es la hora de operación. SIN fuente aprobada y por eso NO generados: velocidad_maquina, firma_operador y revisado. No hay velocidad automática, firma electrónica ni revisión de supervisión.
+//
+// PENDIENTE DE VINTO (no se inventa): rangos y límites, valores estándar, lecturas de PLC o sensores, velocidad de máquina automática, firmas y revisiones, frecuencia de toma, validaciones cruzadas, catálogos y la
+// hora real de operación. Habilitado solo en entornos de prueba.
+import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
+
+export const P1_01_CODE = "VINTO-P1-01";
+export const P101_FIELDS: readonly FieldSpec[] = [
+    { key: "producto_gramaje_crepado", label: "Producto / gramaje / crepado", kind: "text", required: true, suffix: "g/m²" },
+    { key: "nivel_tanque_t_30", label: "Nivel tanque T-30", kind: "decimal", required: true },
+    { key: "nivel_tanque_h_1", label: "Nivel tanque H-1", kind: "decimal", required: true },
+    { key: "nivel_tanque_h_3", label: "Nivel tanque H-3", kind: "decimal", required: true },
+    { key: "peso_balas_fibra_corta", label: "Peso balas fibra corta", kind: "text", required: true, suffix: "kg" },
+    { key: "peso_balas_fibra_larga", label: "Peso balas fibra larga", kind: "text", required: true, suffix: "kg" },
+    { key: "tiempo_de_pulpeo_fibra_corta", label: "Tiempo de pulpeo fibra corta", kind: "text", required: true, suffix: "min" },
+    { key: "tiempo_de_pulpeo_fibra_larga", label: "Tiempo de pulpeo fibra larga", kind: "text", required: true, suffix: "min" },
+    { key: "nivel_tanque_t_20", label: "Nivel tanque T-20", kind: "decimal", required: true },
+    { key: "caudal_b_4", label: "Caudal B-4", kind: "decimal", required: true },
+    { key: "caudal_b_7", label: "Caudal B-7", kind: "decimal", required: true },
+    { key: "mezcla_fibra_corta_fibra_larga", label: "Mezcla fibra corta/fibra larga", kind: "text", required: true },
+    { key: "nivel_tanque_h_20", label: "Nivel tanque H-20", kind: "decimal", required: true },
+    { key: "consistencia_h_4", label: "Consistencia H-4", kind: "decimal", required: true, suffix: "%" },
+    { key: "apertura_valvula_consistencia", label: "Apertura válvula consistencia", kind: "decimal", required: true, suffix: "%" },
+    { key: "gramaje_valvula", label: "Gramaje válvula", kind: "decimal", required: true, suffix: "g/m²" },
+    { key: "nivel_tanque_p17", label: "Nivel tanque P17", kind: "decimal", required: true },
+    { key: "motor_fan_b23", label: "Motor Fan B23", kind: "text", required: true },
+    { key: "motor_fan_b23b", label: "Motor Fan B23B", kind: "text", required: true },
+    { key: "nivel_tanque_t_21", label: "Nivel tanque T-21", kind: "decimal", required: true },
+    { key: "velocidad_chorro", label: "Velocidad chorro", kind: "decimal", required: true, suffix: "m/min" },
+    { key: "velocidad_tela", label: "Velocidad tela", kind: "decimal", required: true, suffix: "m/min" },
+    { key: "error_chorro_tela", label: "Error chorro/tela", kind: "text", required: true },
+    { key: "presion_labio", label: "Presión labio", kind: "decimal", required: true },
+    { key: "apertura_labio", label: "Apertura labio", kind: "text", required: true },
+    { key: "angulo_labio", label: "Ángulo labio", kind: "text", required: true },
+    { key: "distancia", label: "Distancia", kind: "text", required: true },
+    { key: "presion_entrada_colador", label: "Presión entrada colador", kind: "decimal", required: true },
+    { key: "presion_salida_colador", label: "Presión salida colador", kind: "decimal", required: true },
+    { key: "apertura_purga", label: "Apertura purga", kind: "text", required: true },
+    { key: "dosificacion_release", label: "Dosificación Release", kind: "text", required: true },
+    { key: "dosificacion_fosfato", label: "Dosificación Fosfato", kind: "text", required: true },
+    { key: "dosificacion_pasiv_tela", label: "Dosificación Pasiv. tela", kind: "text", required: true },
+    { key: "dosificacion_pasiv_fieltro", label: "Dosificación Pasiv. fieltro", kind: "text", required: true },
+    { key: "bomba_ba1", label: "Bomba BA1", kind: "text", required: true },
+    { key: "bomba_ba2", label: "Bomba BA2", kind: "text", required: true },
+    { key: "bomba_ba3", label: "Bomba BA3", kind: "text", required: true },
+    { key: "presion_cocedores", label: "Presión cocedores", kind: "decimal", required: true },
+    { key: "cambio", label: "Cambio", kind: "text", required: true },
+    { key: "crepado", label: "Crepado", kind: "decimal", required: true },
+    { key: "limpieza", label: "Limpieza", kind: "text", required: true },
+    { key: "nivel_tanque_t_30_aguas", label: "Nivel tanque T-30 aguas", kind: "decimal", required: true },
+    { key: "nivel_tanque_h_20_aguas", label: "Nivel tanque H-20 aguas", kind: "decimal", required: true },
+    { key: "nivel_tanque_t_30_aguas_2", label: "Nivel tanque T-30 aguas 2", kind: "decimal", required: true },
+    { key: "nivel_tanque_h_20_aguas_2", label: "Nivel tanque H-20 aguas 2", kind: "decimal", required: true },
+    { key: "nivel_tanque_t_30_accionamientos", label: "Nivel tanque T-30 accionamientos", kind: "decimal", required: true },
+    { key: "nivel_tanque_h_20_accionamientos", label: "Nivel tanque H-20 accionamientos", kind: "decimal", required: true },
+    { key: "opertado", label: "Opertado", kind: "text", required: true },
+    { key: "produccion", label: "Producción", kind: "text", required: true },
+    { key: "velocidad_fieltro", label: "Velocidad fieltro", kind: "decimal", required: true, suffix: "m/min" },
+    { key: "velocidad_secador", label: "Velocidad secador", kind: "decimal", required: true, suffix: "m/min" },
+    { key: "presion_cilindro", label: "Presión cilindro", kind: "decimal", required: true },
+    { key: "presion_pope", label: "Presión pope", kind: "decimal", required: true },
+    { key: "presion_caldero", label: "Presión caldero", kind: "decimal", required: true },
+    { key: "temperatura_lado_seco", label: "Temperatura lado seco", kind: "decimal", required: true, suffix: "°C" },
+    { key: "temperatura_lado_humedo", label: "Temperatura lado húmedo", kind: "decimal", required: true, suffix: "°C" },
+    { key: "apertura_campana", label: "Apertura campana", kind: "text", required: true },
+    { key: "presion_regaderas", label: "Presión regaderas", kind: "decimal", required: true },
+    { key: "apertura_purga_prensa", label: "Apertura purga prensa", kind: "text", required: true },
+    { key: "presion_aceite_alta_tela", label: "Presión aceite alta tela", kind: "decimal", required: true },
+    { key: "presion_aceite_guia_tela", label: "Presión aceite guía tela", kind: "decimal", required: true },
+    { key: "presion_aceite_lubricacion", label: "Presión aceite lubricación", kind: "decimal", required: true },
+    { key: "presion_agua_prensa", label: "Presión agua prensa", kind: "decimal", required: true },
+    { key: "presion_aire_prensa", label: "Presión aire prensa", kind: "decimal", required: true },
+    { key: "presion_vacio_prensa", label: "Presión vacío prensa", kind: "decimal", required: true },
+    { key: "presion_fuelle_comando", label: "Presión fuelle comando", kind: "decimal", required: true },
+    { key: "presion_fuelle_transmision", label: "Presión fuelle transmisión", kind: "decimal", required: true },
+    { key: "caudal_agua_sello_1", label: "Caudal agua sello 1", kind: "decimal", required: true },
+    { key: "caudal_agua_sello_2", label: "Caudal agua sello 2", kind: "decimal", required: true },
+    { key: "caudal_agua_sello_3", label: "Caudal agua sello 3", kind: "decimal", required: true },
+    { key: "filtro_agua_prensa", label: "Filtro agua prensa", kind: "text", required: true },
+    { key: "filtro_quimicos", label: "Filtro químicos", kind: "text", required: true },
+    { key: "rodillos_quimicos", label: "Rodillos químicos", kind: "text", required: true },
+    { key: "vacio_prensa", label: "Vacío prensa", kind: "decimal", required: true },
+    { key: "vacio_pope", label: "Vacío pope", kind: "decimal", required: true },
+    { key: "vacio_fieltro", label: "Vacío fieltro", kind: "decimal", required: true },
+    { key: "vacio_tela", label: "Vacío tela", kind: "decimal", required: true },
+    { key: "limpieza_sala_de_control", label: "Limpieza sala de control", kind: "text", required: true },
+    { key: "limpieza_escalera", label: "Limpieza escalera", kind: "text", required: true },
+    { key: "limpieza_mezzanine", label: "Limpieza mezzanine", kind: "text", required: true },
+    { key: "limpieza_lado_transmision", label: "Limpieza lado transmisión", kind: "text", required: true },
+    { key: "limpieza_pasos_y_escaleras", label: "Limpieza pasos y escaleras", kind: "text", required: true },
+    { key: "hora_cambio_cuchilla_de_cambio", label: "Hora cambio cuchilla de cambio", kind: "time", required: true },
+    { key: "hora_cambio_cuchilla_de_crepado", label: "Hora cambio cuchilla de crepado", kind: "time", required: true },
+    { key: "hora_cambio_cuchilla_de_limpieza", label: "Hora cambio cuchilla de limpieza", kind: "time", required: true },
+    { key: "novedades", label: "Novedades", kind: "text", required: true },
+];
+// Agrupación SOLO VISUAL de la captura (no cambia la estructura persistida ni representa grupos industriales aprobados): cada campo aparece exactamente una vez, en el orden del contrato.
+export const P101_SECTIONS: readonly { title: string; hint?: string; keys: readonly string[] }[] = [
+    { title: "Materia prima, tanques y pulpeo", keys: ["producto_gramaje_crepado", "nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga"] },
+    { title: "Caudales, mezclas y consistencias", keys: ["nivel_tanque_t_20", "caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20", "consistencia_h_4", "apertura_valvula_consistencia", "gramaje_valvula"] },
+    { title: "Tela, chorro y labio", keys: ["nivel_tanque_p17", "motor_fan_b23", "motor_fan_b23b", "nivel_tanque_t_21", "velocidad_chorro", "velocidad_tela", "error_chorro_tela", "presion_labio", "apertura_labio", "angulo_labio", "distancia", "presion_entrada_colador", "presion_salida_colador", "apertura_purga"] },
+    { title: "Dosificaciones y accionamientos", keys: ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "presion_cocedores", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_h_20_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_h_20_aguas_2", "nivel_tanque_t_30_accionamientos", "nivel_tanque_h_20_accionamientos", "opertado", "produccion"] },
+    { title: "Secador, presiones y temperaturas", keys: ["velocidad_fieltro", "velocidad_secador", "presion_cilindro", "presion_pope", "presion_caldero", "temperatura_lado_seco", "temperatura_lado_humedo", "apertura_campana", "presion_regaderas"] },
+    { title: "Prensa, aceite, vacío y filtros", keys: ["apertura_purga_prensa", "presion_aceite_alta_tela", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "presion_agua_prensa", "presion_aire_prensa", "presion_vacio_prensa", "presion_fuelle_comando", "presion_fuelle_transmision", "caudal_agua_sello_1", "caudal_agua_sello_2", "caudal_agua_sello_3", "filtro_agua_prensa", "filtro_quimicos", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro", "vacio_tela"] },
+    { title: "Limpieza y cambios de cuchillas", keys: ["limpieza_sala_de_control", "limpieza_escalera", "limpieza_mezzanine", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras", "hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza"] },
+    { title: "Novedades", keys: ["novedades"] },
+];
+export const P101 = defineCandidateForm(P1_01_CODE, P101_FIELDS);
+export const P101_AUTOMATIC = ["Nombre del operador (usuario autenticado, informativo; no es una firma)", "Fecha (fecha operativa de la asignación)", "Turno (el de la asignación)"] as const;
+export const P101_UNRESOLVED_AUTOMATIC = ["Hora (la del registro del servidor no es la hora de operación)", "Velocidad de máquina", "Firma del operador", "Revisado"] as const; // sin fuente aprobada: no se generan
+export const P101_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Automáticos sin fuente", pending: "Velocidad de máquina, firma del operador y revisado no tienen fuente aprobada: no se generan. No hay lectura de PLC ni sensores, firma electrónica ni revisión de supervisión; el usuario autenticado es solo informativo." },
+    { label: "Horas de cambio de cuchilla", pending: "Las tres son horas MANUALES obligatorias (HH:MM) y se guardan como hora real. La hora de registro del servidor no es la hora de operación y no se usa en su lugar." },
+    { label: "Tipos de los campos", pending: "Los pesos de balas, tiempos de pulpeo, aperturas, dosificaciones, bombas, filtros, limpiezas y demás campos declarados texto se guardan tal como se digitan, sin convertirlos a número; se conserva la clave `opertado` de la definición." },
+    { label: "Rangos y reglas", pending: "Sin rangos, límites, valores estándar, frecuencia de toma, validaciones cruzadas ni catálogos aprobados; nada se calcula." },
+];
