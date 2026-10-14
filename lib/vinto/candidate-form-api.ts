@@ -25,6 +25,24 @@ export const machineCandidateApi = (form: CandidateForm) => ({
         requestJson(`/api/quality/machines/${encodeURIComponent(machineCode)}/captures?form_code=${encodeURIComponent(form.code)}&limit=${limit}`, { signal }, form.parseList),
 });
 
+// Calidad ligada a UNA BOBINA física (DEV-Q2, P1-21): reutiliza las rutas de capturas de Calidad por bobina. La bobina va en la ruta (no en el cuerpo); el historial se filtra por formulario en el backend
+// (un historial con otros formularios no pasaría el parser estricto de éste). Cookie HttpOnly vía requestJson.
+export const bobbinCandidateApi = (form: CandidateForm) => ({
+    submit: (payload: CandidatePayload): Promise<ApiResult<CandidateSubmission>> => {
+        const { bobbin_id: bobbin, ...body } = payload;
+        return requestJson(`/api/quality/bobbins/${encodeURIComponent(bobbin ?? "")}/captures`, { method: "POST", body, signal: AbortSignal.timeout(POST_TIMEOUT_MS) }, form.parseSubmission);
+    },
+    get: (captureId: string, signal?: AbortSignal): Promise<ApiResult<CandidateCapture>> =>
+        requestJson(`/api/quality/captures/${encodeURIComponent(captureId)}`, { signal: signal ?? AbortSignal.timeout(GET_TIMEOUT_MS) }, form.parseCapture),
+    list: (bobbinId: string, signal?: AbortSignal): Promise<ApiResult<CandidateCapture[]>> =>
+        requestJson(`/api/quality/bobbins/${encodeURIComponent(bobbinId)}/captures?form_code=${encodeURIComponent(form.code)}`, { signal }, form.parseList),
+});
+
+// Candidatos de Calidad por bobina que el backend publica por máquina (vacío con la política real).
+export function getQualityBobbinForms(signal?: AbortSignal): Promise<ApiResult<Availability>> {
+    return requestJson("/api/quality/bobbin-forms", { signal }, parseAvailability);
+}
+
 // Máquinas del alcance y formularios de Calidad por máquina que el backend publica (vacío con la política real).
 export function getQualityMachineForms(signal?: AbortSignal): Promise<ApiResult<Availability>> {
     return requestJson("/api/quality/machine-forms", { signal }, parseAvailability);

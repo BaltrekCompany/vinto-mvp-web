@@ -18,6 +18,7 @@ from datetime import date, datetime
 
 from app import capture_service as cs
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError
+from app.quality.form_availability import available_quality_forms
 from app.sectors import in_scope, scoped_sector_codes
 from app.shifts import resolve_shift
 from app.work_orders.errors import MachineNotFoundError, MachineOutsideScopeError
@@ -114,27 +115,7 @@ def list_machine_captures(connection, machine_code, *, form_code=None, limit=DEF
 
 def available_forms(connection, sectors) -> list[dict]:
     """Máquinas activas del alcance con los formularios de Calidad por máquina que el backend publica para ellas (política + versión publicada de área quality + vínculo). Solo lectura."""
-    scoped = list(scoped_sector_codes(sectors))
-    with connection.transaction():
-        connection.execute("SET TRANSACTION READ ONLY")
-        machines = connection.execute(
-            """SELECT s.code, s.name, m.id, m.code, m.name FROM vinto_master.machine m JOIN vinto_master.sector s ON s.id = m.sector_id
-               WHERE m.active AND s.active AND s.code = ANY(%s) ORDER BY s.code, m.code""", (scoped,)).fetchall()
-        forms: dict = {}
-        ids = [r[2] for r in machines]
-        if ids and MACHINE_QUALITY_FORM_CODES:
-            for machine_id, code, name, version in connection.execute(
-                    """WITH latest AS (SELECT DISTINCT ON (f.id) f.code, fv.id AS version_id, fv.name, fv.version_number
-                                       FROM vinto_config.form f JOIN vinto_config.form_version fv ON fv.form_id = f.id
-                                       WHERE f.active AND fv.status = 'published' AND fv.area = 'quality' AND f.code = ANY(%s) ORDER BY f.id, fv.version_number DESC)
-                       SELECT fvm.machine_id, l.code, l.name, l.version_number FROM latest l JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = l.version_id
-                       WHERE fvm.machine_id = ANY(%s) ORDER BY fvm.machine_id, l.code""", (_codes(), ids)).fetchall():
-                forms.setdefault(machine_id, []).append({"code": code, "name": name, "version_number": version})
-    out: dict = {}
-    for sector_code, sector_name, machine_id, machine_code, machine_name in machines:
-        sector = out.setdefault(sector_code, {"code": sector_code, "name": sector_name, "machines": []})
-        sector["machines"].append({"code": machine_code, "name": machine_name, "forms": forms.get(machine_id, [])})
-    return list(out.values())
+    return available_quality_forms(connection, sectors, MACHINE_QUALITY_FORM_CODES)
 
 
 def _context(connection, actor_id, request_id):

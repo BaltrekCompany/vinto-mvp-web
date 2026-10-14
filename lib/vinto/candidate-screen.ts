@@ -11,6 +11,7 @@ export type CandidateScreen = {
     title: string; // título de la captura y del historial
     automatic: readonly string[]; // campos automáticos de la definición legacy (no se digitan)
     pending: readonly { label: string; pending: string }[]; // decisiones pendientes de VINTO
+    bobbinCodeField?: string; // contexto "bobbin": campo manual que declara el número de bobina; se precarga con el código de la bobina seleccionada y el backend rechaza cualquier otro valor
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
     historyNote: string;

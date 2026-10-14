@@ -76,6 +76,9 @@ class Base(unittest.IsolatedAsyncioTestCase):
         policy = patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", frozenset({P122_CODE, P126_CODE}))  # TEST-ONLY policy
         policy.start()
         self.addCleanup(policy.stop)
+        clock = patch.object(_capture_service, "_now", return_value=DAY)
+        self.clock = clock.start()
+        self.addCleanup(clock.stop)
 
     async def cookie(self, name):
         if name not in self.cookies:
@@ -91,8 +94,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         return body
 
     async def post(self, body, machine="MP1", who="CALIDAD", at=DAY):
-        with patch.object(_capture_service, "_now", return_value=at):
-            return await call("POST", f"/api/quality/machines/{machine}/captures", json_body=body, cookie=await self.cookie(who))
+        self.clock.return_value = at  # one stable patch per test: nested per-request patches of concurrent requests would not unwind in order and would leak into later modules
+        return await call("POST", f"/api/quality/machines/{machine}/captures", json_body=body, cookie=await self.cookie(who))
 
     async def get(self, path, who="CALIDAD"):
         return await call("GET", path, cookie=await self.cookie(who))
