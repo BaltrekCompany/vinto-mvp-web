@@ -1,4 +1,5 @@
-// node scripts/e2e/b0-e2e.mjs <creds.json> <evidence-dir>
+// node scripts/e2e/b0-e2e.mjs <creds.json> <run-dir> <manifest.json>   (solo desde scripts/e2e/b0-run.mjs; no acepta destinos por variables de entorno)
+// node scripts/e2e/b0-e2e.mjs --self-test-cdp                            (autoprueba del adjunto al Chrome propio; sin servicios ni base de datos)
 // E2E-B0 · validación integral de Bobinas MP1/MP3 y Calidad desde la NAVEGACIÓN NORMAL de VINTO (la aplicación real en `/`, sin harness de formulario ni ruta de QA):
 // Jefatura crea y publica la OT -> Supervisión activa la asignación -> Operación captura F3 (bobina) y P1-06 -> Calidad ve la bobina en la bandeja, registra P1-19 y P1-20 y consulta el historial.
 // Más seguridad y permisos, Seguimiento saneado (PB-CLEAN), un recorrido en MP3 con reintento idempotente y la comprobación de que Rebobinado y Conversión siguen sin disponibilidad operativa.
@@ -9,37 +10,79 @@
 // no es el exclusivo de E2E-B0 o si el navegador llama al puerto 8000. Las lecturas SQL son SELECT en transacciones de solo lectura; la única escritura SQL posible es sobre la base EFÍMERA y solo
 // para comprobaciones explícitas (ninguna en este recorrido).
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const [credsPath, outDir] = process.argv.slice(2);
-const API = process.env.E2E_API ?? "http://127.0.0.1:8190", WEB = process.env.E2E_WEB ?? "http://127.0.0.1:8796";
-const PG_CONTAINER = process.env.E2E_PG_CONTAINER ?? "vinto-e2eb0-pg";
-const CHROME = process.env.E2E_CHROME ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const creds = JSON.parse(readFileSync(credsPath, "utf8"));
-const { database, users, articles } = creds;
-mkdirSync(outDir, { recursive: true });
+const SELF_TEST = process.argv[2] === "--self-test-cdp";
+// DESTINOS FIJOS: el recorrido no admite que el entorno los redirija. Los crea b0-run.mjs y el manifiesto de la corrida los confirma; cualquier otra cosa aborta antes de la primera petición.
+const FIXED = Object.freeze({ api: "http://127.0.0.1:8190", web: "http://127.0.0.1:8796", container: "vinto-e2eb0-pg", pgPort: 55432 });
+const API = FIXED.api, WEB = FIXED.web, PG_CONTAINER = FIXED.container;
+const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const FORBIDDEN_DB = ["vinto", "vinto_test", "postgres"];
+const [credsPath, outDir, manifestPath] = SELF_TEST ? [] : process.argv.slice(2);
 const results = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // kind: "browser" = navegador real; "http" = verificación HTTP complementaria; "sql" = comprobación SQL de solo lectura
 const check = (name, ok, detail = "", kind = "browser") => { results.push({ name, ok: !!ok, kind, detail }); console.log(`${ok ? "PASS" : "FAIL"}  [${kind}] ${name}${detail ? "  — " + String(detail).slice(0, 400) : ""}`); };
 const abort = (message) => { console.error("E2E ABORTADO: " + message); process.exit(2); };
+let creds = {}, users = {}, articles = {}, database = "", manifest = { runId: "selftest" }, pgUser = "", labelRun = "", portMap = "";
 
-// ---------------------------------------------------------------- salvaguardas
-const apiUrl = new URL(API), webUrl = new URL(WEB);
-if (apiUrl.port === "8000" || webUrl.port === "8787" || apiUrl.port === "5432") abort("la API o el frontend apuntan a puertos de DEV");
-if (apiUrl.hostname !== "127.0.0.1" || webUrl.hostname !== "127.0.0.1") abort("solo se admite 127.0.0.1");
-if (!/^vinto-e2eb0-/.test(PG_CONTAINER)) abort(`el contenedor ${PG_CONTAINER} no es el PostgreSQL exclusivo de E2E-B0`);
-if (!/_test$/.test(database) || ["vinto", "vinto_test", "postgres"].includes(database)) abort(`la base ${database} no es una base efímera *_test exclusiva`);
-const pgUser = execFileSync("docker", ["exec", PG_CONTAINER, "printenv", "POSTGRES_USER"], { encoding: "utf8" }).trim();
+// PID que escucha en un puerto y árbol de procesos que cuelga de un PID raíz (PowerShell); sirven para demostrar que un puerto pertenece al proceso lanzado por esta corrida
+const psJson = (script) => JSON.parse(execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" }).trim() || "null");
+const portOwnership = (port, rootPid) => psJson(`$o = @(Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }); $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId; $t = @(${Number(rootPid)}); $i = 0; while ($i -lt $t.Count) { $t += @($all | Where-Object { $_.ParentProcessId -eq $t[$i] } | ForEach-Object { $_.ProcessId }); $i++ }; [pscustomobject]@{ owners = @($o); tree = @($t) } | ConvertTo-Json -Compress`);
+const ownsPort = (port, rootPid) => { const r = portOwnership(port, rootPid); const owners = [r?.owners ?? []].flat(), tree = [r?.tree ?? []].flat(); return owners.length > 0 && owners.every((o) => tree.includes(o)); };
+
+if (!SELF_TEST) {
+  // ---- H1: ninguna variable heredada puede redirigir el HTTP, el SQL ni el navegador (se valida ANTES de cualquier petición, consulta o lectura de servicios)
+  for (const [name, expected] of [["E2E_API", FIXED.api], ["E2E_WEB", FIXED.web], ["E2E_PG_CONTAINER", FIXED.container]]) if (process.env[name] !== undefined && process.env[name] !== expected) abort(`la variable heredada ${name} intenta redirigir la prueba; los destinos son fijos y los define scripts/e2e/b0-run.mjs`);
+  if (process.env.E2E_CHROME !== undefined) abort("la variable heredada E2E_CHROME no se admite: el navegador es el instalado en la ruta fija");
+  if (!credsPath || !outDir || !manifestPath) abort("uso: node scripts/e2e/b0-e2e.mjs <creds.json> <run-dir> <manifest.json>; solo se ejecuta desde scripts/e2e/b0-run.mjs");
+  try { manifest = JSON.parse(readFileSync(manifestPath, "utf8")); } catch { abort("el manifiesto de la corrida es ilegible"); }
+  if (!/^\d{8}T\d{6}Z-[0-9a-f]{8}$/.test(manifest?.runId ?? "")) abort("el manifiesto no trae un identificador de corrida válido");
+  if (manifest.api !== FIXED.api || manifest.web !== FIXED.web || manifest.container !== FIXED.container || manifest.pgPort !== FIXED.pgPort) abort("el manifiesto no coincide con los destinos fijos de E2E-B0");
+  const apiUrl = new URL(API), webUrl = new URL(WEB);
+  if (apiUrl.port === "8000" || webUrl.port === "8787" || apiUrl.port === "5432") abort("la API o el frontend apuntan a puertos de DEV");
+  if (apiUrl.hostname !== "127.0.0.1" || webUrl.hostname !== "127.0.0.1") abort("solo se admite 127.0.0.1");
+  if (!/^vinto-e2eb0-/.test(PG_CONTAINER)) abort(`el contenedor ${PG_CONTAINER} no es el PostgreSQL exclusivo de E2E-B0`);
+  if (!/^[0-9a-f]{40}$/.test(manifest.commit ?? "")) abort("el manifiesto no trae el SHA probado");
+  if (!/_test$/.test(manifest.database ?? "") || FORBIDDEN_DB.includes(manifest.database)) abort(`la base ${manifest.database} no es una base efímera *_test exclusiva`);
+  if (!Number.isInteger(manifest.backendPid) || !Number.isInteger(manifest.webPid)) abort("el manifiesto no identifica los procesos lanzados por la corrida");
+  try { creds = JSON.parse(readFileSync(credsPath, "utf8")); } catch { abort("las credenciales de la corrida son ilegibles"); }
+  ({ database, users, articles } = creds);
+  if (database !== manifest.database) abort("la base de las credenciales no es la declarada en el manifiesto de la corrida");
+  // ---- H4: el directorio de evidencias pertenece a esta corrida y no contiene resultados anteriores (nada se sobrescribe ni se borra)
+  if (basename(resolve(outDir)) !== manifest.runId) abort("el directorio de evidencias no corresponde al identificador de esta corrida");
+  if (existsSync(join(outDir, "resultados-e2e-b0.json"))) abort("el directorio de evidencias ya contiene resultados anteriores incompatibles; no se sobrescriben");
+  if (execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim() !== manifest.commit) abort("el código cambió desde que el orquestador fijó el SHA probado");
+  mkdirSync(outDir, { recursive: true });
+
+  // ---- identidad de los servicios ANTES de cualquier operación de negocio
+  const inspect = (format) => execFileSync("docker", ["inspect", "-f", format, PG_CONTAINER], { encoding: "utf8" }).trim();
+  try { labelRun = inspect('{{index .Config.Labels "vinto.e2eb0.run"}}'); portMap = execFileSync("docker", ["port", PG_CONTAINER, "5432/tcp"], { encoding: "utf8" }).trim(); } catch { abort(`no existe el contenedor ${PG_CONTAINER}`); }
+  if (labelRun !== manifest.runId || !portMap.split("\n").every((l) => l.trim() === `127.0.0.1:${FIXED.pgPort}`)) abort("el contenedor de PostgreSQL no es el creado por esta corrida (etiqueta o puerto distintos)");
+  pgUser = execFileSync("docker", ["exec", PG_CONTAINER, "printenv", "POSTGRES_USER"], { encoding: "utf8" }).trim();
+}
 const q = (sql, db = database) => execFileSync("docker", ["exec", PG_CONTAINER, "psql", "-U", pgUser, "-d", db, "-At", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c", `BEGIN READ ONLY; ${sql}; COMMIT;`], { encoding: "utf8" })
   .split("\n").filter((l) => l && l !== "BEGIN" && l !== "COMMIT");
-const identity = q("SELECT current_database()")[0];
-if (identity !== database || !identity.endsWith("_test")) abort(`identidad de base inesperada: ${identity}`);
-check("S0 la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de E2E-B0", true, identity, "sql");
-const health = await fetch(`${API}/api/health`);
-check("S0b la API real responde y su health consulta la base (200)", health.status === 200, String(health.status), "http");
+if (!SELF_TEST) {
+  const identity = q("SELECT current_database()")[0];
+  if (identity !== database || !identity.endsWith("_test")) abort(`identidad de base inesperada: ${identity}`);
+  check("S0 la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de E2E-B0", identity === database && identity.endsWith("_test"), identity, "sql");
+  check("S0a la corrida está identificada: el contenedor de PostgreSQL lleva la etiqueta de esta corrida, publica solo 127.0.0.1:55432 y el directorio de evidencias es el de la corrida", labelRun === manifest.runId && portMap === `127.0.0.1:${FIXED.pgPort}` && basename(resolve(outDir)) === manifest.runId, manifest.runId, "static");
+  const apiOwned = ownsPort(8190, manifest.backendPid), webOwned = ownsPort(8796, manifest.webPid);
+  check("S0b identidad de los servicios: el puerto 8190 pertenece al backend y el 8796 al frontend lanzados por esta corrida (no a otro servicio local)", apiOwned && webOwned, `backend pid ${manifest.backendPid}, frontend pid ${manifest.webPid}`, "http");
+  if (!apiOwned || !webOwned) abort("los puertos 8190 u 8796 no pertenecen a los procesos lanzados por esta corrida");
+  const health = await fetch(`${API}/api/health`);
+  check("S0c la API real responde y su health consulta la base (200)", health.status === 200, String(health.status), "http");
+  const probe = await fetch(`${API}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", Origin: WEB }, body: JSON.stringify({ username: users.jefatura.username, password: users.jefatura.password }) });
+  const probeJson = await probe.json().catch(() => null);
+  const servedUser = probeJson?.user?.id;
+  check("S0d la API sirve EXACTAMENTE la base de esta corrida: el usuario ficticio que devuelve el login existe en esa base (y solo en ella)", probe.status === 200 && servedUser === users.jefatura.user_id && q(`SELECT count(*) FROM vinto_master."user" WHERE id = '${servedUser}'`)[0] === "1", String(probe.status), "sql");
+  if (!(probe.status === 200 && servedUser === users.jefatura.user_id)) abort("la API no sirve la base de esta corrida");
+}
 
 function client() {
   let cookie = "";
@@ -62,15 +105,28 @@ const FAULT_SCRIPT = (mode) => `(() => { const w = window; if (w.__fault) return
     if (post && armed && ${JSON.stringify(mode)} === "lose-request" && target(url)) { armed = false; throw new TypeError("simulated: request never reached the server"); }
     const response = await real(input, init); if (post && armed && ${JSON.stringify(mode)} === "lose-response" && target(url)) { armed = false; throw new TypeError("simulated: response lost after the server processed the request"); } return response; }; })()`;
 
-async function browser(label, port, opts, body) {
+async function browser(label, opts, body) {
   const { mobile = false, fault = "none" } = opts;
   const width = mobile ? 390 : 1366, height = mobile ? 844 : 900;
-  const profile = mkdtempSync(join(tmpdir(), `m4a-${label}-`));
-  const chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-gpu", `--window-size=${width},${height}`, "about:blank"], { stdio: "ignore" });
+  const profile = mkdtempSync(join(tmpdir(), `e2eb0-${manifest.runId}-${label}-`));
+  const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--disable-gpu", `--window-size=${width},${height}`, "about:blank"], { stdio: "ignore" });
   let ws, nextId = 1; const pending = new Map(); const log = { requests: [], consoleErrors: [], exceptions: [] }; const byId = new Map();
   const send = (method, params = {}) => new Promise((res) => { const id = nextId++; pending.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
   try {
-    for (let i = 0; i < 60; i++) { try { const t = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); const p = t.find((x) => x.type === "page"); if (p) { ws = new WebSocket(p.webSocketDebuggerUrl); await new Promise((a, b) => { ws.onopen = a; ws.onerror = b; }); break; } } catch { /* arrancando */ } await sleep(300); }
+    // Chrome elige un puerto libre (--remote-debugging-port=0) y lo escribe en DevToolsActivePort DENTRO del perfil temporal único de este caso: solo el Chrome lanzado por este caso puede crearlo.
+    // Se comprueba además que el depurador anuncia ese mismo identificador de navegador y que el puerto pertenece al árbol de procesos de ese Chrome. Nunca se prueban puertos fijos ni se adjunta a otras sesiones.
+    let dtp = null;
+    for (let i = 0; i < 150 && !dtp; i++) {
+      if (chrome.exitCode !== null) throw new Error("el Chrome lanzado terminó antes de abrir el depurador");
+      try { const lines = readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n"); if (/^\d+$/.test(lines[0]) && lines[1]) dtp = { port: Number(lines[0]), path: lines[1].trim() }; } catch { /* aún no existe */ }
+      if (!dtp) await sleep(100);
+    }
+    if (!dtp) throw new Error("el Chrome lanzado no publicó su puerto de depuración");
+    const base = `http://127.0.0.1:${dtp.port}`, version = await (await fetch(`${base}/json/version`)).json();
+    if (!/^Chrome\//.test(version.Browser ?? "") || !String(version.webSocketDebuggerUrl).endsWith(dtp.path)) throw new Error("la identidad del depurador no coincide con el Chrome lanzado");
+    if (!ownsPort(dtp.port, chrome.pid)) throw new Error("el puerto de depuración no pertenece al Chrome lanzado por este caso");
+    for (let i = 0; i < 60 && !ws; i++) { try { const t = await (await fetch(`${base}/json`)).json(); const p = t.find((x) => x.type === "page"); if (p) { ws = new WebSocket(p.webSocketDebuggerUrl); await new Promise((a, b) => { ws.onopen = a; ws.onerror = b; }); } } catch { /* arrancando */ } if (!ws) await sleep(300); }
+    if (!ws) throw new Error("no se pudo abrir la página del Chrome lanzado");
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
       if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); return; }
@@ -93,7 +149,7 @@ async function browser(label, port, opts, body) {
     const click = (selector) => js(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el || el.disabled) return false; el.click(); return true; })()`);
     const shot = async (name) => { const h = await js("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"); const r = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width, height: Math.min(h, 5000), scale: 1 } }); writeFileSync(join(outDir, name), Buffer.from(r.result.data, "base64")); };
     const overflow = () => js("document.documentElement.scrollWidth - window.innerWidth");
-    const api = { send, js, waitFor, goto, text, setField, clickText, click, shot, overflow, log, sleep };
+    const api = { send, js, waitFor, goto, text, setField, clickText, click, shot, overflow, log, sleep, cdp: { port: dtp.port, browserPath: dtp.path, pid: chrome.pid } };
     try { await body(api); } catch (error) { try { await shot(`fallo-${label}.png`); console.error("TEXTO AL FALLAR:", (await text()).replace(/\s+/g, " ").slice(0, 600)); console.error("HTTP:", JSON.stringify(log.requests.filter((r) => r.status >= 400 || r.status === null).slice(0, 8).map((r) => `${r.method} ${new URL(r.url).pathname} ${r.status}`))); } catch { /* sin captura */ } throw error; }
   } finally {
     try { ws?.close(); } catch { /* ya cerrado */ }
@@ -124,8 +180,13 @@ const goModule = async (b, label, marker) => { await nav(b, label); await b.wait
 const rows = (sql) => q(sql);
 const allRequests = [];
 const keep = (b) => { allRequests.push(...b.log.requests); };
-let port = 9500;
-const nextPort = () => port++;
+// ---- autoprueba H2: lanza SU Chrome, se adjunta únicamente a él (puerto dinámico validado) y lo cierra; no toca otras sesiones de Chrome ni puertos fijos
+if (SELF_TEST) {
+  let observed = null;
+  await browser("selftest", {}, async (b) => { observed = { ...b.cdp, userAgent: await b.js("navigator.userAgent") }; });
+  console.log("CDP_SELFTEST " + JSON.stringify(observed));
+  process.exit(/Chrome\//.test(observed?.userAgent ?? "") ? 0 : 1);
+}
 const ctx = { ot: {}, line: {}, assignment: {}, bobbin: {}, capture: {}, body: {} };
 
 const jefatura = client(), supervision = client(), calidadApi = client(), operacionApi = client();
@@ -133,7 +194,7 @@ await jefatura.login("jefatura"); await supervision.login("supervision"); await 
 check("S1 la API real responde con sesión y no hay OT ni capturas previas en la base efímera", (await jefatura.call("GET", "/api/work-orders")).json?.length === 0 && rows("SELECT count(*) FROM vinto_txn.capture")[0] === "0", "", "http");
 
 // ============================================================ E01 · Jefatura: OT de MP1 y MP3 desde la navegación normal
-await browser("jef", nextPort(), {}, async (b) => {
+await browser("jef", {}, async (b) => {
   await loginApp(b, "jefatura");
   check("E01.0 Jefatura entra por el login real y ve Bobinas · Programación", /Bobinas · Programaci[oó]n/.test(await b.text()), (await b.text()).slice(0, 200));
   for (const machine of ["MP1", "MP3"]) {
@@ -165,7 +226,7 @@ await browser("jef", nextPort(), {}, async (b) => {
 const baselineBefore = JSON.stringify((await jefatura.call("GET", "/api/work-orders")).json.map((w) => w.baseline));
 
 // ============================================================ E02 · Supervisión: activa las asignaciones
-await browser("sup", nextPort(), {}, async (b) => {
+await browser("sup", {}, async (b) => {
   await loginApp(b, "supervision");
   await sleep(1200);
   for (const machine of ["MP1", "MP3"]) {
@@ -185,7 +246,7 @@ await browser("sup", nextPort(), {}, async (b) => {
 
 // ============================================================ E03 / E04 · Operación: F3 y P1-06 en MP1 (+ validación de campos)
 const OP_NAV = async (b) => { await goModule(b, "Ejecución", "Punto de captura"); };
-await browser("op1", nextPort(), {}, async (b) => {
+await browser("op1", {}, async (b) => {
   await loginApp(b, "operacion");
   await OP_NAV(b);
   await b.clickText("MP1"); await b.waitFor(`document.body.innerText.includes(${JSON.stringify(ctx.ot.MP1.number)})`, "contexto de MP1", 20000); await sleep(800);
@@ -241,7 +302,7 @@ await browser("op1", nextPort(), {}, async (b) => {
 });
 
 // ============================================================ E11 · MP3: F3 con respuesta perdida y reintento idempotente desde la interfaz
-await browser("op2", nextPort(), { fault: "lose-response" }, async (b) => {
+await browser("op2", { fault: "lose-response" }, async (b) => {
   await loginApp(b, "operacion");
   await OP_NAV(b);
   await b.clickText("MP3"); await b.waitFor(`document.body.innerText.includes(${JSON.stringify(ctx.ot.MP3.number)})`, "contexto de MP3", 20000); await sleep(800);
@@ -266,7 +327,7 @@ await browser("op2", nextPort(), { fault: "lose-response" }, async (b) => {
 });
 
 // ============================================================ E05–E08 · Calidad: bandeja, P1-19, P1-20 e historial
-await browser("cal", nextPort(), {}, async (b) => {
+await browser("cal", {}, async (b) => {
   await loginApp(b, "calidad");
   await nav(b, "Calidad"); await b.waitFor("document.body.innerText.includes('Calidad ·')", "front Calidad", 15000);
   await goModule(b, "Ejecución", "Bobinas pendientes de Calidad"); await sleep(1200);
@@ -415,7 +476,7 @@ const q19bad = [await status(cal, "POST", `/api/quality/bobbins/${ctx.bobbin.MP3
 check("R8 P1-19: mismo capture_id con otros valores = 409; valor inválido, bobina inexistente y formulario desconocido se rechazan (4xx) sin crear capturas", q19c.status === 409 && q19bad.every((s) => s >= 400 && s < 500) && rows(`SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id IN ('${ctx.bobbin.MP1.id}','${ctx.bobbin.MP3.id}')`)[0] === "2", `${q19c.status} ${q19bad.join(",")}`, "http");
 
 // ============================================================ Roles en la interfaz, Rebobinado/Conversión y E10 · Seguimiento saneado
-await browser("ops-ui", nextPort(), {}, async (b) => {
+await browser("ops-ui", {}, async (b) => {
   await loginApp(b, "operacion");
   await nav(b, "Calidad"); await b.waitFor("document.body.innerText.includes('Calidad ·')", "front Calidad", 15000); await goModule(b, "Ejecución", "Calidad ·");
   check("E09.11 Operación en el front Calidad: sin acceso al inbox y sin acciones de Calidad", (await b.text()).includes("Tu perfil no tiene acceso al inbox de Calidad") && !(await b.text()).includes("Registrar humedad"));
@@ -451,7 +512,7 @@ await browser("ops-ui", nextPort(), {}, async (b) => {
   check("E10.9 sin errores de JavaScript inesperados en Seguimiento", b.log.exceptions.length === 0, JSON.stringify(b.log.exceptions).slice(0, 160));
   await logoutApp(b); keep(b);
 });
-await browser("cal-ui", nextPort(), {}, async (b) => {
+await browser("cal-ui", {}, async (b) => {
   await loginApp(b, "calidad");
   await toBobinas(b); await goModule(b, "Ejecución", "Punto de captura");
   check("E09.14 Calidad en el front Bobinas: puede consultar pero no capturar producción (aviso) y la tarjeta de F3 no abre la captura", (await b.text()).includes("puede consultar este frente, pero no capturar") && await clickCard(b, "Registro de producción de bobinas") && (await sleep(800), !(await b.text()).includes("Datos de la bobina")));
@@ -461,13 +522,13 @@ await browser("cal-ui", nextPort(), {}, async (b) => {
   await b.shot("e10-seguimiento-calidad.png");
   await logoutApp(b); keep(b);
 });
-await browser("jef-ui", nextPort(), {}, async (b) => {
+await browser("jef-ui", {}, async (b) => {
   await loginApp(b, "jefatura");
   await toBobinas(b); await goModule(b, "Ejecución", "Punto de captura");
   check("E09.15 Jefatura en Ejecución de Bobinas: consulta sin capturar (aviso) y la tarjeta de P1-06 no abre la captura", (await b.text()).includes("puede consultar este frente, pero no capturar") && await clickCard(b, "Registro de control de fardos") && (await sleep(800), !(await b.text()).includes("Control de fardos") || (await b.text()).includes("no tiene permiso")));
   await logoutApp(b); keep(b);
 });
-await browser("sinsector", nextPort(), {}, async (b) => {
+await browser("sinsector", {}, async (b) => {
   await loginApp(b, "operacion_sin_sector");
   await sleep(1500);
   const t = await b.text();
@@ -490,9 +551,9 @@ for (const c of [jefatura, supervision, calidadApi, operacionApi, dataApi, calSi
 check("Z4 sin sesiones activas de prueba tras los logouts", rows("SELECT count(*) FROM vinto_auth.session WHERE revoked_at IS NULL AND expires_at > now()")[0] === "0", `activas antes del cierre final: ${sessions}`, "sql");
 const sectorsSrc = readFileSync(new URL("../../backend/app/sectors.py", import.meta.url), "utf8"), captureSrc = readFileSync(new URL("../../backend/app/capture_service.py", import.meta.url), "utf8");
 check("Z5 configuración real intacta: DEFAULT_OPERATIONAL_SECTORS = (SECTOR_BOBINAS,) y CENTRAL_FORM_CODES = frozenset({FORM_CODE}) con FORM_CODE = VINTO-P1-06", /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)$/m.test(sectorsSrc) && /^FORM_CODE = "VINTO-P1-06"/m.test(captureSrc) && /^CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)$/m.test(captureSrc), "", "static");
-const evidence = { generated: "E2E-B0", database, counts, results };
-writeFileSync(join(outDir, "resultados-e2e-b0.json"), JSON.stringify(evidence, null, 2));
 const fails = results.filter((r) => !r.ok);
+const evidence = { generated: "E2E-B0", runId: manifest.runId, commit: manifest.commit, dirty: manifest.dirty === true, startedAt: manifest.startedAt, finishedAt: new Date().toISOString(), database, counts, total: results.length, pass: results.length - fails.length, fail: fails.length, results };
+writeFileSync(join(outDir, "resultados-e2e-b0.json"), JSON.stringify(evidence, null, 2), { flag: "wx" }); // «wx»: falla si ya existe; nunca sobrescribe resultados de otra corrida
 const by = (k) => results.filter((r) => r.kind === k).length;
 console.log(`\nTOTAL ${results.length} (navegador ${by("browser")}, http ${by("http")}, sql ${by("sql")}, static ${by("static")}) · PASS ${results.length - fails.length} · FAIL ${fails.length}`);
 process.exit(fails.length ? 1 : 0);
