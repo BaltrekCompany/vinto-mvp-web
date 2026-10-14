@@ -56,6 +56,7 @@ import { BobinasCandidateCards, offeredCandidates, publishedCandidates } from "@
 import { CandidateFormCapture } from "@/components/vinto/candidate-form-capture";
 import { CandidateHistory } from "@/components/vinto/candidate-history";
 import { BOBINAS_CANDIDATES, type BobinasCandidateScreen } from "@/lib/vinto/bobinas-candidates";
+import { candidateHistoryKey, sessionScope } from "@/lib/vinto/resource-view";
 import type { CandidateAttempt, CandidateCapture } from "@/lib/vinto/candidate-form";
 import { useSession } from "@/lib/vinto/use-session";
 import { FORM_DEFINITIONS, REPORT_DEFINITIONS } from "@/lib/vinto/form-definitions";
@@ -252,11 +253,12 @@ export default function Home() {
     const canReadCaptures = hasPermission(user, "production.capture");
     const f6List = useResource<CentralCapture[]>("captures-f6", authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento", signal => listCaptures(signal), sessionLost);
     // DEV-B1: la disponibilidad (qué formularios publica el backend para MP1 / MP3) decide si se ofrecen P1-05 y P1-31; con la configuración real no se publican y no aparece nada.
-    const bobAvailability = useAvailability(false, authenticated && bobinasFront && (activeModule === "ejecucion" || activeModule === "seguimiento"), sessionLost);
+    const scope = sessionScope(user); // las claves de los recursos candidatos incluyen al usuario: otra cuenta en el mismo navegador nunca ve la vista de la anterior, ni siquiera mientras carga
+    const bobAvailability = useAvailability(false, authenticated && bobinasFront && (activeModule === "ejecucion" || activeModule === "seguimiento"), sessionLost, scope);
     const publishedCand = publishedCandidates(bobAvailability.view);
     const candHistory = {
-        p105: useResource<CandidateCapture[]>(`captures-p105:${candRefresh}`, authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p105"), signal => BOBINAS_CANDIDATES.p105.api.list(signal), sessionLost),
-        p131: useResource<CandidateCapture[]>(`captures-p131:${candRefresh}`, authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p131"), signal => BOBINAS_CANDIDATES.p131.api.list(signal), sessionLost),
+        p105: useResource<CandidateCapture[]>(candidateHistoryKey("p105", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p105"), signal => BOBINAS_CANDIDATES.p105.api.list(signal), sessionLost),
+        p131: useResource<CandidateCapture[]>(candidateHistoryKey("p131", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p131"), signal => BOBINAS_CANDIDATES.p131.api.list(signal), sessionLost),
     };
     // Inbox CENTRAL de Calidad (solo lectura, GET /api/quality/bobbins, status pendiente): no depende de la asignación activa.
     const canReadQualityInbox = hasPermission(user, "quality.capture");
