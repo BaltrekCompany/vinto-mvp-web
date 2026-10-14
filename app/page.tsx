@@ -257,6 +257,7 @@ export default function Home() {
     const bobAvailability = useAvailability(false, authenticated && bobinasFront && (activeModule === "ejecucion" || activeModule === "seguimiento"), sessionLost, scope);
     const publishedCand = publishedCandidates(bobAvailability.view);
     const candHistory = {
+        p104: useResource<CandidateCapture[]>(candidateHistoryKey("p104", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p104"), signal => BOBINAS_CANDIDATES.p104.api.list(signal), sessionLost),
         p105: useResource<CandidateCapture[]>(candidateHistoryKey("p105", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p105"), signal => BOBINAS_CANDIDATES.p105.api.list(signal), sessionLost),
         p131: useResource<CandidateCapture[]>(candidateHistoryKey("p131", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p131"), signal => BOBINAS_CANDIDATES.p131.api.list(signal), sessionLost),
     };
@@ -283,7 +284,8 @@ export default function Home() {
     useEffect(() => localStorage.setItem("vinto-p1-records", JSON.stringify(records)), [records]);
     const changeFront = (next: Front) => { setFrontChoice(next); if (next !== "Calidad" && !GROUPS[next].includes(machine))
         setMachine(GROUPS[next][0]); };
-    const forms = useMemo(() => effectiveForms().filter(f => front === "Calidad" ? f.area === "quality" && f.id !== Q19_FORM_ID && f.id !== Q20_FORM_ID && norm(`${f.name} ${f.machineLabel}`).includes(norm(query)) : f.area === "production" && norm(f.sector).includes(norm(front)) && applies(f, machine) && norm(`${f.name} ${f.machineLabel}`).includes(norm(query))).sort((a, b) => (FLOW[a.id]?.[0] || 999) - (FLOW[b.id]?.[0] || 999)), [front, machine, query]);
+    const centralFibra = front === "Bobinas" && offeredCandidates(bobAvailability.view, machine).includes("p104"); // DEV-B2: con la ficha central publicada no se ofrece la captura local equivalente
+    const forms = useMemo(() => effectiveForms().filter(f => !(centralFibra && f.id === "form_4_registro_de_consumo_de_fibra")).filter(f => front === "Calidad" ? f.area === "quality" && f.id !== Q19_FORM_ID && f.id !== Q20_FORM_ID && norm(`${f.name} ${f.machineLabel}`).includes(norm(query)) : f.area === "production" && norm(f.sector).includes(norm(front)) && applies(f, machine) && norm(`${f.name} ${f.machineLabel}`).includes(norm(query))).sort((a, b) => (FLOW[a.id]?.[0] || 999) - (FLOW[b.id]?.[0] || 999)), [front, machine, query, centralFibra]);
     if (loggingOut)
         return <AuthChecking label="Cerrando sesión…"/>;
     if (view.status === "checking")
