@@ -3,13 +3,15 @@
 **Estado: prueba técnica. No homologa ninguna regla industrial ni autoriza el piloto.** Demuestra que el circuito técnico existente de Bobinas MP1/MP3 funciona de punta a punta (OT, asignación, captura F3 y P1-06, bandeja de Calidad, P1-19, P1-20 e historial) sobre la **aplicación real en `/`**, el **backend FastAPI real** y un **PostgreSQL efímero y exclusivo**. Los maestros usados son **candidatos** (no homologados), los usuarios y los datos son **ficticios**, las 52 decisiones `BO:` siguen **Pendiente** y Q-LIB y el piloto siguen **NO GO**.
 
 ## 1. Resultado
-**106 comprobaciones: 106 PASS, 0 FAIL, 0 SKIP, 0 BLOCKED** (59 de navegador, 25 HTTP complementarias, 21 SQL de solo lectura, 1 estática). Los casos E01 a E11 pedidos se ejecutaron todos; ninguno quedó omitido ni bloqueado. La columna «Tipo» distingue navegador, HTTP y SQL.
+**Corrida `20261014T182540Z-a6d9c19a`: 109 comprobaciones, 109 PASS, 0 FAIL, 0 SKIP, 0 BLOCKED, limpieza verificada** (las 106 comprobaciones de la versión anterior del arnés siguen presentes y en PASS; se añadieron 3 de identidad: S0a, S0c y S0d, y S0b pasó a ser la identidad de los servicios) (59 de navegador, 26 HTTP complementarias, 22 SQL de solo lectura, 2 estática). Los casos E01 a E11 pedidos se ejecutaron todos; ninguno quedó omitido ni bloqueado. La columna «Tipo» distingue navegador, HTTP y SQL.
 
 ## 2. Código probado y entorno
 | Elemento | Valor |
 |---|---|
-| Código de producto bajo prueba | `911b7cbb6a5c31aaabbf11a7602f31e6e3705d28` (`main` tras el PR #37, PB-CLEAN). Esta rama **no modifica** `app/`, `components/`, `lib/`, `backend/app`, migraciones, `seed_data`, permisos ni sectores; añade solo herramientas de prueba y esta documentación |
-| Base efímera | `vinto_e2eb0_b6ce9593d9f2_test` (nombre generado por ejecución, sin credenciales) |
+| Código de producto bajo prueba | idéntico al de `main` `911b7cb` (PR #37, PB-CLEAN): esta rama **no modifica** `app/`, `components/`, `lib/`, `backend/app`, migraciones, `seed_data`, permisos ni sectores |
+| SHA probado de la corrida | `ae0d84c943ad86b8b1b61c8e9bc9422e9a9ee67b` (rama del PR #38, árbol limpio: `dirty = false`), fijado por el orquestador y comprobado por el recorrido contra `git rev-parse HEAD` |
+| Identificador de corrida | `20261014T182540Z-a6d9c19a` (directorio de evidencias propio; ver §4) |
+| Base efímera | `vinto_e2eb0_4f14b242d411_test` (nombre generado por ejecución, sin credenciales) |
 | PostgreSQL | 17.11 (Debian 17.11-1.pgdg13+2), contenedor nuevo `vinto-e2eb0-pg`, datos en tmpfs, `127.0.0.1:55432` |
 | Backend | FastAPI real (`app.main:app`), Python 3.12.10, `http://127.0.0.1:8190`, configuración real del producto |
 | Frontend | Build de la aplicación con `NEXT_PUBLIC_API_URL=http://127.0.0.1:8190`, servido en `http://127.0.0.1:8796`; sin ruta ni harness de QA |
@@ -22,22 +24,32 @@
 - La configuración real se conserva y se verifica antes de servir: `DEFAULT_OPERATIONAL_SECTORS = (SECTOR_BOBINAS,)` y `CENTRAL_FORM_CODES = frozenset({FORM_CODE})` con `FORM_CODE = "VINTO-P1-06"`; el servidor de prueba no los reasigna (Z5 y `scripts/e2e-b0-guard.test.mjs`). F3 y Calidad usan sus rutas existentes (`/api/bobbins`, `/api/quality/...`).
 - Usuarios ficticios creados solo en la base efímera; contraseñas aleatorias en un archivo temporal fuera del repositorio que se borra al terminar. Estas evidencias no contienen cookies, contraseñas ni tokens.
 
+## 3b. Garantías del arnés (correcciones de la auditoría del PR #38)
+- **Destinos fijos (H1).** API `127.0.0.1:8190`, frontend `127.0.0.1:8796`, contenedor `vinto-e2eb0-pg` y Chrome de ruta fija están en el código; el recorrido **rechaza** las variables heredadas `E2E_API`, `E2E_WEB`, `E2E_PG_CONTAINER` y `E2E_CHROME` (y el orquestador también) y solo recibe el resto por un manifiesto de la corrida. Antes de cualquier operación de negocio demuestra la identidad: el contenedor lleva la etiqueta de la corrida y publica solo `127.0.0.1:55432`; `current_database()` coincide con el manifiesto; los puertos 8190 y 8796 pertenecen a los procesos que lanzó el orquestador (backend y frontend); y el usuario que devuelve el login de la API existe en esa base. Pruebas negativas con un servidor señuelo (`scripts/e2e-b0-guard.test.mjs`) demuestran que ninguna petición llega a otro destino cuando se intenta redirigir.
+- **Chrome CDP propio (H2).** Cada caso lanza su Chrome con `--remote-debugging-port=0` y un perfil temporal único; el puerto sale del `DevToolsActivePort` de ese perfil y se valida que el depurador anuncia ese identificador de navegador y que el puerto pertenece al árbol de procesos del Chrome lanzado. No hay puertos fijos ni se adjunta a sesiones ajenas; solo se cierra el PID propio. La prueba de colisión usa señuelos CDP en el rango antiguo y un Chrome ajeno abierto, y comprueba que el ajeno conserva exactamente sus pestañas y sigue vivo.
+- **Limpieza como parte del resultado (H3).** Tras detener los procesos y eliminar el contenedor, el orquestador verifica que no quede contenedor (por nombre o etiqueta de la corrida), procesos cuya línea de comandos contenga el identificador de la corrida, puertos reservados ocupados ni directorios temporales propios. Si algo propio queda pendiente, el código de salida es 3 y el recurso se registra en `corrida.json`; nunca se elimina nada ajeno.
+- **Resultados por corrida (H4).** Cada corrida escribe en su propio subdirectorio `<evidencias>/<runId>/` (se rechaza si existe o contiene resultados anteriores, sin tocarlos) y `resultados-e2e-b0.json` se crea sin sobrescribir y lleva `runId`, SHA, estado del árbol, conteos y fechas. El orquestador solo da la corrida por exitosa si el recorrido terminó bien, los resultados corresponden a su `runId`, SHA y base con conteos coherentes y sin fallos, y la limpieza está verificada; el veredicto queda en `corrida.json` (`status`: `passed` o `failed`).
+
 ## 4. Cómo reproducirlo
 ```
-node scripts/e2e/b0-run.mjs <directorio-de-evidencias>
+node scripts/e2e/b0-run.mjs <directorio-base-de-evidencias>
 ```
-Requiere Docker, Chrome y `backend/.venv` con `backend/requirements.txt`. El orquestador levanta el PostgreSQL exclusivo, el backend de prueba (`backend/tests/e2e_b0_server.py`), construye y sirve el frontend, ejecuta `scripts/e2e/b0-e2e.mjs` y, también si falla, detiene los procesos y elimina el contenedor (con todas las bases efímeras). Duración aproximada: 2 minutos. `node --test scripts/e2e-b0-guard.test.mjs` comprueba estáticamente el aislamiento sin Docker. Nota: el orquestador reconstruye `dist/` con la URL de la API de prueba; para volver a la configuración normal hay que reconstruir con `node scripts/run-framework.mjs build`.
+Cada corrida crea `<directorio-base-de-evidencias>/<runId>/` con `corrida.json` (veredicto, resultados y limpieza), `resultados-e2e-b0.json`, `entorno-e2e-b0.json` y las capturas. Una corrida solo es válida si `corrida.json` indica `"status": "passed"`.
+Requiere Docker, Chrome y `backend/.venv` con `backend/requirements.txt`. El orquestador levanta el PostgreSQL exclusivo, el backend de prueba (`backend/tests/e2e_b0_server.py`), construye y sirve el frontend, ejecuta `scripts/e2e/b0-e2e.mjs` y, también si falla, detiene los procesos y elimina el contenedor (con todas las bases efímeras). Duración aproximada: 2 minutos. `node --test scripts/e2e-b0-guard.test.mjs` comprueba el aislamiento y las garantías H1 a H4 (estáticas y negativas, con señuelos; la de Chrome requiere Chrome instalado) sin Docker. Nota: el orquestador reconstruye `dist/` con la URL de la API de prueba; para volver a la configuración normal hay que reconstruir con `node scripts/run-framework.mjs build`.
 
 ## 5. Infraestructura reutilizada
 Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y las salvaguardas de `scripts/e2e/m4a-e2e.mjs` (copiados, con un registro de POST ampliado a las rutas de Bobinas y Calidad); la base efímera con plantilla migrada y bundle de `backend/app/ephemeral_db.py`, `backend/app/db_guard.py` y el patrón de `backend/tests/e2e_p110_server.py`. No se creó un framework nuevo ni se instalaron fixtures de otros sectores.
 
 ## 6. Resultados por caso
-### Preparación y aislamiento (S) (3/3)
+### Preparación y aislamiento (S) (6/6)
 
 | ID | Tipo | Resultado | Comprobación | Dato observado |
 |---|---|---|---|---|
-| S0 | sql | PASS | la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de E2E-B0 | vinto_e2eb0_b6ce9593d9f2_test |
-| S0b | http | PASS | la API real responde y su health consulta la base (200) | 200 |
+| S0 | sql | PASS | la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de E2E-B0 | vinto_e2eb0_4f14b242d411_test |
+| S0a | static | PASS | la corrida está identificada: el contenedor de PostgreSQL lleva la etiqueta de esta corrida, publica solo 127.0.0.1:55432 y el directorio de evidencias es el de la corrida | 20261014T182540Z-a6d9c19a |
+| S0b | http | PASS | identidad de los servicios: el puerto 8190 pertenece al backend y el 8796 al frontend lanzados por esta corrida (no a otro servicio local) | backend pid 14788, frontend pid 35056 |
+| S0c | http | PASS | la API real responde y su health consulta la base (200) | 200 |
+| S0d | sql | PASS | la API sirve EXACTAMENTE la base de esta corrida: el usuario ficticio que devuelve el login existe en esa base (y solo en ella) | 200 |
 | S1 | http | PASS | la API real responde con sesión y no hay OT ni capturas previas en la base efímera |  |
 
 ### E01 · Jefatura: OT (11/11)
@@ -47,7 +59,7 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 | E01.0 | browser | PASS | Jefatura entra por el login real y ve Bobinas · Programación | VINTO  PRODUCCIÓN DIGITAL  Jefatura (prueba E2E-B0) Jefatura En línea  FRONT OPERATIVO  Bobinas Rebobinado Con… |
 | E01.1 | browser | PASS | MP1: crear la OT desde la interfaz con el artículo candidato M1-1024 |  |
 | E01.1 | browser | PASS | MP3: crear la OT desde la interfaz con el artículo candidato M3-3004 |  |
-| E01.2 | http | PASS | las dos OT existen en PostgreSQL (API central) en borrador con su número real | {"MP3":{"number":"OT-2026-0002","id":"d576a3e5-3554-45a9-bfab-07eabcf0480f"},"MP1":{"number":"OT-2026-0001","i… |
+| E01.2 | http | PASS | las dos OT existen en PostgreSQL (API central) en borrador con su número real | {"MP3":{"number":"OT-2026-0002","id":"4477a471-4d2b-498e-9fd8-3783b8f677be"},"MP1":{"number":"OT-2026-0001","i… |
 | E01.3 | browser | PASS | MP1: publicar la base desde la interfaz |  |
 | E01.3 | browser | PASS | MP3: publicar la base desde la interfaz |  |
 | E01.4 | http | PASS | ambas OT quedan PUBLICADAS y la interfaz muestra el estado verdadero | OT-2026-0002:published,OT-2026-0001:published |
@@ -77,9 +89,9 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 | E03.2 | browser | PASS | un envío con campos vacíos se rechaza sin llamar al servidor |  |
 | E03.3 | browser | PASS | enviar F3 con los campos del contrato técnico actual |  |
 | E03.4 | browser | PASS | un único POST /api/bobbins = 201 con el payload contratado (capture_id, assignment_id, device_key y los seis valores manuales) | ["capture_id","assignment_id","device_key","values"] |
-| E03.5 | sql | PASS | PostgreSQL: bobina creada en MP1 con su correlativo, medidas EXACTAS de los datos enviados, artículo y gramaje heredado del maestro | ecd300ae-e827-4f50-8146-93aee7fb4425/1/MP1/1/1250.5/480.25/3/07:10:00/08:05:00/22/M1-1024/cc3fdbb5-0f4b-47ee-b… |
+| E03.5 | sql | PASS | PostgreSQL: bobina creada en MP1 con su correlativo, medidas EXACTAS de los datos enviados, artículo y gramaje heredado del maestro | 48f93b05-a45b-4c96-b1ff-1e6623b2e896/1/MP1/1/1250.5/480.25/3/07:10:00/08:05:00/22/M1-1024/bcf7e539-50d6-487b-a… |
 | E03.6 | sql | PASS | estado inicial de Calidad: pending, sin decisión, autor ni fecha de decisión | pending/-/- |
-| E03.7 | sql | PASS | la bobina se relaciona con su captura (submitted, revisión 1, autor Operación), la asignación y la OT correctas | OT-2026-0001/9abfe678-4e3d-4453-88d9-1bfaa6f44ba2/submitted/1/d1492863-c9c2-476c-ae1c-4798b0516759 |
+| E03.7 | sql | PASS | la bobina se relaciona con su captura (submitted, revisión 1, autor Operación), la asignación y la OT correctas | OT-2026-0001/5b7471c9-800a-4676-85d3-7f9fcbf4cd09/submitted/1/cc48a56e-da96-46cf-b32a-0d5e2e7cb6e4 |
 | E03.8 | sql | PASS | auditoría: el alta de la captura y de la bobina quedó registrada con el actor de la sesión |  |
 | E03.9 | browser | PASS | la captura F3 no está en localStorage (solo la clave técnica del dispositivo) | vinto-device-key,vinto-ot,vinto-asg,vinto-p1-records |
 
@@ -91,7 +103,7 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 | E04.2 | browser | PASS | enviar P1-06 |  |
 | E04.3 | browser | PASS | un único POST /api/captures = 201 (form_code VINTO-P1-06, assignment_id de MP1) | {"posts":1,"http":[201],"form":"VINTO-P1-06"} |
 | E04.3b | http | PASS | la consulta central GET /api/captures/{id} devuelve la captura de P1-06 persistida (200) | 200 |
-| E04.4 | sql | PASS | PostgreSQL: captura P1-06 submitted, revisión 1, MP1, asignación correcta y autor Operación | submitted/1/MP1/VINTO-P1-06/9abfe678-4e3d-4453-88d9-1bfaa6f44ba2/d1492863-c9c2-476c-ae1c-4798b0516759 |
+| E04.4 | sql | PASS | PostgreSQL: captura P1-06 submitted, revisión 1, MP1, asignación correcta y autor Operación | submitted/1/MP1/VINTO-P1-06/5b7471c9-800a-4676-85d3-7f9fcbf4cd09/cc48a56e-da96-46cf-b32a-0d5e2e7cb6e4 |
 | E04.5 | sql | PASS | PostgreSQL: valores de P1-06 exactos | cantidad_fardos=4/punto_merma=recorte_maquina/tipo_producto=hoja_doble/peso_kg=96.5/observaciones=fardos ficti… |
 | E04.6 | browser | PASS | la lista central de Seguimiento (Bobinas) muestra la captura de P1-06 leída de PostgreSQL: OT, máquina MP1, fardos y peso | 2026-10-14 OT-2026-0001 L1 / PV-E2EB0-MP1 M1-BOBINA PH G-22 CR-25% R-540640 MP1 Día 4 Recorte de máquina Hoja … |
 | E04.7 | browser | PASS | P1-06 no se guarda como captura local del navegador | vinto-device-key,vinto-ot,vinto-asg,vinto-p1-records |
@@ -112,8 +124,8 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 |---|---|---|---|---|
 | E06.1 | browser | PASS | abrir el control de humedad (P1-19) de la bobina de MP1 |  |
 | E06.2 | browser | PASS | enviar P1-19 |  |
-| E06.3 | browser | PASS | un POST /api/quality/bobbins/{id}/captures = 201 para la bobina de MP1 con form_code VINTO-P1-19 | /api/quality/bobbins/ecd300ae-e827-4f50-8146-93aee7fb4425/captures |
-| E06.4 | sql | PASS | PostgreSQL: captura P1-19 submitted, área quality, asociada a la bobina de MP1 y autor Calidad | submitted/1/ecd300ae-e827-4f50-8146-93aee7fb4425/VINTO-P1-19/quality/a4e6655b-b851-4f74-88fe-37e7f2d8d9e5 |
+| E06.3 | browser | PASS | un POST /api/quality/bobbins/{id}/captures = 201 para la bobina de MP1 con form_code VINTO-P1-19 | /api/quality/bobbins/48f93b05-a45b-4c96-b1ff-1e6623b2e896/captures |
+| E06.4 | sql | PASS | PostgreSQL: captura P1-19 submitted, área quality, asociada a la bobina de MP1 y autor Calidad | submitted/1/48f93b05-a45b-4c96-b1ff-1e6623b2e896/VINTO-P1-19/quality/afc6a38d-9672-41b3-8cfc-a8586038f8f3 |
 | E06.5 | sql | PASS | PostgreSQL: los seis pesos exactos se guardaron (no se envía ni almacena la humedad calculada) | peso_humedo_comando=12.5/peso_seco_comando=11.0/peso_humedo_medio=12.6/peso_seco_medio=11.1/peso_humedo_transv… |
 
 ### E07 · Calidad: P1-20 (5/5)
@@ -122,7 +134,7 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 |---|---|---|---|---|
 | E07.1 | browser | PASS | abrir las propiedades físicas (P1-20) de la bobina de MP1 |  |
 | E07.2 | browser | PASS | la pantalla declara las unidades y nombres como provisionales y enviar P1-20 |  |
-| E07.3 | sql | PASS | PostgreSQL: captura P1-20 submitted asociada a la bobina de MP1 con sus 12 detalles | submitted/ecd300ae-e827-4f50-8146-93aee7fb4425/VINTO-P1-20/12 |
+| E07.3 | sql | PASS | PostgreSQL: captura P1-20 submitted asociada a la bobina de MP1 con sus 12 detalles | submitted/48f93b05-a45b-4c96-b1ff-1e6623b2e896/VINTO-P1-20/12 |
 | E07.4 | sql | PASS | PostgreSQL: valores exactos de P1-20 (espesor 0.12, gramaje 22.1, resistencias) sin tolerancias ni conformidad almacenadas | crepado=20/gramaje=22.1/resistencia_longitudinal_centro=5.1/resistencia_longitudinal_medio=5.2/resistencia_lon… |
 | E07.5 | sql | PASS | las unidades provisionales de P1-20 se conservan tal como están en la definición candidata (gramaje, crepado y resistencias sin unidad de catálogo) | crepado:sin-unidad,gramaje:sin-unidad,resistencia_longitudinal_centro:sin-unidad,resistencia_longitudinal_medi… |
 
@@ -183,7 +195,7 @@ Patrón de Chrome con CDP, `browser()`, `loginApp`, `logoutApp`, `client()` y la
 | E11.1 | browser | PASS | Operación ve el contexto real de MP3 y abre F3 |  |
 | E11.2 | browser | PASS | la respuesta se perdió pero el servidor ya procesó el POST (1 bobina en MP3) y la interfaz ofrece reintentar el MISMO envío | 1 |
 | E11.3 | browser | PASS | el reintento reutiliza el MISMO capture_id (dos POST, un solo identificador) y el servidor responde 200 idempotente | {"posts":2,"ids":1,"statuses":[201,200]} |
-| E11.4 | sql | PASS | PostgreSQL: sigue habiendo UNA bobina en MP3 (correlativo 1, independiente del de MP1), una captura y un quality_release | 822b1b84-ca48-485b-a10c-654471f716bd/1/1/d8ffbd1b-bb19-425e-a71e-630229630fd3 |
+| E11.4 | sql | PASS | PostgreSQL: sigue habiendo UNA bobina en MP3 (correlativo 1, independiente del de MP1), una captura y un quality_release | 9374a692-678f-4463-8de4-82da6d78cd56/1/1/d003ba66-df56-445b-9f39-3dd5cee7d117 |
 
 ### R · Robustez (idempotencia, rechazos, concurrencia) (8/8)
 
@@ -220,7 +232,7 @@ Capturas del navegador (datos ficticios), en `docs/evidence/e2e-b0/`:
 | E10 · Conteo central no disponible («—», nunca cero) | ![E10b](evidence/e2e-b0/e10-conteo-no-disponible.png) |
 | E11 · F3 en MP3 con respuesta perdida y reintento del mismo envío | ![E11](evidence/e2e-b0/e11-f3-mp3-incierto.png) |
 
-Los datos completos de cada comprobación están en `docs/evidence/e2e-b0/resultados-e2e-b0.json` y el entorno en `entorno-e2e-b0.json`.
+Los datos completos de cada comprobación están en `docs/evidence/e2e-b0/resultados-e2e-b0.json`, el veredicto de la corrida y su limpieza en `corrida.json` y el entorno en `entorno-e2e-b0.json`.
 
 ## 8. Peticiones HTTP relevantes observadas
 | Operación | Resultado observado |
@@ -244,6 +256,7 @@ Los datos completos de cada comprobación están en `docs/evidence/e2e-b0/result
 - Un `wrangler` huérfano de una ejecución manual impedía reconstruir `dist` (`EPERM`); se detuvo.
 - Tres supuestos errados de la prueba, ajustados a la conducta contratada: el título muestra «Programacion» sin tilde; P1-06 no hace una lectura de reconciliación tras un 201 (solo ante una respuesta incierta), por lo que la persistencia se verifica con `GET /api/captures/{id}` y SQL; y un usuario sin concesión de sector ve la estructura de la aplicación pero ninguna OT ni bobina y no puede abrir una captura.
 - Una aserción de la lista central comparaba la primera fila con la OT y no la fila de la captura; se acotó a la fila con el peso registrado.
+- Al endurecer el arnés, el propio orquestador detectó una sesión de prueba sin cerrar (la sonda de identidad de la API): la corrida se marcó `failed` por la comprobación Z4; se corrigió cerrando esa sesión y la corrida posterior pasó. Es un ejemplo de que una corrida fallida no puede parecer exitosa.
 
 ## 10. Observaciones sobre el producto (no corregidas en este incremento)
 - Ejecución de Bobinas sigue ofreciendo formularios heredados que se guardan **localmente** («Registro de consumo de fibra», «Parámetros de operación de máquina»); no son parte del circuito central probado y siguen sujetos a la homologación.
@@ -254,14 +267,14 @@ Los datos completos de cada comprobación están en `docs/evidence/e2e-b0/result
 ## 11. Verificaciones finales ejecutadas (sobre esta rama)
 | Verificación | Resultado |
 |---|---|
-| E2E-B0 de navegador, HTTP y SQL (`node scripts/e2e/b0-run.mjs`) | 106 comprobaciones: 106 PASS · 0 FAIL (ejecución final) |
-| Guarda estática del aislamiento (`scripts/e2e-b0-guard.test.mjs`) | 5/5 |
-| Suite Node completa (`node --test scripts/*.test.mjs`) | 569/569 (564 previas + 5) |
+| E2E-B0 de navegador, HTTP y SQL (`node scripts/e2e/b0-run.mjs`) | 109 comprobaciones: 109 PASS · 0 FAIL (ejecución final) |
+| Guarda del aislamiento y pruebas negativas H1 a H4 (`scripts/e2e-b0-guard.test.mjs`) | 13/13 (5 estáticas, 3 de H1, 2 de H2, 1 de H3, 2 de H4); verificadas por mutación: quitar la comprobación de variables heredadas o la detección de procesos propios hace fallar la guarda |
+| Suite Node completa (`node --test scripts/*.test.mjs`) | 577/577 (564 previas + 13) |
 | Backend, pruebas relevantes contra una base `*_test` protegida en un PostgreSQL efímero | 473 pruebas (F3, Calidad, F6, revisión de capturas, asignaciones, OT, turnos, sectores, producción, protección de base y bundle): 471 OK, 1 omitida y 1 fallo ajeno al producto (`test_db_guard` exige el nombre literal `vinto_test`; con esa base en el contenedor aislado, `tests.test_db_guard` 7/7 OK) |
 | Lint (`eslint`) | 0 errores; 3 warnings preexistentes ajenos |
-| Build (`node scripts/run-framework.mjs build`) | OK |
-| `tsc --noEmit` | exit 2 por **un único diagnóstico preexistente**, el mismo de `main` (`911b7cb`, el código de `app/` no cambia en esta rama): `app/page.tsx(397,1023): error TS2322 … 'fardo_id?: undefined' … is not assignable to type 'Record<string, string | number | boolean>'` (deuda técnica separada; no se corrigió) |
-| Limpieza | contenedores `vinto-e2eb0-*` eliminados, puertos 55432/8190/8796 libres, procesos detenidos; sin tocar recursos ajenos |
+| Build (`node scripts/run-framework.mjs build`) | OK (el orquestador reconstruye `dist/` con la URL de la API de prueba; tras la corrida se reconstruyó con la configuración normal) |
+| `tsc --noEmit` | exit 2 por **un único diagnóstico preexistente**, el mismo de `main` (`ae0d84c`, el código de `app/` no cambia en esta rama): `app/page.tsx(397,1023): error TS2322 … 'fardo_id?: undefined' … is not assignable to type 'Record<string, string | number | boolean>'` (deuda técnica separada; no se corrigió) |
+| Limpieza | verificada por el propio orquestador en cada corrida (`cleanup.ok = true`, sin pendientes): contenedor eliminado, procesos propios detenidos, puertos 55432/8190/8796 libres y directorios temporales borrados; sin tocar recursos ajenos |
 
 ## 12. Riesgos residuales
 - Chrome headless de Windows con perfil limpio por caso; no se probaron otros navegadores ni dispositivos de planta.
