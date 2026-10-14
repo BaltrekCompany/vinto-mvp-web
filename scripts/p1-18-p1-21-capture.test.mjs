@@ -172,8 +172,8 @@ test("flujo de envío (P1-18 y P1-21): 201, 200 idempotente, rechazos definitivo
 test("la oferta sale del backend: P1-18 por máquina, P1-21 por la máquina de la bobina; nunca se mezclan y con la política real no se ofrece nada", () => {
   const form = (c) => ({ code: c, name: c, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
-  assert.deepEqual([...QUALITY_BOBBIN_SCREENS], ["p121"]);
-  assert.deepEqual(BOBBIN_SCREEN_BY_FORM, { "VINTO-P1-21": "p121" });
+  assert.deepEqual([...QUALITY_BOBBIN_SCREENS], ["p121", "p124", "p125"]); // p124 / p125 se añadieron en DEV-Q3
+  assert.deepEqual(BOBBIN_SCREEN_BY_FORM, { "VINTO-P1-21": "p121", "VINTO-P1-24": "p124", "VINTO-P1-25": "p125" });
   const real = avail([{ code: "MP1", name: "MP1", forms: [] }, { code: "MP3", name: "MP3", forms: [] }]);
   assert.deepEqual([qualityMachines(real), publishedQualityScreens(real), bobbinScreensFor(real, "MP1"), bobbinScreensFor(real, "MP3")], [[], [], [], []], "configuración real: el backend no publica ningún candidato");
   const machineSide = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-18"), form("VINTO-P1-22")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-18")] }]);
@@ -246,8 +246,8 @@ test("alcance: políticas vacías en el backend, producción y seed_data intacto
   const manifest = JSON.parse(read("backend/seed_data/manifest.json"));
   assert.match(machine, /^MACHINE_QUALITY_FORM_CODES: frozenset = frozenset\(\)$/m);
   assert.match(bobbin, /^ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\)$/m);
-  assert.match(bobbin, /^BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-21"\}\)$/m);
-  assert.match(bobbin, /^BOBBIN_CODE_FIELDS: dict = \{"VINTO-P1-21": "numero_de_bobina"\}$/m);
+  assert.match(bobbin, /^BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25"\}\)$/m);
+  assert.match(bobbin, /^BOBBIN_CODE_FIELDS: dict = \{"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina"\}$/m);
   assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)$/m);
   assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)$/m);
   assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);

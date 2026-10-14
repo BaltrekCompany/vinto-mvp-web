@@ -370,7 +370,7 @@ class P121ConfigurationTests(BobbinBase):
     async def test_the_shipped_bobbin_policy_is_empty_and_the_candidate_is_unreachable_without_the_test_policy(self):
         _, bobbin = await self.bobbin()
         self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset())
-        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset({P121_CODE}))
+        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset({P121_CODE, "VINTO-P1-24", "VINTO-P1-25"}))  # P1-24 / P1-25 added by DEV-Q3
         created = await self.submit(bobbin["id"], self.body(bobbin))
         self.assertEqual(created.status, 201, created.text)
         with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_BOBBIN_POLICY):  # the real policy
