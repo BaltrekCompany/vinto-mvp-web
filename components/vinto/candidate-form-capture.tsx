@@ -93,6 +93,15 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         } finally { busy.current = false; setSending(false); }
     }
 
+    const renderField = (field: (typeof form.fields)[number]) => field.kind === "textarea"
+        ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)}/>
+        : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
+            inputMode={field.kind === "decimal" ? "decimal" : "text"} suffix={field.suffix}/>;
+    // Agrupación solo visual (candidate.sections): cada campo se dibuja una vez y la estructura guardada no cambia. Sin secciones: un único bloque con todos los campos.
+    const groups = candidate.sections
+        ? candidate.sections.map(s => ({ title: s.title, hint: s.hint, fields: s.keys.map(k => form.fields.find(f => f.key === k)).filter((f): f is (typeof form.fields)[number] => f !== undefined) }))
+        : [{ title: candidate.title, hint: "Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.", fields: [...form.fields] }];
+
     return <CaptureShell kicker={candidate.kicker} title={candidate.title} onBack={back}>
         <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
             <p className="font-black">Ficha NO homologada · solo donde el backend la publique</p>
@@ -108,12 +117,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         {(candidate.unresolved || candidate.calculated) && <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-950" data-section="gaps">
             {candidate.unresolved && <p>Automáticos sin fuente confirmada (no se generan ni se sustituyen por la hora de envío): <b>{candidate.unresolved.join(", ")}</b>.</p>}
             {candidate.calculated && <p>Calculados sin fórmula aprobada (no se calculan, no se guardan ni se muestran como oficiales): <b>{candidate.calculated.join(", ")}</b>.</p>}</div>}
-        <CaptureSection title={candidate.title} hint="Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.">
-            {form.fields.map(field => field.kind === "textarea"
-                ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)}/>
-                : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
-                    inputMode={field.kind === "decimal" ? "decimal" : "text"} suffix={field.suffix}/>)}
-        </CaptureSection>
+        {groups.map(group => <CaptureSection key={group.title} title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>)}
         <CaptureNotice text={notice}/>
         {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
             <p className="font-black">{saved.message}</p>

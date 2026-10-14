@@ -6,12 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
 import { P110History, P111History, P112History, P113History, P116History, P129History } from "@/components/vinto/central-form-history";
+import { CandidateHistory } from "@/components/vinto/candidate-history";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
 import { Panel } from "@/components/vinto/panels";
 import { CONVERSION_DISABLED_MESSAGE, CONVERSION_DISABLED_TITLE, DISABLED_MESSAGE, DISABLED_TITLE, articlesOf, offeredForms, screenFor, sectorView, type FormScreen, type SectorAvailability } from "@/lib/vinto/availability";
 import { listCapturesOf } from "@/lib/vinto/captures-api";
 import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActive, failureMessage, type CaptureContext } from "@/lib/vinto/orders";
+import { REBOBINADO_CANDIDATES, REBOBINADO_CANDIDATE_SCREENS } from "@/lib/vinto/rebobinado-candidates";
+import { candidateHistoryKey } from "@/lib/vinto/resource-view";
 import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_11_CODE, parseP111List } from "@/lib/vinto/p1-11";
 import { P1_12_CODE, parseP112List } from "@/lib/vinto/p1-12";
@@ -45,15 +48,16 @@ export type SectorCentralProps = {
     canReadAssignments: boolean;
     onOpenForm: (screen: FormScreen, context: CaptureContext) => void;
     refreshKey: number; // cambia tras un envío para refrescar el historial
+    scope?: string; // sessionScope(user): las claves de disponibilidad e historiales candidatos incluyen a la cuenta (otra cuenta en el mismo navegador nunca ve la vista anterior)
     onSessionLost: () => void;
 };
 type Props = SectorCentralProps & { code: CentralSector };
 type Inner = Props & { sector: SectorAvailability };
 
 export function SectorCentral(props: Props) {
-    const { module, canManageOrders, onSessionLost, code } = props;
+    const { module, canManageOrders, onSessionLost, code, scope } = props;
     const config = SECTORS[code];
-    const availability = useAvailability(canManageOrders && module === "programacion", true, onSessionLost); // la programación pide además los artículos de cada máquina
+    const availability = useAvailability(canManageOrders && module === "programacion", true, onSessionLost, scope); // la programación pide además los artículos de cada máquina
     if (availability.view.status !== "ready") return <CentralStatus state={availability.view} onRetry={availability.refresh} title={`No se pudo consultar la disponibilidad de ${config.label}`}/>;
     const view = sectorView(availability.view.data, code);
     if (view.kind === "disabled") return <div role="status" {...tag(code, "disabled")}><Panel title={config.disabledTitle} note={config.disabledMessage}><p className="text-sm text-slate-700">Habilitar {config.label} requiere datos maestros aprobados y un cambio de configuración revisado en el backend; no se puede activar desde esta pantalla.</p></Panel></div>;
@@ -97,7 +101,7 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, o
                 <p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">{screen ? "Abrir captura central" : "Sin pantalla central"}</p></button>)}</div></div>;
 }
 
-function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, onSessionLost }: Inner) {
+function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost }: Inner) {
     const label = SECTORS[code].label;
     const workOrders = useWorkOrders(canReadOrders, onSessionLost);
     const assignments = useAssignments(canReadAssignments, onSessionLost);
@@ -110,7 +114,12 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
     const p113 = useResource(`captures-p113:${refreshKey}`, canCapture && offered.has(P1_13_CODE), signal => listCapturesOf(parseP113List, signal, 50, P1_13_CODE), onSessionLost);
     const p116 = useResource(`captures-p116:${refreshKey}`, canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);
     const p129 = useResource(`captures-p129:${refreshKey}`, canCapture && offered.has(P1_29_CODE), signal => listCapturesOf(parseP129List, signal, 50, P1_29_CODE), onSessionLost);
-    const refresh = () => { workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p112.refresh(); p113.refresh(); p116.refresh(); p129.refresh(); };
+    // DEV-R2: historiales de las fichas candidatas de Rebobinado (P1-30 / P1-07); clave con la sesión (sin `scope` no se consultan).
+    const candidateHistory = {
+        p130: useResource(candidateHistoryKey("reb-p130", scope ?? "", refreshKey), canCapture && scope !== undefined && offered.has(REBOBINADO_CANDIDATES.p130.code), signal => REBOBINADO_CANDIDATES.p130.api.list(signal), onSessionLost),
+        p107: useResource(candidateHistoryKey("reb-p107", scope ?? "", refreshKey), canCapture && scope !== undefined && offered.has(REBOBINADO_CANDIDATES.p107.code), signal => REBOBINADO_CANDIDATES.p107.api.list(signal), onSessionLost),
+    };
+    const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p112.refresh(); p113.refresh(); p116.refresh(); p129.refresh(); };
     if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;
     const orders = workOrders.view.data.filter(o => machines.has(o.machine.code)), asg = assignments.view.data.filter(a => machines.has(a.machine.code));
     return <div className="space-y-5" {...tag(code, "seguimiento")}>
@@ -130,5 +139,6 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
         {canCapture && offered.has(P1_13_CODE) && <P113History resource={p113.view} refresh={p113.refresh}/>}
         {canCapture && offered.has(P1_16_CODE) && <P116History resource={p116.view} refresh={p116.refresh}/>}
         {canCapture && offered.has(P1_29_CODE) && <P129History resource={p129.view} refresh={p129.refresh}/>}
+        {canCapture && REBOBINADO_CANDIDATE_SCREENS.filter(screen => offered.has(REBOBINADO_CANDIDATES[screen].code)).map(screen => <CandidateHistory key={screen} candidate={REBOBINADO_CANDIDATES[screen]} resource={candidateHistory[screen].view} refresh={candidateHistory[screen].refresh}/>)}
     </div>;
 }

@@ -126,7 +126,7 @@ test("la página y useAvailability usan las claves por sesión y los demás llam
   assert.match(central, /export const useAvailability = \(withArticles: boolean, enabled: boolean, onUnauthorized: \(\) => void, scope\?: string\)/);
   assert.match(central, /availabilityKey\(withArticles, scope\)/);
   assert.match(central, /const view: Resource<T> = deriveView\(key, enabled, attempt, stored\);/);
-  assert.match(sector, /useAvailability\(canManageOrders && module === "programacion", true, onSessionLost\)/); // Rebobinado / Conversión: sin cambios
+  assert.match(sector, /useAvailability\(canManageOrders && module === "programacion", true, onSessionLost, scope\)/); // DEV-R2: la disponibilidad de Rebobinado / Conversión también va ligada a la sesión
   assert.match(sector, /`captures-p110:\$\{refreshKey\}`/);
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false, "no se borra el almacenamiento local");
 });
