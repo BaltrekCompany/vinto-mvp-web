@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,13 @@ class Settings(BaseSettings):
     reference_database_url: SecretStr | None = None
     reference_test_database_url: SecretStr | None = None
     test_admin_database_url: SecretStr | None = None
+    # PG54-04: señal explícita de endurecimiento, NUNCA "hardened" por defecto (no se activa en este PR).
+    # "legacy" (por defecto): comportamiento actual, con fallback silencioso a database_url/test_database_url
+    # cuando una URL de identidad específica no está configurada — igual que antes de CLOUD-01B-2.
+    # "hardened": cada operación exige su propia URL de identidad; si falta, falla de inmediato (nunca cae
+    # de vuelta a database_url/test_database_url) y las operaciones de aprovisionamiento de pruebas
+    # efímeras (app/ephemeral_db.py) se niegan a ejecutarse fuera de app_env en {"local","test","qa","ci"}.
+    pg_privilege_mode: Literal["legacy", "hardened"] = "legacy"
     db_connect_timeout: int = Field(default=3, ge=1, le=30)
     db_statement_timeout_ms: int = Field(default=2000, ge=1, le=30000)
     auth_max_failed_attempts: int = Field(default=5, ge=1, le=20)

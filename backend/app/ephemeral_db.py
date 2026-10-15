@@ -14,7 +14,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
 from app.config import settings
-from app.db_guard import UnsafeDatabaseError, connect_test_database, is_test_database_name
+from app.db_guard import UnsafeDatabaseError, assert_test_admin_allowed, connect_test_database, is_test_database_name, resolve_role_url
 
 OPTIONS = "-c statement_timeout=60000 -c lock_timeout=30000"
 
@@ -27,9 +27,9 @@ def base_url() -> str:
 
 def _admin_base_url() -> str:
     """CREATE/DROP DATABASE exige CREATEDB: TEST_ADMIN_DATABASE_URL es la identidad separada de CLOUD-01B-2
-    para esto (solo DEV/QA). Si no está configurada, se mantiene el comportamiento previo (base_url())."""
-    admin_url = settings.test_admin_database_url
-    return admin_url.get_secret_value() if admin_url else base_url()
+    para esto (solo DEV/QA). PG54-04: resolve_role_url honra pg_privilege_mode (en "hardened" exige
+    TEST_ADMIN_DATABASE_URL explícitamente, nunca cae en TEST_DATABASE_URL, la cuenta de la API)."""
+    return resolve_role_url(settings.test_admin_database_url, settings.test_database_url, label="TEST_ADMIN_DATABASE_URL")
 
 
 def database_url(name: str) -> str:
@@ -38,6 +38,9 @@ def database_url(name: str) -> str:
 
 
 def _admin():
+    # PG54-04: ninguna operación de CREATEDB (crear/destruir una base *_test) se permite fuera de un
+    # APP_ENV reconocido como no operativo cuando pg_privilege_mode es "hardened".
+    assert_test_admin_allowed()
     return psycopg.connect(make_conninfo(_admin_base_url(), dbname="postgres"), autocommit=True, connect_timeout=5)
 
 

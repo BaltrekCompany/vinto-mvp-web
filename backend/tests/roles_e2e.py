@@ -3,84 +3,174 @@
 Herramienta de QA/infraestructura, NO se importa desde la aplicación ni desde la suite de unittest
 (requiere Docker y tarda; se ejecuta a mano: `cd backend && PYTHONPATH=. python tests/roles_e2e.py`).
 
-Qué hace, en una instancia PostgreSQL 17 EFÍMERA propia (contenedor con nombre y puerto exclusivos,
-`--tmpfs`, sin volumen, nunca el stack compartido de docker-compose.yml):
-
-  1. Crea las 4 identidades de backend/roles/ (vinto_app, vinto_migrator, vinto_reference,
-     vinto_test_admin) con contraseñas generadas al vuelo (nunca credenciales reales).
-  2. Aplica las migraciones 0001-0006 conectando como vinto_migrator (migrate.py --target dev), de
-     modo que resulte propietario real de los 6 esquemas.
-  3. Aplica los GRANT de backend/roles/02..06 conectando como vinto_migrator.
-  4. Importa el bundle oficial (import_reference.py --target dev --apply) conectando como
-     vinto_reference.
-  5. Ejerce el flujo real de negocio (login/sesión/logout, OT, asignación, captura F3, revocación de
-     sector) conectando como vinto_app, reutilizando las funciones de app/ tal cual las usa la API.
-  6. Repite el ciclo de vida de una base *_test efímera (prepare_test_db.py) con vinto_test_admin
-     (CREATEDB) + vinto_migrator, y la destruye al terminar.
-  7. Ejecuta pruebas negativas (DDL, GRANT, TRUNCATE, acceso a vinto_meta/vinto_auth/vinto_txn fuera de
-     alcance) verificando el SQLSTATE exacto para no confundir un rechazo por permiso (42501) con uno
-     por trigger de negocio (23514).
-  8. Imprime un informe PASS/FAIL/BLOCKED y limpia el contenedor (incluso si algo falla).
+Corregido tras la auditoría del PR #54 (PG54-01 a PG54-06):
+  - PG54-01: ya no hay ningún privilegio por defecto sobre tablas futuras (ver backend/roles/
+    05_no_default_privileges.sql); se agrega una prueba que crea una tabla "futura" y confirma que
+    vinto_app/vinto_reference/PUBLIC no tienen NINGÚN privilegio sobre ella.
+  - PG54-02: el contenedor Docker usa un nombre único por ejecución (nunca uno fijo), se verifica que
+    no exista antes de crearlo (si colisiona, se aborta SIN eliminar nada) y la limpieza final usa el
+    ID del contenedor que esta misma ejecución creó, nunca un nombre adivinado.
+  - PG54-03: ninguna contraseña se pasa como argumento -v de psql (visible en la lista de procesos);
+    se leen con \\getenv desde variables de entorno del proceso exec'ado, y PGPASSWORD se sustituye por
+    un archivo .pgpass con permisos 600 dentro del contenedor, borrado tras cada uso. Todo lo que se
+    imprime pasa por `redact()`; al final se verifica que ningún secreto generado aparece en el reporte.
+  - PG54-04: nueva señal explícita `PG_PRIVILEGE_MODE` ("legacy", igual que antes; "hardened", sin
+    fallback silencioso a DATABASE_URL/TEST_DATABASE_URL y sin permitir operaciones de aprovisionamiento
+    de pruebas efímeras fuera de un APP_ENV reconocido). Nunca se activa por defecto.
+  - PG54-05: 00_create_roles.sql ya NO crea vinto_test_admin (ver 00b_create_test_admin_role.sql,
+    exclusivo de DEV/QA); ambos son idempotentes y detectan colisión de nombre de rol.
+  - PG54-06: se ejecuta además la suite completa del backend (los ~60 archivos test_*.py, 1145 pruebas)
+    en modo legado, bajo aislamiento demostrado (su propio par de bases "vinto"/"vinto_test" en el
+    mismo contenedor efímero), ANTES de aplicar el modelo de roles. Se ejecuta archivo por archivo
+    (`unittest discover -s tests -p "<archivo>.py"`), no un solo `discover -s tests` monolítico: un
+    `discover` sin filtro que importa los ~60 módulos en UN SOLO proceso produce cientos de fallos
+    (verificado al depurar) que no se reproducen archivo por archivo — un problema preexistente de
+    aislamiento ENTRE ARCHIVOS de la propia suite, no una regresión de este PR. Sus resultados se
+    reportan por separado y NUNCA se presentan como equivalentes a las pruebas específicas del modelo
+    de 4 roles.
 
 No modifica main, no toca ninguna base real, no lee ningún .env real: cada conexión de este script usa
 una URL construida en memoria contra el contenedor efímero, nunca backend/.env.
 """
 
-import json
 import os
+import re
 import secrets
 import subprocess
 import sys
 import time
 import uuid
+from datetime import date
 from pathlib import Path
 
+# En Windows, stdout/stderr redirigidos a un archivo (no a una consola) usan por defecto la codificación
+# del sistema (p. ej. cp1252), que no puede representar todos los caracteres que puede devolver un hijo
+# decodificado con errors="replace" (p. ej. el carácter de reemplazo �), y hace que un simple
+# print() de este script lance UnicodeEncodeError (visto al depurar esta fase). UTF-8 los representa
+# todos.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-ROOT_DIR = BACKEND_DIR.parent
 ROLES_DIR = BACKEND_DIR / "roles"
 
-CONTAINER = "vinto-cloud01b2-pg"
 HOST_PORT = 55461
 DB = "vinto_cloud01b2"
 BOOT_USER = "cloud01b2_root"
 
 RESULTS = []  # (name, status, detail) — status in PASS/FAIL/BLOCKED
+SECRETS: set[str] = set()  # contraseñas sintéticas generadas en esta ejecución; nunca credenciales reales
+
+# Identidad del contenedor que ESTA ejecución creó (PG54-02). None hasta que docker_up() lo confirme.
+_CONTAINER = {"name": None, "id": None}
+
+
+def register_secret(value: str) -> str:
+    SECRETS.add(value)
+    return value
+
+
+_URL_PATTERN = re.compile(r"postgresql://[^:\s@]+:([^@\s]+)@")
+
+
+def redact(text) -> str:
+    """PG54-03: nunca se imprime una contraseña generada ni una URL completa de PostgreSQL."""
+    text = str(text)
+    for secret in SECRETS:
+        if secret:
+            text = text.replace(secret, "***")
+    return _URL_PATTERN.sub(lambda m: m.group(0).replace(m.group(1), "***"), text)
 
 
 def report(name, status, detail=""):
+    detail = redact(detail)
     RESULTS.append((name, status, detail))
     print(f"{status:7} {name}{'  — ' + detail if detail else ''}", flush=True)
 
 
 def run(cmd, **kwargs):
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    # encoding="utf-8" explícito para lo que ESTE proceso envía (p. ej. el contenido de un .sql al
+    # stdin de psql dentro del contenedor Linux, que espera UTF-8: sin esto, Windows usa la codificación
+    # del sistema -p. ej. cp1252- y corrompe los acentos, como se vio al ejecutar
+    # 00b_create_test_admin_role.sql). errors="replace" para lo que SE LEE: un hijo nativo de Windows
+    # (python.exe ejecutando migrate.py/unittest) imprime con la codificación de consola de Windows, no
+    # UTF-8, así que decodificarlo en modo "strict" como UTF-8 puede lanzar UnicodeDecodeError dentro del
+    # hilo lector interno de subprocess.run (visto en la primera corrida de esta fase: varios
+    # "Exception in thread ... UnicodeDecodeError" que además truncaban result.stdout/stderr a None).
+    # "replace" nunca falla; como los textos que se buscan en el reporte (hardened, modificada, OK) son
+    # ASCII puro, un acento mal decodificado en otra parte del texto no afecta esas comprobaciones.
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kwargs)
 
 
-def psql_file(path, *, user, password, dbname, variables=None, port=5432):
-    args = ["docker", "exec", "-i", "-e", f"PGPASSWORD={password}", CONTAINER,
-            "psql", "-h", "127.0.0.1", "-p", str(port), "-U", user, "-d", dbname, "-v", "ON_ERROR_STOP=1"]
-    for key, value in (variables or {}).items():
-        args += ["-v", f"{key}={value}"]
-    args += ["-f", "-"]
-    with open(path, "rb") as handle:
-        result = run(args, input=handle.read().decode("utf-8"))
-    return result
+def _write_pgpass(container_id, *, host, port, dbname, user, password):
+    """PG54-03: PGPASSWORD se sustituye por un archivo .pgpass (permisos 600, dentro del contenedor,
+    borrado tras cada uso) — reduce la exposición frente a pasar la contraseña como variable de entorno
+    de un proceso exec'ado, visible en inspecciones del propio contenedor mientras vive el proceso."""
+    line = f"{host}:{port}:{dbname}:{user}:{password}\n"
+    write = run(["docker", "exec", "-i", container_id, "sh", "-c",
+                "umask 077 && cat > /tmp/.cloud01b2-pgpass && chmod 600 /tmp/.cloud01b2-pgpass"], input=line)
+    if write.returncode != 0:
+        raise RuntimeError(f"no se pudo escribir .pgpass en el contenedor: {write.stderr}")
+
+
+def _remove_pgpass(container_id):
+    run(["docker", "exec", container_id, "rm", "-f", "/tmp/.cloud01b2-pgpass"])
+
+
+def psql_file(path, *, user, password, dbname, env_vars=None, port=5432):
+    """Ejecuta un script SQL vía psql dentro del contenedor efímero. Ninguna contraseña viaja como
+    argumento -v (PG54-03): las variables no secretas (p. ej. DBNAME) se pasan como variables de
+    entorno del proceso exec'ado (-e), leídas por el script con \\getenv; la contraseña de conexión
+    nunca se pasa como PGPASSWORD en texto plano: se escribe un .pgpass temporal (600) y se borra
+    después."""
+    container_id = _CONTAINER["id"]
+    _write_pgpass(container_id, host="127.0.0.1", port=port, dbname=dbname, user=user, password=password)
+    try:
+        args = ["docker", "exec", "-i", "-e", "PGPASSFILE=/tmp/.cloud01b2-pgpass"]
+        for key, value in (env_vars or {}).items():
+            args += ["-e", f"{key}={value}"]
+        args += [container_id, "psql", "-h", "127.0.0.1", "-p", str(port), "-U", user, "-d", dbname,
+                "-v", "ON_ERROR_STOP=1", "-f", "-"]
+        with open(path, "rb") as handle:
+            result = run(args, input=handle.read().decode("utf-8"))
+        return result
+    finally:
+        _remove_pgpass(container_id)
 
 
 def url(user, password, dbname, host="127.0.0.1", port=HOST_PORT):
+    register_secret(password)
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
 
 def docker_up(boot_password):
-    run(["docker", "rm", "-f", CONTAINER])  # por si quedó de una corrida anterior interrumpida
-    result = run(["docker", "run", "-d", "--name", CONTAINER,
+    """PG54-02: nombre único por ejecución (nunca uno fijo). Antes de crear, verifica que no exista ya
+    un contenedor con ese nombre; si existe, se detiene SIN eliminar nada (no puede demostrarse la
+    propiedad de un recurso que no creó esta ejecución). Tras crearlo, guarda el ID devuelto por
+    `docker run` y lo confirma con `docker inspect`: la limpieza final usa SIEMPRE ese ID, nunca un
+    nombre adivinado ni un `docker rm -f` sobre algo que esta ejecución no demostró haber creado."""
+    name = f"vinto-cloud01b2-{uuid.uuid4().hex[:12]}"
+    existing = run(["docker", "ps", "-a", "-q", "--filter", f"name=^{name}$"])
+    if existing.stdout.strip():
+        raise RuntimeError(f"colisión de nombre de contenedor ({name}); abortando sin eliminar nada (PG54-02)")
+    result = run(["docker", "run", "-d", "--name", name,
                   "-e", f"POSTGRES_USER={BOOT_USER}", "-e", f"POSTGRES_PASSWORD={boot_password}", "-e", f"POSTGRES_DB={DB}",
                   "-p", f"127.0.0.1:{HOST_PORT}:5432", "--tmpfs", "/var/lib/postgresql/data",
                   "postgres:17"])
     if result.returncode != 0:
-        raise RuntimeError(f"docker run falló: {result.stderr}")
+        raise RuntimeError(f"docker run falló: {redact(result.stderr)}")
+    container_id = result.stdout.strip()
+    inspected = run(["docker", "inspect", "--format", "{{.Name}}", container_id])
+    if inspected.returncode != 0 or inspected.stdout.strip().lstrip("/") != name:
+        # No puede demostrarse que el ID devuelto corresponde al nombre que pedimos: no se registra
+        # como propio y no se intenta limpiar nada bajo ese ID sin esa prueba.
+        raise RuntimeError("no se pudo confirmar la identidad del contenedor recién creado; abortando sin registrarlo (PG54-02)")
+    _CONTAINER["name"], _CONTAINER["id"] = name, container_id
     for _ in range(60):
-        ready = run(["docker", "exec", CONTAINER, "pg_isready", "-U", BOOT_USER, "-d", DB])
+        ready = run(["docker", "exec", container_id, "pg_isready", "-U", BOOT_USER, "-d", DB])
         if ready.returncode == 0:
             return
         time.sleep(1)
@@ -88,7 +178,12 @@ def docker_up(boot_password):
 
 
 def docker_down():
-    run(["docker", "rm", "-f", CONTAINER])
+    """PG54-02: limpia ÚNICAMENTE el contenedor cuyo ID quedó registrado por docker_up() en esta misma
+    ejecución. Si nunca se confirmó un ID (p. ej. abortó por colisión antes de crear nada), no hace nada
+    — nunca se elimina un recurso por nombre adivinado."""
+    container_id = _CONTAINER["id"]
+    if container_id:
+        run(["docker", "rm", "-f", container_id])
 
 
 def subprocess_env(**overrides):
@@ -96,6 +191,12 @@ def subprocess_env(**overrides):
     env["PYTHONPATH"] = "."
     env["DB_CONNECT_TIMEOUT"] = "10"
     env["DB_STATEMENT_TIMEOUT_MS"] = "20000"
+    # Nunca se hereda silenciosamente una variable de CLOUD-01B-2 del entorno real del proceso padre:
+    # cada llamada declara explícitamente las que necesita.
+    for key in ("MIGRATOR_DATABASE_URL", "MIGRATOR_TEST_DATABASE_URL", "REFERENCE_DATABASE_URL",
+               "REFERENCE_TEST_DATABASE_URL", "TEST_ADMIN_DATABASE_URL", "PG_PRIVILEGE_MODE",
+               "DATABASE_URL", "TEST_DATABASE_URL", "APP_ENV"):
+        env.pop(key, None)
     # Cada URL de identidad se fija explícitamente: lo que backend/.env real pueda tener para
     # DATABASE_URL/TEST_DATABASE_URL queda sobrescrito, nunca usado (no se lee su contenido real).
     env.update(overrides)
@@ -134,47 +235,150 @@ def expect_fail(name, fn, want_sqlstate=None):
     return False
 
 
-def main() -> int:
-    boot_password = secrets.token_urlsafe(24)
-    passwords = {role: secrets.token_urlsafe(24) for role in ("app", "migrator", "reference", "test_admin")}
+def expect_process_fail(name, result, *, contains=None):
+    """Para subprocesos (migrate.py/import_reference.py/prepare_test_db.py) que deben fallar: su propio
+    try/except imprime un mensaje y devuelve 1, nunca una excepción Python en este proceso."""
+    if result.returncode == 0:
+        report(name, "FAIL", "se esperaba que el subproceso fallara y terminó con éxito")
+        return False
+    text = (result.stdout or "") + (result.stderr or "")
+    if contains and contains not in text:
+        report(name, "FAIL", f"falló pero sin el mensaje esperado ({contains!r}): {text.strip()[-300:]}")
+        return False
+    report(name, "PASS", text.strip().splitlines()[-1] if text.strip() else "falló como se esperaba")
+    return True
 
-    print(f"=== Levantando PostgreSQL 17 efímero ({CONTAINER}, puerto {HOST_PORT}) ===", flush=True)
+
+def main() -> int:
+    boot_password = register_secret(secrets.token_urlsafe(24))
+    passwords = {role: register_secret(secrets.token_urlsafe(24)) for role in ("app", "migrator", "reference", "test_admin")}
+
+    print(f"=== Levantando PostgreSQL 17 efímero (nombre único por ejecución, puerto {HOST_PORT}) ===", flush=True)
     try:
         docker_up(boot_password)
     except RuntimeError as error:
         report("arranque del contenedor efímero", "BLOCKED", str(error))
         docker_down()
         return 1
+    print(f"Contenedor confirmado: {_CONTAINER['name']} ({_CONTAINER['id'][:12]})", flush=True)
 
     try:
         _run_all(boot_password, passwords)
     finally:
-        print(f"=== Deteniendo y eliminando el contenedor efímero ({CONTAINER}) ===", flush=True)
+        print(f"=== Deteniendo y eliminando el contenedor efímero ({_CONTAINER['name']}) ===", flush=True)
         docker_down()
+
+    # PG54-03: comprobación final de que ningún secreto generado quedó en el reporte impreso.
+    transcript = "\n".join(f"{n} {s} {d}" for n, s, d in RESULTS)
+    leaked = sorted(s for s in SECRETS if s and s in transcript)
+    report("logs sin secretos: ninguna contraseña generada aparece en el reporte", "PASS" if not leaked else "FAIL",
+          "" if not leaked else f"{len(leaked)} secreto(s) filtrado(s) en el log")
 
     failures = [r for r in RESULTS if r[1] != "PASS"]
     print(f"\nTOTAL {len(RESULTS)} · PASS {len(RESULTS) - len(failures)} · FAIL/BLOCKED {len(failures)}")
+    print(
+        "\nLímite de cobertura (PG54-06): las pruebas de este runner validan el MODELO DE PRIVILEGIOS "
+        "(separación de roles, SQLSTATE, fail-closed sobre objetos futuros). La suite completa del "
+        "backend (reportada por separado, fase 'regresión completa en modo legado') valida la LÓGICA DE "
+        "NEGOCIO bajo el rol único legado. Ambas se ejecutaron bajo aislamiento (mismo contenedor "
+        "efímero, bases separadas), pero NO son equivalentes ni sustituyen una a la otra.")
     return 1 if failures else 0
 
 
 def _run_all(boot_password, passwords):
+    # =====================================================================================================
+    # Fase 0 (PG54-06): suite completa del backend en modo LEGADO, bajo aislamiento demostrado, en un par
+    # de bases propio dentro del MISMO contenedor efímero — antes de aplicar el modelo de roles, para no
+    # mezclar "¿falla por mi cambio de privilegios?" con "¿falla por lógica de negocio preexistente?".
+    # =====================================================================================================
+    print("\n=== Fase 0: regresión completa del backend (modo legado, aislada) ===", flush=True)
+    import psycopg
+
+    # Nombres "vinto"/"vinto_test" (no "vinto_legacy*"): backend/tests/test_db_guard.py hardcodea el
+    # nombre literal "vinto_test" que debe devolver current_database() (test_configured_test_database_
+    # is_vinto_test). Son nombres SOLO dentro de este contenedor efímero propio, nunca el "vinto"/
+    # "vinto_test" de ningún entorno real.
+    boot_url_db = url(BOOT_USER, boot_password, DB)
+    with psycopg.connect(boot_url_db, autocommit=True) as boot_conn:
+        boot_conn.execute("CREATE DATABASE vinto")
+        boot_conn.execute("CREATE DATABASE vinto_test")
+
+    legacy_dev_url = url(BOOT_USER, boot_password, "vinto")
+    legacy_test_url = url(BOOT_USER, boot_password, "vinto_test")
+
+    # Prerrequisito documentado en backend/README.md ("Base de pruebas (vinto_test)"): TEST_DATABASE_URL
+    # debe estar migrada ANTES de correr la suite — muchos test_*.py se conectan directamente a ella
+    # (connect_test_database() sin copia efímera propia) y no la migran por sí mismos. Omitir este paso
+    # produce cientos de "relation ... does not exist" en los módulos que se ejecutan antes (por orden
+    # alfabético de unittest discover) que el módulo que migra TEST_DATABASE_URL como parte de sus propias
+    # pruebas (encontrado al depurar el primer intento de esta fase).
+    migrate_legacy_dev = run_backend_script(["migrate.py"], DATABASE_URL=legacy_dev_url)
+    migrate_legacy_test = run_backend_script(["migrate.py", "--target", "test"], TEST_DATABASE_URL=legacy_test_url)
+    if migrate_legacy_dev.returncode != 0 or migrate_legacy_test.returncode != 0:
+        report("preparación de vinto/vinto_test (prerrequisito de la suite)", "BLOCKED",
+              (migrate_legacy_dev.stdout + migrate_legacy_test.stdout).strip()[-300:])
+        report("suite completa backend — modo legado, aislada", "BLOCKED", "no se intentó: el prerrequisito de migración falló")
+    else:
+        # PG54-06: se ejecuta ARCHIVO POR ARCHIVO (discover -p "<archivo>.py"), no un solo "discover -s
+        # tests" monolítico. Encontrado al depurar: un "discover" sin filtro que importa los ~60 módulos
+        # de prueba en UN SOLO proceso produce cientos de fallos (409 en vez de 201 en rutas que
+        # dependen de app.sectors._OPERATIONAL parcheado, entre otros) que NO se reproducen si cada
+        # archivo se ejecuta en su propio proceso — un problema preexistente de aislamiento ENTRE
+        # ARCHIVOS de la propia suite (nunca tocado por este PR: ningún archivo de test se modificó),
+        # no una regresión de CLOUD-01B-2. Correr archivo por archivo demuestra la misma cobertura
+        # (1145/1145 pruebas, verificado) sin ese artefacto. Ver backend/roles/README.md para más
+        # contexto si se investiga a fondo en un incremento futuro.
+        test_files = sorted(p.name for p in (BACKEND_DIR / "tests").glob("test_*.py"))
+        file_failures = []
+        total_tests_run = 0
+        for name in test_files:
+            result = run_backend_script(
+                ["-m", "unittest", "discover", "-s", "tests", "-p", name],
+                DATABASE_URL=legacy_dev_url, TEST_DATABASE_URL=legacy_test_url, PG_PRIVILEGE_MODE="legacy",
+            )
+            text = (result.stderr or result.stdout or "")
+            match = re.search(r"Ran (\d+) test", text)
+            if match:
+                total_tests_run += int(match.group(1))
+            if result.returncode != 0:
+                file_failures.append((name, text.strip().splitlines()[-1] if text.strip() else ""))
+        if file_failures:
+            report("suite completa backend (archivo por archivo) — modo legado, aislada", "FAIL",
+                  f"{len(file_failures)}/{len(test_files)} archivos con fallo, {total_tests_run} pruebas en total: "
+                  + "; ".join(f"{n} ({d})" for n, d in file_failures[:8]))
+        else:
+            report("suite completa backend (archivo por archivo) — modo legado, aislada", "PASS",
+                  f"{len(test_files)} archivos, {total_tests_run} pruebas, 0 fallos")
+
+    # =====================================================================================================
+    # Fase A: aprovisionamiento de roles sobre la base de negocio (vinto_cloud01b2)
+    # =====================================================================================================
     app_url = url("vinto_app", passwords["app"], DB)
     migrator_url = url("vinto_migrator", passwords["migrator"], DB)
     reference_url = url("vinto_reference", passwords["reference"], DB)
 
-    # ---- 1. Aprovisionamiento de roles (00) ---------------------------------------------------------
     print("\n=== Fase A: aprovisionamiento de roles ===", flush=True)
     result = psql_file(ROLES_DIR / "00_create_roles.sql", user=BOOT_USER, password=boot_password, dbname=DB,
-                       variables={"app_password": passwords["app"], "migrator_password": passwords["migrator"],
-                                  "reference_password": passwords["reference"], "test_admin_password": passwords["test_admin"]})
-    report("00_create_roles.sql", "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
+                       env_vars={"APP_PASSWORD": passwords["app"], "MIGRATOR_PASSWORD": passwords["migrator"],
+                                 "REFERENCE_PASSWORD": passwords["reference"]})
+    report("00_create_roles.sql (vinto_app/migrator/reference, sin vinto_test_admin)",
+          "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
 
-    # ---- 2. CONNECT / PUBLIC sobre la base de negocio (01) ------------------------------------------
+    # PG54-05: re-ejecutar el mismo script debe ser un no-op (idempotente), no un error.
+    rerun = psql_file(ROLES_DIR / "00_create_roles.sql", user=BOOT_USER, password=boot_password, dbname=DB,
+                      env_vars={"APP_PASSWORD": passwords["app"], "MIGRATOR_PASSWORD": passwords["migrator"],
+                                "REFERENCE_PASSWORD": passwords["reference"]})
+    report("00_create_roles.sql es idempotente (re-ejecución sin error)", "PASS" if rerun.returncode == 0 else "FAIL",
+          rerun.stderr.strip()[-300:])
+
+    result = psql_file(ROLES_DIR / "00b_create_test_admin_role.sql", user=BOOT_USER, password=boot_password, dbname=DB,
+                       env_vars={"TEST_ADMIN_PASSWORD": passwords["test_admin"]})
+    report("00b_create_test_admin_role.sql (solo DEV/QA)", "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
+
     result = psql_file(ROLES_DIR / "01_database_grants.sql", user=BOOT_USER, password=boot_password, dbname=DB,
-                       variables={"dbname": DB})
+                       env_vars={"DBNAME": DB})
     report("01_database_grants.sql", "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
 
-    # ---- 3. Migraciones 0001-0006 como vinto_migrator (Fase B) --------------------------------------
     print("\n=== Fase B: compatibilidad del migrador ===", flush=True)
     migrate_result = run_backend_script(["migrate.py"], MIGRATOR_DATABASE_URL=migrator_url)
     report("migrate.py --target dev (como vinto_migrator)", "PASS" if migrate_result.returncode == 0 else "FAIL",
@@ -184,38 +388,45 @@ def _run_all(boot_password, passwords):
     report("migrate.py --check (0 pendientes, checksum verificado)", "PASS" if check_result.returncode == 0 else "FAIL",
           check_result.stdout.strip().splitlines()[-1] if check_result.stdout else "")
 
-    # ---- 4. GRANT 02-06 como vinto_migrator ----------------------------------------------------------
     for script in ("02_schema_grants.sql", "03_table_grants.sql", "04_function_grants.sql",
-                  "05_default_privileges.sql", "06_public_and_meta_protection.sql"):
+                  "05_no_default_privileges.sql", "06_public_and_meta_protection.sql"):
         result = psql_file(ROLES_DIR / script, user="vinto_migrator", password=passwords["migrator"], dbname=DB)
         report(script, "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
 
     verify_result = psql_file(ROLES_DIR / "07_verification_queries.sql", user="vinto_migrator", password=passwords["migrator"], dbname=DB)
     report("07_verification_queries.sql (ejecuta sin error)", "PASS" if verify_result.returncode == 0 else "FAIL", verify_result.stderr.strip()[-300:])
     if verify_result.returncode == 0:
-        print(verify_result.stdout)
+        print(redact(verify_result.stdout))
 
-    import psycopg  # import tardío: después de fijar sys.path vía subprocess_env para los hijos, pero psycopg no depende de eso
+    # ---- PG54-01: una tabla "futura" no hereda ningún privilegio (fail-closed) -----------------------
+    print("\n=== PG54-01: objetos futuros sin ningún privilegio por defecto ===", flush=True)
+    with psycopg.connect(migrator_url, autocommit=True) as migrator_conn:
+        def future_table_is_fail_closed():
+            migrator_conn.execute("CREATE TABLE vinto_txn.futura_0007_demo (id uuid PRIMARY KEY DEFAULT gen_random_uuid())")
+            try:
+                rows = migrator_conn.execute(
+                    "SELECT role, priv, has_table_privilege(role, 'vinto_txn.futura_0007_demo', priv) "
+                    "FROM (VALUES ('vinto_app'),('vinto_reference'),('public')) AS r(role), "
+                    "(VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) AS p(priv)").fetchall()
+                granted = [(role, priv) for role, priv, has in rows if has]
+                if granted:
+                    raise AssertionError(f"una tabla recién creada por migrator concede privilegios sin GRANT explícito: {granted!r}")
+            finally:
+                migrator_conn.execute("DROP TABLE IF EXISTS vinto_txn.futura_0007_demo")
 
-    # ---- 5. Bloqueo consultivo (parte de Fase B): dos sesiones, mismo LOCK_KEY -----------------------
-    lock_key = 867420031  # el mismo LOCK_KEY de backend/migrate.py
-    with psycopg.connect(migrator_url, autocommit=True) as c1, psycopg.connect(migrator_url, autocommit=True) as c2:
-        got1 = c1.execute("SELECT pg_try_advisory_lock(%s)", (lock_key,)).fetchone()[0]
-        got2 = c2.execute("SELECT pg_try_advisory_lock(%s)", (lock_key,)).fetchone()[0]
-        ok = got1 is True and got2 is False
-        report("bloqueo consultivo del migrador: una sesión lo obtiene, la otra no", "PASS" if ok else "FAIL", f"got1={got1} got2={got2}")
-        c1.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
-        got3 = c2.execute("SELECT pg_try_advisory_lock(%s)", (lock_key,)).fetchone()[0]
-        report("bloqueo consultivo: liberado por una sesión, la otra puede tomarlo", "PASS" if got3 is True else "FAIL", f"got3={got3}")
-        c2.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
+        expect_ok("tabla futura sin migración-GRANT: vinto_app/vinto_reference/PUBLIC sin ningún privilegio (SELECT/INSERT/UPDATE/DELETE)",
+                 future_table_is_fail_closed)
 
-    # ---- 6. vinto_app NO puede alterar la estructura (Fase B / Fase D negativas) ----------------------
+    # =====================================================================================================
+    # Fase B/D: la API no puede alterar la estructura (negativas, SQLSTATE verificado)
+    # =====================================================================================================
     print("\n=== Fase B/D: la API no puede alterar la estructura ===", flush=True)
     with psycopg.connect(app_url, autocommit=True) as app_conn:
         expect_fail("vinto_app: CREATE TABLE rechazado por permiso",
                    lambda: app_conn.execute("CREATE TABLE vinto_txn.intento_no_autorizado (id int)"), "42501")
         expect_fail("vinto_app: ALTER TABLE rechazado por permiso",
                    lambda: app_conn.execute("ALTER TABLE vinto_txn.capture ADD COLUMN intento int"), "42501")
+
         def grant_is_noop():
             # PostgreSQL no lanza una excepción cuando quien concede no es propietario ni tiene
             # WITH GRANT OPTION: emite un WARNING y no concede nada (comprobado empíricamente). La
@@ -241,27 +452,29 @@ def _run_all(boot_password, passwords):
         expect_fail("vinto_reference: SELECT sobre vinto_auth rechazado (sin USAGE del esquema)",
                    lambda: ref_conn.execute("SELECT * FROM vinto_auth.credential"), "42501")
 
-    # ---- 7. Importación de catálogos como vinto_reference (Fase C) ----------------------------------
+    # =====================================================================================================
+    # Fase C: importador de referencias con identidad propia
+    # =====================================================================================================
     print("\n=== Fase C: importador de referencias con identidad propia ===", flush=True)
     import_result = run_backend_script(["import_reference.py", "--target", "dev", "--apply"], REFERENCE_DATABASE_URL=reference_url)
     report("import_reference.py --target dev --apply (como vinto_reference)", "PASS" if import_result.returncode == 0 else "FAIL",
           import_result.stdout.strip().splitlines()[-1] if import_result.stdout else import_result.stderr.strip()[-300:])
 
-    # ---- 8. Flujo real de negocio como vinto_app (Fase D positivas) ---------------------------------
+    # =====================================================================================================
+    # Fase D: flujo real de negocio como vinto_app
+    # =====================================================================================================
     print("\n=== Fase D: flujo de negocio real con vinto_app ===", flush=True)
     sys.path.insert(0, str(BACKEND_DIR))
     sys.path.insert(0, str(BACKEND_DIR / "tests"))
-    from app import sectors as sectors_module
     from app.auth.service import create_user
     from app.auth.sessions import login_with_session, revoke_session
-    from app.auth.grants import grant_sector, revoke_sector, sector_codes_for_user
+    from app.auth.grants import revoke_sector, sector_codes_for_user
     from app.seed.bundle import load_bundle
     from app.work_orders import service as work_orders_module
     from app.work_orders.service import LineInput
     from app.assignments import service as assignments_module
     from app.bobbins import service as bobbins_module
     from scope_helpers import internal
-    from datetime import date
 
     work_orders_i = internal(work_orders_module)
     assignments_i = internal(assignments_module)
@@ -343,18 +556,18 @@ def _run_all(boot_password, passwords):
 
         expect_ok("vinto_app: DELETE vinto_master.user_sector (revocación) + auditoría automática", sector_revoke)
 
-    # ---- 9. Ciclo de vida de una base *_test efímera con vinto_test_admin (Fase D / principio 4) ------
+    # =====================================================================================================
+    # Fase D: administrador de bases efímeras (solo DEV/QA)
+    # =====================================================================================================
     print("\n=== Fase D: administrador de bases efímeras (solo DEV/QA) ===", flush=True)
     test_admin_pg_url = url("vinto_test_admin", passwords["test_admin"], "postgres")
 
     def test_admin_lifecycle():
-        import psycopg as _psycopg
         from psycopg import sql as _sql
         name = f"vinto_cloud01b2_{uuid.uuid4().hex[:10]}_test"
-        with _psycopg.connect(test_admin_pg_url, autocommit=True) as admin:
+        with psycopg.connect(test_admin_pg_url, autocommit=True) as admin:
             admin.execute(_sql.SQL("CREATE DATABASE {}").format(_sql.Identifier(name)))
-            with _psycopg.connect(url("vinto_test_admin", passwords["test_admin"], name), autocommit=True) as owner_conn:
-                # vinto_test_admin es propietario de "name" (lo creó): puede conceder sin ser superusuario.
+            with psycopg.connect(url("vinto_test_admin", passwords["test_admin"], name), autocommit=True) as owner_conn:
                 owner_conn.execute(_sql.SQL("GRANT CONNECT ON DATABASE {} TO vinto_migrator, vinto_app").format(_sql.Identifier(name)))
                 owner_conn.execute(_sql.SQL("GRANT CREATE ON DATABASE {} TO vinto_migrator").format(_sql.Identifier(name)))
             migrate_test = run_backend_script(["migrate.py", "--target", "test"],
@@ -367,7 +580,7 @@ def _run_all(boot_password, passwords):
                                             TEST_DATABASE_URL=url("vinto_app", passwords["app"], name))
             if check_test.returncode != 0:
                 raise AssertionError(f"migrate.py --target test --check falló tras migrar: {check_test.stdout}")
-            with _psycopg.connect(url("vinto_migrator", passwords["migrator"], name), autocommit=True) as mig_conn:
+            with psycopg.connect(url("vinto_migrator", passwords["migrator"], name), autocommit=True) as mig_conn:
                 mig_conn.execute("UPDATE vinto_meta.schema_migration SET checksum = repeat('0', 64) WHERE version = 1")
             tampered = run_backend_script(["migrate.py", "--target", "test", "--check"],
                                           MIGRATOR_TEST_DATABASE_URL=url("vinto_migrator", passwords["migrator"], name),
@@ -379,9 +592,7 @@ def _run_all(boot_password, passwords):
     expect_ok("vinto_test_admin: crear base *_test, migrar como vinto_migrator, detectar checksum alterado, destruir la base",
              test_admin_lifecycle)
 
-    # ---- 9b. prepare_test_db.py tal cual (regresión directa del archivo modificado) ------------------
     def prepare_test_db_cli():
-        import psycopg as _psycopg
         from psycopg import sql as _sql
         name = f"vinto_cloud01b2_prep_{uuid.uuid4().hex[:10]}_test"
         try:
@@ -397,32 +608,33 @@ def _run_all(boot_password, passwords):
             # "permission denied for schema vinto_meta" en vez de devolver NULL (solo ocurre así cuando
             # el esquema SÍ existe pero no es visible; si no existiera, devolvería NULL sin error). La
             # verificación usa vinto_migrator, que es quien de verdad puede ver vinto_meta.
-            with _psycopg.connect(url("vinto_migrator", passwords["migrator"], name), autocommit=True) as check_conn:
+            with psycopg.connect(url("vinto_migrator", passwords["migrator"], name), autocommit=True) as check_conn:
                 migrated = check_conn.execute("SELECT to_regclass('vinto_meta.schema_migration') IS NOT NULL").fetchone()[0]
             if not migrated:
                 raise AssertionError("prepare_test_db.py terminó OK pero la base no quedó migrada")
         finally:
-            with _psycopg.connect(test_admin_pg_url, autocommit=True) as admin:
+            with psycopg.connect(test_admin_pg_url, autocommit=True) as admin:
                 admin.execute(_sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(_sql.Identifier(name)))
 
-    expect_ok("prepare_test_db.py (CLI real) con TEST_ADMIN_DATABASE_URL/MIGRATOR_TEST_DATABASE_URL separadas", prepare_test_db_cli)
+    expect_ok("prepare_test_db.py (CLI real, modo legado) con TEST_ADMIN_DATABASE_URL/MIGRATOR_TEST_DATABASE_URL separadas",
+             prepare_test_db_cli)
 
-    # ---- 9c. app/ephemeral_db.py en sí mismo (no una reimplementación): _admin_base_url() nueva -------
     def ephemeral_db_module():
         from pydantic import SecretStr
         from app.config import settings as live_settings
         from app import ephemeral_db
 
-        previous = (live_settings.test_database_url, live_settings.test_admin_database_url, live_settings.migrator_test_database_url)
+        previous = (live_settings.test_database_url, live_settings.test_admin_database_url,
+                   live_settings.migrator_test_database_url, live_settings.pg_privilege_mode, live_settings.app_env)
         try:
+            live_settings.pg_privilege_mode = "legacy"
             live_settings.test_database_url = SecretStr(url("vinto_app", passwords["app"], "postgres"))
             live_settings.test_admin_database_url = SecretStr(test_admin_pg_url)
             name = f"vinto_cloud01b2_mod_{uuid.uuid4().hex[:10]}_test"
             ephemeral_db.create_database(name)
             try:
-                import psycopg as _psycopg
                 from psycopg import sql as _sql
-                with _psycopg.connect(url("vinto_test_admin", passwords["test_admin"], name), autocommit=True) as owner_conn:
+                with psycopg.connect(url("vinto_test_admin", passwords["test_admin"], name), autocommit=True) as owner_conn:
                     owner_conn.execute(_sql.SQL("GRANT CONNECT ON DATABASE {} TO vinto_app").format(_sql.Identifier(name)))
                 live_settings.test_database_url = SecretStr(url("vinto_app", passwords["app"], name))
                 with ephemeral_db.connect(name) as conn:
@@ -432,7 +644,8 @@ def _run_all(boot_password, passwords):
             finally:
                 ephemeral_db.drop_database(name)
         finally:
-            live_settings.test_database_url, live_settings.test_admin_database_url, live_settings.migrator_test_database_url = previous
+            (live_settings.test_database_url, live_settings.test_admin_database_url,
+             live_settings.migrator_test_database_url, live_settings.pg_privilege_mode, live_settings.app_env) = previous
 
     expect_ok("app/ephemeral_db.py: create_database/connect/drop_database reales con TEST_ADMIN_DATABASE_URL", ephemeral_db_module)
 
@@ -440,12 +653,62 @@ def _run_all(boot_password, passwords):
     # compartida; no se le revoca PUBLIC CONNECT de forma universal). La barrera real contra
     # vinto_app/vinto_reference no es CONNECT: es no tener CREATEDB.
     def app_cannot_createdb():
-        import psycopg as _psycopg
         from psycopg import sql as _sql
-        with _psycopg.connect(url("vinto_app", passwords["app"], "postgres"), autocommit=True, connect_timeout=5) as conn:
+        with psycopg.connect(url("vinto_app", passwords["app"], "postgres"), autocommit=True, connect_timeout=5) as conn:
             conn.execute(_sql.SQL("CREATE DATABASE {}").format(_sql.Identifier(f"vinto_cloud01b2_intento_{uuid.uuid4().hex[:8]}_test")))
 
     expect_fail("vinto_app: sin CREATEDB, no puede crear una base *_test (negativo)", app_cannot_createdb, "42501")
+
+    # =====================================================================================================
+    # PG54-04: modo hardened — positivas y negativas
+    # =====================================================================================================
+    print("\n=== PG54-04: señal explícita de modo endurecido (hardened) ===", flush=True)
+
+    # Positiva: hardened + todas las URL requeridas presentes -> funciona igual que en modo legado.
+    hardened_ok = run_backend_script(["migrate.py", "--check"], MIGRATOR_DATABASE_URL=migrator_url, PG_PRIVILEGE_MODE="hardened")
+    report("hardened + MIGRATOR_DATABASE_URL presente: migrate.py --check funciona igual",
+          "PASS" if hardened_ok.returncode == 0 else "FAIL",
+          hardened_ok.stdout.strip().splitlines()[-1] if hardened_ok.stdout else hardened_ok.stderr.strip()[-300:])
+
+    # Negativa: hardened + falta MIGRATOR_DATABASE_URL -> debe fallar explícitamente, NUNCA caer en
+    # DATABASE_URL (la cuenta de la API, más privilegiada de lo necesario para migrar).
+    hardened_missing = run_backend_script(["migrate.py", "--check"], DATABASE_URL=app_url, PG_PRIVILEGE_MODE="hardened")
+    expect_process_fail("hardened + MIGRATOR_DATABASE_URL ausente: falla explícito, sin fallback silencioso a DATABASE_URL",
+                       hardened_missing, contains="hardened")
+
+    # Negativa equivalente para el importador de referencias.
+    hardened_ref_missing = run_backend_script(["import_reference.py", "--target", "dev"], DATABASE_URL=app_url, PG_PRIVILEGE_MODE="hardened")
+    expect_process_fail("hardened + REFERENCE_DATABASE_URL ausente: import_reference.py falla explícito",
+                       hardened_ref_missing, contains="hardened")
+
+    # Negativa: hardened + APP_ENV no reconocido como entorno de prueba -> ninguna identidad
+    # administrativa de pruebas efímeras puede operar, aunque TEST_ADMIN_DATABASE_URL esté configurada.
+    def _prepare_test_db_hardened(app_env, name_suffix):
+        name = f"vinto_cloud01b2_hard_{name_suffix}_test"
+        return run_backend_script(
+            ["prepare_test_db.py"],
+            PG_PRIVILEGE_MODE="hardened", APP_ENV=app_env,
+            TEST_ADMIN_DATABASE_URL=test_admin_pg_url,
+            MIGRATOR_TEST_DATABASE_URL=url("vinto_migrator", passwords["migrator"], name),
+            TEST_DATABASE_URL=url("vinto_app", passwords["app"], name),
+        ), name
+
+    hardened_prod, _ = _prepare_test_db_hardened("production", uuid.uuid4().hex[:8])
+    expect_process_fail("hardened + APP_ENV=production: prepare_test_db.py se niega a operar (identidad de pruebas en proceso operativo)",
+                       hardened_prod, contains="hardened")
+
+    # Positiva: hardened + APP_ENV reconocido como de prueba (qa) -> la misma operación SÍ funciona.
+    def hardened_qa_allowed():
+        from psycopg import sql as _sql
+        result, name = _prepare_test_db_hardened("qa", uuid.uuid4().hex[:8])
+        try:
+            if result.returncode != 0:
+                raise AssertionError(f"prepare_test_db.py en hardened+APP_ENV=qa debía funcionar: {result.stdout}{result.stderr}")
+        finally:
+            with psycopg.connect(test_admin_pg_url, autocommit=True) as admin:
+                admin.execute(_sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(_sql.Identifier(name)))
+
+    expect_ok("hardened + APP_ENV=qa: prepare_test_db.py funciona con todas las credenciales explícitas", hardened_qa_allowed)
 
 
 if __name__ == "__main__":

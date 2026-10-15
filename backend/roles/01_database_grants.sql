@@ -1,8 +1,11 @@
 -- CLOUD-01B-2: CONNECT/TEMPORARY sobre la base de negocio y protección frente a PUBLIC.
 --
 -- Ejecuta este archivo el administrador del clúster, conectado a la base de negocio objetivo
--- (dev/qa/operativa o la base efímera de prueba). Requiere pasar :dbname, por ejemplo:
---   psql -v dbname=vinto_cloud01b2 -f 01_database_grants.sql -d vinto_cloud01b2
+-- (dev/qa/operativa o la base efímera de prueba). El nombre de la base se lee de la variable de entorno
+-- DBNAME (PG54-03: ningún valor se pasa como argumento -v en la línea de comandos, visible en la lista
+-- de procesos; dbname no es un secreto, pero se mantiene el mismo mecanismo que el resto de scripts por
+-- consistencia), por ejemplo:
+--   DBNAME=vinto_cloud01b2 psql -f 01_database_grants.sql -d vinto_cloud01b2
 --
 -- OBS-PG-03 / principio 8: se revoca explícitamente el CONNECT que PostgreSQL concede a PUBLIC por
 -- defecto sobre cualquier base nueva, y se concede solo a los 3 roles que de verdad necesitan conectarse
@@ -11,6 +14,10 @@
 
 \set ON_ERROR_STOP on
 
+\getenv dbname DBNAME
+
+-- :"dbname" (sustitución de identificador de psql) funciona en una sentencia SQL normal; a diferencia de
+-- un bloque DO $$...$$, aquí NO hay quoting de dólar que la oculte, así que no hace falta EXECUTE/format.
 REVOKE CONNECT, TEMPORARY ON DATABASE :"dbname" FROM PUBLIC;
 
 GRANT CONNECT ON DATABASE :"dbname" TO vinto_app, vinto_migrator, vinto_reference;

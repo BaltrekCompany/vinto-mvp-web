@@ -176,7 +176,11 @@ del clúster, nunca como una migración numerada. Dos razones:
 **Toda migración `0007` en adelante que agregue una tabla que la API (`vinto_app`) o el importador de
 referencias (`vinto_reference`) deban leer o escribir DEBE incluir, al final del mismo archivo `.sql`,
 sus propios `GRANT` explícitos** (por ejemplo `GRANT SELECT, INSERT, UPDATE ON vinto_txn.tabla_nueva TO
-vinto_app;`). No existe ningún `GRANT`/`ALTER DEFAULT PRIVILEGES` que otorgue escritura automática sobre
-tablas futuras: el privilegio por defecto para una tabla nueva es `SELECT` únicamente (ver
-`backend/roles/05_default_privileges.sql`); sin un `GRANT` explícito en la migración, la tabla queda
-legible pero no escribible por la API hasta que se corrija.
+vinto_app;`). **El modelo es fail-closed: no existe ningún `GRANT`/`ALTER DEFAULT PRIVILEGES` que otorgue
+nada —ni siquiera `SELECT`— sobre tablas futuras** (corregido en PG54-01 tras la auditoría del PR #54; la
+versión anterior de este documento concedía `SELECT` por defecto, lo que la auditoría señaló como una
+concesión automática indebida). Ver `backend/roles/05_no_default_privileges.sql`: una tabla nueva nace
+completamente inaccesible para `vinto_app`/`vinto_reference` hasta que la migración que la crea declara
+explícitamente, uno por uno, los privilegios exactos que necesita. Olvidar el `GRANT` no hace que la API
+funcione a medias (lectura sin escritura): la hace fallar de inmediato con `insufficient_privilege` en
+cualquier intento de uso, lo que se detecta en la primera prueba, no en producción.
