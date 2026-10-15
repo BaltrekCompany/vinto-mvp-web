@@ -478,8 +478,12 @@ const q19bad = [await status(cal, "POST", `/api/quality/bobbins/${ctx.bobbin.MP3
 check("R8 P1-19: mismo capture_id con otros valores = 409; valor inválido, bobina inexistente y formulario desconocido se rechazan (4xx) sin crear capturas", q19c.status === 409 && q19bad.every((s) => s >= 400 && s < 500) && rows(`SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id IN ('${ctx.bobbin.MP1.id}','${ctx.bobbin.MP3.id}')`)[0] === "2", `${q19c.status} ${q19bad.join(",")}`, "http");
 
 // ============================================================ Roles en la interfaz, Rebobinado/Conversión y E10 · Seguimiento saneado
+// INT-02A · bytes LEGACY de un uso anterior del navegador (vinto-ot / vinto-asg / vinto-p1-records) sembrados antes de navegar: la aplicación no debe leerlos para mostrarlos, borrarlos, migrarlos ni sobrescribirlos.
+const LEGACY_LS = { "vinto-ot": JSON.stringify([{ id: "OT-LEGACY-E2E-INT02A", sector: "Bobinas", machine: "MP1", status: "Publicada", baseline: 1, lines: [] }]), "vinto-asg": JSON.stringify([{ id: "ASG-LEGACY-E2E-INT02A", ot: "OT-LEGACY-E2E-INT02A" }]),
+  "vinto-p1-records": JSON.stringify([{ id: "REG-LEGACY-E2E-INT02A", formName: "Registro legacy E2E", machine: "MP1", values: {} }]) };
 await browser("ops-ui", {}, async (b) => {
   await loginApp(b, "operacion");
+  await b.js(`(() => { const d = ${JSON.stringify(LEGACY_LS)}; for (const k of Object.keys(d)) localStorage.setItem(k, d[k]); return true; })()`);
   await nav(b, "Calidad"); await b.waitFor("document.body.innerText.includes('Calidad ·')", "front Calidad", 15000); await goModule(b, "Ejecución", "Calidad ·");
   check("E09.11 Operación en el front Calidad: sin acceso al inbox y sin acciones de Calidad", (await b.text()).includes("Tu perfil no tiene acceso al inbox de Calidad") && !(await b.text()).includes("Registrar humedad"));
   for (const [front, marker] of [["Rebobinado", "Rebobinado no está habilitado"], ["Conversión", "no está habilitado"]]) {
@@ -498,24 +502,36 @@ await browser("ops-ui", {}, async (b) => {
   await b.shot("e10-seguimiento-bobinas.png");
   check("E10.1 Seguimiento de Bobinas no muestra la bobina ficticia BM-2609-001 ni liberaciones/rechazos ficticios", !t.includes("BM-2609-001") && !/\bLiberada\b|\bRechazada\b/.test(t) && !/Liberar|Rechazar/.test(t), "");
   check("E10.2 «Bobinas liberadas» figura como funcionalidad pendiente (no como un cero) y la genealogía como pendiente", t.includes("Funcionalidad pendiente") && /Bobinas liberadas[\s\S]{0,40}Funcionalidad pendiente/.test(t) && !/Bobinas liberadas\s*0/.test(t));
-  check("E10.3 los conteos central y local están diferenciados: «Registros centrales» coincide con la API y el local se rotula como de este navegador y sin sumarse", t.includes("Registros centrales") && centralValue.includes(String(countApi.json?.count)) && /Registros locales \(este navegador\): \d+\. No representan la producción central de Bobinas ni se suman al conteo central/.test(t), `central=${centralValue.join("/")} api=${countApi.json?.count}`);
+  check("E10.3 INT-02A: «Registros centrales» coincide con la API y no existe ningún conteo local ni mención de registros del navegador", t.includes("Registros centrales") && centralValue.includes(String(countApi.json?.count)) && !/Registros locales|este navegador/.test(t), `central=${centralValue.join("/")} api=${countApi.json?.count}`);
   check("E10.4 las OT y asignaciones centrales siguen visibles (OT de MP1 y MP3 con su línea y su asignación)", t.includes(ctx.ot.MP1.number) && t.includes(ctx.ot.MP3.number) && t.includes(`PV-E2EB0-MP1`) && t.includes("Activa"));
   check("E10.5 los reportes no implementados aparecen como pendientes y no como operativos", t.includes("Todavía no existen reportes centrales") && (await b.js("[...document.querySelectorAll('span')].filter((e) => e.innerText.trim() === 'Pendiente').length")) >= 4 && !/Se generan desde registros fuente/.test(t));
-  check("E10.6 no hay descarga de historial de tubetes y las descargas se rotulan como locales de este navegador", !/Historial de tubetes/.test(t) && t.includes("Descargas de registros locales (este navegador)"));
+  check("E10.6 INT-02A: no hay descarga de historial de tubetes ni panel de descargas de registros locales", !/Historial de tubetes/.test(t) && !t.includes("Descargas de registros locales") && !(await b.js("[...document.querySelectorAll('button')].some((e) => /registros locales|Resumen OT/i.test(e.innerText))")));
   await b.js("window.__block.push('/api/captures/count')");
   await b.clickText("Actualizar");
   await b.waitFor("document.body.innerText.includes('Consulta central no disponible')", "estado no disponible", 20000);
   const unknown = await b.js("[...document.querySelectorAll('p.text-3xl')].map((e) => e.innerText.trim())");
   const tUnknown = await b.text();
   await b.shot("e10-conteo-no-disponible.png");
-  check("E10.7 con el conteo central no disponible, el valor es «—» (nunca cero ni el conteo local) y el local queda como dato secundario", unknown.includes("—") && !unknown.includes("0") && /Registros locales \(este navegador\): \d+\./.test(tUnknown) && tUnknown.includes("No representan la producción central"), JSON.stringify(unknown));
+  check("E10.7 con el conteo central no disponible, el valor es «—» (nunca cero ni un conteo local) y no se menciona ningún dato local", unknown.includes("—") && !unknown.includes("0") && !/Registros locales|este navegador/.test(tUnknown) && tUnknown.includes("Consulta central no disponible"), JSON.stringify(unknown));
   const lsDump = await storageDump(b);
   check("E10.8 no se mezcla información local con la producción central: ninguna OT, bobina ni captura central está en localStorage", !lsDump.includes(ctx.ot.MP1.number) && !lsDump.includes(ctx.capture.f3_mp1) && !lsDump.includes(ctx.capture.p106), Object.keys(JSON.parse(lsDump)).join(","));
+  const legacyAfter = JSON.parse(lsDump);
+  check("E12.1 INT-02A: los datos legacy del navegador siguen BYTE A BYTE intactos tras recorrer Bobinas, Rebobinado, Conversión, Calidad y Seguimiento (no se leen para borrarlos, migrarlos ni sobrescribirlos)", Object.entries(LEGACY_LS).every(([k, v]) => legacyAfter[k] === v), Object.keys(legacyAfter).join(","));
+  check("E12.2 INT-02A: los registros legacy no se muestran como registros centrales ni como indicadores (Seguimiento) y la pantalla no ofrece verlos", !t.includes("REG-LEGACY-E2E-INT02A") && !t.includes("OT-LEGACY-E2E-INT02A") && !t.includes("ASG-LEGACY-E2E-INT02A"));
+  await toBobinas(b); await goModule(b, "Ejecución", "Punto de captura"); await sleep(800);
+  const cards = await b.js("[...document.querySelectorAll('[data-form]')].map((e) => e.dataset.form).sort()");
+  const tExec = await b.text();
+  check("E12.3 INT-02A: Ejecución de Bobinas solo ofrece los formularios CENTRALES F3 y P1-06 (sin tarjetas locales) y no menciona el contexto local ni el buscador legacy", JSON.stringify(cards) === JSON.stringify(["form_3_registro_de_produccion_de_bobinas", "form_6_registro_de_control_de_fardos"]) && !tExec.includes("Contexto OT–PV–producto heredado") && !tExec.includes("Buscar formato"), JSON.stringify(cards));
+  const legacyExec = JSON.parse(await storageDump(b));
+  check("E12.4 INT-02A: ningún dato legacy aparece en Ejecución de Bobinas y los bytes siguen intactos", !tExec.includes("OT-LEGACY-E2E-INT02A") && !tExec.includes("REG-LEGACY-E2E-INT02A") && Object.entries(LEGACY_LS).every(([k, v]) => legacyExec[k] === v));
   check("E10.9 sin errores de JavaScript inesperados en Seguimiento", b.log.exceptions.length === 0, JSON.stringify(b.log.exceptions).slice(0, 160));
   await logoutApp(b); keep(b);
 });
 await browser("cal-ui", {}, async (b) => {
   await loginApp(b, "calidad");
+  await goModule(b, "Ejecución", "Calidad ·"); await sleep(1200);
+  const calCards = await b.js("[...document.querySelectorAll('[data-form]')].map((e) => e.dataset.form)"), calText = await b.text();
+  check("E12.5 INT-02A: Calidad no ofrece tarjetas legacy editables: ningún formulario local, solo el inbox central", calCards.length === 0 && !calText.includes("Contexto OT–PV–producto heredado") && !calText.includes("Enviar registro trazable") && calText.includes("Bobinas pendientes de Calidad"), JSON.stringify(calCards));
   await toBobinas(b); await goModule(b, "Ejecución", "Punto de captura");
   check("E09.14 Calidad en el front Bobinas: puede consultar pero no capturar producción (aviso) y la tarjeta de F3 no abre la captura", (await b.text()).includes("puede consultar este frente, pero no capturar") && await clickCard(b, "Registro de producción de bobinas") && (await sleep(800), !(await b.text()).includes("Datos de la bobina")));
   await nav(b, "Calidad"); await goModule(b, "Seguimiento", "Calidad ·"); await sleep(800);

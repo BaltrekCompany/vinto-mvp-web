@@ -300,19 +300,19 @@ const component = readFileSync(new URL("../components/vinto/f3-bobbin-capture.ts
 const lib = readFileSync(new URL("../lib/vinto/bobbins.ts", import.meta.url), "utf8");
 const api = readFileSync(new URL("../lib/vinto/bobbins-api.ts", import.meta.url), "utf8");
 
-test("F3 is rendered by its own component before the generic Capture and never calls save()", () => {
+test("F3 is rendered by its own component and never calls save(); INT-02A: there is no generic local Capture left to fall back to", () => {
   const f3 = page.indexOf("selected.id === F3_FORM_ID && (f3Attempt || captureContext)");
-  const generic = page.indexOf("return <Capture form={selected}");
-  assert.ok(f3 > 0 && generic > f3, "F3BobbinCapture must be returned before the generic Capture");
-  const branch = page.slice(f3, generic);
+  assert.ok(f3 > 0, "F3BobbinCapture branch exists");
+  const branch = page.slice(f3, page.indexOf("return <main", f3));
   assert.match(branch, /<F3BobbinCapture/);
   for (const forbidden of ["save(", "setRecords", "vinto-p1-records"]) assert.equal(branch.includes(forbidden), false, forbidden);
+  assert.equal(/return <Capture form=|function Capture\(/.test(page), false, "// INT-02A (cambio de contrato): la captura local genérica se retiró");
   assert.match(page, /selected\.id === F6_FORM_ID && captureContext[\s\S]*<F6Capture/); // F6 sigue igual
 });
 
-test("session loss clears the F3 attempt and old local F3 records are not shown as central tracking", () => {
+test("session loss clears the F3 attempt and no local F3 records are read at all", () => {
   assert.ok((page.match(/setF3Attempt\(null\)/g) ?? []).length >= 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
-  assert.ok((page.match(/r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID/g) ?? []).length >= 1);
+  assert.equal(/records=\{|setRecords|r\.formId/.test(page), false); // INT-02A (cambio de contrato): Seguimiento ya no recibe registros locales de ningún formulario
 });
 
 test("the old F3 override (codigo_tubete, manual grammage/description) is gone from effectiveForms", () => {
