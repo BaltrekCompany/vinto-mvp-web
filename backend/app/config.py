@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://127.0.0.1:8787"]
     database_url: SecretStr | None = None
     test_database_url: SecretStr | None = None
+    # Identidades opcionales de CLOUD-01B-2 (modelo de privilegios mínimos). Si una no está configurada,
+    # migrate.py / import_reference.py / ephemeral_db.py siguen usando database_url/test_database_url,
+    # igual que antes de este cambio: no hay ruptura de compatibilidad para quien no las defina.
+    migrator_database_url: SecretStr | None = None
+    migrator_test_database_url: SecretStr | None = None
+    reference_database_url: SecretStr | None = None
+    reference_test_database_url: SecretStr | None = None
+    test_admin_database_url: SecretStr | None = None
     db_connect_timeout: int = Field(default=3, ge=1, le=30)
     db_statement_timeout_ms: int = Field(default=2000, ge=1, le=30000)
     auth_max_failed_attempts: int = Field(default=5, ge=1, le=20)

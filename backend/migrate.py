@@ -107,11 +107,17 @@ def main() -> int:
         options = {"connect_timeout": settings.db_connect_timeout, "autocommit": True,
                    "options": "-c lock_timeout=5000 -c statement_timeout=60000"}
         if args.target == "test":
-            connection_context = connect_test_database(**options)
+            # MIGRATOR_TEST_DATABASE_URL es opcional (CLOUD-01B-2): si no está configurada, el comportamiento
+            # es idéntico al de antes de este cambio (TEST_DATABASE_URL vía connect_test_database()).
+            migrator_test_url = settings.migrator_test_database_url
+            connection_context = connect_test_database(
+                migrator_test_url.get_secret_value() if migrator_test_url else None, **options)
         else:
-            if settings.database_url is None or not settings.database_url.get_secret_value():
+            # MIGRATOR_DATABASE_URL es opcional (CLOUD-01B-2): sin ella, se usa DATABASE_URL como siempre.
+            url = settings.migrator_database_url or settings.database_url
+            if url is None or not url.get_secret_value():
                 raise MigrationError("DATABASE_URL no configurada")
-            connection_context = psycopg.connect(settings.database_url.get_secret_value(), **options)
+            connection_context = psycopg.connect(url.get_secret_value(), **options)
         with connection_context as connection:
             if args.status or args.check:
                 applied = applied_migrations(connection)

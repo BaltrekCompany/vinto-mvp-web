@@ -30,10 +30,15 @@ CONNECTION_OPTIONS = "-c lock_timeout=30000 -c statement_timeout=120000"
 def open_connection(target: str):
     kwargs = {"autocommit": True, "connect_timeout": settings.db_connect_timeout, "options": CONNECTION_OPTIONS}
     if target == "test":
-        return connect_test_database(**kwargs)  # verifica current_database() antes de devolverla
-    if settings.database_url is None or not settings.database_url.get_secret_value():
+        # REFERENCE_TEST_DATABASE_URL es opcional (CLOUD-01B-2): sin ella, igual que antes (TEST_DATABASE_URL).
+        reference_test_url = settings.reference_test_database_url
+        return connect_test_database(
+            reference_test_url.get_secret_value() if reference_test_url else None, **kwargs)  # verifica current_database() antes de devolverla
+    # REFERENCE_DATABASE_URL es opcional (CLOUD-01B-2): sin ella, igual que antes (DATABASE_URL).
+    url = settings.reference_database_url or settings.database_url
+    if url is None or not url.get_secret_value():
         raise UnsafeDatabaseError("DATABASE_URL no está configurada")
-    return psycopg.connect(settings.database_url.get_secret_value(), **kwargs)
+    return psycopg.connect(url.get_secret_value(), **kwargs)
 
 
 def is_candidate(manifest) -> bool:

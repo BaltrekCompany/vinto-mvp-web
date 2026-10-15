@@ -25,13 +25,20 @@ def base_url() -> str:
     return settings.test_database_url.get_secret_value()
 
 
+def _admin_base_url() -> str:
+    """CREATE/DROP DATABASE exige CREATEDB: TEST_ADMIN_DATABASE_URL es la identidad separada de CLOUD-01B-2
+    para esto (solo DEV/QA). Si no está configurada, se mantiene el comportamiento previo (base_url())."""
+    admin_url = settings.test_admin_database_url
+    return admin_url.get_secret_value() if admin_url else base_url()
+
+
 def database_url(name: str) -> str:
     assert is_test_database_name(name), name
     return make_conninfo(base_url(), dbname=name)
 
 
 def _admin():
-    return psycopg.connect(make_conninfo(base_url(), dbname="postgres"), autocommit=True, connect_timeout=5)
+    return psycopg.connect(make_conninfo(_admin_base_url(), dbname="postgres"), autocommit=True, connect_timeout=5)
 
 
 def create_database(name: str, template: str | None = None) -> None:

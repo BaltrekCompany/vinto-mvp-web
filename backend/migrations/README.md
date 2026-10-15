@@ -79,7 +79,10 @@ su configuración y los datos base para implementarlos en una fase posterior.
 
 Los controles de auditoría no sustituyen el hardening: vinto_app conserva
 por ahora los privilegios de desarrollo definidos en la Fase 1. Separación
-de roles, TLS y permisos restrictivos siguen pendientes.
+de roles, TLS y permisos restrictivos siguen pendientes (ver más abajo
+"CLOUD-01B-2: modelo de privilegios mínimos" para el diseño de esa
+separación, probado en una instancia efímera, todavía no adoptado en
+DEV/QA/operativo).
 
 Consultas de inspección de tablas, claves, índices y auditoría:
 backend/verification.sql. Este archivo es de solo lectura.
@@ -154,3 +157,26 @@ Solo hacia adelante, sin backfill: las capturas existentes (F3, F6) quedan con `
 - Trigger `guard_capture_bobbin`: una captura con `bobbin_id` debe usar una versión de formulario `quality` y llevar
   exactamente el contexto productivo de la F3 de origen de esa Bobina (máquina, turno, fecha operativa y asignación);
   `bobbin_id` no puede cambiar después. `validate_capture()` no se reemplaza.
+
+## CLOUD-01B-2: modelo de privilegios mínimos
+
+Las migraciones 0001-0006 se aplicaron y se seguirán aplicando sin modificar (no se reescribe ninguna
+para no invalidar su checksum en instalaciones ya migradas). El modelo de privilegios mínimos (roles
+`vinto_app`/`vinto_migrator`/`vinto_reference`/`vinto_test_admin`, ver `backend/roles/README.md`) se
+provisiona como un paso **aparte**, fuera de `migrate.py`, ejecutado una sola vez por el administrador
+del clúster, nunca como una migración numerada. Dos razones:
+
+1. `CREATE ROLE` requiere `CREATEROLE`, privilegio que ningún rol de aplicación debe tener (principio 5);
+   no tiene sentido que una migración —pensada para ejecutarse con el rol migrador, sin `CREATEROLE`—
+   intente crear roles.
+2. Los `GRANT` sobre objetos ya existentes (0001-0006) son un aprovisionamiento de infraestructura, no un
+   cambio de esquema: no alteran tablas, columnas, triggers ni datos, así que no les corresponde un
+   número de migración.
+
+**Toda migración `0007` en adelante que agregue una tabla que la API (`vinto_app`) o el importador de
+referencias (`vinto_reference`) deban leer o escribir DEBE incluir, al final del mismo archivo `.sql`,
+sus propios `GRANT` explícitos** (por ejemplo `GRANT SELECT, INSERT, UPDATE ON vinto_txn.tabla_nueva TO
+vinto_app;`). No existe ningún `GRANT`/`ALTER DEFAULT PRIVILEGES` que otorgue escritura automática sobre
+tablas futuras: el privilegio por defecto para una tabla nueva es `SELECT` únicamente (ver
+`backend/roles/05_default_privileges.sql`); sin un `GRANT` explícito en la migración, la tabla queda
+legible pero no escribible por la API hasta que se corrija.
