@@ -107,8 +107,8 @@ test("7 · los reportes inexistentes no aparecen como operativos", () => {
 
 test("8 · las capturas centrales F3, P1-06, P1-19 y P1-20 siguen conectadas", () => {
   for (const marker of ["<F6Capture ", "<F3BobbinCapture ", "<QualityHumidityCapture ", "<QualityPhysicalCapture ", "<QualityBobbinHistory "]) assert.ok(page.includes(marker), marker);
-  assert.match(page, /const f6List = useResource<CentralCapture\[\]>\("captures-f6"/);
-  assert.match(page, /const qualityInbox = useResource<QualityBobbinInboxItem\[\]>\("quality-bobbin-inbox"/);
+  assert.match(page, /const f6List = useResource<CentralCapture\[\]>\(candidateHistoryKey\("f6", scope, 0\)/);
+  assert.match(page, /const qualityInbox = useResource<QualityBobbinInboxItem\[\]>\(qualityInboxKey\(scope\)/);
   assert.match(page, /<BobbinasProgramming /);
 });
 

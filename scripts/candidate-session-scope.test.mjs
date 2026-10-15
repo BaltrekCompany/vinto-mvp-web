@@ -35,9 +35,9 @@ test("las claves incluyen al usuario: distintas cuentas, distintas claves; sin s
   assert.notEqual(candidateHistoryKey("p105", sessionScope(A), 0), candidateHistoryKey("p105", sessionScope(B), 0));
   assert.notEqual(candidateHistoryKey("p105", sessionScope(A), 0), candidateHistoryKey("p131", sessionScope(A), 0));
   assert.notEqual(candidateHistoryKey("p105", sessionScope(A), 0), candidateHistoryKey("p105", sessionScope(A), 1)); // tras un envío se recarga
-  // sin `scope`, la clave de disponibilidad es la de siempre (los demás llamadores no cambian)
-  assert.equal(availabilityKey(false), "availability:base");
-  assert.equal(availabilityKey(true), "availability:articles");
+  // INT-01B: el scope es obligatorio y siempre forma parte de la clave (ya no existe una clave de disponibilidad sin sesión)
+  assert.equal(availabilityKey(false, sessionScope(A)), `availability:base:user:${A.id}`);
+  assert.equal(availabilityKey(true, sessionScope(A)), `availability:articles:user:${A.id}`);
 });
 
 test("usuario A carga disponibilidad e historial, la sesión pasa a anónima y B inicia sesión: B no ve nada de A ni mientras carga", () => {
@@ -123,10 +123,10 @@ test("la página y useAvailability usan las claves por sesión y los demás llam
   assert.match(page, /candidateHistoryKey\("p105", scope, candRefresh\)/);
   assert.match(page, /candidateHistoryKey\("p131", scope, candRefresh\)/);
   assert.equal(/captures-p105:\$\{|captures-p131:\$\{/.test(page), false, "ya no quedan claves sin usuario");
-  assert.match(central, /export const useAvailability = \(withArticles: boolean, enabled: boolean, onUnauthorized: \(\) => void, scope\?: string\)/);
+  assert.match(central, /export const useAvailability = \(withArticles: boolean, enabled: boolean, onUnauthorized: \(\) => void, scope: string\)/);
   assert.match(central, /availabilityKey\(withArticles, scope\)/);
   assert.match(central, /const view: Resource<T> = deriveView\(key, enabled, attempt, stored\);/);
   assert.match(sector, /useAvailability\(canManageOrders && module === "programacion", true, onSessionLost, scope\)/); // DEV-R2: la disponibilidad de Rebobinado / Conversión también va ligada a la sesión
-  assert.match(sector, /`captures-p110:\$\{refreshKey\}`/);
+  assert.match(sector, /candidateHistoryKey\("p110", scope, refreshKey\)/); // INT-01B: ya no hay claves constantes
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false, "no se borra el almacenamiento local");
 });

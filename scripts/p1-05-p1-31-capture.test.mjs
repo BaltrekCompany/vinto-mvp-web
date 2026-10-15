@@ -185,5 +185,5 @@ test("alcance: la política real y los datos de referencia no incluyen P1-05 ni 
   // Rebobinado y Conversión no cambian: sus shells siguen siendo los mismos
   assert.match(page, /front === "Conversión" \? <ConversionCentral /);
   assert.match(page, /front === "Rebobinado" \? <RebobinadoCentral /);
-  assert.match(page, /function sessionLost\(\) \{\n[^\n]*setBobCandidate\(null\); setCandAttempts\(\{\}\)/); // la sesión perdida descarta intentos y pantallas candidatas
+  assert.match(page, /function resetSessionState\(\) \{\n(?:[^\n]*bumpSessionEpoch\(\);[^\n]*\n)?[^\n]*setBobCandidate\(null\); setCandAttempts\(\{\}\)/); // la sesión perdida descarta intentos y pantallas candidatas
 });

@@ -78,7 +78,18 @@ def tearDownModule():
         f3.STATE.pop("template")
 
 
+# INT-01A: la ruta por Bobina solo admite los formularios de su política (P1-19 / P1-20 y los candidatos habilitados). Los formularios SINTÉTICOS de este módulo se autorizan únicamente aquí, en el entorno de prueba,
+# ampliando la política con patch.object; los que NO figuran (producción, un quality de otro tipo, un desconocido) siguen bloqueados aunque estén publicados.
+TEST_POLICY = frozenset({"VINTO-P1-19", "VINTO-P1-20", FORM, "QA-TEST-DRAFT", "QA-TEST-RETIRED", "QA-TEST-MP3", "QA-TEST-AUTO"})
+
+
 class QualityCaptureCase(f3.BobbinApiCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        policy = patch.object(_quality_captures, "CENTRAL_BOBBIN_FORM_CODES", TEST_POLICY)  # TEST-ONLY policy
+        policy.start()
+        self.addCleanup(policy.stop)
+
     async def bobbin(self, machine="MP1"):
         _, assignment = await self.assignment(machine)
         reply = await self.post(self.payload(assignment))
@@ -134,7 +145,10 @@ class ValidationTests(QualityCaptureCase):
         _, created = await self.bobbin("MP1")
         bobbin_id = created["bobbin"]["id"]
         before = self.counts()
-        for form_code in ("VINTO-P1-06", "VINTO-P1-03", "QA-TEST-PROD", "QA-TEST-DRAFT", "QA-TEST-RETIRED", "QA-TEST-MP3", "NO-EXISTE"):
+        for form_code in ("VINTO-P1-06", "VINTO-P1-03", "QA-TEST-PROD", "NO-EXISTE"):  # not in the bobbin policy: rejected by the policy, whatever is published
+            reply = await self.submit(bobbin_id, self.body(form_code=form_code))
+            self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"), form_code)
+        for form_code in ("QA-TEST-DRAFT", "QA-TEST-RETIRED", "QA-TEST-MP3"):  # allowed by the test policy but not published / not linked to this machine
             reply = await self.submit(bobbin_id, self.body(form_code=form_code))
             self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"), form_code)
         reply = await self.submit(bobbin_id, self.body(form_code="QA-TEST-AUTO"))

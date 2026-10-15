@@ -114,7 +114,7 @@ test("M6-A: Home enruta Conversión al shell central y deja Rebobinado y Bobinas
   assert.ok(page.includes("onSessionLost={sessionLost}/> : <>")); // la rama de Bobinas / Calidad sigue después de Rebobinado
   assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p116"/);
   assert.match(page, /setConvCapture\(null\); setP116Attempt\(null\); setP116Context\(null\)/); // sesión perdida y logout limpian el intento de Conversión
-  assert.equal((page.match(/setP116Attempt\(null\); setP116Context\(null\)/g) ?? []).length, 2);
+  assert.equal((page.match(/setP116Attempt\(null\); setP116Context\(null\)/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
   // el código de la ruta central no escribe ni borra las claves legacy (se conservan intactas en el navegador)
   for (const file of ["components/vinto/sector-central.tsx", "components/vinto/conversion-central.tsx", "components/vinto/p1-16-capture.tsx"]) assert.equal(/removeItem|localStorage|vinto-ot|vinto-asg|vinto-p1-records/.test(code(file)), false, file);
 });

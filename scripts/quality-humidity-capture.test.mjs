@@ -437,7 +437,7 @@ test("Home opens the central humidity form from the selected bobbin, not from an
   assert.match(branch, /attempt=\{humidityAttempt\} setAttempt=\{setHumidityAttempt\}/);
   assert.match(branch, /onSessionLost=\{sessionLost\}/);
   assert.equal(/save\(|setRecords|vinto-p1-records|activeAssignment|captureContext/.test(branch), false);
-  assert.ok((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\);/g) ?? []).length >= 2, "sessionLost clears the selection and the attempt");
+  assert.ok((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\);/g) ?? []).length >= 1, "sessionLost clears the selection and the attempt");
 });
 
 test("after a success the form closes and the INBOX is refreshed so the bobbin stays pending", () => {

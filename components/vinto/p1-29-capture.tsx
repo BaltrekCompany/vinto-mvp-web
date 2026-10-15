@@ -9,6 +9,7 @@ import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { CONTEXT_NOTES, P129_GROUPS, P129_PENDING, P129_SIMPLE_FIELDS, createP129Attempt, emptyP129Draft, submitP129Attempt, type P129Attempt, type P129Capture, type P129Draft, type P129SubmitDeps } from "@/lib/vinto/p1-29";
 import { getP129, submitP129 } from "@/lib/vinto/p1-29-api";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // VINTO-P1-29 · Producción Tubetera: captura CENTRAL CANDIDATA (API + PostgreSQL), M3-B. «Ficha candidata — No homologada»: la agrupación en campos simples + rodelas + formatos es una
 // propuesta técnica; tipo de tubete (sin catálogo), unidad del espesor, operador, visto bueno, nombre de la máquina y el alcance de los grupos son decisiones PENDIENTES y aquí no se
@@ -51,6 +52,7 @@ export function P129CaptureForm({ context, online, attempt, setAttempt, back, on
     const updateGroup = (spec: GroupSpec, fn: (rows: P129Draft["groups"][string]) => P129Draft["groups"][string]) => setDraft(old => ({ ...old, groups: { ...old.groups, [spec.code]: fn(old.groups[spec.code] ?? []) } }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -64,6 +66,7 @@ export function P129CaptureForm({ context, online, attempt, setAttempt, back, on
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitP129Attempt(current, api);
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") {
                 setAttempt(null);
                 const message = submitMessage(outcome);
@@ -71,6 +74,7 @@ export function P129CaptureForm({ context, online, attempt, setAttempt, back, on
                 setSaved({ capture: outcome.capture, message, readBack: "reading" });
                 onSubmitted?.(outcome.capture);
                 const read = await api.get(outcome.capture.id); // consulta posterior por id: se compara con lo que la API confirmó
+                if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 setSaved(old => old && { ...old, readBack: !read.ok ? "error" : JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? "ok" : "mismatch" });
                 return;
             }

@@ -48,7 +48,7 @@ export type SectorCentralProps = {
     canReadAssignments: boolean;
     onOpenForm: (screen: FormScreen, context: CaptureContext) => void;
     refreshKey: number; // cambia tras un envío para refrescar el historial
-    scope?: string; // sessionScope(user): las claves de disponibilidad e historiales candidatos incluyen a la cuenta (otra cuenta en el mismo navegador nunca ve la vista anterior)
+    scope: string; // sessionScope(user): las claves de disponibilidad, OT, asignaciones e historiales incluyen a la cuenta (otra cuenta en el mismo navegador nunca ve la vista anterior)
     onSessionLost: () => void;
 };
 type Props = SectorCentralProps & { code: CentralSector };
@@ -66,17 +66,17 @@ export function SectorCentral(props: Props) {
     return <Tracking {...props} sector={view.sector}/>;
 }
 
-function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, onSessionLost }: Inner) {
-    const workOrders = useWorkOrders(canReadOrders, onSessionLost);
+function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost }: Inner) {
+    const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const machines = sector.machines.map(m => m.code);
     return <div {...tag(code, "programacion")}><BobbinasProgramming machines={machines} sectorLabel={SECTORS[code].label} catalog={machine => articlesOf(sector.machines.find(m => m.code === machine)).map(a => ({ code: a.code, name: a.description }))}
         workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
 }
 
-function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, onSessionLost }: Inner) {
+function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost }: Inner) {
     const [machineCode, setMachineCode] = useState(sector.machines[0]?.code ?? "");
     const machine = sector.machines.find(m => m.code === machineCode) ?? sector.machines[0];
-    const active = useActiveAssignment(machine.code, canReadAssignments, onSessionLost);
+    const active = useActiveAssignment(machine.code, canReadAssignments, onSessionLost, scope);
     let state: ExecState;
     if (!canReadAssignments) state = { kind: "error", message: "Acceso no permitido.", retry: active.refresh };
     else if (active.view.status === "ready") state = { kind: "check", check: contextFromActive(active.view.data) };
@@ -103,21 +103,21 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, o
 
 function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost }: Inner) {
     const label = SECTORS[code].label;
-    const workOrders = useWorkOrders(canReadOrders, onSessionLost);
-    const assignments = useAssignments(canReadAssignments, onSessionLost);
+    const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
+    const assignments = useAssignments(canReadAssignments, onSessionLost, scope);
     const machines = new Set(sector.machines.map(m => m.code));
     const offered = new Set(sector.machines.flatMap(m => m.forms.map(f => f.code)).filter(formCode => screenFor(code, formCode) !== null)); // solo los historiales de formularios con pantalla en ESTE sector
     // Un historial por formulario que el backend publica en ESTE sector: los demás no se consultan (el recurso queda deshabilitado).
-    const p110 = useResource(`captures-p110:${refreshKey}`, canCapture && offered.has(P1_10_CODE), signal => listCapturesOf(parseP110List, signal, 50, P1_10_CODE), onSessionLost);
-    const p111 = useResource(`captures-p111:${refreshKey}`, canCapture && offered.has(P1_11_CODE), signal => listCapturesOf(parseP111List, signal, 50, P1_11_CODE), onSessionLost);
-    const p112 = useResource(`captures-p112:${refreshKey}`, canCapture && offered.has(P1_12_CODE), signal => listCapturesOf(parseP112List, signal, 50, P1_12_CODE), onSessionLost);
-    const p113 = useResource(`captures-p113:${refreshKey}`, canCapture && offered.has(P1_13_CODE), signal => listCapturesOf(parseP113List, signal, 50, P1_13_CODE), onSessionLost);
-    const p116 = useResource(`captures-p116:${refreshKey}`, canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);
-    const p129 = useResource(`captures-p129:${refreshKey}`, canCapture && offered.has(P1_29_CODE), signal => listCapturesOf(parseP129List, signal, 50, P1_29_CODE), onSessionLost);
+    const p110 = useResource(candidateHistoryKey("p110", scope, refreshKey), canCapture && offered.has(P1_10_CODE), signal => listCapturesOf(parseP110List, signal, 50, P1_10_CODE), onSessionLost);
+    const p111 = useResource(candidateHistoryKey("p111", scope, refreshKey), canCapture && offered.has(P1_11_CODE), signal => listCapturesOf(parseP111List, signal, 50, P1_11_CODE), onSessionLost);
+    const p112 = useResource(candidateHistoryKey("p112", scope, refreshKey), canCapture && offered.has(P1_12_CODE), signal => listCapturesOf(parseP112List, signal, 50, P1_12_CODE), onSessionLost);
+    const p113 = useResource(candidateHistoryKey("p113", scope, refreshKey), canCapture && offered.has(P1_13_CODE), signal => listCapturesOf(parseP113List, signal, 50, P1_13_CODE), onSessionLost);
+    const p116 = useResource(candidateHistoryKey("p116", scope, refreshKey), canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);
+    const p129 = useResource(candidateHistoryKey("p129", scope, refreshKey), canCapture && offered.has(P1_29_CODE), signal => listCapturesOf(parseP129List, signal, 50, P1_29_CODE), onSessionLost);
     // DEV-R2: historiales de las fichas candidatas de Rebobinado (P1-30 / P1-07); clave con la sesión (sin `scope` no se consultan).
     const candidateHistory = {
-        p130: useResource(candidateHistoryKey("reb-p130", scope ?? "", refreshKey), canCapture && scope !== undefined && offered.has(REBOBINADO_CANDIDATES.p130.code), signal => REBOBINADO_CANDIDATES.p130.api.list(signal), onSessionLost),
-        p107: useResource(candidateHistoryKey("reb-p107", scope ?? "", refreshKey), canCapture && scope !== undefined && offered.has(REBOBINADO_CANDIDATES.p107.code), signal => REBOBINADO_CANDIDATES.p107.api.list(signal), onSessionLost),
+        p130: useResource(candidateHistoryKey("reb-p130", scope, refreshKey), canCapture && offered.has(REBOBINADO_CANDIDATES.p130.code), signal => REBOBINADO_CANDIDATES.p130.api.list(signal), onSessionLost),
+        p107: useResource(candidateHistoryKey("reb-p107", scope, refreshKey), canCapture && offered.has(REBOBINADO_CANDIDATES.p107.code), signal => REBOBINADO_CANDIDATES.p107.api.list(signal), onSessionLost),
     };
     const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p112.refresh(); p113.refresh(); p116.refresh(); p129.refresh(); };
     if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;

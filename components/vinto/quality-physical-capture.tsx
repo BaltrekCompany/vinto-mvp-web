@@ -14,6 +14,7 @@ import {
     physicalAverages, physicalBobbinToShow, physicalPendingNotice, submitPhysicalAttempt, type PendingPhysicalAttempt, type PhysicalDraft, type PhysicalKey,
 } from "@/lib/vinto/quality-physical";
 import { getPhysicalCapture, submitPhysicalCapture } from "@/lib/vinto/quality-physical-api";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // VINTO-P1-20 · Propiedades físicas de UNA Bobina física: se envía SOLO a POST /api/quality/bobbins/{id}/captures (PostgreSQL). Nunca escribe en
 // vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El encabezado sale del item del inbox (o del snapshot del intento
@@ -49,6 +50,7 @@ export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back
     const set = (key: keyof PhysicalDraft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || !shown) return; // evita el doble clic y las solicitudes simultáneas
         if (!online) return void setNotice(PHYSICAL_MESSAGES.offline);
         let current = attempt;
@@ -61,6 +63,7 @@ export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitPhysicalAttempt(current, { post: submitPhysicalCapture, get: id => getPhysicalCapture(id) });
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") { setAttempt(null); toast.success(outcome.message); return void onSubmitted(); }
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
             if (outcome.kind === "rejected") { setAttempt(null); return void setNotice(outcome.message); } // definitivo: el intento termina y los campos se desbloquean

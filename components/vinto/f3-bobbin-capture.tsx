@@ -11,6 +11,7 @@ import { submitBobbin } from "@/lib/vinto/bobbins-api";
 import { BOBBIN_MESSAGES, EMPTY_BOBBIN_DRAFT, contextToShow, createBobbinAttempt, pendingNotice, submitBobbinAttempt, type BobbinDraft, type PendingBobbinAttempt } from "@/lib/vinto/bobbins";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // F3 · Registro de producción de bobinas: se envía SOLO a POST /api/bobbins (PostgreSQL). Nunca escribe en vinto-p1-records ni en
 // localStorage (salvo la clave técnica vinto-device-key). El encabezado es solo informativo: el backend deriva máquina, turno,
@@ -48,6 +49,7 @@ export function F3BobbinCapture({ context, online, attempt, setAttempt, back, on
     const set = (key: keyof BobbinDraft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current) return; // evita el doble clic
         if (!online) return void setNotice(BOBBIN_MESSAGES.offline);
         let current = attempt;
@@ -61,6 +63,7 @@ export function F3BobbinCapture({ context, online, attempt, setAttempt, back, on
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitBobbinAttempt(current, { post: submitBobbin });
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") { setAttempt(null); toast.success(outcome.message); return void onSubmitted(); }
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
             if (outcome.kind === "rejected") {

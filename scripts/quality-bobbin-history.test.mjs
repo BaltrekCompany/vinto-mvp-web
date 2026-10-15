@@ -306,13 +306,13 @@ test("the history screen renders every UI state and the header context from the 
 test("page: independent history state, keyed per bobbin and per opening, gated by quality.capture, cleared on logout/session loss", () => {
   assert.match(page, /const \[qualityHistory, setQualityHistory\] = useState<\{ item: QualityBobbinInboxItem; seq: number \} \| null>\(null\)/);
   const declaration = page.slice(page.indexOf("const historyBobbin ="), page.indexOf("const refreshCentral"));
-  assert.match(declaration, /useResource<QualityHistoryLoad>\(qualityHistory \? `quality-history:\$\{qualityHistory\.item\.bobbin\.id\}:\$\{qualityHistory\.seq\}`/);
+  assert.match(declaration, /useResource<QualityHistoryLoad>\(qualityHistoryKey\(scope, qualityHistory \? qualityHistory\.item\.bobbin\.id : null, qualityHistory \? qualityHistory\.seq : 0\)/);
   assert.match(declaration, /authenticated && front === "Calidad" && canReadQualityInbox && historyBobbin !== null/);
   assert.match(declaration, /getQualityBobbinHistory\(\{ id: historyBobbin\.id, code: historyBobbin\.code \}, signal\)/);
   assert.match(declaration, /, sessionLost\);/);
   assert.match(declaration, /const openQualityHistory = \(item: QualityBobbinInboxItem\) => \{ historySeq\.current \+= 1; setQualityHistory\(\{ item, seq: historySeq\.current \}\); \};/);
   // se limpia al perder la sesión y al cerrar sesión
-  assert.equal((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\); setQualityHistory\(null\);/g) ?? []).length, 2);
+  assert.equal((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\); setQualityHistory\(null\);/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
   // pantalla: solo con permiso; Volver solo cierra el historial (no refresca ni toca el inbox/intento)
   assert.match(page, /if \(qualityHistory && canReadQualityInbox\)\n\s+return <QualityBobbinHistory item=\{qualityHistory\.item\} resource=\{bobbinHistory\.view\} refresh=\{bobbinHistory\.refresh\} back=\{\(\) => setQualityHistory\(null\)\}\/>;/);
   assert.equal(/setInterval/.test(page), false, "no polling");
