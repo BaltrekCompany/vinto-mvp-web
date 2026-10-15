@@ -90,9 +90,9 @@ test("the component ties every result to user, front and attempt, cancels stale 
   assert.match(source, /if \(!active\) return;/);
   assert.match(source, /\[front, attempt, userKey\]/);
   assert.match(source, /if \(kind === "session"\) onSessionLost\(\)/);
-  assert.match(source, /captureCountView\(current, front, localCount\)/);
+  assert.match(source, /captureCountView\(current, front\)/); // INT-02A (cambio de contrato): sin conteo local
   const view = read("lib/vinto/capture-count-view.ts");
-  assert.match(view, /Registros locales \(este navegador\)/);
+  assert.doesNotMatch(view.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"), /Registros locales|navegador/); // INT-02A (cambio de contrato): el conteo local ya no se menciona
   assert.match(view, /Registros centrales/);
   assert.match(view, /kind === "forbidden"/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie|Authorization/);
@@ -103,5 +103,5 @@ test("the tracking view passes the authenticated user and the session-lost handl
   const usages = page.match(/<Tracking [^\n]*?\/>/g) ?? [];
   assert.equal(usages.length, 1); // PB-CLEAN: Calidad ya no usa Tracking (resumen central pendiente)
   for (const usage of usages) assert.match(usage, /userKey=\{user\.id\} onSessionLost=\{sessionLost\}/);
-  assert.match(page, /<CaptureCount front=\{front\} localCount=\{rec\.length\} userKey=\{userKey\} onSessionLost=\{onSessionLost\}\/>/);
+  assert.match(page, /<CaptureCount front=\{front\} userKey=\{userKey\} onSessionLost=\{onSessionLost\}\/>/);
 });

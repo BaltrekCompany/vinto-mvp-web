@@ -215,12 +215,12 @@ test("only the F6 form id is centralized", () => {
 
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
-test("the page routes F6 to the central component and keeps the other forms on local save()", () => {
+test("the page routes F6 to the central component; INT-02A: no other form falls back to a local save()", () => {
   const f6 = page.slice(page.indexOf("if (selected && selected.id === F6_FORM_ID"), page.indexOf("    // Calidad · VINTO-P1-19 (central)")); // la rama F3 tiene su propio test en bobbins.test.mjs
   assert.ok(f6.includes("<F6Capture"));
   assert.equal(/save\(|setRecords|vinto-p1-records/.test(f6), false);
-  assert.match(page, /if \(selected\)\n\s+return <Capture form=\{selected\}[^\n]*save=\{r => \{ setRecords\(x => \[r, \.\.\.x\]\)/); // los demás formularios siguen locales
-  assert.equal((page.match(/records=\{records\.filter\(r => r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID\)\}/g) ?? []).length, 1); // F6 y F3 locales históricos fuera de Seguimiento (PB-CLEAN: un solo Tracking, el de Bobinas)
+  assert.equal(/return <Capture form=|setRecords|save=\{/.test(page), false); // INT-02A (cambio de contrato): los demás formularios ya no se guardan localmente
+  assert.equal((page.match(/records=\{/g) ?? []).length, 0); // (antes: F6 y F3 locales históricos fuera de Seguimiento (PB-CLEAN: un solo Tracking, el de Bobinas)
 });
 
 test("the F6 component and API client never touch local storage for records", () => {

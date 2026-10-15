@@ -9,7 +9,7 @@ import { captureCountView } from "@/lib/vinto/capture-count-view";
 // aplicar y se muestra "cargando". Así nunca se muestra el conteo de otra sesión u otro frente.
 type CountState = { owner: string; front: CaptureFront; attempt: number } & ({ status: "failed"; kind: CaptureCountFailure } | { status: "ready"; count: number });
 
-export function CaptureCount({ front, localCount, userKey, onSessionLost }: { front: CaptureFront; localCount: number; userKey: string; onSessionLost: () => void }) {
+export function CaptureCount({ front, userKey, onSessionLost }: { front: CaptureFront; userKey: string; onSessionLost: () => void }) {
     const [attempt, setAttempt] = useState(0);
     const [state, setState] = useState<CountState | null>(null);
     useEffect(() => {
@@ -30,7 +30,7 @@ export function CaptureCount({ front, localCount, userKey, onSessionLost }: { fr
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [front, attempt, userKey]);
     const current = state && state.owner === userKey && state.front === front && state.attempt === attempt ? state : { owner: userKey, front, attempt, status: "loading" as const };
-    const view = captureCountView(current, front, localCount);
+    const view = captureCountView(current, front);
     return <div className="rounded-2xl border bg-white p-5" aria-live="polite">
         <p className="text-sm text-slate-700">{view.label}</p>
         <p className="mt-2 text-3xl font-black">{view.value}</p>

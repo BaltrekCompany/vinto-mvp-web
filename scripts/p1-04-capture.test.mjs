@@ -147,10 +147,9 @@ test("alcance: la política real y seed_data no incluyen P1-04, el legacy no se 
   assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
   for (const file of ["lib/vinto/p1-04.ts", "lib/vinto/p1-04-api.ts", "lib/vinto/bobinas-candidates.ts"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records/.test(read(file).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")), false, file);
   const page = read("app/page.tsx");
-  // con la ficha central publicada se oculta la tarjeta LOCAL equivalente (sin respaldo local de una captura central); sin publicación el comportamiento anterior no cambia
-  assert.match(page, /const centralFibra = front === "Bobinas" && offeredCandidates\(bobAvailability\.view, machine\)\.includes\("p104"\)/);
-  assert.match(page, /\.filter\(f => !\(centralFibra && f\.id === "form_4_registro_de_consumo_de_fibra"\)\)/);
-  assert.match(page, /function Fiber\(/); // el componente legacy sigue existiendo: no se borra ni se migra
+  // INT-02A (cambio de contrato): ya no existe la tarjeta LOCAL de fibra ni su ocultamiento condicional; las tarjetas de Bobinas son solo F3 y P1-06 y P1-04 solo aparece si el backend la publica
+  assert.equal(/centralFibra|function Fiber\(/.test(page), false);
+  assert.match(page, /const CENTRAL_BOBINAS_FORMS = FORM_DEFINITIONS\.filter\(f => f\.id === F3_FORM_ID \|\| f\.id === F6_FORM_ID\)/);
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false);
   assert.equal(/total_kg|total_final|hora_inicio|hora_fin/.test(read("components/vinto/candidate-form-capture.tsx")), false, "la pantalla genérica no conoce totales ni horas");
 });

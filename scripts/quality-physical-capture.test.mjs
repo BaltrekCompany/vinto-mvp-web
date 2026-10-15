@@ -409,9 +409,9 @@ test("Home: own selection and attempt for P1-20, opened from the inbox, gated by
   assert.match(page, /qualityInbox=\{canReadQualityInbox \? <QualityBobbinInbox /);
 });
 
-test("the legacy local P1-20 card is excluded from the Calidad cards; other fronts are untouched", () => {
-  assert.match(page, /front === "Calidad" \? f\.area === "quality" && f\.id !== Q19_FORM_ID && f\.id !== Q20_FORM_ID && norm\(/);
-  assert.match(page, /: f\.area === "production" && norm\(f\.sector\)\.includes\(norm\(front\)\)/); // Rebobinado / Conversión / Bobinas sin cambios
+test("INT-02A: the legacy local P1-20 card is gone with every local card; Bobinas only lists the central F3 / P1-06 forms", () => {
+  assert.equal(/f\.area === "quality"|f\.id !== Q20_FORM_ID/.test(page), false);
+  assert.match(page, /const CENTRAL_BOBINAS_FORMS = FORM_DEFINITIONS\.filter\(f => f\.id === F3_FORM_ID \|\| f\.id === F6_FORM_ID\)/);
   assert.match(page, /f\.id === "form_20_propiedades_fisicas_de_bobina"/); // la definición legacy sigue existiendo (no se borra)
 });
 

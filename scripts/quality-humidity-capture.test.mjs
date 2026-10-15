@@ -103,10 +103,12 @@ test("empty, zero or invalid wet weights give 0 like the original and a decimal 
   assert.deepEqual([r.comando, r.medio, r.transversal], [0, 0, 10]);
 });
 
-test("the formula matches the original code in app/page.tsx", () => {
+test("the display-only formula lives in quality-captures.ts; INT-02A retired the local copy in app/page.tsx", () => {
   const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /w > 0 \? Number\(\(\(\(w - d\) \/ w\) \* 100\)\.toFixed\(2\)\) : 0/);
-  assert.match(page, /\/ 3\)\.toFixed\(2\)\)/);
+  assert.equal(/w > 0 \? Number\(\(\(\(w - d\) \/ w\) \* 100\)/.test(page), false);
+  const lib = readFileSync(new URL("../lib/vinto/quality-captures.ts", import.meta.url), "utf8");
+  assert.match(lib, /wet > 0 \? Number\(\(\(\(wet - dry\) \/ wet\) \* 100\)\.toFixed\(2\)\) : 0/);
+  assert.match(lib, /\/ 3\)\.toFixed\(2\)\)/);
 });
 
 // ---- payload ------------------------------------------------------------------------------------------------------------------
@@ -447,12 +449,10 @@ test("after a success the form closes and the INBOX is refreshed so the bobbin s
   assert.equal(/filter|splice|slice\(/.test(branch), false, "the bobbin is not removed locally");
 });
 
-test("the legacy P1-19 and P1-20 cards are excluded from the Calidad cards and nothing else changes", () => {
-  assert.match(page, /f\.area === "quality" && f\.id !== Q19_FORM_ID && f\.id !== Q20_FORM_ID && norm\(/); // P1-20 central (Q3.2-B)
-  assert.equal((page.match(/Q19_FORM_ID/g) ?? []).length, 2); // import + filtro
-  assert.equal((page.match(/Q20_FORM_ID/g) ?? []).length, 2); // import + filtro: ningún otro formulario se excluye
-  assert.match(page, /f\.id === "form_19_control_de_humedad"/); // la definición legacy sigue existiendo
-  assert.equal(/f\.id !== "form_18|f\.id !== "form_20|f\.id !== "form_21/.test(page), false);
+test("INT-02A: Calidad has no local cards at all (the legacy P1-19 / P1-20 exclusion filter is gone with them); the legacy definitions stay in the seed source", () => {
+  assert.equal(/Q19_FORM_ID|Q20_FORM_ID/.test(page), false);
+  assert.equal(/f\.area === "quality"/.test(page), false);
+  assert.match(page, /f\.id === "form_19_control_de_humedad"/); // la definición legacy sigue existiendo (fuente inerte de la siembra)
 });
 
 test("the pending attempt survives Volver: the form is mounted with the attempt's bobbin", () => {

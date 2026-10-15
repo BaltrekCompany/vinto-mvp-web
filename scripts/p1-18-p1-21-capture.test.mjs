@@ -263,6 +263,6 @@ test("alcance: políticas vacías en el backend, producción y seed_data intacto
   const history = read("lib/vinto/quality-history-api.ts");
   assert.match(history, /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/); // el historial de la bobina de P1-19 / P1-20 no cambia
   const page = read("app/page.tsx");
-  assert.match(page, /function Fiber\(/); // los formularios legacy y sus registros no se tocan
+  assert.equal(/function Fiber\(|function Capture\(/.test(page), false); // INT-02A (cambio de contrato): las pantallas locales se retiraron; los registros locales históricos no se tocan (la pantalla no los lee ni los escribe)
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false);
 });

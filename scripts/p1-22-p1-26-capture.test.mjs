@@ -197,6 +197,6 @@ test("alcance: política de Calidad por máquina vacía, producción y seed_data
   assert.match(page, /if \(qualCapture && front === "Calidad"\)/);
   assert.match(page, /machine=\{pending \? pending\.machine : qualCapture\.machine\}/);
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false);
-  assert.match(page, /function Fiber\(/); // los formularios legacy y sus registros no se tocan
+  assert.equal(/function Fiber\(|function Capture\(/.test(page), false); // INT-02A (cambio de contrato): las pantallas locales se retiraron; los registros locales históricos no se tocan (la pantalla no los lee ni los escribe)
   assert.match(page, /setQualCapture\(null\); setQualAttempts\(\{\}\)/); // la sesión perdida descarta los intentos
 });

@@ -119,8 +119,8 @@ const api = strip(read("../lib/vinto/quality-api.ts"));
 const lib = strip(read("../lib/vinto/quality-bobbins.ts"));
 const component = strip(read("../components/vinto/quality-bobbin-inbox.tsx"));
 const executionBody = page.slice(page.indexOf("function Execution("), page.indexOf("function Cards("));
-const programmingBody = page.slice(page.indexOf("function Programming("), page.indexOf("function Execution("));
-const trackingBody = page.slice(page.indexOf("function Tracking("), page.indexOf("function downloadRows("));
+const programmingBody = page.slice(page.indexOf("function QualityProgrammingNote("), page.indexOf("function Execution(")); // INT-02A: la programación local se retiró; queda la nota de Calidad
+const trackingBody = page.slice(page.indexOf("function Tracking("), page.indexOf("// ====", page.indexOf("function Tracking(")));
 
 test("the API consumes GET /api/quality/bobbins and nothing else", () => {
   assert.match(api, /"\/api\/quality\/bobbins"/);
