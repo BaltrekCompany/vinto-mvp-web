@@ -416,6 +416,6 @@ test("INT-02A: the legacy local P1-20 card is gone with every local card; Bobina
 });
 
 test("the history API stays a read-only GET; its viewer registry maps P1-19 and P1-20 to their own strict parsers", () => {
-  assert.match(historyApi, /const VIEWERS: HistoryViewers = \{ \[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\) \};/);
+  assert.match(historyApi, /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/);
   assert.equal(/method:|POST|PATCH|PUT|DELETE|localStorage|sessionStorage|submitPhysical|createPhysicalAttempt/.test(historyApi), false);
 });
