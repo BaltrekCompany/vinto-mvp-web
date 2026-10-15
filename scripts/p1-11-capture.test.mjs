@@ -360,6 +360,6 @@ test("component and clients never touch business storage; P1-11 is wired only be
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
   assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p111"/);
   assert.match(page, /P111CaptureForm/);
-  assert.equal((page.match(/setP111Attempt\(null\); setP111Context\(null\)/g) ?? []).length, 2); // session loss and logout clear the pending attempt
+  assert.equal((page.match(/setP111Attempt\(null\); setP111Context\(null\)/g) ?? []).length, 1); // session loss and logout clear the pending attempt
   for (const dir of ["app/p1-11", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
 });

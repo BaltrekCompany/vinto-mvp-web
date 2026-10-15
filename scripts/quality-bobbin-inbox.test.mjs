@@ -190,7 +190,7 @@ test("Programming and Tracking do not present demo releases as Calidad state", (
 
 test("the resource is enabled only for Calidad + quality.capture in Ejecución, with sessionLost, and ignores the active assignment", () => {
   const declaration = page.slice(page.indexOf("const qualityInbox = useResource"), page.indexOf("const refreshCentral"));
-  assert.match(declaration, /useResource<QualityBobbinInboxItem\[\]>\("quality-bobbin-inbox"/);
+  assert.match(declaration, /useResource<QualityBobbinInboxItem\[\]>\(qualityInboxKey\(scope\)/);
   assert.match(declaration, /front === "Calidad" && canReadQualityInbox && activeModule === "ejecucion"/);
   assert.match(declaration, /listQualityBobbins\(signal\)/);
   assert.match(declaration, /sessionLost\)/);

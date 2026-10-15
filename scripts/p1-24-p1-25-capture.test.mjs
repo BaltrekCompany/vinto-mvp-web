@@ -190,7 +190,7 @@ test("alcance: política vacía, producción y seed_data intactos, sin migracion
   assert.match(read("backend/app/quality/machine_capture_service.py"), /^MACHINE_QUALITY_FORM_CODES: frozenset = frozenset\(\)$/m);
   assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
   assert.equal(readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql")).length, 6);
-  assert.equal(/VINTO-P1-19|VINTO-P1-20/.test(bobbin), false);
+  assert.equal(/VINTO-P1-19|VINTO-P1-20/.test(bobbin.replace(/^CENTRAL_BOBBIN_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-19", "VINTO-P1-20"\}\)$/m, "").replace(/^"""[\s\S]*?"""/, "")), false); // INT-01A: solo en la política positiva
   assert.equal(/UPDATE vinto_txn\.quality_release|INSERT INTO vinto_txn\.(bobbin|assignment|work_order|quality_release)|decided_by|decision_reason/.test(bobbin.replace(/^"""[\s\S]*?"""/, "")), false);
   assert.match(read("lib/vinto/quality-history-api.ts"), /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/);
 });

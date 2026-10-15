@@ -397,7 +397,7 @@ test("the Inbox offers 'Registrar propiedades' per bobbin with that row's item",
 test("Home: own selection and attempt for P1-20, opened from the inbox, gated by quality.capture, cleared on logout/session loss", () => {
   assert.match(page, /const \[selectedPhysicalBobbin, setSelectedPhysicalBobbin\] = useState<QualityBobbinInboxItem \| null>\(null\), \[physicalAttempt, setPhysicalAttempt\] = useState<PendingPhysicalAttempt \| null>\(null\);/);
   assert.match(page, /onRegisterProperties=\{item => setSelectedPhysicalBobbin\(physicalAttempt \? physicalAttempt\.bobbin : item\)\}/);
-  assert.equal((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\); setQualityHistory\(null\); setSelectedPhysicalBobbin\(null\); setPhysicalAttempt\(null\);/g) ?? []).length, 2);
+  assert.equal((page.match(/setSelectedQualityBobbin\(null\); setHumidityAttempt\(null\); setQualityHistory\(null\); setSelectedPhysicalBobbin\(null\); setPhysicalAttempt\(null\);/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
   const branch = page.slice(page.indexOf("if (selectedPhysicalBobbin && canReadQualityInbox)"), page.indexOf("// Calidad · historial de controles"));
   assert.match(branch, /<QualityPhysicalCapture item=\{selectedPhysicalBobbin\} online=\{online\} attempt=\{physicalAttempt\} setAttempt=\{setPhysicalAttempt\}/);
   assert.match(branch, /back=\{\(\) => setSelectedPhysicalBobbin\(null\)\}/); // Volver NO borra el intento pendiente

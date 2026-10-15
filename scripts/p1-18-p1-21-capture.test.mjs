@@ -202,7 +202,7 @@ test("aislamiento por usuario y por bobina: disponibilidad e historiales de la c
   assert.match(page, /useResource\(`quality-bobbin-forms:\$\{scope\}`, authenticated && front === "Calidad" && canReadQualityInbox && activeModule === "ejecucion", signal => getQualityBobbinForms\(signal\), sessionLost\)/);
   assert.notEqual(availabilityKey(false, sessionScope(A)), availabilityKey(false, sessionScope(B)));
   assert.match(page, /setBobbinCand\(null\); setBobbinCandAttempts\(\{\}\)/); // la sesión perdida (y el cierre de sesión) descartan la bobina y los intentos pendientes
-  assert.equal((page.match(/setBobbinCand\(null\); setBobbinCandAttempts\(\{\}\);/g) ?? []).length, 2);
+  assert.equal((page.match(/setBobbinCand\(null\); setBobbinCandAttempts\(\{\}\);/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
 });
 
 test("el cliente HTTP de P1-21 reutiliza las rutas de Calidad por bobina (bobina en la ruta, historial filtrado) y P1-18 las de por máquina; nunca almacenamiento local", () => {
@@ -259,7 +259,7 @@ test("alcance: políticas vacías en el backend, producción y seed_data intacto
   assert.equal(/machine_capture|MACHINE_QUALITY/.test(bobbin + read("backend/app/quality/router.py") + read("backend/app/quality/service.py")), false);
   assert.equal(/BOBBIN_CANDIDATE|capture_service as bobbin/.test(machine), false);
   // la política por bobina solo afecta al candidato: P1-19 / P1-20 no se mencionan ni se condicionan
-  assert.equal(/VINTO-P1-19|VINTO-P1-20/.test(bobbin), false);
+  assert.equal(/VINTO-P1-19|VINTO-P1-20/.test(bobbin.replace(/^CENTRAL_BOBBIN_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-19", "VINTO-P1-20"\}\)$/m, "").replace(/^"""[\s\S]*?"""/, "")), false); // INT-01A: P1-19 / P1-20 solo figuran en la política positiva CENTRAL_BOBBIN_FORM_CODES
   const history = read("lib/vinto/quality-history-api.ts");
   assert.match(history, /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/); // el historial de la bobina de P1-19 / P1-20 no cambia
   const page = read("app/page.tsx");

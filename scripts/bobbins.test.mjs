@@ -311,7 +311,7 @@ test("F3 is rendered by its own component before the generic Capture and never c
 });
 
 test("session loss clears the F3 attempt and old local F3 records are not shown as central tracking", () => {
-  assert.ok((page.match(/setF3Attempt\(null\)/g) ?? []).length >= 2);
+  assert.ok((page.match(/setF3Attempt\(null\)/g) ?? []).length >= 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
   assert.ok((page.match(/r\.formId !== F6_FORM_ID && r\.formId !== F3_FORM_ID/g) ?? []).length >= 1);
 });
 

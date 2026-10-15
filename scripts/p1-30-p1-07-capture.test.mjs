@@ -184,12 +184,11 @@ test("aislamiento por usuario y formulario: disponibilidad e historiales de otra
   assert.equal(JSON.stringify(deriveView(candidateHistoryKey("reb-p107", sessionScope(A), 0), true, 0, stored)).includes("control-de-A"), false);
   const central = code("components/vinto/sector-central.tsx"), page = read("app/page.tsx");
   assert.match(central, /useAvailability\(canManageOrders && module === "programacion", true, onSessionLost, scope\)/);
-  assert.match(central, /candidateHistoryKey\("reb-p130", scope \?\? "", refreshKey\)/);
-  assert.match(central, /candidateHistoryKey\("reb-p107", scope \?\? "", refreshKey\)/);
-  assert.match(central, /scope !== undefined/);
+  assert.match(central, /candidateHistoryKey\("reb-p130", scope, refreshKey\)/);
+  assert.match(central, /candidateHistoryKey\("reb-p107", scope, refreshKey\)/);
   assert.match(page, /<RebobinadoCentral [^>]*refreshKey=\{rebRefresh\} scope=\{scope\}/);
   assert.match(page, /<ConversionCentral|ConversionCentral/);
-  assert.equal((page.match(/setRebCandAttempts\(\{\}\);/g) ?? []).length, 2, "la sesión perdida y el cierre de sesión descartan los intentos pendientes");
+  assert.equal((page.match(/setRebCandAttempts\(\{\}\);/g) ?? []).length, 1, "la sesión perdida y el cierre de sesión descartan los intentos pendientes");
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts", "components/vinto/sector-central.tsx", "components/vinto/candidate-form-capture.tsx"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records|document\.cookie/.test(code(file)), false, file);
 });
 

@@ -22,5 +22,12 @@ export function deriveView<T>(key: string, enabled: boolean, attempt: number, st
 // Identificador de sesión para las claves: el usuario autenticado; sin sesión, un valor fijo que nunca coincide con el de un usuario.
 export const sessionScope = (user: { id: string } | null | undefined): string => (user ? `user:${user.id}` : "anonymous");
 
-export const availabilityKey = (withArticles: boolean, scope?: string): string => `availability:${withArticles ? "articles" : "base"}${scope ? `:${scope}` : ""}`;
+// INT-01B: TODAS las claves de recursos centrales llevan la identidad de la sesión (`scope` = sessionScope(user)); ninguna es constante. Una vista guardada con la clave de una cuenta nunca se presenta bajo la de
+// otra (deriveView), ni siquiera mientras la solicitud de la nueva cuenta sigue cargando. Las claves no contienen cookies, tokens ni secretos: solo el id del usuario y el tipo de recurso, la máquina, la bobina o el formulario.
+export const availabilityKey = (withArticles: boolean, scope: string): string => `availability:${withArticles ? "articles" : "base"}:${scope}`;
 export const candidateHistoryKey = (screen: string, scope: string, refresh: number): string => `captures-${screen}:${scope}:${refresh}`;
+export const workOrdersKey = (scope: string): string => `work-orders:${scope}`;
+export const assignmentsKey = (scope: string): string => `assignments:${scope}`;
+export const activeAssignmentKey = (machineCode: string, scope: string): string => `active:${scope}:${machineCode}`;
+export const qualityInboxKey = (scope: string): string => `quality-bobbin-inbox:${scope}`;
+export const qualityHistoryKey = (scope: string, bobbinId: string | null, seq: number): string => `quality-history:${scope}:${bobbinId ?? "none"}:${seq}`;

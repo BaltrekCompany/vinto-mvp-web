@@ -218,7 +218,7 @@ test("alcance: políticas vacías, producción y seed intactos, sin migraciones,
   assert.match(bobbin, /^ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\)$/m);
   assert.match(bobbin, /^BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"\}\)$/m);
   assert.match(bobbin, /"VINTO-P1-28": "numero_de_bobina"\}$/m);
-  assert.equal(bobbin.includes("P1-27"), false, "P1-27 es de máquina: no está en la política por bobina");
+  assert.equal(bobbin.replace(/^"""[\s\S]*?"""/, "").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n").includes("P1-27"), false, "P1-27 es de máquina: no está en ninguna política por bobina (solo se menciona en la documentación INT-01A)");
   assert.equal(/VINTO-P1-27/.test(machine), false, "la política por máquina sigue vacía: P1-27 solo se habilita en pruebas");
   assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)$/m);
   assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)$/m);

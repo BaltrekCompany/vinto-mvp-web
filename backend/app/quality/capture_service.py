@@ -12,6 +12,11 @@ Una captura es UNA transacción:
 
 NUNCA toca quality_release: ni liberar, ni rechazar, ni decided_by/decided_at/decision_reason.
 
+POLÍTICA POSITIVA DE LA RUTA POR BOBINA (INT-01A): esta ruta solo acepta (escritura, reintento idempotente, lectura por id, historial y historial filtrado) los formularios de `_allowed_codes()`:
+`CENTRAL_BOBBIN_FORM_CODES` (P1-19 y P1-20) más los candidatos por bobina que `ENABLED_BOBBIN_CANDIDATE_FORM_CODES` habilite. Que un formulario de área `quality` esté publicado y vinculado a la máquina de la Bobina
+NO basta: los exclusivos de Calidad por máquina (P1-18, P1-22, P1-26, P1-27) y cualquier formulario desconocido se rechazan (422 UNSUPPORTED_FORM) y sus capturas no se leen por esta ruta (404). Los entornos de prueba
+amplían la política con patch.object sobre estas constantes; la configuración real no cambia.
+
 FORMULARIOS CANDIDATOS POR BOBINA (DEV-Q2, DEV-Q3 y DEV-CLOSE, VINTO-P1-21 / P1-24 / P1-25 / P1-28; P1-28 es una ficha DOCUMENTAL: no rechaza ni toca quality_release): `BOBBIN_CANDIDATE_FORM_CODES` los conoce y `ENABLED_BOBBIN_CANDIDATE_FORM_CODES` (VACÍA en la configuración real) los habilita; solo los entornos de
 prueba lo hacen con patch.object. Un candidato no habilitado se rechaza (422), no se lista y sus capturas no se leen. El resto de formularios (P1-19, P1-20 y los de prueba) conserva EXACTAMENTE el comportamiento
 anterior: publicación + vínculo con la máquina de la Bobina. NO se bloquean aquí los formularios que pertenecen a Calidad por máquina (pendiente transversal, incremento independiente).
@@ -31,6 +36,8 @@ from app.sectors import scoped_sector_codes
 REASON = "submit quality capture"
 QUALITY_AREA = "quality"
 
+# POLÍTICA (INT-01A): formularios CENTRALES de Calidad por Bobina permitidos por esta ruta. Los candidatos por Bobina se suman solo si ENABLED_BOBBIN_CANDIDATE_FORM_CODES los habilita.
+CENTRAL_BOBBIN_FORM_CODES: frozenset = frozenset({"VINTO-P1-19", "VINTO-P1-20"})
 # POLÍTICA: formularios candidatos por Bobina (sin homologar). Conocidos aquí; habilitados SOLO si figuran en ENABLED_… (vacío en producción).
 BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"})
 ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset()
@@ -98,12 +105,16 @@ _VIEW_SQL = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at,
                JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id
                JOIN vinto_master.article_version av ON av.id = b.article_version_id
                JOIN vinto_master.article ar ON ar.id = av.article_id
-               WHERE fv.area = 'quality' AND c.bobbin_id IS NOT NULL AND s.code = ANY(%s) AND f.code <> ALL(%s)"""
+               WHERE fv.area = 'quality' AND c.bobbin_id IS NOT NULL AND s.code = ANY(%s) AND f.code = ANY(%s)"""
 
 
-def _disabled_codes() -> list[str]:
-    """Candidatos por Bobina que la política NO habilita: sus capturas no se leen ni se listan."""
-    return sorted(BOBBIN_CANDIDATE_FORM_CODES - ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
+def _allowed(code) -> bool:
+    return isinstance(code, str) and (code in CENTRAL_BOBBIN_FORM_CODES or (code in BOBBIN_CANDIDATE_FORM_CODES and code in ENABLED_BOBBIN_CANDIDATE_FORM_CODES))
+
+
+def _allowed_codes() -> list[str]:
+    """Formularios que esta ruta admite hoy (política positiva). Todo lo demás: no se acepta, no se lee y no se lista."""
+    return sorted(CENTRAL_BOBBIN_FORM_CODES | (BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES))
 
 
 def _to_view(connection, row) -> QualityCaptureView:
@@ -112,7 +123,7 @@ def _to_view(connection, row) -> QualityCaptureView:
 
 def get_quality_capture(connection, capture_id, *, sectors) -> QualityCaptureView:
     capture_id = cs._uuid(capture_id, CaptureNotFoundError)
-    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(scoped_sector_codes(sectors)), _disabled_codes(), capture_id)).fetchone()
+    row = connection.execute(_VIEW_SQL + " AND c.id = %s", (list(scoped_sector_codes(sectors)), _allowed_codes(), capture_id)).fetchone()
     if row is None:
         raise CaptureNotFoundError()
     return _to_view(connection, row)
@@ -132,7 +143,7 @@ def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
 
 def available_bobbin_forms(connection, *, sectors) -> list[dict]:
     """Máquinas del alcance y candidatos por Bobina que el backend publica (política + versión publicada de área quality + vínculo). Vacío con la política real. Solo lectura."""
-    return available_quality_forms(connection, sectors, ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
+    return available_quality_forms(connection, sectors, BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
 
 
 def _check_declared_bobbin(connection, form_code, bobbin_id, clean):
@@ -150,9 +161,9 @@ def list_bobbin_quality_captures(connection, bobbin_id, *, form_code=None, secto
     """Capturas de Calidad enviadas de una Bobina (más recientes primero; orden solo de presentación). Sin paginación. `form_code` opcional filtra por formulario (un candidato no habilitado: 422)."""
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
     _bobbin_context(connection, bobbin_id, sectors)
-    if form_code is not None and form_code in BOBBIN_CANDIDATE_FORM_CODES and form_code not in ENABLED_BOBBIN_CANDIDATE_FORM_CODES:
-        raise UnsupportedFormError()
-    query, params = _VIEW_SQL + " AND c.bobbin_id = %s AND c.status IN ('submitted','closed')", [list(scoped_sector_codes(sectors)), _disabled_codes(), bobbin_id]
+    if form_code is not None and not _allowed(form_code):
+        raise UnsupportedFormError()  # un formulario que la política no admite (de máquina, candidato deshabilitado o desconocido) tampoco se consulta por esta ruta
+    query, params = _VIEW_SQL + " AND c.bobbin_id = %s AND c.status IN ('submitted','closed')", [list(scoped_sector_codes(sectors)), _allowed_codes(), bobbin_id]
     if form_code is not None:
         query, params = query + " AND f.code = %s", params + [form_code]
     rows = connection.execute(query + " ORDER BY c.captured_at DESC, c.id DESC", params).fetchall()
@@ -193,8 +204,8 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
     device_key = str(cs._uuid(device_key, CaptureValidationError))
     if not isinstance(form_code, str) or not form_code.strip():
         raise CaptureValidationError("form_code es obligatorio")
-    if form_code in BOBBIN_CANDIDATE_FORM_CODES and form_code not in ENABLED_BOBBIN_CANDIDATE_FORM_CODES:
-        raise UnsupportedFormError()  # política: un candidato publicado NO se acepta por el solo hecho de existir
+    if not _allowed(form_code):
+        raise UnsupportedFormError()  # política positiva (INT-01A): un formulario publicado NO se acepta por el solo hecho de existir; vale también para reintentos con un capture_id ya usado
     request_id = request_id or f"quality-capture:{uuid.uuid4()}"
     with connection.transaction():
         cs._lock(connection, f"vinto-capture-id:{capture_id}")  # misma clave que F6/F3: un capture_id es único entre todas las capturas
