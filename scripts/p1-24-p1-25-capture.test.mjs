@@ -185,7 +185,7 @@ test("se reutiliza la pantalla compartida: ni pantallas ni endpoints nuevos, sin
 test("alcance: política vacía, producción y seed_data intactos, sin migraciones nuevas, P1-19 / P1-20 / P1-21 sin tocar", () => {
   const bobbin = read("backend/app/quality/capture_service.py"), manifest = JSON.parse(read("backend/seed_data/manifest.json"));
   assert.match(bobbin, /^ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\)$/m);
-  assert.match(bobbin, /^BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25"\}\)$/m);
+  assert.match(bobbin, /^BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset\(\{"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"\}\)$/m);
   assert.match(bobbin, /"VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina"/);
   assert.match(read("backend/app/quality/machine_capture_service.py"), /^MACHINE_QUALITY_FORM_CODES: frozenset = frozenset\(\)$/m);
   assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);

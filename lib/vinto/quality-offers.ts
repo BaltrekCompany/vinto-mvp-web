@@ -2,9 +2,9 @@
 // de área quality y vínculo con la máquina) y de las pantallas que la interfaz sabe dibujar. Sin disponibilidad no se ofrece nada: nunca hay listas estáticas ni localStorage como respaldo. Sin red ni DOM.
 import type { Availability, MachineAvailability } from "./availability.ts";
 
-export const QUALITY_CANDIDATE_SCREENS = ["p118", "p122", "p126"] as const;
+export const QUALITY_CANDIDATE_SCREENS = ["p118", "p122", "p126", "p127"] as const;
 export type QualityCandidateScreen = (typeof QUALITY_CANDIDATE_SCREENS)[number];
-export const QUALITY_SCREEN_BY_FORM: Readonly<Record<string, QualityCandidateScreen>> = { "VINTO-P1-18": "p118", "VINTO-P1-22": "p122", "VINTO-P1-26": "p126" };
+export const QUALITY_SCREEN_BY_FORM: Readonly<Record<string, QualityCandidateScreen>> = { "VINTO-P1-18": "p118", "VINTO-P1-22": "p122", "VINTO-P1-26": "p126", "VINTO-P1-27": "p127" };
 
 const screenOf = (code: string): QualityCandidateScreen | null => QUALITY_SCREEN_BY_FORM[code] ?? null;
 
@@ -28,9 +28,9 @@ export function publishedQualityScreens(availability: Availability): QualityCand
 // ---- candidatos de Calidad POR BOBINA (DEV-Q2) --------------------------------------------------------------------------------
 // La disponibilidad sale de GET /api/quality/bobbin-forms (política habilitada, versión publicada de área quality y vínculo con la máquina); se ofrece para la MÁQUINA de la bobina seleccionada. Es independiente
 // de la de Calidad por máquina: un formulario de una no se ofrece en la otra.
-export const QUALITY_BOBBIN_SCREENS = ["p121", "p124", "p125"] as const;
+export const QUALITY_BOBBIN_SCREENS = ["p121", "p124", "p125", "p128"] as const;
 export type QualityBobbinScreen = (typeof QUALITY_BOBBIN_SCREENS)[number];
-export const BOBBIN_SCREEN_BY_FORM: Readonly<Record<string, QualityBobbinScreen>> = { "VINTO-P1-21": "p121", "VINTO-P1-24": "p124", "VINTO-P1-25": "p125" };
+export const BOBBIN_SCREEN_BY_FORM: Readonly<Record<string, QualityBobbinScreen>> = { "VINTO-P1-21": "p121", "VINTO-P1-24": "p124", "VINTO-P1-25": "p125", "VINTO-P1-28": "p128" };
 
 export function bobbinScreensFor(availability: Availability, machineCode: string): QualityBobbinScreen[] {
     const machine = availability.sectors.flatMap((s) => s.machines).find((m) => m.code === machineCode);

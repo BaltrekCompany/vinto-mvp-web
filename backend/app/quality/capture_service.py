@@ -12,7 +12,7 @@ Una captura es UNA transacción:
 
 NUNCA toca quality_release: ni liberar, ni rechazar, ni decided_by/decided_at/decision_reason.
 
-FORMULARIOS CANDIDATOS POR BOBINA (DEV-Q2 y DEV-Q3, VINTO-P1-21 / P1-24 / P1-25): `BOBBIN_CANDIDATE_FORM_CODES` los conoce y `ENABLED_BOBBIN_CANDIDATE_FORM_CODES` (VACÍA en la configuración real) los habilita; solo los entornos de
+FORMULARIOS CANDIDATOS POR BOBINA (DEV-Q2, DEV-Q3 y DEV-CLOSE, VINTO-P1-21 / P1-24 / P1-25 / P1-28; P1-28 es una ficha DOCUMENTAL: no rechaza ni toca quality_release): `BOBBIN_CANDIDATE_FORM_CODES` los conoce y `ENABLED_BOBBIN_CANDIDATE_FORM_CODES` (VACÍA en la configuración real) los habilita; solo los entornos de
 prueba lo hacen con patch.object. Un candidato no habilitado se rechaza (422), no se lista y sus capturas no se leen. El resto de formularios (P1-19, P1-20 y los de prueba) conserva EXACTAMENTE el comportamiento
 anterior: publicación + vínculo con la máquina de la Bobina. NO se bloquean aquí los formularios que pertenecen a Calidad por máquina (pendiente transversal, incremento independiente).
 Si el formulario declara un campo con el número de bobina (`BOBBIN_CODE_FIELDS`), debe coincidir con la Bobina de la ruta: un registro contradictorio se rechaza (422).
@@ -32,10 +32,10 @@ REASON = "submit quality capture"
 QUALITY_AREA = "quality"
 
 # POLÍTICA: formularios candidatos por Bobina (sin homologar). Conocidos aquí; habilitados SOLO si figuran en ENABLED_… (vacío en producción).
-BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25"})
+BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"})
 ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset()
 # Campo manual que declara el número de bobina: debe ser exactamente el código de la Bobina de la ruta (se compara el texto recortado, sin interpretarlo).
-BOBBIN_CODE_FIELDS: dict = {"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina"}
+BOBBIN_CODE_FIELDS: dict = {"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina", "VINTO-P1-28": "numero_de_bobina"}
 
 
 @dataclass(frozen=True)
