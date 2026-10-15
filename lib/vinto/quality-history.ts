@@ -5,7 +5,8 @@
 // rechaza la respuesta COMPLETA (nunca se oculta en silencio un control). Un formulario sin visor específico se muestra solo con sus
 // metadatos; sus valores no se interpretan.
 
-import type { QualityApiLike, QualityCapture } from "./quality-captures.ts"; // solo tipos: se borran al compilar
+import type { CandidateCapture } from "./candidate-form.ts"; // solo tipos: se borran al compilar
+import type { QualityApiLike, QualityCapture } from "./quality-captures.ts";
 import type { PhysicalCapture } from "./quality-physical.ts";
 import type { Resource } from "./use-central.ts";
 
@@ -13,16 +14,19 @@ export const PLANT_TIME_ZONE = "America/La_Paz";
 
 export type QualityHistoryMeta = Omit<QualityCapture, "values">;
 // Detalle que produce el visor de un formulario: unión DISCRIMINADA, cada variante con su propio tipo de captura (nunca se mezclan).
-export type HistoryDetail = { kind: "humidity"; capture: QualityCapture } | { kind: "physical"; capture: PhysicalCapture };
+// "candidate" (INT-02B) reutiliza el parser ESTRICTO de un formulario candidato por bobina (P1-21/P1-24/P1-25/P1-28, candidate-form.ts); su `bobbin` es OPCIONAL en el tipo (otros contextos no la llevan), pero
+// el contexto "bobbin" siempre la incluye: sameIdentity exige su presencia.
+export type HistoryDetail = { kind: "humidity"; capture: QualityCapture } | { kind: "physical"; capture: PhysicalCapture } | { kind: "candidate"; capture: CandidateCapture };
 export type QualityHistoryEntry =
     | { kind: "humidity"; meta: QualityHistoryMeta; capture: QualityCapture } // P1-19 que pasó su validación estricta
     | { kind: "physical"; meta: QualityHistoryMeta; capture: PhysicalCapture } // P1-20 que pasó su validación estricta
+    | { kind: "candidate"; meta: QualityHistoryMeta; capture: CandidateCapture } // candidato por bobina (P1-21/P1-24/P1-25/P1-28) que pasó su validación estricta
     | { kind: "invalid"; meta: QualityHistoryMeta } // formulario con visor cuyos datos NO pasan su validación: error seguro, sin mediciones
     | { kind: "unsupported"; meta: QualityHistoryMeta }; // formulario todavía sin visor: solo metadatos
 export type QualityBobbinHistory = { bobbinId: string; entries: QualityHistoryEntry[] };
 export type ExpectedBobbin = { id: string; code: string };
 // Formularios con visor específico: código -> visor (parser ESTRICTO de ese formulario + su variante). Registro real en quality-history-api.ts:
-// { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture) }.
+// { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture), [P1_21_CODE]: candidateViewer(P121.parseCapture), … }.
 export type HistoryViewer = (raw: unknown) => HistoryDetail | null;
 export type HistoryViewers = Readonly<Record<string, HistoryViewer>>;
 
@@ -34,11 +38,17 @@ export const physicalViewer = (parse: (raw: unknown) => PhysicalCapture | null):
     const capture = parse(raw);
     return capture ? { kind: "physical", capture } : null;
 };
+// Candidato por bobina (P1-21/P1-24/P1-25/P1-28): `parse` es el `parseCapture` ESTRICTO ya existente de esa definición (candidate-form.ts); no se reimplementa ni se relaja.
+export const candidateViewer = (parse: (raw: unknown) => CandidateCapture | null): HistoryViewer => (raw) => {
+    const capture = parse(raw);
+    return capture ? { kind: "candidate", capture } : null;
+};
 
-// La identidad que devuelve el parser específico debe ser la MISMA que la de los metadatos comunes y la de la Bobina consultada.
+// La identidad que devuelve el parser específico debe ser la MISMA que la de los metadatos comunes y la de la Bobina consultada. `?.` porque CandidateCapture.bobbin es opcional en el tipo (otros contextos
+// candidatos no la llevan); los otros dos tipos de captura siempre la traen, así que el comportamiento existente no cambia para ellos.
 const sameIdentity = (detail: HistoryDetail, meta: QualityHistoryMeta, expected: ExpectedBobbin): boolean =>
     detail.capture.id === meta.id && detail.capture.form.code === meta.form.code && detail.capture.form.version_number === meta.form.version_number
-    && detail.capture.bobbin.id === expected.id && detail.capture.bobbin.code === expected.code;
+    && detail.capture.bobbin?.id === expected.id && detail.capture.bobbin?.code === expected.code;
 
 type Rec = Record<string, unknown>;
 const isRec = (value: unknown): value is Rec => typeof value === "object" && value !== null && !Array.isArray(value);

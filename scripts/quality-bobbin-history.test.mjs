@@ -11,19 +11,28 @@ import {
   Q19_FORM_CODE, WEIGHT_KEYS, captureMatchesHumidityAttempt, computeHumidity, createHumidityAttempt, formatHumidity, parseQualityCapture, EMPTY_HUMIDITY_DRAFT,
 } from "../lib/vinto/quality-captures.ts";
 import {
-  HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin, humidityViewer, parseHistoryMeta, parseQualityBobbinHistory,
-  physicalViewer, qualityHistoryLoad,
+  HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, candidateViewer, captureStatusLabel, formatPlantInstant, historyForBobbin, humidityViewer, parseHistoryMeta,
+  parseQualityBobbinHistory, physicalViewer, qualityHistoryLoad,
 } from "../lib/vinto/quality-history.ts";
 import {
   EMPTY_PHYSICAL_DRAFT, PHYSICAL_KEYS, Q20_FORM_CODE, averageLabel, averageOf, captureMatchesPhysicalAttempt, createPhysicalAttempt, parsePhysicalCapture, physicalAverages, seriesKeys,
 } from "../lib/vinto/quality-physical.ts";
+import { P121, P1_21_CODE } from "../lib/vinto/p1-21.ts";
+import { P124, P1_24_CODE } from "../lib/vinto/p1-24.ts";
+import { P125, P1_25_CODE } from "../lib/vinto/p1-25.ts";
+import { P128, P1_28_CODE, P128_OFFICIAL_STATUS_NOTE } from "../lib/vinto/p1-28.ts";
 
 // Evidencia DEV (prueba sintética de Q2): solo como fixture; aquí no se lee ni se escribe la base.
 const BOBBIN_ID = "f96d57a1-ab3d-4d5d-93c0-a1af2a18408b";
 const CAPTURE_ID = "e75e35b2-de12-414d-80c9-15041cc3a9be";
 const OTHER_BOBBIN_ID = "12121212-1212-4212-8212-121212121212";
 const BOBBIN = { id: BOBBIN_ID, code: "1" };
-const VIEWERS = { [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture) }; // el mismo registro que lib/vinto/quality-history-api.ts
+// El mismo registro que lib/vinto/quality-history-api.ts (INT-02B añade los cuatro candidatos por bobina).
+const VIEWERS = {
+  [Q19_FORM_CODE]: humidityViewer(parseQualityCapture), [Q20_FORM_CODE]: physicalViewer(parsePhysicalCapture),
+  [P1_21_CODE]: candidateViewer(P121.parseCapture), [P1_24_CODE]: candidateViewer(P124.parseCapture),
+  [P1_25_CODE]: candidateViewer(P125.parseCapture), [P1_28_CODE]: candidateViewer(P128.parseCapture),
+};
 const DEV_VALUES = { peso_humedo_comando: "0.100", peso_seco_comando: "0.094", peso_humedo_medio: "0.101", peso_seco_medio: "0.095", peso_humedo_transversal: "0.099", peso_seco_transversal: "0.093" };
 
 const capture = (o = {}) => ({
@@ -236,8 +245,12 @@ test("the API only GETs the existing endpoint through requestJson, with cancella
   assert.equal(/method:|POST|PATCH|PUT|DELETE/.test(api), false);
   assert.equal(/fetch\(|Authorization|document\.cookie|localStorage|sessionStorage|indexedDB/.test(api), false);
   assert.match(api, /AbortSignal\.any\(\[signal, AbortSignal\.timeout\(GET_TIMEOUT_MS\)\]\)/);
-  assert.match(api, /const VIEWERS: HistoryViewers = \{ \[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\) \};/,
+  assert.match(api, /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/,
     "P1-19 and P1-20 go through their strict parsers (Q2 / Q3.2-B)");
+  assert.match(api, /\[P1_21_CODE\]: candidateViewer\(P121\.parseCapture\)/, "P1-21 reuses its own strict candidate parser (INT-02B)");
+  assert.match(api, /\[P1_24_CODE\]: candidateViewer\(P124\.parseCapture\)/, "P1-24 reuses its own strict candidate parser (INT-02B)");
+  assert.match(api, /\[P1_25_CODE\]: candidateViewer\(P125\.parseCapture\)/, "P1-25 reuses its own strict candidate parser (INT-02B)");
+  assert.match(api, /\[P1_28_CODE\]: candidateViewer\(P128\.parseCapture\)/, "P1-28 reuses its own strict candidate parser (INT-02B)");
   assert.match(api, /if \(!result\.ok && result\.kind === "session"\) return result;/, "401 reaches the existing session-lost flow");
   assert.equal(/\/api\/quality\/(?!bobbins\/\$\{)/.test(api), false, "no other endpoint");
 });
@@ -469,4 +482,126 @@ test("the P1-20 detail reuses the Q3.2-B constants and functions, shows exact te
   assert.match(component, /\{entry\.kind === "humidity" && <HumidityDetail capture=\{entry\.capture\}\/>\}/);
   assert.match(component, /<Fact label="Gramaje nominal de Producción" value=\{grammageLabel\(bobbin\.grammage_g_m2\)\}\/>/);
   assert.equal(/dangerouslySetInnerHTML|indexedDB/.test(component), false);
+});
+
+// ---- INT-02B · candidatos por bobina P1-21/P1-24/P1-25/P1-28 con detalle reutilizado ------------------------------------------
+// El backend (INT-01A) ya filtra qué formularios llegan por /api/quality/bobbins/{id}/captures: estos candidatos solo aparecen en la
+// respuesta real cuando ENABLED_BOBBIN_CANDIDATE_FORM_CODES los habilita (vacío en producción; solo entornos de prueba). Aquí se prueba
+// el parser/visor del lado del frontend con el MISMO parser estricto que ya usan la captura y el historial propio del candidato
+// (candidate-form.ts / lib/vinto/pX.ts): no se reimplementa ni se relaja.
+const P121_ID = "66666666-6666-4666-8666-666666666666";
+const P121_VALUES = { numero_de_bobina: "1", posicion_de_perfil: "centro", gramaje: "18.250", peso_seco: "0.095" };
+const p121 = (o = {}) => capture({ id: P121_ID, form: { code: P1_21_CODE, version_number: 1, name: "Perfil de gramaje y humedad" }, values: { ...P121_VALUES }, ...o });
+
+const P124_ID = "99999999-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const P124_VALUES = {
+  numero_de_bobina: "1", producto: "M1-1031", crepado: "12.0", gramaje: "18.250", resistencia_longitudinal_humeda_centro: "0.050", resistencia_longitudinal_humeda_medio: "0.051",
+  resistencia_longitudinal_humeda_extremo: "0.049", resistencia_transversal_humeda_centro: "0.030", resistencia_transversal_humeda_medio: "0.031", resistencia_transversal_humeda_extremo: "0.029",
+  tiempo_de_curado_condicion: "5.0",
+};
+const p124 = (o = {}) => capture({ id: P124_ID, form: { code: P1_24_CODE, version_number: 1, name: "Propiedades físicas en húmedo" }, values: { ...P124_VALUES }, ...o });
+
+const P125_ID = "bbbbbbbb-cccc-4ccc-8ccc-cccccccccccc";
+const P125_VALUES = {
+  numero_de_bobina: "1", producto: "M1-1031", crepado: "12.0", gramaje_laboratorio_g_m2: "18.250", curado_min: "5", resistencia_longitudinal_centro_kgf: "0.120",
+  resistencia_longitudinal_medio_kgf: "0.121", resistencia_longitudinal_extremo_kgf: "0.119", elongacion_media_longitudinal: "3.5", resistencia_longitudinal_humeda_centro_kgf: "0.050",
+  resistencia_longitudinal_humeda_medio_kgf: "0.051", resistencia_longitudinal_humeda_extremo_kgf: "0.049", elongacion_media_transversal: "2.1",
+};
+const p125 = (o = {}) => capture({ id: P125_ID, form: { code: P1_25_CODE, version_number: 1, name: "Resistencia en húmedo-curado" }, values: { ...P125_VALUES }, ...o });
+
+const P128_ID = "dddddddd-eeee-4eee-8eee-eeeeeeeeeeee";
+const P128_VALUES = { numero_de_bobina: "1", producto: "M1-1031", detalle_motivo_de_rechazo: "Borde roto", accion_correctiva: "Reproceso", peso_rechazado: "12.500", estado_disposicion_final: "En espera" };
+const p128 = (o = {}) => capture({ id: P128_ID, form: { code: P1_28_CODE, version_number: 1, name: "Registro de bobinas rechazadas" }, values: { ...P128_VALUES }, ...o });
+
+test("a valid P1-21/P1-24/P1-25/P1-28 capture parses as 'candidate' with its own strict values and the bobbin identity", () => {
+  for (const [make, id, code, values] of [[p121, P121_ID, P1_21_CODE, P121_VALUES], [p124, P124_ID, P1_24_CODE, P124_VALUES], [p125, P125_ID, P1_25_CODE, P125_VALUES], [p128, P128_ID, P1_28_CODE, P128_VALUES]]) {
+    const history = parse([make()]);
+    assert.equal(history.entries.length, 1, code);
+    const [entry] = history.entries;
+    assert.equal(entry.kind, "candidate", code);
+    assert.equal(entry.capture.id, id, code);
+    assert.equal(entry.capture.form.code, code, code);
+    assert.deepEqual(entry.capture.bobbin, BOBBIN, code);
+    assert.deepEqual(entry.capture.values, values, code);
+    assert.equal("capture" in entry.meta, false, code);
+  }
+});
+
+test("each candidate's own strict parser rejects the other three forms (fields never cross between candidates)", () => {
+  assert.equal(P121.parseCapture(p124()), null);
+  assert.equal(P124.parseCapture(p125()), null);
+  assert.equal(P125.parseCapture(p128()), null);
+  assert.equal(P128.parseCapture(p121()), null);
+  assert.ok(P121.parseCapture(p121()));
+  assert.ok(P124.parseCapture(p124()));
+  assert.ok(P125.parseCapture(p125()));
+  assert.ok(P128.parseCapture(p128()));
+});
+
+test("a candidate capture missing a required field is 'invalid' (never 'unsupported', never shown with partial values)", () => {
+  for (const [make, code] of [[p121, P1_21_CODE], [p124, P1_24_CODE], [p125, P1_25_CODE], [p128, P1_28_CODE]]) {
+    const missingKey = Object.keys(make().values).find((k) => k !== "observaciones");
+    const bad = make({ values: Object.fromEntries(Object.entries(make().values).filter(([k]) => k !== missingKey)) });
+    const history = parse([bad]);
+    assert.equal(history.entries[0].kind, "invalid", code);
+    assert.equal("capture" in history.entries[0], false, code);
+  }
+});
+
+test("a candidate capture of ANOTHER bobbin, or sharing an id with another entry, rejects the whole response", () => {
+  assert.equal(parse([p121({ bobbin: { id: OTHER_BOBBIN_ID, code: "1" } })]), null);
+  assert.equal(parse([p121({ bobbin: { id: BOBBIN_ID, code: "9" } })]), null, "same id, different code");
+  assert.equal(parse([capture(), p121({ id: CAPTURE_ID })]), null, "duplicated capture id across forms");
+  const lateFromOther = qualityHistoryLoad(OTHER_BOBBIN_ID, { ok: true, status: 200, data: parse([p121({ bobbin: { id: OTHER_BOBBIN_ID, code: "7" } })], { id: OTHER_BOBBIN_ID, code: "7" }) });
+  assert.deepEqual(historyForBobbin({ status: "ready", data: lateFromOther, refreshing: false }, BOBBIN_ID), { status: "loading" });
+});
+
+test("a lying candidate viewer (identity mismatch) is still caught by sameIdentity, like P1-19/P1-20", () => {
+  const liar = (patch) => ({ [P1_21_CODE]: (raw) => { const c = P121.parseCapture(raw); return c && { kind: "candidate", capture: { ...c, ...patch } }; } });
+  for (const patch of [{ id: "11111111-1111-4111-8111-111111111111" }, { bobbin: { id: OTHER_BOBBIN_ID, code: "1" } }, { form: { code: P1_21_CODE, version_number: 2, name: "x" } }]) {
+    assert.equal(parseQualityBobbinHistory([p121()], BOBBIN, liar(patch)).entries[0].kind, "invalid", JSON.stringify(patch));
+  }
+  assert.equal(parseQualityBobbinHistory([p121()], BOBBIN, liar({})).entries[0].kind, "candidate");
+});
+
+test("mixed P1-19 / P1-20 / four candidates / unknown history keeps the backend order and each entry its own kind", () => {
+  const list = [p128({ captured_at: "2026-10-08T18:00:00Z" }), p125({ captured_at: "2026-10-08T17:00:00Z" }), p124({ captured_at: "2026-10-08T16:30:00Z" }), p121({ captured_at: "2026-10-08T16:00:00Z" }),
+    other({ captured_at: "2026-10-08T15:00:00Z" }), capture({ captured_at: "2026-10-08T14:00:00Z" })];
+  const history = parse(list);
+  assert.deepEqual(history.entries.map((e) => e.kind), ["candidate", "candidate", "candidate", "candidate", "unsupported", "humidity"]);
+  assert.deepEqual(history.entries.slice(0, 4).map((e) => e.capture.form.code), [P1_28_CODE, P1_25_CODE, P1_24_CODE, P1_21_CODE]);
+});
+
+test("registering this viewer does not relax or bypass the candidate's own createAttempt/normalizeDraft validation", () => {
+  // El visor solo LEE con parseCapture; el envío sigue exigiendo los campos obligatorios de la definición (sin relación con el historial).
+  assert.equal(P121.createAttempt({ ...P121.emptyDraft(), numero_de_bobina: "1" }, BOBBIN_ID, "device-1").ok, false, "still missing posicion_de_perfil/gramaje/peso_seco");
+  assert.equal(P128.createAttempt(P128.emptyDraft(), BOBBIN_ID, "device-1").ok, false);
+});
+
+test("P1-28 is documental: the history never touches quality_release and its officialStatusNote is shown apart from the control, never as a release/reject action", () => {
+  assert.match(P128_OFFICIAL_STATUS_NOTE, /quality_release/);
+  assert.equal(/Liberar|Rechazar|liberar|rechazar/.test(P128_OFFICIAL_STATUS_NOTE), false);
+  assert.match(component, /CANDIDATE_OFFICIAL_NOTE: Readonly<Record<string, string>> = \{ \[P1_28_CODE\]: P128_OFFICIAL_STATUS_NOTE \};/);
+  assert.equal(/Liberar|Rechazar|liberar|rechazar|quality\.release|quality_release/.test(component), false, "the literal note text never appears inline in the component");
+});
+
+test("the candidate detail reuses each form's own FieldSpec (label + suffix), never a hardcoded second copy of its fields", () => {
+  assert.match(component, /const CANDIDATE_FIELDS: Readonly<Record<string, readonly FieldSpec\[\]>> = \{ \[P1_21_CODE\]: P121_FIELDS, \[P1_24_CODE\]: P124_FIELDS, \[P1_25_CODE\]: P125_FIELDS, \[P1_28_CODE\]: P128_FIELDS \};/);
+  assert.match(component, /\{entry\.kind === "candidate" && <CandidateDetail capture=\{entry\.capture\}\/>\}/);
+  const body = component.slice(component.indexOf("function CandidateDetail("), component.indexOf("function Body("));
+  assert.ok(body.length > 0);
+  assert.match(body, /f\.key !== "observaciones"/);
+  assert.match(body, /label=\{f\.label\} value=\{raw === undefined \? "—" : withUnit\(raw, f\.suffix\)\}/);
+  assert.match(body, /notes !== undefined && notes !== ""/);
+  assert.equal(/Number\(|parseFloat|toFixed|dangerouslySetInnerHTML|onClick|<Input|<Textarea|<select/.test(body), false, "read-only: no arithmetic, no HTML injection, no inputs");
+});
+
+test("reading P1-21/P1-24/P1-25/P1-28 history does not touch any pending attempt of another candidate form", () => {
+  const device = "99999999-9999-4999-8999-999999999999";
+  const made = P121.createAttempt({ ...P121.emptyDraft(), ...P121_VALUES }, BOBBIN_ID, device, () => P121_ID);
+  assert.ok(made.ok);
+  const before = JSON.stringify(made.attempt);
+  parse([p121(), p124(), p125(), p128()]);
+  assert.equal(JSON.stringify(made.attempt), before);
+  assert.ok(Object.isFrozen(made.attempt.payload.values));
 });

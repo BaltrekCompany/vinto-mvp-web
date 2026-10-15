@@ -2,6 +2,7 @@
 
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { CandidateCapture, FieldSpec } from "@/lib/vinto/candidate-form";
 import { POSITIONS, POSITION_LABELS, computeHumidity, formatHumidity, type QualityCapture } from "@/lib/vinto/quality-captures";
 import { grammageLabel, qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, physicalAverages, seriesKeys, type PhysicalCapture } from "@/lib/vinto/quality-physical";
@@ -9,12 +10,18 @@ import {
     HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin,
     type QualityHistoryEntry, type QualityHistoryLoad, type QualityHistoryMeta,
 } from "@/lib/vinto/quality-history";
+import { P121_FIELDS, P1_21_CODE } from "@/lib/vinto/p1-21";
+import { P124_FIELDS, P1_24_CODE } from "@/lib/vinto/p1-24";
+import { P125_FIELDS, P1_25_CODE } from "@/lib/vinto/p1-25";
+import { P128_FIELDS, P128_OFFICIAL_STATUS_NOTE, P1_28_CODE } from "@/lib/vinto/p1-28";
 import type { Resource } from "@/lib/vinto/use-central";
 
 // Historial de controles de Calidad de UNA Bobina (GET /api/quality/bobbins/{id}/captures, PostgreSQL). SOLO lectura: no envía, no edita,
 // no libera ni rechaza y no escribe en el navegador. El encabezado sale del item del inbox (Bobina seleccionada); los controles, en el orden
 // del backend. La humedad de P1-19 (computeHumidity de Q2) y los promedios de P1-20 (physicalAverages de Q3.2-B) se calculan SOLO para
-// mostrarlos. Nunca se muestran datos demo ni locales.
+// mostrarlos. P1-21/P1-24/P1-25/P1-28 (INT-02B) reutilizan los FieldSpec de sus propias definiciones candidatas (candidate-form.ts): los
+// valores manuales se muestran tal como se guardaron, sin calcular ni inventar nada; P1-28 es DOCUMENTAL y nunca cambia quality_release.
+// Nunca se muestran datos demo ni locales.
 
 type Props = {
     item: QualityBobbinInboxItem; // Bobina seleccionada en el inbox
@@ -85,10 +92,31 @@ function EntryCard({ entry, index, total }: { entry: QualityHistoryEntry; index:
         </dl>
         {entry.kind === "humidity" && <HumidityDetail capture={entry.capture}/>}
         {entry.kind === "physical" && <PhysicalDetail capture={entry.capture}/>}
+        {entry.kind === "candidate" && <CandidateDetail capture={entry.capture}/>}
         {entry.kind === "unsupported" && <p className="mt-3 rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">{HISTORY_MESSAGES.unsupported}</p>}
         {entry.kind === "invalid" && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{HISTORY_MESSAGES.invalidEntry}</p>}
         <p className="mt-3 break-all text-xs text-slate-500">ID de captura: {meta.id}</p>
     </li>;
+}
+
+// Campos manuales declarados de cada candidato por bobina (candidate-form.ts), en el MISMO orden y con la MISMA etiqueta/unidad que su
+// captura; el código de bobina ya se muestra en el encabezado y no se repite aquí. P1-28 es DOCUMENTAL: su nota de estado oficial se
+// agrega aparte y nunca sustituye al estado oficial de Calidad mostrado en el encabezado.
+const CANDIDATE_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_21_CODE]: P121_FIELDS, [P1_24_CODE]: P124_FIELDS, [P1_25_CODE]: P125_FIELDS, [P1_28_CODE]: P128_FIELDS };
+const CANDIDATE_OFFICIAL_NOTE: Readonly<Record<string, string>> = { [P1_28_CODE]: P128_OFFICIAL_STATUS_NOTE };
+
+function CandidateDetail({ capture }: { capture: CandidateCapture }) {
+    const fields = (CANDIDATE_FIELDS[capture.form.code] ?? []).filter(f => f.key !== "observaciones");
+    const officialNote = CANDIDATE_OFFICIAL_NOTE[capture.form.code];
+    const notes = capture.values.observaciones;
+    return <div className="mt-4 space-y-4">
+        <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">{fields.map(f => {
+            const raw = capture.values[f.key];
+            return <Meta key={f.key} label={f.label} value={raw === undefined ? "—" : withUnit(raw, f.suffix)}/>;
+        })}</dl>
+        {officialNote !== undefined && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">{officialNote}</p>}
+        {notes !== undefined && notes !== "" && <div><p className="text-xs font-semibold text-slate-600">Observaciones</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{notes}</p></div>}
+    </div>;
 }
 
 function Body({ view, refresh }: { view: Resource<QualityHistoryLoad>; refresh: () => void }) {
