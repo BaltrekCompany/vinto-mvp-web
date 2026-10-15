@@ -72,13 +72,16 @@ if (!existsSync(PYTHON)) die(`no existe el intérprete de Python del backend: ${
 try { docker("info", "--format", "{{.ServerVersion}}"); } catch { die("el motor de Docker no está disponible"); }
 if (docker("ps", "-a", "--filter", `name=^${CONTAINER}$`, "--format", "{{.Names}}")) die(`ya existe un contenedor ${CONTAINER}; no se reutiliza ni se borra automáticamente`);
 for (const port of PORTS) if (!(await portFree(port))) die(`el puerto ${port} está ocupado`);
+// El SHA y el estado del árbol se fijan ANTES de crear ningún archivo o directorio propio (incluida la carpeta de evidencias, aunque por
+// defecto caiga dentro del repositorio): así `dirty` refleja el árbol tal como estaba al invocar la corrida, nunca un efecto secundario
+// de esta misma corrida sobre el propio repositorio.
+const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim().length > 0;
 const runId = `${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}-${randomBytes(4).toString("hex")}`;
 const runDir = join(evidenceBase, runId);
 if (existsSync(runDir)) die(`el directorio de evidencias ${runDir} ya existe; cada corrida usa uno propio y no se reutiliza`);
 mkdirSync(evidenceBase, { recursive: true });
 mkdirSync(runDir);
-const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim().length > 0;
 const startedAt = new Date().toISOString();
 const work = mkdtempSync(join(tmpdir(), `qa3f01-${runId}-`));
 const manifestPath = (phase) => join(work, `manifest-${phase}.json`);
