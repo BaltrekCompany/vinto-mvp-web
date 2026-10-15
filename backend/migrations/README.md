@@ -184,3 +184,17 @@ completamente inaccesible para `vinto_app`/`vinto_reference` hasta que la migrac
 explícitamente, uno por uno, los privilegios exactos que necesita. Olvidar el `GRANT` no hace que la API
 funcione a medias (lectura sin escritura): la hace fallar de inmediato con `insufficient_privilege` en
 cualquier intento de uso, lo que se detecta en la primera prueba, no en producción.
+
+**Caso especial: funciones invocables directamente con `SELECT` (no funciones de trigger).** A
+diferencia de una tabla, PostgreSQL concede `EXECUTE` a `PUBLIC` por defecto sobre toda función nueva, y
+**ningún `ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS` lo evita** para objetos futuros — es una limitación
+de PostgreSQL documentada desde hace años (BUG #8685) y confirmada aquí de forma empírica (PG54-FINAL):
+tras ejecutar ese `ALTER DEFAULT PRIVILEGES`, una función recién creada seguía con `EXECUTE` concedido a
+`PUBLIC`. La única forma fiable es revocarlo del objeto ya creado. Por eso, toda migración `0007` en
+adelante que cree una función invocable directamente (no una función de trigger — esas devuelven el
+pseudotipo `trigger` y PostgreSQL rechaza invocarlas fuera de un disparador, sin importar el `EXECUTE`
+que tengan) **debe incluir, en el mismo archivo, `REVOKE EXECUTE ON FUNCTION <nombre>(<tipos>) FROM
+PUBLIC;` inmediatamente después de crearla**, antes de conceder `EXECUTE` a quien sí la necesite. Ver
+`backend/roles/04_function_grants.sql` (aplica este mismo patrón retroactivamente, solo como `GRANT`/
+`REVOKE` de infraestructura, a `vinto_txn.management_start_year` de `0004_bobbin_production.sql`, sin
+reescribir esa migración).

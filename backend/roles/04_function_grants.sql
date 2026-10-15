@@ -8,14 +8,34 @@
 -- guard_recipe_child, guard_order_version, guard_order_line, validate_assignment, validate_capture,
 -- guard_capture_child, validate_detail_group, validate_completed_capture, guard_bobbin_sequence,
 -- validate_bobbin, require_quality_release, guard_capture_bobbin, guard_credential_identity,
--- guard_session_update) se ejecutan EXCLUSIVAMENTE como cuerpo de un TRIGGER. PostgreSQL dispara una
--- función de trigger sin exigir EXECUTE al rol que ejecuta el INSERT/UPDATE/DELETE que lo activa; ese
--- rol solo necesita los privilegios de tabla que el cuerpo de la función usa (ya cubiertos en
--- 03_table_grants.sql). NO se concede EXECUTE sobre ninguna de ellas: no es necesario, y concederlo
--- sin necesidad sería la misma "concesión indiscriminada" que OBS-PG-01 pidió evitar para tablas.
+-- guard_session_update) se ejecutan EXCLUSIVAMENTE como cuerpo de un TRIGGER y devuelven el
+-- pseudotipo "trigger": PostgreSQL las rechaza si se llaman directamente ("ERROR: trigger functions
+-- can only be called as triggers"), sin importar quién las invoque ni qué EXECUTE tenga — verificado
+-- empíricamente. Por eso no necesitan ningún GRANT/REVOKE de EXECUTE aquí: el riesgo que correspondería
+-- cubrir no existe para ellas. management_start_year() es distinta: devuelve integer y SÍ puede
+-- invocarse directamente con SELECT, así que es la única donde el privilegio por defecto de PostgreSQL
+-- importa de verdad.
+--
+-- PG54-FINAL: CREATE FUNCTION concede EXECUTE a PUBLIC por defecto — y, a diferencia de las tablas,
+-- NINGÚN "ALTER DEFAULT PRIVILEGES ... REVOKE ... ON FUNCTIONS FROM PUBLIC" lo evita para objetos
+-- futuros: es una limitación de PostgreSQL documentada desde hace años (PostgreSQL BUG #8685,
+-- "alter default privileges cannot revoke default execute privilege on functions", y el hilo más
+-- reciente "Removing the default grant of EXECUTE on functions/procedures to PUBLIC" en pgsql-hackers),
+-- confirmada aquí de forma empírica: tras "ALTER DEFAULT PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS
+-- FROM PUBLIC", una función nueva seguía teniendo proacl NULL y PUBLIC seguía con EXECUTE=true. La
+-- única forma fiable es revocarlo del OBJETO YA CREADO, que sí funciona siempre (verificado). Por eso
+-- toda migración futura que cree una función invocable directamente DEBE incluir, en el mismo archivo,
+-- su propio "REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC;" (ver backend/migrations/README.md) — no basta
+-- con no concederlo explícitamente a nadie, como sí basta para una tabla nueva.
 
 \set ON_ERROR_STOP on
 
+-- management_start_year ya existe desde 0004_bobbin_production.sql (no se reescribe esa migración:
+-- esto es un GRANT/REVOKE de infraestructura, no un cambio de esquema). PUBLIC tenía EXECUTE por el
+-- defecto de PostgreSQL desde que se creó; se revoca aquí explícitamente, de forma fiable, sobre el
+-- objeto ya existente.
+REVOKE EXECUTE ON FUNCTION vinto_txn.management_start_year(date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION vinto_txn.management_start_year(date) TO vinto_app;
 
--- vinto_reference no llama a esta función (no procesa capturas F3): sin GRANT.
+-- vinto_reference no llama a esta función (no procesa capturas F3): sin GRANT (y, tras el REVOKE de
+-- arriba, tampoco la hereda de PUBLIC).

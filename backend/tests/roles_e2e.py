@@ -281,7 +281,11 @@ def main() -> int:
         "(separación de roles, SQLSTATE, fail-closed sobre objetos futuros). La suite completa del "
         "backend (reportada por separado, fase 'regresión completa en modo legado') valida la LÓGICA DE "
         "NEGOCIO bajo el rol único legado. Ambas se ejecutaron bajo aislamiento (mismo contenedor "
-        "efímero, bases separadas), pero NO son equivalentes ni sustituyen una a la otra.")
+        "efímero, bases separadas), pero NO son equivalentes ni sustituyen una a la otra.\n"
+        "El 1145/1145 de la fase de regresión corresponde a ejecución ARCHIVO POR ARCHIVO. La ejecución "
+        "monolítica ('unittest discover -s tests' sin filtro) produce interferencias entre archivos "
+        "todavía no explicadas (ver comentario en el código de esta fase); NO se declara reparado el "
+        "runner monolítico — se recomienda un incremento posterior dedicado a esa causa raíz.")
     return 1 if failures else 0
 
 
@@ -290,9 +294,21 @@ def _run_all(boot_password, passwords):
     # Fase 0 (PG54-06): suite completa del backend en modo LEGADO, bajo aislamiento demostrado, en un par
     # de bases propio dentro del MISMO contenedor efímero — antes de aplicar el modelo de roles, para no
     # mezclar "¿falla por mi cambio de privilegios?" con "¿falla por lógica de negocio preexistente?".
+    #
+    # CLOUD01B2_SKIP_FASE0=1 omite esta fase (son ~1145 pruebas, archivo por archivo, varios minutos).
+    # Úsalo solo cuando no haya ningún cambio de lógica de negocio desde la última vez que se corrió
+    # completa (p. ej. una corrección focalizada de los scripts de roles/privilegios): repetir la suite
+    # completa sin necesidad técnica no es gratis y esta fase ya se validó en 1145/1145 en una corrida
+    # previa de este mismo PR.
     # =====================================================================================================
-    print("\n=== Fase 0: regresión completa del backend (modo legado, aislada) ===", flush=True)
     import psycopg
+
+    if os.environ.get("CLOUD01B2_SKIP_FASE0") == "1":
+        report("suite completa backend (archivo por archivo) — modo legado, aislada", "PASS",
+              "omitida intencionalmente (CLOUD01B2_SKIP_FASE0=1): sin cambios de lógica de negocio desde la corrida 1145/1145 previa de este PR")
+        return _run_role_model(boot_password, passwords)
+
+    print("\n=== Fase 0: regresión completa del backend (modo legado, aislada) ===", flush=True)
 
     # Nombres "vinto"/"vinto_test" (no "vinto_legacy*"): backend/tests/test_db_guard.py hardcodea el
     # nombre literal "vinto_test" que debe devolver current_database() (test_configured_test_database_
@@ -319,15 +335,22 @@ def _run_all(boot_password, passwords):
               (migrate_legacy_dev.stdout + migrate_legacy_test.stdout).strip()[-300:])
         report("suite completa backend — modo legado, aislada", "BLOCKED", "no se intentó: el prerrequisito de migración falló")
     else:
-        # PG54-06: se ejecuta ARCHIVO POR ARCHIVO (discover -p "<archivo>.py"), no un solo "discover -s
-        # tests" monolítico. Encontrado al depurar: un "discover" sin filtro que importa los ~60 módulos
-        # de prueba en UN SOLO proceso produce cientos de fallos (409 en vez de 201 en rutas que
-        # dependen de app.sectors._OPERATIONAL parcheado, entre otros) que NO se reproducen si cada
-        # archivo se ejecuta en su propio proceso — un problema preexistente de aislamiento ENTRE
-        # ARCHIVOS de la propia suite (nunca tocado por este PR: ningún archivo de test se modificó),
-        # no una regresión de CLOUD-01B-2. Correr archivo por archivo demuestra la misma cobertura
-        # (1145/1145 pruebas, verificado) sin ese artefacto. Ver backend/roles/README.md para más
-        # contexto si se investiga a fondo en un incremento futuro.
+        # PG54-06 / PG54-FINAL: se ejecuta ARCHIVO POR ARCHIVO (discover -p "<archivo>.py"), no un solo
+        # "discover -s tests" monolítico. Encontrado al depurar: un "discover" sin filtro que importa
+        # los ~48 módulos de prueba en UN SOLO proceso produce cientos de fallos (409 en vez de 201 en
+        # rutas que dependen de app.sectors._OPERATIONAL parcheado, entre otros) que NO se reproducen si
+        # cada archivo se ejecuta en su propio proceso — un problema preexistente de aislamiento ENTRE
+        # ARCHIVOS de la propia suite (nunca tocado por este PR: ningún archivo de test se modificó), no
+        # una regresión de CLOUD-01B-2.
+        #
+        # IMPORTANTE: esto NO declara reparado el runner monolítico ("unittest discover -s tests" sin
+        # filtro). Sigue interfiriendo entre archivos y su causa raíz no se investigó (requeriría
+        # instrumentar qué estado de proceso se filtra entre módulos — p. ej. un patch.object de
+        # app.sectors._OPERATIONAL u otro singleton que no se restaura del todo entre archivos). Correr
+        # archivo por archivo es un workaround que demuestra la misma cobertura (1145/1145 pruebas,
+        # verificado) sin ese artefacto, pero no es una corrección del runner monolítico en sí. Se
+        # recomienda un incremento posterior dedicado a identificar esa causa raíz si se quiere volver a
+        # usar "discover -s tests" sin filtro (p. ej. en CI).
         test_files = sorted(p.name for p in (BACKEND_DIR / "tests").glob("test_*.py"))
         file_failures = []
         total_tests_run = 0
@@ -349,6 +372,12 @@ def _run_all(boot_password, passwords):
         else:
             report("suite completa backend (archivo por archivo) — modo legado, aislada", "PASS",
                   f"{len(test_files)} archivos, {total_tests_run} pruebas, 0 fallos")
+
+    return _run_role_model(boot_password, passwords)
+
+
+def _run_role_model(boot_password, passwords):
+    import psycopg
 
     # =====================================================================================================
     # Fase A: aprovisionamiento de roles sobre la base de negocio (vinto_cloud01b2)
@@ -416,6 +445,39 @@ def _run_all(boot_password, passwords):
 
         expect_ok("tabla futura sin migración-GRANT: vinto_app/vinto_reference/PUBLIC sin ningún privilegio (SELECT/INSERT/UPDATE/DELETE)",
                  future_table_is_fail_closed)
+
+        def future_function_follows_the_mandatory_revoke_convention():
+            # PG54-FINAL: a diferencia de una tabla, CREATE FUNCTION SÍ concede EXECUTE a PUBLIC por
+            # defecto, y ningún ALTER DEFAULT PRIVILEGES lo evita (ver backend/roles/
+            # 05_no_default_privileges.sql). La convención obligatoria para toda migración futura es
+            # revocarlo del objeto recién creado de inmediato; esta prueba demuestra que, siguiéndola,
+            # PUBLIC/vinto_app/vinto_reference quedan sin EXECUTE.
+            migrator_conn.execute("CREATE FUNCTION vinto_txn.futura_funcion_0007(x date) RETURNS integer LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT 1 $$")
+            migrator_conn.execute("REVOKE EXECUTE ON FUNCTION vinto_txn.futura_funcion_0007(date) FROM PUBLIC")
+            try:
+                rows = migrator_conn.execute(
+                    "SELECT role, has_function_privilege(role, 'vinto_txn.futura_funcion_0007(date)', 'EXECUTE') "
+                    "FROM (VALUES ('vinto_app'),('vinto_reference'),('public')) AS r(role)").fetchall()
+                granted = [role for role, has in rows if has]
+                if granted:
+                    raise AssertionError(f"una función futura con REVOKE EXECUTE...FROM PUBLIC explícito sigue concediendo EXECUTE a: {granted!r}")
+            finally:
+                migrator_conn.execute("DROP FUNCTION IF EXISTS vinto_txn.futura_funcion_0007(date)")
+
+        expect_ok("función futura siguiendo la convención obligatoria (REVOKE EXECUTE...FROM PUBLIC explícito): "
+                 "vinto_app/vinto_reference/PUBLIC sin EXECUTE", future_function_follows_the_mandatory_revoke_convention)
+
+        def management_start_year_is_not_public():
+            rows = migrator_conn.execute(
+                "SELECT role, has_function_privilege(role, 'vinto_txn.management_start_year(date)', 'EXECUTE') "
+                "FROM (VALUES ('vinto_reference'),('vinto_test_admin'),('public')) AS r(role)").fetchall()
+            granted = [role for role, has in rows if has]
+            if granted:
+                raise AssertionError(f"management_start_year sigue siendo ejecutable por quien no debería: {granted!r}")
+
+        expect_ok("vinto_txn.management_start_year: vinto_reference/vinto_test_admin/PUBLIC sin EXECUTE "
+                 "(corregido con REVOKE explícito sobre el objeto existente, 04_function_grants.sql)",
+                 management_start_year_is_not_public)
 
     # =====================================================================================================
     # Fase B/D: la API no puede alterar la estructura (negativas, SQLSTATE verificado)

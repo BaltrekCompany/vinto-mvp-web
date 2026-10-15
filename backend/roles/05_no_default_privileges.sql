@@ -24,13 +24,29 @@
 --
 -- Para que quede explícito y auditable (y no dependa únicamente del comportamiento por defecto de
 -- PostgreSQL, que una versión futura podría cambiar), se fija explícitamente que PUBLIC tampoco recibe
--- nada sobre objetos futuros de los esquemas aplicativos:
+-- nada sobre TABLAS ni SECUENCIAS futuras de los esquemas aplicativos (para estos dos tipos de objeto,
+-- PostgreSQL ya no concede nada a PUBLIC por defecto, así que este REVOKE es defensivo/declarativo, no
+-- correctivo — verificado empíricamente: una tabla nueva sin GRANT explícito queda con
+-- has_table_privilege('public', ..., 'SELECT') = false incluso sin este REVOKE):
 ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA vinto_master, vinto_config, vinto_txn, vinto_audit, vinto_auth
   REVOKE ALL ON TABLES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA vinto_master, vinto_config, vinto_txn, vinto_audit, vinto_auth
   REVOKE ALL ON SEQUENCES FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA vinto_master, vinto_config, vinto_txn, vinto_audit, vinto_auth
-  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+
+-- FUNCIONES: deliberadamente SIN "ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS" aquí. A diferencia de
+-- tablas/secuencias, verificado empíricamente (y documentado como limitación de PostgreSQL desde hace
+-- años: BUG #8685 "alter default privileges cannot revoke default execute privilege on functions",
+-- vigente también en los hilos de pgsql-hackers sobre "Removing the default grant of EXECUTE on
+-- functions/procedures to PUBLIC") que esta sentencia NO suprime el EXECUTE que PostgreSQL concede a
+-- PUBLIC por defecto sobre toda función nueva: tras ejecutarla, una función recién creada seguía con
+-- proacl NULL y PUBLIC con EXECUTE=true. Escribirla aquí daría una falsa sensación de protección.
+--
+-- La única forma fiable es revocarlo del OBJETO YA CREADO (funciona siempre, verificado). Por eso: toda
+-- migración futura (0007 en adelante) que cree una función invocable directamente con SELECT (no una
+-- función de trigger, que PostgreSQL rechaza invocar directamente sin importar el EXECUTE — ver
+-- 04_function_grants.sql) DEBE incluir, en el mismo archivo, su propio
+-- "REVOKE EXECUTE ON FUNCTION <nombre>(<tipos>) FROM PUBLIC;" inmediatamente después de crearla, antes
+-- de conceder EXECUTE a los roles que sí la necesiten.
 
 -- NO ejecutar ningún "... GRANT ... TO vinto_app" ni "... TO vinto_reference" en este archivo. Si una
 -- migración futura necesita que vinto_app lea o escriba una tabla nueva, el GRANT va DENTRO de esa
