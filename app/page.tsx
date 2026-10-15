@@ -71,6 +71,7 @@ import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
 import { RECIPES_BY_PRODUCT } from "@/lib/vinto/recipes";
 import { NOMINAL_WEIGHT_BY_PRODUCT } from "@/lib/vinto/product-weights";
 import type { CaptureRecord, FieldDefinition, FormDefinition } from "@/lib/vinto/types";
+import { bumpSessionEpoch } from "@/lib/vinto/session-epoch";
 type Front = "Bobinas" | "Rebobinado" | "Conversión" | "Calidad";
 type Module = "programacion" | "ejecucion" | "seguimiento";
 type Role = OperationalRole;
@@ -253,6 +254,7 @@ export default function Home() {
     // INT-01B: ÚNICO punto que descarta todo el estado de pantalla ligado a una sesión (selecciones, intentos pendientes con su contexto original, aperturas). Se usa al cerrar sesión, al perderla y cuando
     // cambia la identidad del usuario autenticado: los intentos pendientes de una cuenta nunca reaparecen asociados a otra. No toca el almacenamiento local (las funciones legacy lo siguen usando).
     function resetSessionState() {
+        bumpSessionEpoch(); // INT-01: invalida las operaciones asíncronas (capturas POST) de la sesión anterior: sus respuestas tardías ya no tocan este estado
         setRoleChoice(null); setFrontChoice(null); setModuleChoice(null); setSelected(null); setCaptureContext(null); setF6Attempt(null); setF3Attempt(null); setSelectedQualityBobbin(null); setHumidityAttempt(null); setQualityHistory(null); setSelectedPhysicalBobbin(null); setPhysicalAttempt(null); setRebCapture(null); setP110Attempt(null); setP110Context(null); setP129Attempt(null); setP129Context(null); setBobCandidate(null); setCandAttempts({}); setQualCapture(null); setQualAttempts({}); setBobbinCand(null); setBobbinCandAttempts({}); setRebCandAttempts({}); setConvCapture(null); setP116Attempt(null); setP116Context(null); setP112Attempt(null); setP112Context(null); setP113Attempt(null); setP113Context(null); setP111Attempt(null); setP111Context(null);
     }
     // Cambio de identidad sin pasar por «sesión perdida» / «cerrar sesión» (p. ej. otra cuenta que entra en el mismo navegador): se descarta el estado de la cuenta anterior ANTES de dibujar nada.

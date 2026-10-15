@@ -1,4 +1,4 @@
-"""Capturas de Calidad ligadas a una Bobina física (fundación; todavía sin formularios reales de Calidad).
+"""Capturas de Calidad ligadas a una Bobina física (P1-19, P1-20 y, solo con política habilitada, los candidatos por bobina).
 
 La autoridad del contexto es la BOBINA pedida: máquina, turno, fecha operativa, asignación, OT, línea, PV y artículo se derivan de
 su captura F3 de origen (bobbin -> source_capture -> assignment -> work_order_line -> work_order_version -> work_order). NO se usa la
@@ -18,8 +18,8 @@ NO basta: los exclusivos de Calidad por máquina (P1-18, P1-22, P1-26, P1-27) y 
 amplían la política con patch.object sobre estas constantes; la configuración real no cambia.
 
 FORMULARIOS CANDIDATOS POR BOBINA (DEV-Q2, DEV-Q3 y DEV-CLOSE, VINTO-P1-21 / P1-24 / P1-25 / P1-28; P1-28 es una ficha DOCUMENTAL: no rechaza ni toca quality_release): `BOBBIN_CANDIDATE_FORM_CODES` los conoce y `ENABLED_BOBBIN_CANDIDATE_FORM_CODES` (VACÍA en la configuración real) los habilita; solo los entornos de
-prueba lo hacen con patch.object. Un candidato no habilitado se rechaza (422), no se lista y sus capturas no se leen. El resto de formularios (P1-19, P1-20 y los de prueba) conserva EXACTAMENTE el comportamiento
-anterior: publicación + vínculo con la máquina de la Bobina. NO se bloquean aquí los formularios que pertenecen a Calidad por máquina (pendiente transversal, incremento independiente).
+prueba lo hacen con patch.object. Un candidato no habilitado se rechaza (422), no se lista y sus capturas no se leen. Todo formulario que NO figure en `_allowed_codes()` se trata igual,
+sea candidato deshabilitado, exclusivo de Calidad por máquina o desconocido, aunque esté publicado y vinculado a la máquina de la Bobina (INT-01A); P1-19 y P1-20 siguen siendo los únicos formularios centrales admitidos.
 Si el formulario declara un campo con el número de bobina (`BOBBIN_CODE_FIELDS`), debe coincidir con la Bobina de la ruta: un registro contradictorio se rechaza (422).
 """
 

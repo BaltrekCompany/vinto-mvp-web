@@ -8,6 +8,7 @@ import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { CONTEXT_NOTES, EMPTY_P110_DRAFT, P110_LABELS, createP110Attempt, submitP110Attempt, type P110Attempt, type P110Capture, type P110Draft, type P110SubmitDeps } from "@/lib/vinto/p1-10";
 import { getP110, submitP110 } from "@/lib/vinto/p1-10-api";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // VINTO-P1-10 · Registro de fardos: captura CENTRAL (API + PostgreSQL), M2-B2. Solo funciona contra un backend que habilite P1-10 (hoy únicamente entornos de prueba:
 // Rebobinado no es operativo y el formulario no está en la política de captura central). NO es una ficha homologada: numeración y formato del fardo, tipo del peso,
@@ -42,6 +43,7 @@ export function P110CaptureForm({ context, online, attempt, setAttempt, back, on
     const set = (key: keyof P110Draft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -54,6 +56,7 @@ export function P110CaptureForm({ context, online, attempt, setAttempt, back, on
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitP110Attempt(current, api);
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") {
                 setAttempt(null);
                 const message = submitMessage(outcome);
@@ -62,6 +65,7 @@ export function P110CaptureForm({ context, online, attempt, setAttempt, back, on
                 onSubmitted?.(outcome.capture);
                 // Consulta posterior: se vuelve a leer la captura por id de la API central y se compara con lo guardado.
                 const read = await api.get(outcome.capture.id);
+                if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 setSaved(old => old && { ...old, readBack: !read.ok ? { state: "error" } : JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? { state: "ok" } : { state: "mismatch" } });
                 return;
             }

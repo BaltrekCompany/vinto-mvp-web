@@ -11,6 +11,7 @@ import {
     type P112Attempt, type P112Capture, type P112Draft, type P112SubmitDeps,
 } from "@/lib/vinto/p1-12";
 import { getP112, submitP112 } from "@/lib/vinto/p1-12-api";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // VINTO-P1-12 · Producción diaria de papel higiénico (Conversión): captura CENTRAL CANDIDATA de UN PALLET (API + PostgreSQL), M6-B. Solo funciona contra un backend que habilite P1-12 (hoy únicamente
 // entornos de prueba: Conversión no es operativo y el formulario no está en la política de captura central). NO es una ficha homologada: los tres campos (cantidad de jabas, hora de inicio y de fin)
@@ -45,6 +46,7 @@ export function P112CaptureForm({ context, online, attempt, setAttempt, back, on
     const set = (key: keyof P112Draft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -57,6 +59,7 @@ export function P112CaptureForm({ context, online, attempt, setAttempt, back, on
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitP112Attempt(current, api);
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") {
                 setAttempt(null);
                 const message = submitMessage(outcome);
@@ -65,6 +68,7 @@ export function P112CaptureForm({ context, online, attempt, setAttempt, back, on
                 onSubmitted?.(outcome.capture);
                 // Consulta posterior: se vuelve a leer la captura por id de la API central y se compara con lo guardado.
                 const read = await api.get(outcome.capture.id);
+                if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 setSaved(old => old && { ...old, readBack: !read.ok ? { state: "error" } : JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? { state: "ok" } : { state: "mismatch" } });
                 return;
             }

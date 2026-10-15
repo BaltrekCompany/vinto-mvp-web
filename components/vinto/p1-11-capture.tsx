@@ -9,6 +9,7 @@ import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { ADVISORY, P111_GROUPS, PENDING_NOTES, createP111Attempt, emptyP111Draft, submitP111Attempt, type P111Attempt, type P111Capture, type P111Draft, type P111SubmitDeps } from "@/lib/vinto/p1-11";
 import { getP111, submitP111 } from "@/lib/vinto/p1-11-api";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // VINTO-P1-11 · Consumo de bobinas (Conversión): captura CENTRAL CANDIDATA con UN grupo repetible de bobinas DECLARADAS (API + PostgreSQL), M6-D. Solo funciona contra un backend que habilite P1-11 (hoy únicamente
 // entornos de prueba: Conversión no es operativo y el formulario no está en la política de captura central). NO es una ficha homologada: el N.º de bobina, la posición y los tres saldos son DECLARACIONES de
@@ -49,6 +50,7 @@ export function P111CaptureForm({ context, online, attempt, setAttempt, back, on
     const updateGroup = (spec: GroupSpec, fn: (rows: P111Draft["groups"][string]) => P111Draft["groups"][string]) => setDraft(old => ({ ...old, groups: { ...old.groups, [spec.code]: fn(old.groups[spec.code] ?? []) } }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -62,6 +64,7 @@ export function P111CaptureForm({ context, online, attempt, setAttempt, back, on
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitP111Attempt(current, api);
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") {
                 setAttempt(null);
                 const message = submitMessage(outcome);
@@ -69,6 +72,7 @@ export function P111CaptureForm({ context, online, attempt, setAttempt, back, on
                 setSaved({ capture: outcome.capture, message, readBack: "reading" });
                 onSubmitted?.(outcome.capture);
                 const read = await api.get(outcome.capture.id); // consulta posterior por id: se compara con lo que la API confirmó
+                if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 setSaved(old => old && { ...old, readBack: !read.ok ? "error" : JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? "ok" : "mismatch" });
                 return;
             }

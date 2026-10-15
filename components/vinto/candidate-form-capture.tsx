@@ -9,6 +9,7 @@ import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmi
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // Pantalla de captura CENTRAL CANDIDATA de un formulario declarativo (candidate-form.ts): la usan P1-05 y P1-31 y la usarán las fichas simples siguientes. Envía SOLO a la API central
 // (POST /api/captures con el código del formulario) y se reconcilia con GET por id; nunca escribe en vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El contexto (OT,
@@ -59,6 +60,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const set = (key: string) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -72,6 +74,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await form.submitAttempt(current, io);
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") {
                 setAttempt(null);
                 const message = submitMessage(outcome);
@@ -80,6 +83,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
                 onSubmitted?.(outcome.capture);
                 // Consulta posterior: se vuelve a leer la captura por id de la API central y se compara con lo guardado.
                 const read = await io.get(outcome.capture.id);
+                if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 const sameBobbin = form.context !== "bobbin" || (read.ok && read.data.bobbin?.id === bobbin?.bobbin.id && outcome.capture.bobbin?.id === bobbin?.bobbin.id); // la captura debe seguir asociada a ESTA bobina
                 setSaved(old => old && { ...old, readBack: !read.ok ? { state: "error" } : sameBobbin && JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? { state: "ok" } : { state: "mismatch" } });
                 return;

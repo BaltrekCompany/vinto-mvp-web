@@ -7,6 +7,7 @@ import { getCapture, submitCapture } from "@/lib/vinto/captures-api";
 import { EMPTY_DRAFT, PUNTO_MERMA_OPTIONS, SUBMIT_MESSAGES, TIPO_PRODUCTO_OPTIONS, createAttempt, submitAttempt, submitMessage, type F6Draft, type PendingAttempt } from "@/lib/vinto/captures";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
+import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
 // F6 · Registro de control de fardos: se envía SOLO a la API central (PostgreSQL). Nunca escribe en vinto-p1-records ni en
 // localStorage (salvo la clave técnica vinto-device-key). El encabezado muestra el contexto de la asignación solo como
@@ -33,6 +34,7 @@ export function F6Capture({ context, online, attempt, setAttempt, back, onSubmit
     const set = (key: keyof F6Draft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
+        const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
@@ -45,6 +47,7 @@ export function F6Capture({ context, online, attempt, setAttempt, back, onSubmit
         busy.current = true; setSending(true); setNotice(null);
         try {
             const outcome = await submitAttempt(current, { post: submitCapture, get: id => getCapture(id) });
+            if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
             if (outcome.kind === "submitted") { setAttempt(null); toast.success(submitMessage(outcome)); return void onSubmitted(); }
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
             if (outcome.kind === "rejected") {
