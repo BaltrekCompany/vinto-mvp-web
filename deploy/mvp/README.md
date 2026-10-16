@@ -52,8 +52,9 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
    a este archivo compartido; nunca se duplica por versión.
 3. `env/postgres.env.example` → copiar a `docker/.env` (no versionado) con contraseñas reales.
 4. `scripts/deploy.sh` — fase por fase, cada una con `CONFIRM=yes` explícito, en este orden:
-   `user-and-dirs` → `preflight-build-deps` → `install-node-runtime <version> <tarball>
-   <SHASUMS256.txt>` → `checkout <sha>` (requiere además `AUTHORIZED_COMMIT=<sha>`) →
+   `user-and-dirs` → `preflight-build-deps` → `install-node-runtime <version> <tarball>`
+   (checksum verificado contra `env/node-runtime-checksums.txt`, versionado — ver más abajo) →
+   `checkout <sha>` (requiere además `AUTHORIZED_COMMIT=<sha>`) →
    `python-venv <sha>` → `install-frontend-artifact <sha> <tar.gz> <manifiesto>` (artefacto
    construido APARTE con `scripts/build-frontend-artifact.sh`, ver más abajo) →
    `preflight-startup` → `activate <sha>` →
@@ -204,9 +205,11 @@ con TVC/ETL (el PATH global, el gestor de paquetes del sistema). En su lugar:
   o si el checksum del `.tar.gz` no coincide con el del manifiesto; nunca sobrescribe un `dist/` ya
   instalado en ese release. Verificado con un artefacto sintético: instala con commit+checksum
   correctos, rechaza commit erróneo, artefacto manipulado y reinstalación.
-- **`deploy.sh install-node-runtime <version> <tarball> <SHASUMS256.txt>`** — instala Node OFICIAL
-  (tarball de `nodejs.org`) bajo `$APP_DIR/runtime/node-v<version>-linux-x64/`, verificando su
-  checksum contra `SHASUMS256.txt` ANTES de extraer nada; rechaza el tarball si no coincide.
+- **`deploy.sh install-node-runtime <version> <tarball>`** — instala Node OFICIAL (tarball de
+  `nodejs.org`) bajo `$APP_DIR/runtime/node-v<version>-linux-x64/`, verificando su checksum contra
+  `env/node-runtime-checksums.txt` (versionado en este repositorio — ver "Hardening final" más
+  abajo) ANTES de extraer nada; rechaza el tarball si no coincide, y rechaza cualquier versión que
+  no esté en esa lista aprobada.
   `runtime/active` es un symlink que se conmuta atómicamente (igual que `current` para el código);
   **nunca borra una versión anterior** al instalar otra. Verificado end-to-end con el tarball
   OFICIAL real `node-v22.18.0-linux-x64.tar.xz`: rechazo de un tarball corrupto, instalación real
@@ -231,3 +234,39 @@ que el plugin oficial — su propio `--help` se autodenomina `docker compose`), 
 array `COMPOSE_CMD`, usado por `deploy.sh`/`rollback.sh` en vez de invocar `docker compose`
 literal. `deploy.sh validate-compose` resuelve el YAML con `config` (nunca `up`/`down`) para
 confirmarlo sin levantar ningún recurso persistente.
+
+## Hardening final (CLOUD-DEP-02B.1-C.2, tercera auditoría del PR #56)
+
+- **DEP56-01 (extracción segura de artefactos)**: `install-frontend-artifact` ya no extrae el
+  `.tar.gz` directamente sobre el release. Antes de extraer nada, valida CADA entrada (Python,
+  `tarfile`): debe vivir bajo `standalone/`, sin componentes `..`/`.` ni rutas absolutas, y no
+  puede ser un enlace simbólico/duro ni un tipo especial; además usa el filtro endurecido `data`
+  de `tarfile` (PEP 706, Python ≥ 3.12) como segunda barrera. Extrae en un directorio de staging
+  propio (`$APP_DIR/.artifact-staging/<único>`) y solo lo mueve al release si todo resultó íntegro
+  y `standalone/server.js` existe; el staging se borra siempre (`trap ... EXIT`), ante error o
+  éxito. Probado con artefactos reales: entrada fuera de `standalone/`, recorrido `../..`, enlace
+  simbólico que escapa del destino y tar truncado/corrupto — los 4 rechazados, el release nunca
+  se toca y el staging queda vacío.
+- **DEP56-02 (procedencia del runtime Node)**: comparar el tarball contra un `SHASUMS256.txt`
+  suministrado junto a él (como antes) no demuestra procedencia — quien controla el tarball
+  controla igual ese archivo. El checksum esperado se lee ahora de
+  `env/node-runtime-checksums.txt`, versionado en este repositorio (aprobar una versión nueva
+  exige un commit y una revisión de PR); `install-node-runtime` ya solo toma `<version>
+  <tarball>`, sin un tercer argumento. Probado con el tarball oficial real
+  `node-v22.18.0-linux-x64.tar.xz`: instala la versión aprobada, rechaza una versión NO aprobada
+  (aunque el tarball sea válido) y rechaza un tarball manipulado para la versión aprobada —
+  `runtime/active` nunca cambia en ningún caso de rechazo. Confirma además que una segunda versión
+  aprobada no borra la primera.
+- **DEP56-03 (validación de Compose sin exponer secretos)**: `validate-compose` ya no ejecuta
+  `config` sin más (imprimiría la configuración resuelta, incluidas las contraseñas). Ahora exige
+  que el comando Compose disponible soporte `-q/--quiet` ("solo valida, no imprime nada") y lo
+  usa siempre; si un error de validación llegara a citar un valor, se redacta cualquier secreto
+  conocido del propio `.env` antes de mostrarlo (sustitución literal vía Python, no `sed`/glob).
+  Probado con una contraseña sintética inyectada en `docker/.env`: no aparece en stdout ni stderr,
+  ni en el camino exitoso ni en el de error (variable requerida ausente).
+
+Hallazgo adicional corregido durante estas pruebas: dos asignaciones `var="$(grep ... | awk
+...)"` sin `|| true` en `install-node-runtime`/`install-frontend-artifact` podían abortar el
+script de forma SILENCIOSA (sin ningún mensaje) si el `grep` no encontraba coincidencia — el
+mismo patrón que `lib_common.sh::env_value` ya evita internamente. Corregido con `|| true` y un
+mensaje explícito en cada caso, siguiendo la misma convención que el resto del archivo.

@@ -210,7 +210,8 @@ fi
 
 echo "--- Instalación recomendada (solo documentación; no se instala nada aquí) ---"
 echo "Node: runtime oficial AISLADO bajo \$APP_DIR/runtime/ vía 'deploy.sh install-node-runtime'"
-echo "(verifica checksum SHA-256 contra SHASUMS256.txt antes de extraer); nunca apt/NodeSource"
+echo "(verifica checksum SHA-256 contra env/node-runtime-checksums.txt, versionado en el"
+echo "repositorio, nunca contra un archivo suministrado junto al tarball); nunca apt/NodeSource"
 echo "instalando en /usr/bin ni modificando el PATH global compartido con TVC/ETL."
 echo "Frontend: compilar en un host Linux x86_64 aparte con"
 echo "deploy/mvp/scripts/build-frontend-artifact.sh, transferir el .tar.gz + manifiesto al VPS, e"
