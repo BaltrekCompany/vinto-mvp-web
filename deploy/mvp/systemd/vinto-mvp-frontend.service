@@ -7,7 +7,10 @@ Wants=network-online.target
 Type=simple
 User=vinto-mvp
 Group=vinto-mvp
-WorkingDirectory=/opt/vinto-mvp-web
+# "current" es un symlink mantenido por deploy.sh (fase "activate") que apunta a la versión
+# desplegada en /opt/vinto-mvp-web/releases/<sha> (CLOUD-DEP-02A.2, DEP55-04: versiones separadas
+# para poder revertir). systemd resuelve el symlink al arrancar el servicio.
+WorkingDirectory=/opt/vinto-mvp-web/current
 
 # PORT/HOST son las dos variables que vinext lee en TIEMPO DE EJECUCIÓN (confirmado en CLOUD-01B-1:
 # node_modules/vinext/README.md — HOST, no HOSTNAME, para evitar la colisión con la variable de
@@ -17,7 +20,7 @@ WorkingDirectory=/opt/vinto-mvp-web
 Environment=PORT=3100
 Environment=HOST=127.0.0.1
 
-ExecStart=/usr/bin/node /opt/vinto-mvp-web/dist/standalone/server.js
+ExecStart=/usr/bin/node /opt/vinto-mvp-web/current/dist/standalone/server.js
 
 Restart=on-failure
 RestartSec=5
@@ -32,7 +35,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/vinto-mvp-web/dist
+ReadWritePaths=/opt/vinto-mvp-web/current/dist
 
 [Install]
 WantedBy=multi-user.target

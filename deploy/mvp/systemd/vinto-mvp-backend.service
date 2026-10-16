@@ -10,14 +10,17 @@ Type=simple
 # EXCLUSIVAMENTE de /opt/vinto-mvp-web (ver deploy/mvp/scripts/deploy.sh, paso de creación de usuario).
 User=vinto-mvp
 Group=vinto-mvp
-WorkingDirectory=/opt/vinto-mvp-web/backend
+# "current" es un symlink mantenido por deploy.sh (fase "activate") que apunta a la versión
+# desplegada en /opt/vinto-mvp-web/releases/<sha> (CLOUD-DEP-02A.2, DEP55-04: versiones separadas
+# para poder revertir). systemd resuelve el symlink al arrancar el servicio.
+WorkingDirectory=/opt/vinto-mvp-web/current/backend
 
 # Las credenciales NO se pasan aquí: backend/app/config.py ya lee backend/.env directamente
 # (pydantic-settings, env_file=BACKEND_DIR/".env"). Usar "EnvironmentFile=" en su lugar las
-# expondría en texto plano vía `systemctl show -p Environment` / journald. backend/.env debe
-# existir con permisos 600, propietario vinto-mvp:vinto-mvp, y NUNCA en git (ver
-# deploy/mvp/env/backend.env.example).
-ExecStart=/opt/vinto-mvp-web/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100
+# expondría en texto plano vía `systemctl show -p Environment` / journald. backend/.env es en
+# realidad un enlace a /opt/vinto-mvp-web/shared/backend.env (600, propietario vinto-mvp:vinto-mvp,
+# NUNCA en git — ver deploy/mvp/env/backend.env.example), compartido entre todas las versiones.
+ExecStart=/opt/vinto-mvp-web/current/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100
 
 # Política de reinicio controlada (CLOUD-DEP-02A, Fase 3 §8): reinicia solo ante fallo real,
 # nunca en bucle inmediato ni de forma indefinida sin límite.
@@ -37,7 +40,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/vinto-mvp-web/backend
+ReadWritePaths=/opt/vinto-mvp-web/current/backend
 # El backend nunca necesita escribir fuera de su propio árbol (no genera archivos de datos locales:
 # toda la persistencia es PostgreSQL). Si en el futuro necesitara una ruta de logs propia, añadirla
 # aquí explícitamente en vez de relajar ProtectSystem.
