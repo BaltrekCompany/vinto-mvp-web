@@ -1,0 +1,18 @@
+# VINTO MVP WEB — checksums de Node oficial APROBADOS para este despliegue (CLOUD-DEP-02B.1-C.2,
+# DEP56-02).
+#
+# Por qué existe este archivo: comparar el tarball de Node contra un SHASUMS256.txt copiado junto
+# a él EN EL MOMENTO DE INSTALAR no demuestra procedencia — si alguien puede sustituir el tarball,
+# puede igualmente sustituir ese archivo de checksums (ambos los controla el mismo operador, en el
+# mismo momento). Los valores de aquí se obtuvieron de forma INDEPENDIENTE, directamente desde
+# https://nodejs.org/dist/vX.Y.Z/SHASUMS256.txt, en el momento de aprobar cada versión para este
+# proyecto — y quedan versionados en este repositorio: cambiarlos exige un commit y una revisión
+# de PR, nunca basta con tocar un archivo en el VPS. "deploy.sh install-node-runtime" lee el
+# checksum esperado de AQUÍ, nunca de un archivo que viaje junto al tarball.
+#
+# Para aprobar una versión nueva: descargar SHASUMS256.txt desde nodejs.org en un canal de
+# confianza (HTTPS a nodejs.org), copiar aquí la línea de "node-vX.Y.Z-linux-x64.tar.xz" en el
+# formato de abajo, y someterlo a revisión de PR como cualquier otro cambio.
+#
+# Formato: <version> <sha256 de node-v<version>-linux-x64.tar.xz>
+22.18.0 c1bfeecf1d7404fa74728f9db72e697decbd8119ccc6f5a294d795756dfcfca7

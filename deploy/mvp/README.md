@@ -52,13 +52,16 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
    a este archivo compartido; nunca se duplica por versión.
 3. `env/postgres.env.example` → copiar a `docker/.env` (no versionado) con contraseñas reales.
 4. `scripts/deploy.sh` — fase por fase, cada una con `CONFIRM=yes` explícito, en este orden:
-   `user-and-dirs` → `preflight-build-deps` (repetir: ahora ya existe el usuario de servicio, se
-   puede confirmar la ruta real de node/corepack PARA ÉL) → `checkout <sha>` (requiere además
-   `AUTHORIZED_COMMIT=<sha>`) → `python-venv <sha>` → `frontend-build <sha>` →
+   `user-and-dirs` → `preflight-build-deps` → `install-node-runtime <version> <tarball>`
+   (checksum verificado contra `env/node-runtime-checksums.txt`, versionado — ver más abajo) →
+   `checkout <sha>` (requiere además `AUTHORIZED_COMMIT=<sha>`) →
+   `python-venv <sha>` → `install-frontend-artifact <sha> <tar.gz> <manifiesto>` (artefacto
+   construido APARTE con `scripts/build-frontend-artifact.sh`, ver más abajo) →
    `preflight-startup` → `activate <sha>` →
    `postgres-up` (requiere además `TVC_BACKUP_CONFIRMED=yes`) → `postgres-bootstrap-db` →
    `postgres-roles` → `migrate` → `postgres-grants` → `import-reference` (dry-run) →
    `import-reference-apply` → `systemd-install` → `healthcheck`.
+   `validate-compose` puede ejecutarse en cualquier momento (solo lectura, resuelve el YAML).
 5. `docker/docker-compose.postgres.yml` — lo levanta `deploy.sh postgres-up`.
 6. `backend/roles/*.sql` (del repositorio principal, no de esta carpeta) — los ejecuta
    `deploy.sh postgres-roles`/`postgres-grants` en el orden de `backend/roles/README.md`,
@@ -185,3 +188,90 @@ aceptables", 3 bloqueos puntuales antes del merge:
 - **Punto 3 (archivo temporal del healthcheck)**: `/tmp/.deploy-activate-healthcheck.log` (nombre
   fijo) se sustituyó por un `mktemp` por invocación en `deploy.sh activate` y en
   `rollback.sh version`, con limpieza en todos los caminos de salida.
+
+## Build externo y runtime Node aislado (CLOUD-DEP-02B.1-C.1)
+
+Decisión arquitectónica: el frontend ya NO se compila en el VPS, y Node nunca se instala a nivel
+de sistema (nunca `apt`/NodeSource, nunca `/usr/bin/node`) — ambas cosas tocarían algo compartido
+con TVC/ETL (el PATH global, el gestor de paquetes del sistema). En su lugar:
+
+- **`scripts/build-frontend-artifact.sh`** — se ejecuta en un host Linux x86_64 APARTE (CI o un
+  dev box), nunca en el VPS. Verifica que el repositorio está exactamente en el commit pedido y
+  sin cambios locales, compila con `corepack pnpm` (versionado por `packageManager` en
+  `package.json`), empaqueta `dist/standalone/` en un `.tar.gz` y genera un manifiesto de texto
+  con el commit, la versión de Node usada y el checksum SHA-256 del artefacto.
+- **`deploy.sh install-frontend-artifact <sha> <tar.gz> <manifiesto>`** — instala ese artefacto en
+  el VPS. Rechaza el artefacto si el commit del manifiesto no coincide EXACTAMENTE con el release,
+  o si el checksum del `.tar.gz` no coincide con el del manifiesto; nunca sobrescribe un `dist/` ya
+  instalado en ese release. Verificado con un artefacto sintético: instala con commit+checksum
+  correctos, rechaza commit erróneo, artefacto manipulado y reinstalación.
+- **`deploy.sh install-node-runtime <version> <tarball>`** — instala Node OFICIAL (tarball de
+  `nodejs.org`) bajo `$APP_DIR/runtime/node-v<version>-linux-x64/`, verificando su checksum contra
+  `env/node-runtime-checksums.txt` (versionado en este repositorio — ver "Hardening final" más
+  abajo) ANTES de extraer nada; rechaza el tarball si no coincide, y rechaza cualquier versión que
+  no esté en esa lista aprobada.
+  `runtime/active` es un symlink que se conmuta atómicamente (igual que `current` para el código);
+  **nunca borra una versión anterior** al instalar otra. Verificado end-to-end con el tarball
+  OFICIAL real `node-v22.18.0-linux-x64.tar.xz`: rechazo de un tarball corrupto, instalación real
+  (confirmado `node --version` como el usuario `vinto-mvp`), idempotencia, y coexistencia de dos
+  versiones sin que la más reciente borre la anterior.
+- El unit `systemd/vinto-mvp-frontend.service` apunta su `ExecStart` a
+  `$APP_DIR/runtime/active/bin/node`, nunca a `/usr/bin/node`.
+- `preflight.sh build-deps` ya no exige `node`/`corepack` en el VPS (no se compila allí); en su
+  lugar comprueba que existe un comando Compose utilizable. `preflight.sh startup` comprueba que
+  `runtime/active/bin/node` existe antes de activar/arrancar.
+- **Hallazgo adicional, corregido de paso**: al ejercitar por primera vez `systemd-analyze verify`
+  contra los units (misma versión de systemd que el VPS, 255), apareció `Unknown key name
+  'StartLimitIntervalSec'` — esa directiva (junto con `StartLimitBurst`) pertenece a la sección
+  `[Unit]`, no a `[Service]`; estaba mal ubicada en ambos units desde su creación, así que la
+  política de reinicio controlada nunca se aplicaba de verdad. Corregido en los dos archivos.
+
+## Docker Compose: `docker compose` o `docker-compose` (Fase D, CLOUD-DEP-02B.1-C.1)
+
+El VPS real solo tiene el binario standalone `docker-compose` (v5.3.1, confirmado el mismo motor
+que el plugin oficial — su propio `--help` se autodenomina `docker compose`), no el plugin
+`docker compose`. `lib_common.sh::detect_compose_cmd` detecta cuál de los dos existe y expone el
+array `COMPOSE_CMD`, usado por `deploy.sh`/`rollback.sh` en vez de invocar `docker compose`
+literal. `deploy.sh validate-compose` resuelve el YAML con `config` (nunca `up`/`down`) para
+confirmarlo sin levantar ningún recurso persistente.
+
+## Hardening final (CLOUD-DEP-02B.1-C.2, tercera auditoría del PR #56)
+
+- **DEP56-01 (extracción segura de artefactos)**: `install-frontend-artifact` ya no extrae el
+  `.tar.gz` directamente sobre el release. Antes de extraer nada, valida CADA entrada (Python,
+  `tarfile`): debe vivir bajo `standalone/`, sin componentes `..`/`.` ni rutas absolutas, y no
+  puede ser un enlace simbólico/duro ni un tipo especial; además usa el filtro endurecido `data`
+  de `tarfile` (PEP 706, Python ≥ 3.12) como segunda barrera. Extrae en un directorio de staging
+  propio (`$APP_DIR/.artifact-staging/<único>`) y solo lo mueve al release si todo resultó íntegro
+  y `standalone/server.js` existe; el staging se borra siempre (`trap ... EXIT`), ante error o
+  éxito. Probado con artefactos reales: entrada fuera de `standalone/`, recorrido `../..`, enlace
+  simbólico que escapa del destino y tar truncado/corrupto — los 4 rechazados, el release nunca
+  se toca y el staging queda vacío.
+- **DEP56-02 (procedencia del runtime Node)**: comparar el tarball contra un `SHASUMS256.txt`
+  suministrado junto a él (como antes) no demuestra procedencia — quien controla el tarball
+  controla igual ese archivo. El checksum esperado se lee ahora de
+  `env/node-runtime-checksums.txt`, versionado en este repositorio (aprobar una versión nueva
+  exige un commit y una revisión de PR); `install-node-runtime` ya solo toma `<version>
+  <tarball>`, sin un tercer argumento. Probado con el tarball oficial real
+  `node-v22.18.0-linux-x64.tar.xz`: instala la versión aprobada, rechaza una versión NO aprobada
+  (aunque el tarball sea válido) y rechaza un tarball manipulado para la versión aprobada —
+  `runtime/active` nunca cambia en ningún caso de rechazo. Confirma además que una segunda versión
+  aprobada no borra la primera.
+- **DEP56-03 / DEP56-R2-01 (validación de Compose sin exponer secretos)**: `validate-compose` ya
+  no ejecuta `config` sin más (imprimiría la configuración resuelta, incluidas las contraseñas).
+  Exige que el comando Compose disponible soporte `-q/--quiet` ("solo valida, no imprime nada") y
+  lo usa siempre. La primera versión, al fallar la validación, intentaba REDACTAR el detalle del
+  error pasando la contraseña como ARGUMENTO a un proceso Python — visible en la lista de
+  procesos del host mientras ese proceso corría (el mismo problema que PG54-03 ya corrigió para
+  las conexiones a PostgreSQL). Corregido de raíz: la función ya NO lee ninguna contraseña en
+  absoluto, y el detalle de un error de validación NUNCA se captura, imprime ni escribe en ningún
+  archivo — solo se informa que falló, sin ningún detalle, invitando a depurar manualmente si se
+  acepta el riesgo. Probado con una contraseña sintética inyectada en `docker/.env`: no aparece en
+  stdout, stderr, ni como argumento de ningún proceso vigilado con `ps` mientras corre la
+  validación, ni en el camino exitoso ni en el de error.
+
+Hallazgo adicional corregido durante estas pruebas: dos asignaciones `var="$(grep ... | awk
+...)"` sin `|| true` en `install-node-runtime`/`install-frontend-artifact` podían abortar el
+script de forma SILENCIOSA (sin ningún mensaje) si el `grep` no encontraba coincidencia — el
+mismo patrón que `lib_common.sh::env_value` ya evita internamente. Corregido con `|| true` y un
+mensaje explícito en cada caso, siguiendo la misma convención que el resto del archivo.

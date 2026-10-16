@@ -36,6 +36,28 @@ mvp_healthcheck() {
     && curl -fsS http://127.0.0.1:3100/ >/dev/null
 }
 
+# Detecta qué comando Compose está disponible, sin instalar ni preferir uno por encima del otro
+# salvo por disponibilidad (CLOUD-DEP-02B.1-C.1, Fase D): el VPS real solo tiene el binario
+# standalone "docker-compose" (confirmado v5.3.1, mismo motor que el plugin "docker compose" —
+# su propio --help se autodenomina "docker compose"); el entorno local de pruebas normalmente
+# tiene el plugin. Nunca instala nada ni reinicia Docker: solo decide con qué invocar. Resultado
+# en el array global COMPOSE_CMD (p. ej. ("docker" "compose") o ("docker-compose")), para usarse
+# como "${COMPOSE_CMD[@]}" -f archivo.yml ...
+COMPOSE_CMD=()
+detect_compose_cmd() {
+  if [ "${#COMPOSE_CMD[@]}" -gt 0 ]; then
+    return 0
+  fi
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker-compose)
+  else
+    echo "FALLA: ni 'docker compose' (plugin) ni 'docker-compose' (binario standalone) están disponibles. No se puede continuar con las fases de PostgreSQL." >&2
+    exit 1
+  fi
+}
+
 # Verifica que el esquema de vinto_piloto está completamente migrado (migrate.py --check, con el
 # venv del release activo) ANTES de aplicar privilegios sobre tablas/funciones que todavía podrían
 # no existir, o de arrancar un backend que fallaría en tiempo de ejecución contra un esquema

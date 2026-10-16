@@ -2,6 +2,12 @@
 Description=VINTO MVP WEB — backend FastAPI (piloto, aislado de TVC)
 After=network-online.target
 Wants=network-online.target
+# StartLimitIntervalSec/StartLimitBurst pertenecen a [Unit], no a [Service] (CLOUD-DEP-02B.1-C.1:
+# confirmado con "systemd-analyze verify" contra systemd 255, la misma versión del VPS — puestos
+# en [Service] como estaban antes, systemd los ignora silenciosamente ("Unknown key name"), así
+# que la política de reinicio controlada de abajo nunca llegaba a aplicarse de verdad).
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -26,8 +32,6 @@ ExecStart=/opt/vinto-mvp-web/current/backend/.venv/bin/uvicorn app.main:app --ho
 # nunca en bucle inmediato ni de forma indefinida sin límite.
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # Límites de CPU/memoria (Fase 3 §7). Ajustar según el tamaño real del piloto; estos valores son
 # un punto de partida conservador, no una medición de carga real (no se hizo ningún benchmark).
