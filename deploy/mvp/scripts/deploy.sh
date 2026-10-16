@@ -28,12 +28,17 @@
 #     releases/<sha>/           <- un checkout + venv + build completo por versión desplegada
 #     current -> releases/<sha> <- symlink activo; lo referencian los units de systemd
 #
-# Uso previsto (en el VPS, por fases, en este orden):
+# Uso previsto (en el VPS, por fases, en este orden). DEP55-R2-02: el preflight ya no es un paso
+# único — "preflight" cubre infraestructura/coexistencia, "preflight-build-deps" dependencias de
+# compilación (repetir tras 'user-and-dirs', una vez existe el usuario de servicio) y
+# "preflight-startup" justo antes de activar/arrancar:
 #   CONFIRM=yes bash deploy.sh preflight
 #   CONFIRM=yes bash deploy.sh user-and-dirs
+#   bash deploy.sh preflight-build-deps
 #   CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh checkout <sha>
 #   CONFIRM=yes bash deploy.sh python-venv <sha>
 #   CONFIRM=yes bash deploy.sh frontend-build <sha>
+#   bash deploy.sh preflight-startup
 #   CONFIRM=yes bash deploy.sh activate <sha>
 #   CONFIRM=yes TVC_BACKUP_CONFIRMED=yes bash deploy.sh postgres-up
 #   CONFIRM=yes bash deploy.sh postgres-bootstrap-db
@@ -62,7 +67,15 @@ require_full_sha() {
 }
 
 phase_preflight() {
-  bash "$SCRIPT_DIR/preflight.sh"
+  bash "$SCRIPT_DIR/preflight.sh" infra
+}
+
+phase_preflight_build_deps() {
+  bash "$SCRIPT_DIR/preflight.sh" build-deps
+}
+
+phase_preflight_startup() {
+  bash "$SCRIPT_DIR/preflight.sh" startup
 }
 
 phase_user_and_dirs() {
@@ -187,9 +200,19 @@ phase_frontend_build() {
   fi
 }
 
-# Conmuta "current" al release ya compilado. Es la ÚNICA fase que mueve el symlink: hasta este
-# punto, cualquier fallo en checkout/python-venv/frontend-build deja "current" intacto apuntando
-# a la versión previa en servicio (DEP55-04: "preparar versiones separadas para permitir rollback").
+# Conmuta "current" al release ya compilado. Es la ÚNICA fase que mueve el symlink para una
+# activación normal: hasta este punto, cualquier fallo en checkout/python-venv/frontend-build deja
+# "current" intacto apuntando a la versión previa en servicio (DEP55-04: "preparar versiones
+# separadas para permitir rollback").
+#
+# DEP55-R2-04 ("recuperación de la versión anterior cuando una activación falla", "health checks
+# después de reiniciar"): si los servicios YA estaban instalados, esta fase reinicia ambos y
+# comprueba el healthcheck; si falla, revierte "current" automáticamente a la versión anterior y
+# reinicia de nuevo, dejando el sistema en el último estado conocido-bueno en vez de a medio
+# camino. Esta fase NUNCA toca PostgreSQL (ni esquema ni datos): revertir código y revertir un
+# esquema de base de datos son operaciones independientes — un rollback de código nunca implica,
+# por sí solo, deshacer una migración (ver backend/migrations/README.md para el procedimiento,
+# aparte, de revertir una migración si alguna vez hiciera falta).
 phase_activate() {
   require_confirm
   local commit="${1:?Uso: deploy.sh activate <commit-sha>}"
@@ -203,13 +226,51 @@ phase_activate() {
     echo "FALLA: $release_dir no tiene el build del frontend. Ejecutar 'frontend-build $commit' primero." >&2
     exit 1
   fi
+
+  local previous_target=""
   if [ -e "$APP_DIR/current" ]; then
+    previous_target="$(readlink -f "$APP_DIR/current")"
     readlink -f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$APP_DIR/.previous-release-path" >/dev/null
   fi
+
   sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"
   sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
   echo "'current' -> $release_dir."
-  echo "Si los servicios systemd ya estaban instalados, reiniciarlos ahora (systemctl restart vinto-mvp-backend vinto-mvp-frontend) para que tomen esta versión; si es la primera activación, continuar con 'systemd-install'."
+
+  local units_installed=0
+  if [ -f /etc/systemd/system/vinto-mvp-backend.service ] && [ -f /etc/systemd/system/vinto-mvp-frontend.service ]; then
+    units_installed=1
+  fi
+  if [ "$units_installed" -ne 1 ]; then
+    echo "Los units de systemd no están instalados todavía: nada que reiniciar. Continuar con 'systemd-install' para la primera activación."
+    return 0
+  fi
+
+  for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
+    assert_unit_is_ours "$unit"
+  done
+  sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
+  echo "Servicios reiniciados con $commit. Verificando healthcheck..."
+  sleep 2
+  if phase_healthcheck >/tmp/.deploy-activate-healthcheck.log 2>&1; then
+    cat /tmp/.deploy-activate-healthcheck.log
+    rm -f /tmp/.deploy-activate-healthcheck.log
+    echo "Healthcheck OK tras activar $commit."
+    return 0
+  fi
+  echo "FALLA: el healthcheck no pasó tras activar $commit:" >&2
+  cat /tmp/.deploy-activate-healthcheck.log >&2
+  rm -f /tmp/.deploy-activate-healthcheck.log
+  if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
+    echo "Revirtiendo 'current' automáticamente a la versión anterior ($previous_target)..." >&2
+    sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp"
+    sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
+    sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
+    echo "'current' revertido a $previous_target y servicios reiniciados. $commit queda sin activar; investigar antes de reintentar." >&2
+  else
+    echo "No había una versión anterior a la que revertir automáticamente (primera activación real). Los servicios siguen apuntando a $commit, que no pasó el healthcheck: intervención manual requerida." >&2
+  fi
+  exit 1
 }
 
 phase_postgres_up() {
@@ -371,6 +432,8 @@ phase_healthcheck() {
 
 case "${1:-}" in
   preflight) phase_preflight ;;
+  preflight-build-deps) phase_preflight_build_deps ;;
+  preflight-startup) phase_preflight_startup ;;
   user-and-dirs) phase_user_and_dirs ;;
   checkout) phase_checkout "${2:-}" ;;
   python-venv) phase_python_venv "${2:-}" ;;
@@ -386,7 +449,7 @@ case "${1:-}" in
   systemd-install) phase_systemd_install ;;
   healthcheck) phase_healthcheck ;;
   *)
-    echo "Uso: deploy.sh {preflight|user-and-dirs|checkout <sha>|python-venv <sha>|frontend-build <sha>|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
+    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|python-venv <sha>|frontend-build <sha>|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
     exit 1
     ;;
 esac

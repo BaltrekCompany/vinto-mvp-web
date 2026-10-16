@@ -1,7 +1,8 @@
 # VINTO MVP WEB — despliegue híbrido aislado en el VPS compartido con TVC
 
 Preparado en CLOUD-DEP-02A (diseño y artefactos, sin ejecutar nada en el VPS); corregido en
-CLOUD-DEP-02A.2 tras la auditoría del PR #55 (ver "Correcciones de CLOUD-DEP-02A.2" más abajo). La
+CLOUD-DEP-02A.2 tras la auditoría del PR #55 (ver "Correcciones de CLOUD-DEP-02A.2" más abajo) y en
+una segunda ronda de correcciones, DEP55-R2-01 a 04 (ver "Correcciones de la ronda 2" más abajo). La
 ejecución real es CLOUD-DEP-02B, bajo autorización explícita, fase por fase.
 
 ## Qué es esto y qué no es
@@ -43,14 +44,17 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
 
 ## Orden de archivos y fases para DEP-02B
 
-1. `scripts/preflight.sh` — confirmar que los supuestos siguen siendo ciertos (solo lectura).
+1. `scripts/preflight.sh infra` — confirmar que los supuestos de infraestructura/coexistencia
+   siguen siendo ciertos (solo lectura; DEP55-R2-02: ya no mezcla dependencias de build).
 2. `env/backend.env.example` → copiar a `/opt/vinto-mvp-web/shared/backend.env` (600) con
    contraseñas reales. `deploy.sh checkout` enlaza automáticamente `releases/<sha>/backend/.env`
    a este archivo compartido; nunca se duplica por versión.
 3. `env/postgres.env.example` → copiar a `docker/.env` (no versionado) con contraseñas reales.
 4. `scripts/deploy.sh` — fase por fase, cada una con `CONFIRM=yes` explícito, en este orden:
-   `user-and-dirs` → `checkout <sha>` (requiere además `AUTHORIZED_COMMIT=<sha>`) →
-   `python-venv <sha>` → `frontend-build <sha>` → `activate <sha>` →
+   `user-and-dirs` → `preflight-build-deps` (repetir: ahora ya existe el usuario de servicio, se
+   puede confirmar la ruta real de node/corepack PARA ÉL) → `checkout <sha>` (requiere además
+   `AUTHORIZED_COMMIT=<sha>`) → `python-venv <sha>` → `frontend-build <sha>` →
+   `preflight-startup` → `activate <sha>` →
    `postgres-up` (requiere además `TVC_BACKUP_CONFIRMED=yes`) → `postgres-bootstrap-db` →
    `postgres-roles` → `migrate` → `postgres-grants` → `import-reference` (dry-run) →
    `import-reference-apply` → `systemd-install` → `healthcheck`.
@@ -75,12 +79,51 @@ durante la operación en el mismo host.
 
 ## Pruebas que necesitan el VPS y quedan pendientes (ver CLOUD-DEP-02A, Fase 4)
 
-- Arranque real de los dos servicios systemd en Ubuntu 24.04 (solo se validó la sintaxis de las
-  unidades localmente, no su ejecución real en ese SO).
+- Arranque real de los dos servicios systemd en Ubuntu 24.04. `verify_local.sh` (CLOUD-DEP-02A.2-R2)
+  ensaya en un contenedor Ubuntu 24.04 efímero la propiedad de directorios, la resolución de
+  symlinks hacia `shared/backend.env` y la activación atómica entre releases como el usuario
+  `vinto-mvp`, pero un contenedor normal no corre systemd como PID 1: `systemctl`
+  start/restart/enable, la política `Restart=on-failure` y el sandboxing de `ProtectSystem=strict`
+  siguen sin ejercitarse realmente — solo su sintaxis se validó localmente.
 - `docker compose up` del Postgres del MVP en el VPS real (localmente solo se validó
   `docker compose config`, ver más abajo).
 - Emisión del certificado HTTPS con certbot para el nuevo subdominio.
-- Verificación de que el bloque `allow/deny` de nginx bloquea tráfico no autorizado tal como se espera.
+- Verificación de que el bloque `allow/deny` de nginx bloquea tráfico no autorizado tal como se espera
+  (localmente sí se verificó con un contenedor `nginx:alpine` real, con tráfico HTTP real).
+
+## Correcciones de la ronda 2 (CLOUD-DEP-02A.2-R2, auditoría del PR #55, DEP55-R2-01 a 04)
+
+Segunda auditoría de ChatGPT sobre el commit correctivo de la ronda 1 ("arquitectura y correcciones
+DEP55-01 a 05 favorables", 4 observaciones nuevas, ninguna de arquitectura):
+
+- **DEP55-R2-01 (`scripts/tests/verify_local.sh`, seguridad del runner)**: eliminado cualquier
+  `docker rm -f <nombre fijo>` preventivo al empezar una prueba. Cada contenedor que el runner crea
+  usa un nombre único por ejecución, comprueba que no colisiona con nada preexistente antes de
+  crearlo, se registra por su ID real (confirmado con `docker inspect`, nunca por el nombre pedido)
+  y se limpia exclusivamente por ese ID — incluso ante un error o una interrupción del propio
+  runner (`trap cleanup_all EXIT INT TERM` sobre la lista de IDs registrados).
+- **DEP55-R2-02 (`scripts/preflight.sh`, preflight por etapas)**: dividido en 3 etapas
+  independientes — `infra` (puertos, rutas, identidad de recursos, TVC, backup; nunca depende de
+  node/python/git/corepack), `build-deps` (dependencias de compilación, y confirma la ruta real de
+  node/corepack **para el usuario de servicio**, comparándola con la que asumen los units de
+  systemd) y `startup` (justo antes de activar/arrancar). Antes, una dependencia de build ausente
+  podía bloquear un chequeo de infraestructura que no la necesitaba para nada.
+- **DEP55-R2-03 (`scripts/lib_common.sh`, archivos temporales de credenciales)**: el `.pgpass`
+  temporal dentro del contenedor y el `--env-file` en el host ahora usan una ruta única por llamada
+  (PID + aleatorio + nanosegundos), nunca un nombre fijo — dos invocaciones concurrentes no pueden
+  pisarse. La limpieza usa `trap ... EXIT INT TERM` con la ruta exacta ya resuelta, y el comando
+  bloqueante (`docker exec ... psql`) se lanza en segundo plano y se espera con el builtin `wait`
+  (no directamente en primer plano): así, una señal con trap se atiende de inmediato en vez de
+  diferirse hasta que el comando en curso termine por sí solo. `password_from_pg_url` decodifica
+  porcentaje (RFC 3986), para contraseñas con `@`/`:`/`+` codificados dentro de la URL.
+- **DEP55-R2-04 (`deploy.sh`, `rollback.sh`, releases/rollback)**: `deploy.sh activate` ahora
+  reinicia los servicios (si ya estaban instalados), comprueba el healthcheck y, si falla, revierte
+  automáticamente `current` a la versión anterior y reinicia de nuevo — en vez de dejar el sistema
+  a medio camino. Ensayado en un contenedor Ubuntu 24.04 efímero (propiedad, symlinks, activación
+  atómica, aislamiento de `/opt/vinto-web`, `su`/git/python3 como el usuario de servicio) con la
+  limitación explícita de que ese ensayo NO ejercita systemd en sí (ver arriba). Documentado que un
+  rollback de código (`rollback.sh version`) nunca implica deshacer una migración de base de datos:
+  son operaciones independientes.
 
 ## Correcciones de CLOUD-DEP-02A.2 (auditoría del PR #55, DEP55-01 a 05)
 

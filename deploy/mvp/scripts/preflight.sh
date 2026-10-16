@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 # VINTO MVP WEB — preflight de solo lectura (CLOUD-DEP-02A / se ejecuta en DEP-02B).
-# Corregido en CLOUD-DEP-02A.2 (DEP55-03) tras la auditoría del PR #55.
+# Corregido en CLOUD-DEP-02A.2 (DEP55-03) y en CLOUD-DEP-02A.2-R2 (DEP55-R2-02) tras las
+# auditorías del PR #55.
 #
 # No modifica nada. Verifica que los supuestos de este despliegue siguen siendo ciertos en el VPS
-# ANTES de ejecutar deploy.sh. Seguro de ejecutar repetidamente. Pensado para correrse EN EL VPS
-# (no localmente) — aquí solo se valida con `bash -n`/ShellCheck (ver deploy/mvp/scripts/tests).
+# ANTES de cada grupo de fases de deploy.sh. Seguro de ejecutar repetidamente. Pensado para
+# correrse EN EL VPS (no localmente) — aquí solo se valida con `bash -n`/ShellCheck (ver
+# deploy/mvp/scripts/tests).
 #
-# Qué cambió en DEP55-03 respecto de la versión anterior:
-#   - Un conflicto de PROPIEDAD DESCONOCIDA (ruta/contenedor/red/usuario que ya existe pero no se
-#     puede confirmar que es de una corrida previa de ESTE despliegue) ahora es FALLA, no AVISO:
-#     antes solo avisaba y dejaba continuar; ahora detiene el procedimiento.
-#   - Se añaden controles nuevos: red Docker, volumen/bind-mount potencialmente compartido,
-#     usuario de servicio existente no verificado, dependencias ausentes (node/python/git/pnpm),
-#     evidencia de backup de TVC antes de autorizar una fase de riesgo.
-#   - Se distingue explícitamente "primera instalación" de "actualización" al final del informe.
+# DEP55-R2-02: antes había una sola pasada que mezclaba infraestructura, dependencias de build y
+# arranque — una dependencia de compilación ausente (p. ej. Node) bloqueaba un chequeo de
+# infraestructura que no la necesita para nada. Ahora son 3 etapas independientes:
+#   infra        — puertos, rutas, identidad de recursos, TVC, Docker, backup. NO depende de
+#                  node/python/git/corepack: estos NUNCA aparecen en esta etapa.
+#   build-deps   — SOLO las dependencias necesarias para compilar/migrar (node, corepack, git,
+#                  curl, python3.12), y que la ruta real de node/corepack para el usuario de
+#                  servicio coincide con la que los units de systemd asumen.
+#   startup      — justo antes de activar/arrancar: puertos todavía libres, el release a activar
+#                  está completo, el contenedor de PostgreSQL (si se requiere) está saludable.
+# Sin argumento, ejecuta las 3 en orden (equivalente a antes, para una revisión rápida manual).
 #
-# Uso: bash preflight.sh
+# Uso: bash preflight.sh {infra|build-deps|startup|all}
 
 set -euo pipefail
 
@@ -28,7 +33,8 @@ ok()   { printf 'OK    %s\n' "$1"; }
 warn() { printf 'AVISO %s  -- %s\n' "$1" "$2"; }
 fail() { printf 'FALLA %s  -- %s\n' "$1" "$2"; FAIL=1; }
 
-echo "=== VINTO MVP WEB — preflight (solo lectura) ==="
+stage_infra() {
+echo "=== VINTO MVP WEB — preflight: infraestructura y coexistencia (solo lectura) ==="
 
 # 1. Puertos candidatos deben estar libres.
 for port in 3100 8100 6544; do
@@ -142,27 +148,7 @@ else
   ok "usuario $MVP_SERVICE_USER no existe todavía (esperado antes del primer despliegue)"
 fi
 
-# 7. Dependencias necesarias para compilar/ejecutar, ausentes = falla (no se puede continuar sin
-#    ellas, da igual la fase).
-for bin in git curl node; do
-  if command -v "$bin" >/dev/null 2>&1; then
-    ok "dependencia '$bin' disponible"
-  else
-    fail "dependencia '$bin'" "no está instalada; requerida antes de continuar"
-  fi
-done
-if command -v python3.12 >/dev/null 2>&1; then
-  ok "dependencia 'python3.12' disponible"
-else
-  fail "dependencia 'python3.12'" "no está instalada; requerida para el venv del backend"
-fi
-if command -v corepack >/dev/null 2>&1; then
-  ok "dependencia 'corepack' (pnpm) disponible"
-else
-  fail "dependencia 'corepack'" "no está instalada; requerida para compilar el frontend"
-fi
-
-# 8. Evidencia de backup de TVC antes de autorizar las fases de riesgo (las que crean/arrancan
+# 7. Evidencia de backup de TVC antes de autorizar las fases de riesgo (las que crean/arrancan
 #    PostgreSQL, aplican roles o migran). Este script NO puede verificar un backup por sí mismo
 #    (no tiene acceso a dónde se guarda); exige una atestación explícita del operador vía variable
 #    de entorno, igual de explícita que CONFIRM=yes en deploy.sh.
@@ -172,7 +158,7 @@ else
   warn "backup de TVC" "TVC_BACKUP_CONFIRMED no es 'yes' — confirmar con quien administra TVC que el backup existe y está verificado ANTES de autorizar deploy.sh postgres-up/postgres-roles/migrate (no bloquea este preflight de solo lectura, pero deploy.sh exigirá esta misma variable en esas fases)"
 fi
 
-# 9. Primera instalación vs actualización: clasificación informativa, no bloqueante por sí sola
+# 8. Primera instalación vs actualización: clasificación informativa, no bloqueante por sí sola
 #    (los conflictos de propiedad de arriba ya bloquearon si correspondía).
 echo "--- Clasificación del despliegue ---"
 existing=0
@@ -185,6 +171,108 @@ elif [ "$existing" -eq 2 ]; then
 else
   warn "clasificación" "estado mixto (solo uno de los dos existe) — revisar a mano antes de continuar, no asumir ni primera instalación ni actualización"
 fi
+}
+
+stage_build_deps() {
+echo "=== VINTO MVP WEB — preflight: dependencias de build/migración (solo lectura) ==="
+echo "Esta etapa es independiente de 'infra': una dependencia ausente aquí nunca debe impedir un"
+echo "chequeo de infraestructura que no la necesita (DEP55-R2-02)."
+
+for bin in git curl node; do
+  if command -v "$bin" >/dev/null 2>&1; then
+    ok "dependencia '$bin' disponible ($(command -v "$bin"))"
+  else
+    fail "dependencia '$bin'" "no está instalada; requerida antes de 'checkout'/'frontend-build'"
+  fi
+done
+if command -v python3.12 >/dev/null 2>&1; then
+  ok "dependencia 'python3.12' disponible ($(command -v python3.12))"
+else
+  fail "dependencia 'python3.12'" "no está instalada; requerida para el venv del backend"
+fi
+if command -v corepack >/dev/null 2>&1; then
+  ok "dependencia 'corepack' (pnpm) disponible ($(command -v corepack))"
+else
+  fail "dependencia 'corepack'" "no está instalada; requerida para compilar el frontend"
+fi
+
+# Las rutas reales de node/corepack para el USUARIO DE SERVICIO pueden diferir de las del usuario
+# que ejecuta este preflight (p. ej. node instalado vía nvm en el home de "ubuntu", invisible para
+# un usuario de sistema sin ese PATH) — DEP55-R2-02: "confirmar las rutas reales de Node/Corepack
+# que utilizará el usuario de servicio". Solo se puede comprobar una vez que ese usuario existe.
+if id "$MVP_SERVICE_USER" >/dev/null 2>&1; then
+  service_node="$(sudo -u "$MVP_SERVICE_USER" sh -c 'command -v node' 2>/dev/null || true)"
+  if [ -z "$service_node" ]; then
+    fail "node para $MVP_SERVICE_USER" "no se encuentra node en el PATH de $MVP_SERVICE_USER (aunque exista para otro usuario). El unit de systemd usa /usr/bin/node explícitamente: instalar node donde $MVP_SERVICE_USER pueda ejecutarlo, o actualizar ExecStart si la ruta real es otra."
+  elif [ "$service_node" != "/usr/bin/node" ]; then
+    warn "node para $MVP_SERVICE_USER" "resuelve a '$service_node', no a '/usr/bin/node' (la ruta que usa deploy/mvp/systemd/vinto-mvp-frontend.service). Actualizar el ExecStart del unit a la ruta real antes de 'systemd-install', o instalar node en /usr/bin."
+  else
+    ok "node para $MVP_SERVICE_USER resuelve a /usr/bin/node, igual que ExecStart del unit del frontend"
+  fi
+  service_corepack="$(sudo -u "$MVP_SERVICE_USER" sh -c 'command -v corepack' 2>/dev/null || true)"
+  if [ -z "$service_corepack" ]; then
+    fail "corepack para $MVP_SERVICE_USER" "no se encuentra en el PATH de $MVP_SERVICE_USER; requerido por deploy.sh frontend-build (se ejecuta como ese usuario)."
+  else
+    ok "corepack para $MVP_SERVICE_USER disponible ($service_corepack)"
+  fi
+else
+  warn "rutas de node/corepack para $MVP_SERVICE_USER" "el usuario todavía no existe (se crea en 'user-and-dirs'); repetir esta etapa después de crearlo y antes de 'frontend-build'."
+fi
+
+echo "--- Instalación recomendada de Node/Corepack (solo documentación; no se instala nada aquí) ---"
+echo "Fijar una versión concreta de Node (p. ej. paquete NodeSource para la versión LTS que exige"
+echo "package.json: \"engines\": { \"node\": \">=22.18.0\" }), nunca 'apt install nodejs' genérico sin"
+echo "anclar versión. Corepack ya viene con Node >=16.9; 'corepack enable' una sola vez. pnpm queda"
+echo "fijado por 'packageManager' en package.json (pnpm@11.25.0) — corepack lo resuelve solo, sin"
+echo "instalar pnpm manualmente. Alternativa sin red en el VPS: compilar el frontend en CI/local y"
+echo "desplegar dist/standalone/ ya construido (artefacto), saltando 'frontend-build' en el VPS."
+}
+
+stage_startup() {
+echo "=== VINTO MVP WEB — preflight: arranque y disponibilidad (solo lectura) ==="
+echo "Repite los puertos (pueden haber cambiado desde 'infra') y confirma que lo que se va a"
+echo "activar/arrancar está realmente completo, justo antes de hacerlo."
+
+for port in 3100 8100 6544; do
+  if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
+    warn "puerto $port" "en uso ahora mismo — si es el propio servicio del MVP en un reinicio, es esperado; si es otra cosa, revisar antes de 'activate'/'systemd-install'"
+  else
+    ok "puerto $port libre"
+  fi
+done
+
+if [ -L "$MVP_APP_DIR/current" ]; then
+  release_dir="$(readlink -f "$MVP_APP_DIR/current")"
+  if [ -x "$release_dir/backend/.venv/bin/uvicorn" ] && [ -f "$release_dir/dist/standalone/server.js" ]; then
+    ok "'current' -> $release_dir está completo (venv + build del frontend)"
+  else
+    fail "'current'" "apunta a $release_dir pero falta el venv o el build del frontend; no arrancar los servicios todavía"
+  fi
+else
+  warn "'current'" "todavía no existe (esperado antes de la primera 'activate')"
+fi
+
+if docker ps --format '{{.Names}}' | grep -qx "$MVP_POSTGRES_CONTAINER"; then
+  if docker exec "$MVP_POSTGRES_CONTAINER" sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+    ok "$MVP_POSTGRES_CONTAINER está arriba y acepta conexiones (pg_isready)"
+  else
+    fail "$MVP_POSTGRES_CONTAINER" "está arriba pero no responde a pg_isready; no continuar con migrate/arranque del backend"
+  fi
+else
+  warn "$MVP_POSTGRES_CONTAINER" "no está corriendo todavía (esperado si aún no se ejecutó 'postgres-up')"
+fi
+}
+
+case "${1:-all}" in
+  infra) stage_infra ;;
+  build-deps) stage_build_deps ;;
+  startup) stage_startup ;;
+  all) stage_infra; stage_build_deps; stage_startup ;;
+  *)
+    echo "Uso: preflight.sh {infra|build-deps|startup|all}" >&2
+    exit 1
+    ;;
+esac
 
 echo "=== Resultado: $([ "$FAIL" -eq 0 ] && echo 'SIN FALLAS BLOQUEANTES' || echo 'HAY FALLAS — NO CONTINUAR CON deploy.sh') ==="
 exit "$FAIL"

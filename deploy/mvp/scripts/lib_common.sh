@@ -58,15 +58,26 @@ env_value() {
   printf '%s' "$line"
 }
 
+# Decodifica porcentaje (RFC 3986) de un texto, p. ej. "%40" -> "@". Las contraseñas dentro de
+# una URL postgresql:// que contienen ":"/"@"/"/" deben llevarlo codificado así (DEP55-R2-03:
+# "contraseñas codificadas"); sin esto, password_from_pg_url devolvería el texto codificado en
+# vez de la contraseña real. Solo texto, nunca se evalúa como shell.
+_url_decode() {
+  local data="${1//+/ }"
+  printf '%b' "${data//%/\\x}"
+}
+
 # Extrae la contraseña de una URL postgresql://usuario:contraseña@host:puerto/base, como texto
-# literal (regex, no shell eval). Usado para reaprovisionar roles con la MISMA contraseña que ya
-# está en backend/.env, sin pedir el secreto una segunda vez ni volver a imprimirlo.
+# literal (regex, no shell eval), ya decodificada de porcentaje. Usado para reaprovisionar roles
+# con la MISMA contraseña que ya está en backend/.env, sin pedir el secreto una segunda vez ni
+# volver a imprimirlo. El error NUNCA incluye la URL ni la contraseña, solo que el formato no se
+# reconoció (DEP55-R2-03: "los errores no filtran credenciales").
 password_from_pg_url() {
   local url="$1"
   if [[ "$url" =~ ^postgresql://[^:]+:([^@]+)@ ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
+    _url_decode "${BASH_REMATCH[1]}"
   else
-    echo "password_from_pg_url: no se reconoce el formato de la URL" >&2
+    echo "password_from_pg_url: no se reconoce el formato de la URL (longitud recibida: ${#url})" >&2
     return 1
   fi
 }
@@ -176,6 +187,16 @@ assert_path_not_shared_with_other_containers() {
 # y se borra al terminar; las contraseñas que un .sql necesite leer con \getenv (p. ej. para un
 # CREATE ROLE) se pasan en un archivo --env-file de 600 en el HOST (nunca como -e literal), que
 # también se borra al terminar.
+#
+# Corregido en CLOUD-DEP-02A.2 (DEP55-R2-03) tras la auditoría del PR #55:
+#   - Ambos archivos temporales usan una ruta ÚNICA POR LLAMADA (PID + aleatorio + nanosegundos),
+#     nunca un nombre fijo: dos invocaciones concurrentes (dos operadores, o deploy.sh y un
+#     healthcheck solapados) ya no pueden pisarse ni borrar el archivo activo de la otra.
+#   - La limpieza usa "trap ... EXIT INT TERM" con la ruta exacta ya resuelta en el momento de
+#     crear el archivo: si el proceso se interrumpe (Ctrl-C, kill, error no controlado) a mitad de
+#     una llamada, el archivo en uso en ESE momento se borra igual; al terminar con normalidad, el
+#     trap se desarma explícitamente (nunca queda un trap de una llamada anterior activo para la
+#     siguiente, porque cada llamada solo vive mientras su propia función está en curso).
 
 # Traduce una ruta de archivo del HOST a la forma que el propio binario de docker necesita para
 # encontrarla como argumento de "--env-file" (p. ej. "docker exec --env-file"): en Linux (el VPS
@@ -190,26 +211,45 @@ _docker_host_path() {
   fi
 }
 
-_pg_write_pgpass() {
-  local role="$1" password="$2" db="$3"
-  printf '127.0.0.1:5432:%s:%s:%s\n' "$db" "$role" "$password" \
-    | docker exec -i "$MVP_POSTGRES_CONTAINER" sh -c 'umask 077; cat > /tmp/.deploy-pgpass'
+# Sufijo único por llamada: PID propio + número aleatorio de bash + nanosegundos (o segundos si el
+# "date" del sistema no soporta %N). Nunca se reutiliza dentro de la misma ejecución del script.
+_pg_unique_suffix() {
+  printf '%s-%s-%s' "$$" "$RANDOM" "$(date +%s%N 2>/dev/null || date +%s)"
 }
 
-_pg_cleanup() {
-  local extra_remote="${1:-}"
-  docker exec "$MVP_POSTGRES_CONTAINER" rm -f /tmp/.deploy-pgpass ${extra_remote:+"$extra_remote"}
+# Escribe un .pgpass temporal DENTRO del contenedor, en una ruta única, y la imprime por stdout
+# para que el llamador la capture y la use tanto en PGPASSFILE como en su propia limpieza.
+_pg_write_pgpass() {
+  local role="$1" password="$2" db="$3"
+  local remote
+  remote="/tmp/.deploy-pgpass-$(_pg_unique_suffix)"
+  printf '127.0.0.1:5432:%s:%s:%s\n' "$db" "$role" "$password" \
+    | docker exec -i "$MVP_POSTGRES_CONTAINER" sh -c "umask 077; cat > '$remote'" || return 1
+  printf '%s' "$remote"
 }
 
 # pg_run_sql_inline <role> <password> <db> <sentencia-sql>
 pg_run_sql_inline() {
   local role="$1" password="$2" db="$3" sql="$4"
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
-  _pg_write_pgpass "$role" "$password" "$db"
-  local status=0
-  docker exec -e PGPASSFILE=/tmp/.deploy-pgpass "$MVP_POSTGRES_CONTAINER" \
-    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -tAc "$sql" || status=$?
-  _pg_cleanup
+  local pgpass_path
+  pgpass_path="$(_pg_write_pgpass "$role" "$password" "$db")" || {
+    echo "pg_run_sql_inline: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
+    return 1
+  }
+  # shellcheck disable=SC2064 # se expande AHORA a propósito: la ruta exacta de ESTA llamada.
+  trap "docker exec '$MVP_POSTGRES_CONTAINER' rm -f '$pgpass_path' >/dev/null 2>&1" EXIT INT TERM
+  # DEP55-R2-03: "docker exec" se lanza en segundo plano y se espera con "wait" (builtin), nunca
+  # en primer plano directamente. Bash difiere la ejecución de un trap hasta que el comando en
+  # primer plano termina — si psql se quedara colgado (o tardara mucho), una señal recibida
+  # mientras tanto no limpiaría nada hasta que terminara por sí solo. "wait" SÍ se interrumpe de
+  # inmediato al llegar una señal con trap, permitiendo una limpieza pronta en vez de diferida.
+  docker exec -e PGPASSFILE="$pgpass_path" "$MVP_POSTGRES_CONTAINER" \
+    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -tAc "$sql" &
+  local dpid=$! status=0
+  wait "$dpid" || status=$?
+  docker exec "$MVP_POSTGRES_CONTAINER" rm -f "$pgpass_path" >/dev/null 2>&1
+  trap - EXIT INT TERM
   return "$status"
 }
 
@@ -222,18 +262,28 @@ pg_run_sql_inline() {
 pg_run_sql_file() {
   local role="$1" password="$2" db="$3" sql_file="$4"; shift 4
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
-  _pg_write_pgpass "$role" "$password" "$db"
+  local pgpass_path
+  pgpass_path="$(_pg_write_pgpass "$role" "$password" "$db")" || {
+    echo "pg_run_sql_file: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
+    return 1
+  }
   local envfile="" docker_env_args=()
   if [ "$#" -gt 0 ]; then
-    envfile="$(mktemp)"
+    envfile="$(mktemp)"  # mktemp ya genera un nombre único por llamada en el host.
     chmod 600 "$envfile"
     printf '%s\n' "$@" > "$envfile"
     docker_env_args=(--env-file "$(_docker_host_path "$envfile")")
   fi
-  local status=0
-  docker exec -i -e PGPASSFILE=/tmp/.deploy-pgpass "${docker_env_args[@]}" "$MVP_POSTGRES_CONTAINER" \
-    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -f - < "$sql_file" || status=$?
+  # shellcheck disable=SC2064 # se expanden AHORA: las rutas exactas de ESTA llamada.
+  trap "docker exec '$MVP_POSTGRES_CONTAINER' rm -f '$pgpass_path' >/dev/null 2>&1; rm -f '$envfile' 2>/dev/null" EXIT INT TERM
+  # Igual que en pg_run_sql_inline (DEP55-R2-03): en segundo plano + "wait", para que una señal
+  # con trap se atienda de inmediato en vez de diferirse hasta que termine el comando en curso.
+  docker exec -i -e PGPASSFILE="$pgpass_path" "${docker_env_args[@]}" "$MVP_POSTGRES_CONTAINER" \
+    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -f - < "$sql_file" &
+  local dpid=$! status=0
+  wait "$dpid" || status=$?
+  docker exec "$MVP_POSTGRES_CONTAINER" rm -f "$pgpass_path" >/dev/null 2>&1
   [ -n "$envfile" ] && rm -f "$envfile"
-  _pg_cleanup
+  trap - EXIT INT TERM
   return "$status"
 }
