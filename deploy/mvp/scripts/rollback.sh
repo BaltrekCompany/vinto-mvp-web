@@ -59,25 +59,31 @@ rollback_systemd() {
 # solo — ver deploy.sh::phase_checkout). Reinicia los servicios para que tomen el cambio.
 rollback_version() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local sha="${1:?Uso: rollback.sh version <sha-anterior-de-40-caracteres>}"
   if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
     echo "FALLA: '$sha' no es un SHA completo de 40 caracteres hexadecimales. No se acepta una rama ni una referencia parcial (podría moverse). Abortando." >&2
     exit 1
   fi
   local release_dir="$MVP_APP_DIR/releases/$sha"
-  if [ ! -d "$release_dir" ]; then
+  if ! mvp_test -d "$release_dir"; then
     echo "FALLA: $release_dir no existe. Solo se puede revertir a una versión que ya fue desplegada con deploy.sh checkout. Abortando sin modificar 'current'." >&2
     exit 1
   fi
-  if [ ! -x "$release_dir/backend/.venv/bin/uvicorn" ] || [ ! -f "$release_dir/dist/standalone/server.js" ]; then
+  if ! mvp_test -x "$release_dir/backend/.venv/bin/uvicorn" || ! mvp_test -f "$release_dir/dist/standalone/server.js"; then
     echo "FALLA: $release_dir existe pero no parece una versión completamente desplegada (falta venv o build del frontend). Abortando sin modificar 'current'." >&2
     exit 1
   fi
   local previous_target
-  previous_target="$(readlink -f "$MVP_APP_DIR/current" 2>/dev/null || true)"
+  previous_target="$(mvp_readlink_f "$MVP_APP_DIR/current" 2>/dev/null || true)"
   echo "Revirtiendo 'current' de '${previous_target:-?}' a '$release_dir'."
-  ln -sfn "$release_dir" "$MVP_APP_DIR/current.tmp"
-  mv -T "$MVP_APP_DIR/current.tmp" "$MVP_APP_DIR/current"
+  # CLOUD-DEP-02B.1-E.6-A.1: faltaba "sudo -u $MVP_SERVICE_USER" aquí — "ln"/"mv" directos, como
+  # el invocador (ubuntu), fallarían con "Permission denied" al intentar escribir dentro de
+  # $MVP_APP_DIR (750, exclusivo de $MVP_SERVICE_USER). A diferencia de las comprobaciones de
+  # lectura de más arriba (que fallaban en silencio, "no existe"), esta era una mutación que
+  # habría fallado de forma RUIDOSA y visible — pero fallado igual, sin revertir nunca 'current'.
+  sudo -u "$MVP_SERVICE_USER" ln -sfn "$release_dir" "$MVP_APP_DIR/current.tmp"
+  sudo -u "$MVP_SERVICE_USER" mv -T "$MVP_APP_DIR/current.tmp" "$MVP_APP_DIR/current"
   for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
     assert_unit_is_ours "$unit"
   done

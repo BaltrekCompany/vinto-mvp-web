@@ -58,6 +58,49 @@ detect_compose_cmd() {
   fi
 }
 
+# CLOUD-DEP-02B.1-E.6-A.1: $MVP_APP_DIR es 750, propiedad exclusiva de $MVP_SERVICE_USER
+# (vinto-mvp) — user-and-dirs lo deja así a propósito (DEP55-04), y así debe permanecer. El
+# operador que invoca deploy.sh/rollback.sh/preflight.sh (siempre "ubuntu" en el VPS real, NUNCA
+# root/sudo sobre el script completo — confirmado en CLOUD-DEP-02B.1-D) no tiene ni permiso de
+# tránsito sobre ese árbol. Evaluar "[ -e/-f/-d/-x/-L ... ]", "stat" o "readlink" sobre una ruta
+# DENTRO de $MVP_APP_DIR como ese operador es, en la práctica, un "permission denied" disfrazado
+# de "no existe" — confirmado empíricamente primero en "install-node-runtime" (CLOUD-DEP-02B.1-D,
+# corregido en PR #57) y de nuevo, de forma mucho más extendida, en la auditoría E.6-A sobre
+# "checkout"/"python-venv"/"install-frontend-artifact"/"activate"/"rollback.sh version"/
+# "preflight.sh". Toda lectura sobre una ruta privada del MVP debe pasar por estas funciones
+# (nunca repetir "sudo -u ... test"/"stat"/"readlink" suelto fuera de aquí, para que una futura
+# corrección de este patrón solo tenga que tocar un sitio).
+#
+# assert_can_read_mvp_private_paths: confirma que "sudo -u $MVP_SERVICE_USER" es viable desde
+# este invocador ANTES de usarlo para decidir nada — si no lo es (sudoers mal configurado,
+# usuario inexistente), cada mvp_test/mvp_readlink_f/mvp_stat de más abajo fallaría en silencio
+# igual que la lectura directa (sudo imprime su propio error a stderr, que normalmente no se
+# examina), produciendo el mismo "permission denied disfrazado de no existe" que esto corrige.
+# Se llama una vez al principio de cada fase que dependa de estas funciones.
+assert_can_read_mvp_private_paths() {
+  if ! sudo -u "$MVP_SERVICE_USER" true 2>/dev/null; then
+    echo "FALLA: no se puede ejecutar 'sudo -u $MVP_SERVICE_USER' desde este invocador. Sin esto, ninguna comprobación sobre rutas dentro de $MVP_APP_DIR (750, exclusivo de $MVP_SERVICE_USER) puede distinguir 'no existe' de 'sin permiso para verlo'. Revisar la configuración de sudoers antes de reintentar." >&2
+    exit 1
+  fi
+}
+
+# mvp_test <bandera-de-test...> -- equivalente a "[ <bandera> ... ]", evaluado como
+# $MVP_SERVICE_USER en vez de como el invocador. Uso: mvp_test -e "$ruta", mvp_test ! -d "$ruta".
+mvp_test() {
+  sudo -u "$MVP_SERVICE_USER" test "$@"
+}
+
+# mvp_readlink_f <ruta> -- "readlink -f <ruta>" como $MVP_SERVICE_USER.
+mvp_readlink_f() {
+  sudo -u "$MVP_SERVICE_USER" readlink -f "$1"
+}
+
+# mvp_stat <formato> <ruta> -- "stat -c <formato> <ruta>" como $MVP_SERVICE_USER (p. ej.
+# mvp_stat '%a' "$ruta" para permisos octales, igual que "stat -c '%a'" normal).
+mvp_stat() {
+  sudo -u "$MVP_SERVICE_USER" stat -c "$1" "$2"
+}
+
 # Verifica que el esquema de vinto_piloto está completamente migrado (migrate.py --check, con el
 # venv del release activo) ANTES de aplicar privilegios sobre tablas/funciones que todavía podrían
 # no existir, o de arrancar un backend que fallaría en tiempo de ejecución contra un esquema
@@ -65,8 +108,9 @@ detect_compose_cmd() {
 # si el esquema requerido no está migrado"). Mantiene la aprobación explícita para APLICAR
 # migraciones intacta: esta función solo verifica (--check), nunca ejecuta migrate.py sin --check.
 assert_schema_migrated() {
+  assert_can_read_mvp_private_paths
   local release_dir="$MVP_APP_DIR/current"
-  if [ ! -d "$release_dir/backend" ]; then
+  if ! mvp_test -d "$release_dir/backend"; then
     echo "FALLA: $release_dir/backend no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
@@ -110,6 +154,30 @@ env_value() {
   fi
   line="${line#"${key}"=}"
   # Quita comillas envolventes si las hay (p. ej. CORS_ORIGINS='["https://x"]'); no interpreta nada más.
+  line="${line%\"}"; line="${line#\"}"
+  line="${line%\'}"; line="${line#\'}"
+  printf '%s' "$line"
+}
+
+# CLOUD-DEP-02B.1-E.6-A.1: variante de "env_value" para archivos DENTRO de $MVP_APP_DIR (p. ej.
+# current/backend/.env) — "env_value" normal, evaluada como el invocador (ubuntu), no puede ni
+# comprobar que el archivo existe ni leerlo ahí (750, exclusivo de $MVP_SERVICE_USER). Para
+# archivos FUERA del árbol privado (p. ej. docker/.env) sigue usándose "env_value" normal: no
+# convertir aquella en privilegiada de forma incondicional sería leer con más privilegio del que
+# ese caso necesita. Misma semántica exacta que "env_value", solo cambia el usuario que lee.
+mvp_env_value() {
+  local file="$1" key="$2"
+  if ! mvp_test -f "$file"; then
+    echo "mvp_env_value: no existe $file" >&2
+    return 1
+  fi
+  local line
+  line="$(sudo -u "$MVP_SERVICE_USER" grep -E "^${key}=" "$file" | tail -n1)" || true
+  if [ -z "$line" ]; then
+    echo "mvp_env_value: no se encontró la clave $key en $file" >&2
+    return 1
+  fi
+  line="${line#"${key}"=}"
   line="${line%\"}"; line="${line#\"}"
   line="${line%\'}"; line="${line#\'}"
   printf '%s' "$line"

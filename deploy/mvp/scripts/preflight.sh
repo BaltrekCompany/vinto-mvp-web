@@ -55,8 +55,17 @@ APP_PATH_STATE="no-existe"
 if [ -e "$MVP_APP_DIR" ]; then
   owner="$(stat -c '%U' "$MVP_APP_DIR" 2>/dev/null || echo '?')"
   origin=""
-  if [ -d "$MVP_APP_DIR/current/.git" ]; then
-    origin="$(git -C "$MVP_APP_DIR/current" remote get-url origin 2>/dev/null || true)"
+  # CLOUD-DEP-02B.1-E.6-A.1: "$MVP_APP_DIR/current" está DENTRO del árbol privado (750), a
+  # diferencia de "$MVP_APP_DIR" mismo (cuya existencia/propietario SÍ se puede consultar como
+  # cualquier usuario, porque solo exige permiso de búsqueda sobre "/opt", no sobre el propio
+  # directorio). Evaluado como el invocador, esto siempre reportaría "no existe" aunque el
+  # checkout real sí esté ahí — clasificando por error cada actualización como primera instalación.
+  # "sudo -u ... true" en vez de "assert_can_read_mvp_private_paths" a propósito: esta última
+  # llama a "exit" (correcto para las fases mutadoras de deploy.sh, que deben detenerse de
+  # inmediato), pero preflight.sh es un diagnóstico de solo lectura que debe seguir reportando el
+  # resto de comprobaciones aunque "sudo -u" no esté disponible — nunca abortar a mitad de camino.
+  if sudo -u "$MVP_SERVICE_USER" true 2>/dev/null && mvp_test -d "$MVP_APP_DIR/current/.git"; then
+    origin="$(sudo -u "$MVP_SERVICE_USER" git -C "$MVP_APP_DIR/current" remote get-url origin 2>/dev/null || true)"
   fi
   if [ "$owner" = "$MVP_SERVICE_USER" ] && [ "$origin" = "https://github.com/BaltrekCompany/vinto-mvp-web.git" ]; then
     ok "$MVP_APP_DIR ya existe y es reconocible como una corrida previa de este despliegue (propietario $MVP_SERVICE_USER, origin correcto)"
@@ -233,9 +242,14 @@ for port in 3100 8100 6544; do
   fi
 done
 
-if [ -L "$MVP_APP_DIR/current" ]; then
-  release_dir="$(readlink -f "$MVP_APP_DIR/current")"
-  if [ -x "$release_dir/backend/.venv/bin/uvicorn" ] && [ -f "$release_dir/dist/standalone/server.js" ]; then
+# CLOUD-DEP-02B.1-E.6-A.1: todo lo de aquí abajo vive DENTRO de $MVP_APP_DIR (750) — evaluado
+# como el invocador (ubuntu), "[ -L ... ]"/"readlink"/"[ -x ... ]" siempre reportarían "no
+# existe", y ejecutar el binario de Node directamente ("$MVP_APP_DIR/runtime/active/bin/node
+# --version") fallaría con "Permission denied" aunque "-x" se corrigiera. Todo pasa ahora por
+# mvp_test/mvp_readlink_f o por "sudo -u $MVP_SERVICE_USER" explícito.
+if mvp_test -L "$MVP_APP_DIR/current"; then
+  release_dir="$(mvp_readlink_f "$MVP_APP_DIR/current")"
+  if mvp_test -x "$release_dir/backend/.venv/bin/uvicorn" && mvp_test -f "$release_dir/dist/standalone/server.js"; then
     ok "'current' -> $release_dir está completo (venv + artefacto frontend instalado)"
   else
     fail "'current'" "apunta a $release_dir pero falta el venv o el artefacto frontend; no arrancar los servicios todavía"
@@ -247,9 +261,9 @@ fi
 # Runtime Node AISLADO (CLOUD-DEP-02B.1-C.1): el unit de systemd del frontend usa
 # $MVP_APP_DIR/runtime/active/bin/node, nunca /usr/bin/node. Si no existe todavía, no se puede
 # arrancar el frontend.
-if [ -x "$MVP_APP_DIR/runtime/active/bin/node" ]; then
-  node_version="$("$MVP_APP_DIR/runtime/active/bin/node" --version 2>/dev/null || echo '?')"
-  ok "runtime/active -> $(readlink -f "$MVP_APP_DIR/runtime/active" 2>/dev/null) ($node_version), coincide con el ExecStart del unit del frontend"
+if mvp_test -x "$MVP_APP_DIR/runtime/active/bin/node"; then
+  node_version="$(sudo -u "$MVP_SERVICE_USER" "$MVP_APP_DIR/runtime/active/bin/node" --version 2>/dev/null || echo '?')"
+  ok "runtime/active -> $(mvp_readlink_f "$MVP_APP_DIR/runtime/active" 2>/dev/null) ($node_version), coincide con el ExecStart del unit del frontend"
 else
   fail "runtime/active" "no existe todavía un Node ejecutable en $MVP_APP_DIR/runtime/active/bin/node; ejecutar 'deploy.sh install-node-runtime' antes de 'systemd-install'/'activate'"
 fi

@@ -1660,5 +1660,332 @@ EOF2
   fi
 fi
 
+echo "=== Prueba focalizada E.6-A.1: identidad efectiva en checkout/python-venv/install-frontend-artifact/activate/rollback/preflight (CLOUD-DEP-02B.1-E.6-A.1) ==="
+echo "La auditoría E.6-A encontró que \$APP_DIR (750, exclusivo de vinto-mvp) hace que CUALQUIER"
+echo "comprobación de ruta privada evaluada como el invocador (ubuntu, nunca root/sudo sobre el"
+echo "script completo) sea un falso negativo — el mismo patrón ya corregido para"
+echo "install-node-runtime en PR #57, pero presente sin corregir en el resto del pipeline. Esta"
+echo "batería reproduce el modelo real (usuario sin privilegios + sudo amplio + vinto-mvp separado,"
+echo "sudoers equivalente) y ejercita las fases REALES de deploy.sh/rollback.sh/preflight.sh contra"
+echo "un repositorio Git local sintético (nunca el repositorio real ni datos industriales)."
+E6A1_CNAME=""
+set +e
+create_container vinto-mvp-verify-e6a1 --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 1800
+e6a1_create_status=$?
+set -e
+if [ "$e6a1_create_status" -ne 0 ]; then
+  report "E.6-A.1: identidad efectiva en el pipeline completo (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  E6A1_CNAME="$CREATED_NAME"
+  docker cp "$MVP_DIR" "$E6A1_CNAME:/tmp/mvp" >/dev/null
+  # Exportado para TODO este bloque (no solo una línea): casi cada prueba de aquí invoca
+  # "su -s /bin/bash ..." como argumento DIRECTO de "docker exec" (no envuelto en un "bash -c"
+  # propio) — sin esto, Git Bash reescribe "/bin/bash" como una ruta de Windows ("su: failed to
+  # execute C:/Program Files/Git/usr/bin/bash: No such file or directory"), igual que ya le pasa
+  # a cualquier argumento con forma de ruta absoluta en otras pruebas de este archivo.
+  export MSYS_NO_PATHCONV=1
+  set +e
+  docker exec "$E6A1_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3.12 python3.12-venv sudo curl ca-certificates >/dev/null
+
+    # vinto-mvp: usuario de servicio real, 750 sobre /opt/vinto-mvp-web (lo crea "user-and-dirs",
+    # más abajo, no a mano aquí: también ejercita esa fase).
+    useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
+    # mvp_operator: simula a "ubuntu" en el VPS real — sudo amplio, NUNCA miembro de vinto-mvp.
+    useradd -m -s /bin/bash mvp_operator
+    echo "mvp_operator ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mvp_operator
+    chmod 440 /etc/sudoers.d/mvp_operator
+    # mvp_operator_nosudo: mismo perfil, SIN sudoers — para el escenario de fallo (punto 14).
+    useradd -m -s /bin/bash mvp_operator_nosudo
+    # 700 (no 755 por defecto de mkdir): simula que TVC/ETL no son legibles por "otros" en el
+    # VPS real (el aislamiento que "user-and-dirs" verifica es justamente esto).
+    mkdir -p -m 700 /opt/vinto-web /opt/vinto-etl
+
+    # Repositorio Git LOCAL sintético (nunca el repositorio real ni datos industriales): 2
+    # commits, con un backend/ mínimo pero realista (requirements.txt vacío — válido para pip,
+    # evita cualquier dependencia de red además de la ya usada por apt/git).
+    mkdir -p /tmp/fakerepo-src/backend/roles
+    cd /tmp/fakerepo-src
+    git init --quiet
+    git config user.email "test@example.com"
+    git config user.name "test"
+    : > backend/requirements.txt
+    printf -- "-- stub\n" > backend/roles/00_create_roles.sql
+    git add -A
+    git commit --quiet -m "fake commit 1"
+    git rev-parse HEAD > /tmp/fakerepo-sha1.txt
+    printf -- "-- stub actualizado\n" >> backend/roles/00_create_roles.sql
+    git add -A
+    git commit --quiet -m "fake commit 2"
+    git rev-parse HEAD > /tmp/fakerepo-sha2.txt
+    # "dubious ownership" de git: solo relevante para ESTE repositorio LOCAL de prueba (un clon
+    # real por HTTPS, como en el VPS, nunca pasa por esa comprobación) — nunca algo que afecte al
+    # repositorio real ni a ningún otro.
+    git config --system --add safe.directory "*"
+  ' >/tmp/verify-e6a1-setup.log 2>&1
+  e6a1_setup_ok=$?
+  set -e
+  if [ "$e6a1_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación E.6-A.1 ---"; cat /tmp/verify-e6a1-setup.log
+    report "E.6-A.1: preparación (usuarios sin privilegios, vinto-mvp, repositorio Git local sintético)" 1
+  else
+    report "E.6-A.1: preparación (usuarios sin privilegios, vinto-mvp, repositorio Git local sintético)" 0
+    # MSYS_NO_PATHCONV: estas rutas son DENTRO del contenedor, nunca del host — sin esto, Git
+    # Bash las reescribiría como rutas de Windows (mismo motivo que en otras pruebas de este
+    # archivo que ya usan esta variable para argumentos de "docker exec"/"docker cp").
+    SHA1="$(MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" cat /tmp/fakerepo-sha1.txt)"
+    SHA2="$(MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" cat /tmp/fakerepo-sha2.txt)"
+
+    # Punto de partida REAL: "user-and-dirs" crea /opt/vinto-mvp-web (750) como lo haría en el
+    # VPS — nunca se construye el árbol a mano en esta prueba.
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      'cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh user-and-dirs' \
+      >/tmp/verify-e6a1-userdirs.log 2>&1
+    e6a1_userdirs_ok=$?
+    set -e
+    if [ "$e6a1_userdirs_ok" -eq 0 ]; then
+      report "E.6-A.1: user-and-dirs crea /opt/vinto-mvp-web (750) como mvp_operator, sin privilegios ampliados" 0
+    else
+      echo "--- log user-and-dirs ---"; cat /tmp/verify-e6a1-userdirs.log
+      report "E.6-A.1: user-and-dirs crea /opt/vinto-mvp-web (750) como mvp_operator, sin privilegios ampliados" 1
+    fi
+
+    # 1. Checkout inicial (sin shared/backend.env todavía: debe avisar, no fallar).
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && REPO_URL=/tmp/fakerepo-src CONFIRM=yes AUTHORIZED_COMMIT=$SHA1 bash deploy.sh checkout $SHA1" \
+      >/tmp/verify-e6a1-checkout1.log 2>&1
+    e6a1_checkout1_ok=$?
+    set -e
+    if [ "$e6a1_checkout1_ok" -eq 0 ] && grep -q "AVISO.*backend.env" /tmp/verify-e6a1-checkout1.log; then
+      report "E.6-A.1 (1,3): checkout inicial real como mvp_operator; detecta correctamente que shared/backend.env AÚN NO existe" 0
+    else
+      echo "--- log checkout 1 ---"; cat /tmp/verify-e6a1-checkout1.log
+      report "E.6-A.1 (1,3): checkout inicial real como mvp_operator; detecta correctamente que shared/backend.env AÚN NO existe" 1
+    fi
+
+    # 2. Rechazo de checkout duplicado (mismo commit): mensaje claro, nunca el error de git
+    #    confuso que producía el defecto original (release_dir "invisible" para mvp_operator).
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && REPO_URL=/tmp/fakerepo-src CONFIRM=yes AUTHORIZED_COMMIT=$SHA1 bash deploy.sh checkout $SHA1" \
+      >/tmp/verify-e6a1-checkout-dup.log 2>&1
+    e6a1_checkout_dup_status=$?
+    set -e
+    if [ "$e6a1_checkout_dup_status" -ne 0 ] && grep -q "ya existe .*releases" /tmp/verify-e6a1-checkout-dup.log; then
+      report "E.6-A.1 (2): checkout duplicado rechazado con el mensaje claro esperado (no el error de git confuso del defecto original)" 0
+    else
+      echo "--- log checkout duplicado ---"; cat /tmp/verify-e6a1-checkout-dup.log
+      report "E.6-A.1 (2): checkout duplicado rechazado con el mensaje claro esperado (no el error de git confuso del defecto original)" 1
+    fi
+
+    # 3b/4. Crear shared/backend.env (600) y repetir checkout con un SEGUNDO commit: ahora debe
+    #       detectarlo y crear backend/.env como symlink real hacia shared/backend.env.
+    set +e
+    docker exec "$E6A1_CNAME" bash -c '
+      set -e
+      sudo -u vinto-mvp sh -c "printf \"DATABASE_URL=postgresql://x:y@127.0.0.1/db\n\" > /opt/vinto-mvp-web/shared/backend.env"
+      sudo -u vinto-mvp chmod 600 /opt/vinto-mvp-web/shared/backend.env
+    ' >/tmp/verify-e6a1-backendenv.log 2>&1
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && REPO_URL=/tmp/fakerepo-src CONFIRM=yes AUTHORIZED_COMMIT=$SHA2 bash deploy.sh checkout $SHA2" \
+      >>/tmp/verify-e6a1-backendenv.log 2>&1
+    MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" sudo -u vinto-mvp test -L "/opt/vinto-mvp-web/releases/$SHA2/backend/.env" \
+      >>/tmp/verify-e6a1-backendenv.log 2>&1
+    e6a1_backendenv_ok=$?
+    set -e
+    if [ "$e6a1_backendenv_ok" -eq 0 ]; then
+      report "E.6-A.1 (3,4): con shared/backend.env presente, checkout crea backend/.env como symlink real (antes: nunca se creaba, invisible para mvp_operator)" 0
+    else
+      echo "--- log backend.env/symlink ---"; cat /tmp/verify-e6a1-backendenv.log
+      report "E.6-A.1 (3,4): con shared/backend.env presente, checkout crea backend/.env como symlink real (antes: nunca se creaba, invisible para mvp_operator)" 1
+    fi
+
+    # 5,6,7. Reconocimiento del release existente + python-venv real (venv + pip install de un
+    #        requirements.txt vacío pero válido) + permisos 600 de backend/.env ya verificados
+    #        dentro de la propia fase (antes: FALLABA siempre en la primera línea).
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh python-venv $SHA2" \
+      >/tmp/verify-e6a1-venv.log 2>&1
+    e6a1_venv_ok=$?
+    set -e
+    if [ "$e6a1_venv_ok" -eq 0 ]; then
+      MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" sudo -u vinto-mvp test -x "/opt/vinto-mvp-web/releases/$SHA2/backend/.venv/bin/python"
+      e6a1_venv_ok=$?
+    fi
+    if [ "$e6a1_venv_ok" -eq 0 ]; then
+      report "E.6-A.1 (5,6,7): python-venv real sobre un release ya preparado, como mvp_operator (antes: fallaba siempre en la primera comprobación)" 0
+    else
+      echo "--- log python-venv ---"; cat /tmp/verify-e6a1-venv.log
+      report "E.6-A.1 (5,6,7): python-venv real sobre un release ya preparado, como mvp_operator (antes: fallaba siempre en la primera comprobación)" 1
+    fi
+
+    # 8,9,10. install-frontend-artifact: artefacto sintético válido se instala; uno incompleto
+    #         (sin standalone/server.js) se rechaza; reinstalar sobre un dist/ ya existente se
+    #         rechaza sin sobrescribir (antes: las 3 comprobaciones fallaban siempre en silencio).
+    set +e
+    docker exec "$E6A1_CNAME" bash -c "
+      set -e
+      mkdir -p /tmp/fakeartifact/standalone
+      echo fake > /tmp/fakeartifact/standalone/server.js
+      cd /tmp && tar -czf artifact.tar.gz -C fakeartifact standalone
+      sha=\$(sha256sum artifact.tar.gz | awk '{print \$1}')
+      printf 'VINTO_MVP_ARTIFACT_COMMIT=%s\nVINTO_MVP_ARTIFACT_SHA256=%s\n' '$SHA1' \"\$sha\" > artifact.manifest
+      chown mvp_operator:mvp_operator artifact.tar.gz artifact.manifest
+
+      mkdir -p /tmp/incomplete/standalone
+      echo '{}' > /tmp/incomplete/standalone/package.json
+      tar -czf incomplete.tar.gz -C incomplete standalone
+      shai=\$(sha256sum incomplete.tar.gz | awk '{print \$1}')
+      printf 'VINTO_MVP_ARTIFACT_COMMIT=%s\nVINTO_MVP_ARTIFACT_SHA256=%s\n' '$SHA2' \"\$shai\" > incomplete.manifest
+      chown mvp_operator:mvp_operator incomplete.tar.gz incomplete.manifest
+    " >/tmp/verify-e6a1-artifacts-prep.log 2>&1
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-frontend-artifact $SHA1 /tmp/artifact.tar.gz /tmp/artifact.manifest" \
+      >/tmp/verify-e6a1-artifact-ok.log 2>&1
+    e6a1_artifact_ok=$?
+    set +e
+    MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" sudo -u vinto-mvp test -f "/opt/vinto-mvp-web/releases/$SHA1/dist/standalone/server.js"
+    e6a1_artifact_server_js=$?
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && ! CONFIRM=yes bash deploy.sh install-frontend-artifact $SHA2 /tmp/incomplete.tar.gz /tmp/incomplete.manifest" \
+      >/tmp/verify-e6a1-artifact-incomplete.log 2>&1
+    e6a1_artifact_incomplete_rejected=$?
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && ! CONFIRM=yes bash deploy.sh install-frontend-artifact $SHA1 /tmp/artifact.tar.gz /tmp/artifact.manifest" \
+      >/tmp/verify-e6a1-artifact-overwrite.log 2>&1
+    e6a1_artifact_overwrite_rejected=$?
+    set -e
+    if [ "$e6a1_artifact_ok" -eq 0 ] && [ "$e6a1_artifact_server_js" -eq 0 ] \
+        && [ "$e6a1_artifact_incomplete_rejected" -eq 0 ] && [ "$e6a1_artifact_overwrite_rejected" -eq 0 ]; then
+      report "E.6-A.1 (8,9,10): install-frontend-artifact instala un artefacto válido, rechaza uno incompleto y rechaza sobrescribir dist/ ya instalado, todo como mvp_operator" 0
+    else
+      echo "--- logs install-frontend-artifact ---"
+      cat /tmp/verify-e6a1-artifact-ok.log /tmp/verify-e6a1-artifact-incomplete.log /tmp/verify-e6a1-artifact-overwrite.log
+      report "E.6-A.1 (8,9,10): install-frontend-artifact instala un artefacto válido, rechaza uno incompleto y rechaza sobrescribir dist/ ya instalado, todo como mvp_operator" 1
+    fi
+
+    # 11. Activate dos veces (SHA1 luego SHA2, con stubs de uvicorn): detección de 'current' y
+    #     'previous' — antes, 'previous_target' quedaba SIEMPRE vacío (el check de 'current'
+    #     fallaba en silencio), así que la recuperación automática tras un healthcheck fallido
+    #     NUNCA se disparaba de verdad en una segunda activación real.
+    set +e
+    docker exec "$E6A1_CNAME" bash -c "
+      set -e
+      sudo -u vinto-mvp mkdir -p /opt/vinto-mvp-web/releases/$SHA1/backend/.venv/bin
+      sudo -u vinto-mvp sh -c 'printf \"#!/bin/sh\ntrue\n\" > /opt/vinto-mvp-web/releases/$SHA1/backend/.venv/bin/uvicorn'
+      sudo -u vinto-mvp chmod +x /opt/vinto-mvp-web/releases/$SHA1/backend/.venv/bin/uvicorn
+      sudo -u vinto-mvp mkdir -p /opt/vinto-mvp-web/releases/$SHA2/dist/standalone
+      sudo -u vinto-mvp sh -c 'echo fake > /opt/vinto-mvp-web/releases/$SHA2/dist/standalone/server.js'
+      # SHA2 ya tiene un venv real (de la prueba 5,6,7), pero su requirements.txt está vacío a
+      # propósito (evita depender de la red más allá de apt/git) — nunca instaló uvicorn de
+      # verdad. Stub ejecutable, igual que para SHA1, solo para satisfacer la comprobación de
+      # activate sin depender de un paquete pip real.
+      sudo -u vinto-mvp mkdir -p /opt/vinto-mvp-web/releases/$SHA2/backend/.venv/bin
+      sudo -u vinto-mvp sh -c 'printf \"#!/bin/sh\ntrue\n\" > /opt/vinto-mvp-web/releases/$SHA2/backend/.venv/bin/uvicorn'
+      sudo -u vinto-mvp chmod +x /opt/vinto-mvp-web/releases/$SHA2/backend/.venv/bin/uvicorn
+    " >/tmp/verify-e6a1-activate-prep.log 2>&1
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh activate $SHA1" \
+      >/tmp/verify-e6a1-activate1.log 2>&1
+    e6a1_activate1_ok=$?
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh activate $SHA2" \
+      >/tmp/verify-e6a1-activate2.log 2>&1
+    e6a1_activate2_ok=$?
+    set -e
+    previous_path="$(MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" sudo -u vinto-mvp cat /opt/vinto-mvp-web/.previous-release-path 2>/dev/null || true)"
+    if [ "$e6a1_activate1_ok" -eq 0 ] && [ "$e6a1_activate2_ok" -eq 0 ] \
+        && [ "$previous_path" = "/opt/vinto-mvp-web/releases/$SHA1" ]; then
+      report "E.6-A.1 (11): segunda activación detecta correctamente 'current'/'previous' (antes: previous_target quedaba siempre vacío)" 0
+    else
+      echo "--- previous_path detectado: '$previous_path' (esperado: /opt/vinto-mvp-web/releases/$SHA1) ---"
+      echo "--- logs activate ---"; cat /tmp/verify-e6a1-activate1.log /tmp/verify-e6a1-activate2.log
+      report "E.6-A.1 (11): segunda activación detecta correctamente 'current'/'previous' (antes: previous_target quedaba siempre vacío)" 1
+    fi
+
+    # 13. rollback.sh version en el laboratorio sintético (nunca sobre servicios productivos):
+    #     revertir 'current' de SHA2 a SHA1 — antes, el "ln"/"mv" de esta función ni siquiera
+    #     tenían "sudo -u vinto-mvp": habrían fallado con "Permission denied" directo.
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash rollback.sh version $SHA1" \
+      >/tmp/verify-e6a1-rollback.log 2>&1 || true
+    set -e
+    rollback_current="$(MSYS_NO_PATHCONV=1 docker exec "$E6A1_CNAME" sudo -u vinto-mvp readlink -f /opt/vinto-mvp-web/current 2>/dev/null || true)"
+    # Se tolera que falle MÁS ADELANTE en el healthcheck (no hay systemd real en este contenedor
+    # de ensayo: limitación conocida y documentada, igual que en la prueba 8 de este archivo) —
+    # lo que se exige es que el symlink SÍ haya cambiado antes de llegar a esa limitación.
+    if [ "$rollback_current" = "/opt/vinto-mvp-web/releases/$SHA1" ]; then
+      report "E.6-A.1 (13): rollback.sh version revierte 'current' con el privilegio correcto en un laboratorio sintético (antes: 'ln'/'mv' sin 'sudo -u', fallo directo de permisos)" 0
+    else
+      echo "--- current tras rollback: '$rollback_current' (esperado: /opt/vinto-mvp-web/releases/$SHA1) ---"
+      echo "--- log rollback ---"; cat /tmp/verify-e6a1-rollback.log
+      report "E.6-A.1 (13): rollback.sh version revierte 'current' con el privilegio correcto en un laboratorio sintético (antes: 'ln'/'mv' sin 'sudo -u', fallo directo de permisos)" 1
+    fi
+
+    # 12. preflight.sh startup: 'current' completo se reporta OK (antes: siempre AVISO "no existe
+    #     todavía" aunque existiera); runtime/active ausente se reporta FALLA real; con un runtime
+    #     sintético presente, se reporta OK ejecutando el binario como vinto-mvp.
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      'cd /tmp/mvp/scripts && bash preflight.sh startup' \
+      >/tmp/verify-e6a1-preflight1.log 2>&1
+    set -e
+    if grep -q "OK.*'current'.*completo" /tmp/verify-e6a1-preflight1.log \
+        && grep -q "FALLA runtime/active" /tmp/verify-e6a1-preflight1.log; then
+      e6a1_preflight1_ok=0
+    else
+      e6a1_preflight1_ok=1
+    fi
+    docker exec "$E6A1_CNAME" bash -c "
+      set -e
+      sudo -u vinto-mvp mkdir -p /opt/vinto-mvp-web/runtime/node-vfake/bin
+      sudo -u vinto-mvp sh -c 'printf \"#!/bin/sh\necho v99.0.0\n\" > /opt/vinto-mvp-web/runtime/node-vfake/bin/node'
+      sudo -u vinto-mvp chmod +x /opt/vinto-mvp-web/runtime/node-vfake/bin/node
+      sudo -u vinto-mvp ln -sfn /opt/vinto-mvp-web/runtime/node-vfake /opt/vinto-mvp-web/runtime/active
+    " >/tmp/verify-e6a1-preflight-prep.log 2>&1
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator -c \
+      'cd /tmp/mvp/scripts && bash preflight.sh startup' \
+      >/tmp/verify-e6a1-preflight2.log 2>&1
+    set -e
+    if grep -q "OK.*runtime/active.*v99.0.0" /tmp/verify-e6a1-preflight2.log; then
+      e6a1_preflight2_ok=0
+    else
+      e6a1_preflight2_ok=1
+    fi
+    if [ "$e6a1_preflight1_ok" -eq 0 ] && [ "$e6a1_preflight2_ok" -eq 0 ]; then
+      report "E.6-A.1 (12): preflight.sh startup distingue correctamente recursos presentes de ausentes dentro del árbol privado, como mvp_operator" 0
+    else
+      echo "--- log preflight (sin runtime) ---"; cat /tmp/verify-e6a1-preflight1.log
+      echo "--- log preflight (con runtime sintético) ---"; cat /tmp/verify-e6a1-preflight2.log
+      report "E.6-A.1 (12): preflight.sh startup distingue correctamente recursos presentes de ausentes dentro del árbol privado, como mvp_operator" 1
+    fi
+
+    # 14. Fallo de sudoers: mvp_operator_nosudo no puede ejecutar ninguna fase que dependa de leer
+    #     rutas privadas — debe detenerse con el mensaje explícito, nunca con un fallo silencioso.
+    set +e
+    docker exec "$E6A1_CNAME" su -s /bin/bash mvp_operator_nosudo -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh python-venv $SHA1" \
+      >/tmp/verify-e6a1-nosudo.log 2>&1
+    e6a1_nosudo_status=$?
+    set -e
+    if [ "$e6a1_nosudo_status" -ne 0 ] && grep -q "no se puede ejecutar 'sudo -u vinto-mvp'" /tmp/verify-e6a1-nosudo.log; then
+      report "E.6-A.1 (14): sin 'sudo -u vinto-mvp' disponible, la fase se detiene con el mensaje explícito (nunca un fallo silencioso)" 0
+    else
+      echo "--- log sin sudoers ---"; cat /tmp/verify-e6a1-nosudo.log
+      report "E.6-A.1 (14): sin 'sudo -u vinto-mvp' disponible, la fase se detiene con el mensaje explícito (nunca un fallo silencioso)" 1
+    fi
+  fi
+  unset MSYS_NO_PATHCONV
+fi
+echo "Punto 15 (regresión de install-node-runtime, PR #57): cubierto por la batería 'C.1-1' de este"
+echo "mismo archivo, ejecutada en esta misma corrida — ver sus resultados más arriba."
+
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"
