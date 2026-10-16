@@ -79,7 +79,10 @@ su configuración y los datos base para implementarlos en una fase posterior.
 
 Los controles de auditoría no sustituyen el hardening: vinto_app conserva
 por ahora los privilegios de desarrollo definidos en la Fase 1. Separación
-de roles, TLS y permisos restrictivos siguen pendientes.
+de roles, TLS y permisos restrictivos siguen pendientes (ver más abajo
+"CLOUD-01B-2: modelo de privilegios mínimos" para el diseño de esa
+separación, probado en una instancia efímera, todavía no adoptado en
+DEV/QA/operativo).
 
 Consultas de inspección de tablas, claves, índices y auditoría:
 backend/verification.sql. Este archivo es de solo lectura.
@@ -154,3 +157,51 @@ Solo hacia adelante, sin backfill: las capturas existentes (F3, F6) quedan con `
 - Trigger `guard_capture_bobbin`: una captura con `bobbin_id` debe usar una versión de formulario `quality` y llevar
   exactamente el contexto productivo de la F3 de origen de esa Bobina (máquina, turno, fecha operativa y asignación);
   `bobbin_id` no puede cambiar después. `validate_capture()` no se reemplaza.
+
+## CLOUD-01B-2: modelo de privilegios mínimos
+
+Las migraciones 0001-0006 se aplicaron y se seguirán aplicando sin modificar (no se reescribe ninguna
+para no invalidar su checksum en instalaciones ya migradas). El modelo de privilegios mínimos (roles
+`vinto_app`/`vinto_migrator`/`vinto_reference`/`vinto_test_admin`, ver `backend/roles/README.md`) se
+provisiona como un paso **aparte**, fuera de `migrate.py`, ejecutado una sola vez por el administrador
+del clúster, nunca como una migración numerada. Dos razones:
+
+1. `CREATE ROLE` requiere `CREATEROLE`, privilegio que ningún rol de aplicación debe tener (principio 5);
+   no tiene sentido que una migración —pensada para ejecutarse con el rol migrador, sin `CREATEROLE`—
+   intente crear roles.
+2. Los `GRANT` sobre objetos ya existentes (0001-0006) son un aprovisionamiento de infraestructura, no un
+   cambio de esquema: no alteran tablas, columnas, triggers ni datos, así que no les corresponde un
+   número de migración.
+
+**Toda migración `0007` en adelante que agregue una tabla que la API (`vinto_app`) o el importador de
+referencias (`vinto_reference`) deban leer o escribir DEBE incluir, al final del mismo archivo `.sql`,
+sus propios `GRANT` explícitos** (por ejemplo `GRANT SELECT, INSERT, UPDATE ON vinto_txn.tabla_nueva TO
+vinto_app;`). **El modelo es fail-closed: no existe ningún `GRANT`/`ALTER DEFAULT PRIVILEGES` que otorgue
+nada —ni siquiera `SELECT`— sobre tablas futuras** (corregido en PG54-01 tras la auditoría del PR #54; la
+versión anterior de este documento concedía `SELECT` por defecto, lo que la auditoría señaló como una
+concesión automática indebida). Ver `backend/roles/05_no_default_privileges.sql`: una tabla nueva nace
+completamente inaccesible para `vinto_app`/`vinto_reference` hasta que la migración que la crea declara
+explícitamente, uno por uno, los privilegios exactos que necesita. Olvidar el `GRANT` no hace que la API
+funcione a medias (lectura sin escritura): la hace fallar de inmediato con `insufficient_privilege` en
+cualquier intento de uso, lo que se detecta en la primera prueba, no en producción.
+
+**Caso especial: funciones invocables directamente con `SELECT` (no funciones de trigger).** A
+diferencia de una tabla, PostgreSQL concede `EXECUTE` a `PUBLIC` por defecto sobre toda función nueva.
+`ALTER DEFAULT PRIVILEGES ... IN SCHEMA x REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` **no lo evita**
+(verificado: con `IN SCHEMA`, un `REVOKE` sobre funciones no registra nada en `pg_default_acl`; limitación
+de PostgreSQL documentada desde hace años, BUG #8685). La variante **sin** `IN SCHEMA` —
+`ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` — **sí
+funciona**: verificado que protege, con alcance global por rol creador, toda función nueva que
+`vinto_migrator` cree en cualquier esquema (confirmado también en un esquema sin ninguna entrada propia),
+sin afectar a funciones creadas por otro rol. Ya se aplica en `backend/roles/05_no_default_privileges.sql`
+y cubre automáticamente toda función invocable directamente que una migración `0007` en adelante cree
+(no una función de trigger — esas devuelven el pseudotipo `trigger` y PostgreSQL rechaza invocarlas fuera
+de un disparador, sin importar el `EXECUTE` que tengan). Aun así, declarar explícitamente a quién SÍ se
+le concede `EXECUTE` (`GRANT EXECUTE ON FUNCTION ... TO vinto_app;`) sigue siendo buena práctica, por la
+misma disciplina de privilegios explícitos que exige este modelo para tablas.
+
+Ese default **no protege retroactivamente** una función creada antes de aplicarlo: por eso
+`vinto_txn.management_start_year` (de `0004_bobbin_production.sql`, sin reescribir esa migración) sigue
+necesitando su propio `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC;` explícito sobre el objeto ya
+existente, en `backend/roles/04_function_grants.sql` — la única vía fiable para un objeto que ya existía
+cuando se configuró el default.

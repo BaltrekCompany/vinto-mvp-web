@@ -9,7 +9,7 @@ from pathlib import Path
 import psycopg
 
 from app.config import settings
-from app.db_guard import UnsafeDatabaseError, connect_test_database
+from app.db_guard import UnsafeDatabaseError, connect_test_database, resolve_role_url
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 LOCK_KEY = 867420031
@@ -107,11 +107,15 @@ def main() -> int:
         options = {"connect_timeout": settings.db_connect_timeout, "autocommit": True,
                    "options": "-c lock_timeout=5000 -c statement_timeout=60000"}
         if args.target == "test":
-            connection_context = connect_test_database(**options)
+            # PG54-04: resolve_role_url honra pg_privilege_mode. En "legacy" (por defecto), sin
+            # MIGRATOR_TEST_DATABASE_URL cae en TEST_DATABASE_URL, igual que antes de CLOUD-01B-2. En
+            # "hardened", exige MIGRATOR_TEST_DATABASE_URL y nunca usa la cuenta de la API.
+            url = resolve_role_url(settings.migrator_test_database_url, settings.test_database_url,
+                                   label="MIGRATOR_TEST_DATABASE_URL")
+            connection_context = connect_test_database(url, **options)
         else:
-            if settings.database_url is None or not settings.database_url.get_secret_value():
-                raise MigrationError("DATABASE_URL no configurada")
-            connection_context = psycopg.connect(settings.database_url.get_secret_value(), **options)
+            url = resolve_role_url(settings.migrator_database_url, settings.database_url, label="MIGRATOR_DATABASE_URL")
+            connection_context = psycopg.connect(url, **options)
         with connection_context as connection:
             if args.status or args.check:
                 applied = applied_migrations(connection)

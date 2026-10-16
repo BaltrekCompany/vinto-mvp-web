@@ -20,7 +20,7 @@ from pathlib import Path
 import psycopg
 
 from app.config import settings
-from app.db_guard import UnsafeDatabaseError, connect_test_database
+from app.db_guard import UnsafeDatabaseError, connect_test_database, resolve_role_url
 from app.seed import reference
 from app.seed.bundle import BUNDLE_DIR, BundleError, load_bundle
 
@@ -30,10 +30,12 @@ CONNECTION_OPTIONS = "-c lock_timeout=30000 -c statement_timeout=120000"
 def open_connection(target: str):
     kwargs = {"autocommit": True, "connect_timeout": settings.db_connect_timeout, "options": CONNECTION_OPTIONS}
     if target == "test":
-        return connect_test_database(**kwargs)  # verifica current_database() antes de devolverla
-    if settings.database_url is None or not settings.database_url.get_secret_value():
-        raise UnsafeDatabaseError("DATABASE_URL no está configurada")
-    return psycopg.connect(settings.database_url.get_secret_value(), **kwargs)
+        # PG54-04: resolve_role_url honra pg_privilege_mode (ver backend/migrate.py para el mismo patrón).
+        url = resolve_role_url(settings.reference_test_database_url, settings.test_database_url,
+                               label="REFERENCE_TEST_DATABASE_URL")
+        return connect_test_database(url, **kwargs)  # verifica current_database() antes de devolverla
+    url = resolve_role_url(settings.reference_database_url, settings.database_url, label="REFERENCE_DATABASE_URL")
+    return psycopg.connect(url, **kwargs)
 
 
 def is_candidate(manifest) -> bool:
