@@ -1370,5 +1370,176 @@ echo "=== Verificación: DEP56-01/02 permanecen intactos (reutilizando las prueb
 echo "Ver secciones 'Prueba focalizada DEP56-01' y 'C.1-1/C.1-2' más arriba en esta misma corrida:"
 echo "forman parte de la MISMA ejecución de verify_local.sh, no de una corrida separada."
 
+echo "=== Prueba focalizada E.2: build-frontend-artifact.sh — dependencias de runtime completas + arranque aislado obligatorio (CLOUD-DEP-02B.1-E.2) ==="
+echo "CLOUD-DEP-02B.1-E.1 encontró, contra el commit real ebbe1afedb5d39f2605cc534b1278fd92f614394,"
+echo "que el standalone de 'vinext build' puede NO incluir todo lo que necesita en tiempo de"
+echo "ejecución (faltaba 'react'; ERR_MODULE_NOT_FOUND real al arrancar). Esta batería prueba la"
+echo "corrección con un build real (Linux x86_64, Node 22.18.0, pnpm 11.25.0) Y los caminos de"
+echo "rechazo explícito (Fase D), nunca solo el camino feliz."
+FRONTEND_BUILD_CNAME=""
+set +e
+create_container vinto-mvp-verify-frontend-build --label com.docker.compose.project=vinto-mvp node:22.18.0-bookworm sleep 1800
+frontend_build_create_status=$?
+set -e
+if [ "$frontend_build_create_status" -ne 0 ]; then
+  report "build-frontend-artifact.sh: build real + arranque aislado (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  FRONTEND_BUILD_CNAME="$CREATED_NAME"
+  docker cp "$SCRIPT_DIR/../build-frontend-artifact.sh" "$FRONTEND_BUILD_CNAME:/tmp/build-frontend-artifact-fixed.sh" >/dev/null
+  set +e
+  docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
+    corepack enable
+    git clone --quiet https://github.com/BaltrekCompany/vinto-mvp-web.git /tmp/repo
+    cd /tmp/repo
+    git checkout --quiet ebbe1afedb5d39f2605cc534b1278fd92f614394
+  ' >/tmp/verify-e2-setup.log 2>&1
+  e2_setup_ok=$?
+  set -e
+  if [ "$e2_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación E.2 ---"; cat /tmp/verify-e2-setup.log
+    report "build-frontend-artifact.sh: preparación (clon real del repositorio en el commit aprobado)" 1
+  else
+    report "build-frontend-artifact.sh: preparación (clon real del repositorio en el commit aprobado)" 0
+
+    # Camino feliz, con el commit y el repositorio REALES: build completo, dependencias
+    # completadas dinámicamente, empaquetado, y arranque AISLADO (fuera de /tmp/repo) con HTTP 200
+    # — exactamente lo que recibiría deploy.sh install-frontend-artifact en el VPS. Además verifica
+    # checksum real, estructura (todo bajo standalone/, sin .env) y que 'react' (lo que faltaba en
+    # E.1) está ahora presente.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      mkdir -p /tmp/out
+      VINTO_MVP_DOMAIN=vinto-mvp.baltrekservices.com bash /tmp/build-frontend-artifact-fixed.sh /tmp/repo ebbe1afedb5d39f2605cc534b1278fd92f614394 /tmp/out
+      ARTIFACT="/tmp/out/vinto-mvp-frontend-ebbe1afedb5d39f2605cc534b1278fd92f614394.tar.gz"
+      MANIFEST="/tmp/out/vinto-mvp-frontend-ebbe1afedb5d39f2605cc534b1278fd92f614394.manifest"
+      [ -f "$ARTIFACT" ]
+      [ -f "$MANIFEST" ]
+      actual_sha="$(sha256sum "$ARTIFACT" | awk "{print \$1}")"
+      manifest_sha="$(grep "^VINTO_MVP_ARTIFACT_SHA256=" "$MANIFEST" | cut -d= -f2)"
+      [ "$actual_sha" = "$manifest_sha" ]
+      ! tar -tzf "$ARTIFACT" | grep -v "^standalone/"
+      ! tar -tzf "$ARTIFACT" | grep -iE "(^|/)\.env($|[./])"
+      tar -tzf "$ARTIFACT" | grep -qx "standalone/node_modules/react/package.json"
+      # Evidencia EXPLÍCITA de arranque aislado con HTTP 200, en una copia aparte fuera de
+      # /tmp/repo (Node no puede ver node_modules del repo original desde ahí).
+      rm -rf /tmp/evidence && mkdir -p /tmp/evidence
+      tar -xzf "$ARTIFACT" -C /tmp/evidence
+      source /tmp/build-frontend-artifact-fixed.sh
+      BOOT_TIMEOUT_UNITS=20
+      evidence_result="$(boot_and_check /tmp/evidence/standalone)"
+      [ "$evidence_result" = "OK" ]
+      echo "EVIDENCIA_HTTP200_AISLADO: $evidence_result"
+    ' >/tmp/verify-e2-build.log 2>&1
+    e2_build_ok=$?
+    set -e
+    if [ "$e2_build_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: build real completa dependencias faltantes, empaqueta y arranca HTTP 200 de forma aislada (checksum, estructura y seguridad verificados)" 0
+      grep "EVIDENCIA_HTTP200_AISLADO" /tmp/verify-e2-build.log
+    else
+      echo "--- log E.2 build ---"; cat /tmp/verify-e2-build.log
+      report "build-frontend-artifact.sh: build real completa dependencias faltantes, empaqueta y arranca HTTP 200 de forma aislada (checksum, estructura y seguridad verificados)" 1
+    fi
+
+    # --- Fase D: validación negativa (nunca solo el camino feliz) ------------------------------
+
+    # D1+D5: un paquete de runtime obligatorio que NO puede resolverse (ni en el repo, porque no
+    # está instalado) debe hacer FALLAR el build explícitamente, sin dejar artefacto ni manifiesto
+    # — nunca una versión "a medias" que pudiera confundirse con una válida.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      rm -rf /tmp/fakerepo && mkdir -p /tmp/fakerepo
+      cd /tmp/fakerepo
+      git init --quiet
+      git config user.email "test@example.com"
+      git config user.name "test"
+      printf "%s" "{\"name\":\"fake-vinto-mvp\",\"private\":true,\"packageManager\":\"pnpm@11.25.0\",\"scripts\":{\"build\":\"node build.js\"}}" > package.json
+      printf "%s" "const fs=require(\"fs\");fs.mkdirSync(\"dist/standalone\",{recursive:true});fs.writeFileSync(\"dist/standalone/package.json\",JSON.stringify({private:true,type:\"module\"}));fs.writeFileSync(\"dist/standalone/server.js\",\"import \\\"paquete-inexistente-xyz-999\\\";\\n\");" > build.js
+      corepack pnpm install --lockfile-only >/dev/null 2>&1
+      git add -A
+      git commit --quiet -m "fake repo"
+      SHA="$(git rev-parse HEAD)"
+      rm -rf /tmp/fakeout && mkdir -p /tmp/fakeout
+      ! VINTO_MVP_DOMAIN=example.test bash /tmp/build-frontend-artifact-fixed.sh /tmp/fakerepo "$SHA" /tmp/fakeout
+      [ -z "$(ls -A /tmp/fakeout)" ]
+    ' >/tmp/verify-e2-d1.log 2>&1
+    e2_d1_ok=$?
+    set -e
+    if [ "$e2_d1_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: un paquete de runtime irresoluble hace FALLAR el build sin generar artefacto ni manifiesto" 0
+    else
+      echo "--- log D1/D5 ---"; cat /tmp/verify-e2-d1.log
+      report "build-frontend-artifact.sh: un paquete de runtime irresoluble hace FALLAR el build sin generar artefacto ni manifiesto" 1
+    fi
+
+    # D2: un artefacto incompleto (sin standalone/server.js) debe ser rechazado por
+    # isolated_boot_gate, nunca aceptado por tener la extensión/estructura superficial correcta.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      source /tmp/build-frontend-artifact-fixed.sh
+      rm -rf /tmp/incomplete && mkdir -p /tmp/incomplete/standalone
+      echo "{}" > /tmp/incomplete/standalone/package.json
+      tar -czf /tmp/incomplete.tar.gz -C /tmp/incomplete standalone
+      ! isolated_boot_gate /tmp/incomplete.tar.gz /tmp/repo
+    ' >/tmp/verify-e2-d2.log 2>&1
+    e2_d2_ok=$?
+    set -e
+    if [ "$e2_d2_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: isolated_boot_gate rechaza un artefacto incompleto (sin server.js)" 0
+    else
+      echo "--- log D2 ---"; cat /tmp/verify-e2-d2.log
+      report "build-frontend-artifact.sh: isolated_boot_gate rechaza un artefacto incompleto (sin server.js)" 1
+    fi
+
+    # D3+D4: un servidor que nunca responde (ni arranca ni muestra un error de módulo reconocible)
+    # debe producir FALLA dentro de un tiempo ACOTADO (nunca colgar la prueba), y el proceso que
+    # arrancó nunca debe sobrevivir a la comprobación (sin huérfanos, ni siquiera tras un fallo).
+    # DOS "docker exec" separados a propósito: el proceso "bash -c" del PRIMERO queda él mismo en
+    # la lista de procesos mientras corre, con el propio texto embebido del script (que menciona
+    # "hangtest/server.js" varias veces) como su línea de comandos — comprobar huérfanos DENTRO de
+    # ese mismo "docker exec" se autocoincidiría con el envoltorio, no con un proceso "node" real.
+    # El segundo "docker exec" corre después de que el primero ya terminó y desapareció.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      source /tmp/build-frontend-artifact-fixed.sh
+      rm -rf /tmp/hangtest && mkdir -p /tmp/hangtest
+      printf "setInterval(() => {}, 1000);\n" > /tmp/hangtest/server.js
+      BOOT_TIMEOUT_UNITS=4
+      start=$(date +%s)
+      set +e
+      out="$(boot_and_check /tmp/hangtest)"
+      status=$?
+      set -e
+      end=$(date +%s)
+      elapsed=$((end - start))
+      [ "$out" = "FAIL" ]
+      [ "$status" -ne 0 ]
+      [ "$elapsed" -le 8 ]
+    ' >/tmp/verify-e2-d3.log 2>&1
+    e2_d3_ok=$?
+    set -e
+    if [ "$e2_d3_ok" -eq 0 ]; then
+      set +e
+      docker exec "$FRONTEND_BUILD_CNAME" bash -c '! ps aux | grep "[n]ode .*hangtest/server.js"' >>/tmp/verify-e2-d3.log 2>&1
+      e2_d3_orphan_ok=$?
+      set -e
+    else
+      e2_d3_orphan_ok=1
+    fi
+    if [ "$e2_d3_ok" -eq 0 ] && [ "$e2_d3_orphan_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: un servidor que nunca responde produce FALLA acotada en el tiempo, sin procesos huérfanos" 0
+    else
+      echo "--- log D3/D4 ---"; cat /tmp/verify-e2-d3.log
+      report "build-frontend-artifact.sh: un servidor que nunca responde produce FALLA acotada en el tiempo, sin procesos huérfanos" 1
+    fi
+  fi
+fi
+
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"
