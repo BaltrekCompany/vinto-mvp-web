@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # VINTO MVP WEB — despliegue controlado (CLOUD-DEP-02A: preparado aquí; SE EJECUTA EN DEP-02B,
 # tras autorización explícita de quien administra el VPS; NUNCA en este incremento).
-# Corregido en CLOUD-DEP-02A.2 (DEP55-02/04) tras la auditoría del PR #55.
+# Corregido en CLOUD-DEP-02A.2 (DEP55-02/04) y en CLOUD-DEP-02A.2-R2 (punto 1 de la 3ª auditoría)
+# tras las auditorías del PR #55.
+#
+# CLOUD-DEP-02A.2-R2, punto 1: "migrate" solo aplicaba con autorización explícita, pero nada
+# impedía que "postgres-grants" o el primer arranque ("systemd-install") se ejecutaran igual
+# aunque el esquema no estuviera migrado (si se saltaban fases fuera de orden). Ahora
+# "postgres-grants", "systemd-install" y el reinicio dentro de "activate" verifican primero
+# (lib_common.sh::assert_schema_migrated, "migrate.py --check") y se detienen con un mensaje claro
+# si el esquema no está completo — la aprobación para APLICAR migraciones sigue siendo manual y
+# explícita ("deploy.sh migrate"), esto solo IMPIDE continuar sin haberlo hecho.
 #
 # Principios de este script:
 #   - Nunca toca nginx (eso es un paso separado y posterior — ver deploy/mvp/nginx/README más abajo
@@ -246,27 +255,47 @@ phase_activate() {
     return 0
   fi
 
+  # CLOUD-DEP-02A.2-R2-2, punto 1: no reiniciar (ni arrancar por primera vez) sobre un esquema
+  # incompleto. Solo verifica (--check); aplicar migraciones sigue exigiendo su propia fase y
+  # confirmación explícita ("deploy.sh migrate").
+  assert_schema_migrated
   for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
     assert_unit_is_ours "$unit"
   done
   sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
   echo "Servicios reiniciados con $commit. Verificando healthcheck..."
   sleep 2
-  if phase_healthcheck >/tmp/.deploy-activate-healthcheck.log 2>&1; then
-    cat /tmp/.deploy-activate-healthcheck.log
-    rm -f /tmp/.deploy-activate-healthcheck.log
+  # Archivo único por ejecución (CLOUD-DEP-02A.2-R2-2, punto 3): nunca un nombre fijo compartido
+  # entre invocaciones concurrentes o consecutivas; se borra en todos los caminos de salida.
+  local hc_log
+  hc_log="$(mktemp)"
+  if mvp_healthcheck >"$hc_log" 2>&1; then
+    cat "$hc_log"
+    rm -f "$hc_log"
     echo "Healthcheck OK tras activar $commit."
     return 0
   fi
   echo "FALLA: el healthcheck no pasó tras activar $commit:" >&2
-  cat /tmp/.deploy-activate-healthcheck.log >&2
-  rm -f /tmp/.deploy-activate-healthcheck.log
+  cat "$hc_log" >&2
+  rm -f "$hc_log"
   if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
     echo "Revirtiendo 'current' automáticamente a la versión anterior ($previous_target)..." >&2
     sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp"
     sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
     sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
-    echo "'current' revertido a $previous_target y servicios reiniciados. $commit queda sin activar; investigar antes de reintentar." >&2
+    # CLOUD-DEP-02A.2-R2-2, punto 2: no afirmar que la recuperación fue exitosa sin comprobarlo.
+    sleep 2
+    local revert_hc_log
+    revert_hc_log="$(mktemp)"
+    if mvp_healthcheck >"$revert_hc_log" 2>&1; then
+      rm -f "$revert_hc_log"
+      echo "'current' revertido a $previous_target; healthcheck de la versión anterior OK tras reiniciar. $commit queda sin activar; investigar antes de reintentar." >&2
+    else
+      echo "'current' revertido a $previous_target, pero el healthcheck SIGUE SIN pasar tras reiniciar con la versión anterior (no se confirma que la recuperación automática haya funcionado):" >&2
+      cat "$revert_hc_log" >&2
+      rm -f "$revert_hc_log"
+      echo "Intervención manual requerida de inmediato: ni $commit ni $previous_target responden al healthcheck." >&2
+    fi
   else
     echo "No había una versión anterior a la que revertir automáticamente (primera activación real). Los servicios siguen apuntando a $commit, que no pasó el healthcheck: intervención manual requerida." >&2
   fi
@@ -378,6 +407,10 @@ phase_postgres_grants() {
     echo "FALLA: $roles_dir no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
+  # CLOUD-DEP-02A.2-R2-2, punto 1: 02..06 otorgan privilegios SOBRE objetos que "migrate" crea;
+  # sin el esquema migrado, estos GRANT fallarían contra objetos inexistentes o (peor) quedarían
+  # aplicados de forma incompleta. Nunca continuar sin confirmar primero que el esquema está.
+  assert_schema_migrated
   local migrator_url migrator_pw
   migrator_url="$(env_value "$backend_env" MIGRATOR_DATABASE_URL)"
   migrator_pw="$(password_from_pg_url "$migrator_url")"
@@ -414,6 +447,10 @@ phase_import_reference_apply() {
 
 phase_systemd_install() {
   require_confirm
+  # CLOUD-DEP-02A.2-R2-2, punto 1: "impedir que ... el arranque continúen si el esquema requerido
+  # no está migrado". El primer arranque del backend contra un esquema incompleto fallaría en
+  # tiempo de ejecución; verificarlo aquí, antes de instalar/arrancar, evita ese fallo tardío.
+  assert_schema_migrated
   for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
     assert_unit_is_ours "$unit"
   done
@@ -425,6 +462,11 @@ phase_systemd_install() {
 }
 
 phase_healthcheck() {
+  # Versión verbosa de uso manual (muestra cada respuesta). La MISMA comprobación, en forma
+  # silenciosa para decidir pass/fail programáticamente, vive en lib_common.sh::mvp_healthcheck
+  # y es la que usan "activate" y rollback.sh "version" para decidir si una activación/reversión
+  # fue realmente exitosa — un único criterio de salud, nunca dos copias que puedan divergir
+  # (CLOUD-DEP-02A.2-R2-2).
   curl -fsS http://127.0.0.1:8100/health && echo
   curl -fsS http://127.0.0.1:8100/api/health && echo
   curl -fsS http://127.0.0.1:3100/ >/dev/null && echo "frontend OK (127.0.0.1:3100)"

@@ -18,7 +18,6 @@
 # prueba. En deploy.sh/rollback.sh/preflight.sh (que nunca exportan estas variables) el efecto es
 # idéntico a una asignación normal: siempre toman el valor real de abajo.
 : "${MVP_APP_DIR:=/opt/vinto-mvp-web}"
-# shellcheck disable=SC2034
 : "${MVP_SERVICE_USER:=vinto-mvp}"
 : "${MVP_COMPOSE_PROJECT:=vinto-mvp}"
 : "${MVP_POSTGRES_CONTAINER:=vinto-mvp-postgres}"
@@ -27,6 +26,42 @@
 TVC_APP_DIR="/opt/vinto-web"
 TVC_ETL_DIR="/opt/vinto-etl"
 TVC_PGDATA_DIR="/home/ubuntu/vinto/pgdata"
+
+# Comprueba /health, /api/health y la raíz del frontend. Usada por deploy.sh (fase "healthcheck" y
+# dentro de "activate") Y por rollback.sh ("version", CLOUD-DEP-02A.2-R2-2: "comprobar salud tras
+# reiniciar, nunca afirmar éxito sin comprobarlo"). Un único lugar evita que las dos copias diverjan.
+mvp_healthcheck() {
+  curl -fsS http://127.0.0.1:8100/health >/dev/null \
+    && curl -fsS http://127.0.0.1:8100/api/health >/dev/null \
+    && curl -fsS http://127.0.0.1:3100/ >/dev/null
+}
+
+# Verifica que el esquema de vinto_piloto está completamente migrado (migrate.py --check, con el
+# venv del release activo) ANTES de aplicar privilegios sobre tablas/funciones que todavía podrían
+# no existir, o de arrancar un backend que fallaría en tiempo de ejecución contra un esquema
+# incompleto (CLOUD-DEP-02A.2-R2-2, punto 1: "impedir que postgres-grants y el arranque continúen
+# si el esquema requerido no está migrado"). Mantiene la aprobación explícita para APLICAR
+# migraciones intacta: esta función solo verifica (--check), nunca ejecuta migrate.py sin --check.
+assert_schema_migrated() {
+  local release_dir="$MVP_APP_DIR/current"
+  if [ ! -d "$release_dir/backend" ]; then
+    echo "FALLA: $release_dir/backend no existe. Ejecutar 'activate <sha>' primero." >&2
+    exit 1
+  fi
+  local log
+  log="$(mktemp)"
+  # shellcheck disable=SC2024 # la redirección la abre ESTE shell (no el proceso con sudo), sobre
+  # un archivo de mktemp ya propio: no hace falta que el usuario con sudo pueda escribirlo.
+  if ! sudo -u "$MVP_SERVICE_USER" "$release_dir/backend/.venv/bin/python" "$release_dir/backend/migrate.py" \
+      --target dev --check >"$log" 2>&1; then
+    echo "FALLA: el esquema de vinto_piloto no está completamente migrado (migrate.py --target dev --check falló):" >&2
+    cat "$log" >&2
+    rm -f "$log"
+    echo "Ejecutar 'deploy.sh migrate' (con autorización explícita, revisando qué queda pendiente antes de aplicar) antes de continuar." >&2
+    exit 1
+  fi
+  rm -f "$log"
+}
 
 require_confirm() {
   if [ "${CONFIRM:-}" != "yes" ]; then

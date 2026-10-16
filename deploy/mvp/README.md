@@ -1,9 +1,10 @@
 # VINTO MVP WEB — despliegue híbrido aislado en el VPS compartido con TVC
 
 Preparado en CLOUD-DEP-02A (diseño y artefactos, sin ejecutar nada en el VPS); corregido en
-CLOUD-DEP-02A.2 tras la auditoría del PR #55 (ver "Correcciones de CLOUD-DEP-02A.2" más abajo) y en
-una segunda ronda de correcciones, DEP55-R2-01 a 04 (ver "Correcciones de la ronda 2" más abajo). La
-ejecución real es CLOUD-DEP-02B, bajo autorización explícita, fase por fase.
+CLOUD-DEP-02A.2 tras la auditoría del PR #55 (ver "Correcciones de CLOUD-DEP-02A.2" más abajo), en
+una segunda ronda de correcciones, DEP55-R2-01 a 04 (ver "Correcciones de la ronda 2" más abajo), y
+en un cierre focalizado, CLOUD-DEP-02A.4 (ver "Cierre focalizado" más abajo). La ejecución real es
+CLOUD-DEP-02B, bajo autorización explícita, fase por fase.
 
 ## Qué es esto y qué no es
 
@@ -161,3 +162,26 @@ NO-GO para ejecutar scripts en el VPS" hasta corregir 5 observaciones. Resumen d
   con un valor real antes de instalar) — antes estaba comentado y el piloto quedaba abierto si se
   instalaba sin editar. Documentado explícitamente que HTTP plano nunca es el medio de acceso de
   usuarios reales y que los cookies `Secure` de la API no se transmiten sobre HTTP.
+
+## Cierre focalizado (CLOUD-DEP-02A.4, tercera auditoría del PR #55)
+
+Tercera auditoría de ChatGPT sobre el HEAD de la ronda 2: "arquitectura y correcciones R2
+aceptables", 3 bloqueos puntuales antes del merge:
+
+- **Punto 1 (orden migrate → postgres-grants/arranque)**: `migrate` seguía siendo solo `--check`
+  (la aprobación para APLICAR migraciones sigue siendo manual y explícita, sin cambios), pero
+  nada impedía ejecutar `postgres-grants` o el primer arranque (`systemd-install`) saltándose esa
+  fase. Ahora `phase_postgres_grants`, `phase_systemd_install` y el reinicio dentro de `activate`
+  llaman a `lib_common.sh::assert_schema_migrated` (el mismo `migrate.py --target dev --check`) y
+  se detienen con un mensaje claro si el esquema no está completo. Validado empíricamente contra
+  un Postgres efímero real: `--check` falla antes de migrar, pasa a OK justo después.
+- **Punto 2 (`rollback.sh version`, salud tras reiniciar)**: reiniciaba los servicios pero no
+  comprobaba que respondieran. Ahora ejecuta `lib_common.sh::mvp_healthcheck` (la misma
+  comprobación que usa `deploy.sh`) tras el `systemctl restart` y, si no responde, lo dice
+  explícitamente y sale con código de error — nunca afirma que la recuperación fue exitosa sin
+  haberlo comprobado. La misma comprobación se añadió también al camino de reversión automática
+  dentro de `deploy.sh activate` (CLOUD-DEP-02A.2-R2 ya cubría el caso de ida; el de reversión
+  quedaba sin verificar).
+- **Punto 3 (archivo temporal del healthcheck)**: `/tmp/.deploy-activate-healthcheck.log` (nombre
+  fijo) se sustituyó por un `mktemp` por invocación en `deploy.sh activate` y en
+  `rollback.sh version`, con limpieza en todos los caminos de salida.

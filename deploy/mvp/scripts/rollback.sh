@@ -22,6 +22,11 @@
 #      (no hay checkout, reset ni clean en rollback — ver deploy.sh para cómo se preparan las
 #      versiones separadas en "releases/").
 #
+# Corregido en CLOUD-DEP-02A.2-R2 (punto 2 de la auditoría): "version" reiniciaba los servicios
+# pero no comprobaba su salud — ahora ejecuta el mismo healthcheck que deploy.sh (lib_common.sh::
+# mvp_healthcheck) tras reiniciar y, si no responde, lo dice explícitamente y sale con error en
+# vez de afirmar que la recuperación fue exitosa sin haberlo comprobado.
+#
 # Uso: CONFIRM=yes bash rollback.sh {systemd|postgres|nginx|version <sha-anterior>|all}
 
 set -euo pipefail
@@ -78,6 +83,21 @@ rollback_version() {
   done
   sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
   echo "'current' ahora apunta a $sha. Servicios reiniciados. Ningún dato de PostgreSQL se tocó."
+  # CLOUD-DEP-02A.2-R2-2, punto 2: reiniciar no es lo mismo que recuperarse. Comprobar la salud
+  # real tras el reinicio y salir con código de error si no responde, en vez de afirmar un éxito
+  # que no se comprobó. Un archivo temporal único por ejecución (punto 3), nunca un nombre fijo.
+  sleep 2
+  local hc_log
+  hc_log="$(mktemp)"
+  if mvp_healthcheck >"$hc_log" 2>&1; then
+    rm -f "$hc_log"
+    echo "Healthcheck OK tras revertir a $sha: la recuperación se confirma exitosa."
+  else
+    echo "AVISO: 'current' apunta a $sha y los servicios se reiniciaron, pero el healthcheck NO responde correctamente. No se afirma que la recuperación haya sido exitosa — revisar de inmediato (journalctl -u vinto-mvp-backend/-frontend):" >&2
+    cat "$hc_log" >&2
+    rm -f "$hc_log"
+    exit 1
+  fi
 }
 
 # Detiene el contenedor de PostgreSQL del MVP. NUNCA borra el bind-mount de datos: eso es

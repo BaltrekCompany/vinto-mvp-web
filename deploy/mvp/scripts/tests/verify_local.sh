@@ -42,6 +42,8 @@ report() {
 # --- Ciclo de vida seguro de recursos (DEP55-R2-01) --------------------------------------------
 TRACKED_CONTAINER_IDS=()
 TRACKED_TMP_PATHS=()
+TRACKED_PIDS=()
+track_pid() { TRACKED_PIDS+=("$1"); }
 
 _verify_unique_suffix() {
   printf '%s-%s-%s' "$$" "$RANDOM" "$(date +%s%N 2>/dev/null || date +%s)"
@@ -93,6 +95,10 @@ cleanup_all() {
   local p
   for p in "${TRACKED_TMP_PATHS[@]:-}"; do
     [ -n "$p" ] && rm -rf "$p" 2>/dev/null || true
+  done
+  local pid
+  for pid in "${TRACKED_PIDS[@]:-}"; do
+    [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
   done
 }
 trap cleanup_all EXIT INT TERM
@@ -601,6 +607,159 @@ if ! grep -rEn 'PASSWORD\s*=\s*[^C][^H][^A][^N][^G][^E]' "$MVP_DIR/env" 2>/dev/n
   report "ningún .env.example de deploy/mvp/env contiene algo distinto de CHANGE_ME" 0
 else
   report "ningún .env.example de deploy/mvp/env contiene algo distinto de CHANGE_ME" 1
+fi
+
+echo "=== Prueba focalizada R2-2.1: orden migrate -> postgres-grants/arranque (CLOUD-DEP-02A.2-R2-2, punto 1) ==="
+# Confirma, EMPÍRICAMENTE contra un Postgres efímero y el backend/.venv local, que
+# "migrate.py --check" distingue correctamente un esquema sin migrar (exit != 0) de uno migrado
+# (exit 0): es justo la llamada que lib_common.sh::assert_schema_migrated usa para bloquear
+# "postgres-grants"/"systemd-install"/"activate". Además confirma, por código, que esas 3 fases
+# realmente invocan ese guardián (no basta con que la función exista: tiene que estar conectada).
+BACKEND_VENV_PY=""
+if [ -x "$REPO_ROOT/backend/.venv/Scripts/python.exe" ]; then
+  BACKEND_VENV_PY="$REPO_ROOT/backend/.venv/Scripts/python.exe"
+elif [ -x "$REPO_ROOT/backend/.venv/bin/python" ]; then
+  BACKEND_VENV_PY="$REPO_ROOT/backend/.venv/bin/python"
+fi
+if [ -z "$BACKEND_VENV_PY" ]; then
+  report "orden migrate -> postgres-grants/arranque, validado contra Postgres efímero (omitida: no hay backend/.venv local con psycopg/pydantic instalados)" 1
+else
+  export MSYS_NO_PATHCONV=1
+  set +e
+  create_container vinto-mvp-verify-order --label com.docker.compose.project=vinto-mvp \
+    --tmpfs /var/lib/postgresql/data -p 127.0.0.1::5432 \
+    -e POSTGRES_DB=vinto_order_test -e POSTGRES_USER=order_root -e POSTGRES_PASSWORD=order_pw \
+    postgres:17
+  order_create_status=$?
+  set -e
+  unset MSYS_NO_PATHCONV
+  if [ "$order_create_status" -ne 0 ]; then
+    report "orden migrate -> postgres-grants/arranque, validado contra Postgres efímero" 1
+  else
+    ORDER_CNAME="$CREATED_NAME"
+    for _ in $(seq 1 30); do
+      docker exec "$ORDER_CNAME" pg_isready -U order_root -d vinto_order_test >/dev/null 2>&1 && break
+      sleep 1
+    done
+    ORDER_PORT="$(docker port "$ORDER_CNAME" 5432/tcp | head -n1 | cut -d: -f2)"
+    set +e
+    DATABASE_URL="postgresql://order_root:order_pw@127.0.0.1:${ORDER_PORT}/vinto_order_test" \
+      PG_PRIVILEGE_MODE=legacy "$BACKEND_VENV_PY" "$REPO_ROOT/backend/migrate.py" --target dev --check \
+      >/tmp/verify-order-1.log 2>&1
+    before_migrate_check=$?
+    set -e
+    if [ "$before_migrate_check" -eq 0 ]; then
+      echo "--- log orden (antes de migrar) ---"; cat /tmp/verify-order-1.log
+      report "'migrate.py --check' detecta un esquema SIN migrar (debía fallar, no falló)" 1
+    else
+      report "'migrate.py --check' detecta un esquema SIN migrar (exit != 0, como se espera)" 0
+      set +e
+      DATABASE_URL="postgresql://order_root:order_pw@127.0.0.1:${ORDER_PORT}/vinto_order_test" \
+        PG_PRIVILEGE_MODE=legacy "$BACKEND_VENV_PY" "$REPO_ROOT/backend/migrate.py" --target dev \
+        >/tmp/verify-order-2.log 2>&1
+      apply_status=$?
+      set -e
+      if [ "$apply_status" -ne 0 ]; then
+        echo "--- log orden (aplicando) ---"; cat /tmp/verify-order-2.log
+        report "'migrate.py' (aplicar) sobre el Postgres efímero" 1
+      else
+        set +e
+        DATABASE_URL="postgresql://order_root:order_pw@127.0.0.1:${ORDER_PORT}/vinto_order_test" \
+          PG_PRIVILEGE_MODE=legacy "$BACKEND_VENV_PY" "$REPO_ROOT/backend/migrate.py" --target dev --check \
+          >/tmp/verify-order-3.log 2>&1
+        after_migrate_check=$?
+        set -e
+        if [ "$after_migrate_check" -eq 0 ]; then
+          report "orden migrate -> postgres-grants/arranque: --check pasa a OK justo después de migrar, en el orden correcto" 0
+        else
+          echo "--- log orden (después de migrar) ---"; cat /tmp/verify-order-3.log
+          report "orden migrate -> postgres-grants/arranque: --check pasa a OK justo después de migrar, en el orden correcto" 1
+        fi
+      fi
+    fi
+  fi
+fi
+# Comprobación por código: las 3 fases que no deben continuar sin el esquema migrado llaman al
+# guardián, no solo lo declaran.
+guard_wired=0
+for phase_fn in phase_postgres_grants phase_systemd_install phase_activate; do
+  awk "/^$phase_fn\\(\\)/,/^}/" "$SCRIPT_DIR/../deploy.sh" | grep -q 'assert_schema_migrated' || guard_wired=1
+done
+if [ "$guard_wired" -eq 0 ]; then
+  report "phase_postgres_grants/phase_systemd_install/phase_activate llaman a assert_schema_migrated" 0
+else
+  report "phase_postgres_grants/phase_systemd_install/phase_activate llaman a assert_schema_migrated" 1
+fi
+
+echo "=== Prueba focalizada R2-2.2: rollback.sh version comprueba salud tras reiniciar (punto 2) ==="
+# No hay systemd local para un ensayo end-to-end (ver limitación ya documentada en la prueba 8):
+# se valida la MISMA función que rollback.sh/deploy.sh usan para decidir si una recuperación fue
+# exitosa (lib_common.sh::mvp_healthcheck) contra servidores HTTP reales en los puertos reales
+# (8100/3100), subiéndolos y bajándolos, en vez de solo inspeccionar el código.
+HEALTH_PY=""
+if [ -n "$BACKEND_VENV_PY" ]; then HEALTH_PY="$BACKEND_VENV_PY"; elif command -v python3 >/dev/null 2>&1; then HEALTH_PY="$(command -v python3)"; fi
+if [ -z "$HEALTH_PY" ]; then
+  report "mvp_healthcheck distingue servicios arriba/abajo en 8100+3100 (omitida: no hay python disponible)" 1
+else
+  HEALTH_TMP_DIR="$(mktemp -d)"
+  track_tmp_path "$HEALTH_TMP_DIR"
+  for p in 8100 3100; do mkdir -p "$HEALTH_TMP_DIR/$p"; done
+  # http.server es un servidor de ARCHIVOS: devuelve 404 para una ruta que no exista, no 200 para
+  # cualquier cosa. Se crean los archivos exactos que mvp_healthcheck pide (/health, /api/health
+  # en 8100; "/" en 3100 ya devuelve 200 por defecto al listar el directorio).
+  touch "$HEALTH_TMP_DIR/8100/health"
+  mkdir -p "$HEALTH_TMP_DIR/8100/api"
+  touch "$HEALTH_TMP_DIR/8100/api/health"
+  # Orden deliberado: primero solo el frontend (3100) arriba y NADA en 8100 todavía, para
+  # comprobar el caso "falla" sin tener que matar a mitad de prueba un proceso en segundo plano
+  # (en este entorno, matar un job intermedio demostró ser poco fiable para el propio runner).
+  # Solo el backgroundeo final, limpiado por el trap cleanup_all al terminar el script, es necesario.
+  ( cd "$HEALTH_TMP_DIR/3100" && exec "$HEALTH_PY" -m http.server 3100 --bind 127.0.0.1 >/dev/null 2>&1 ) &
+  frontend_http_pid=$!
+  track_pid "$frontend_http_pid"
+  sleep 1
+  set +e
+  mvp_healthcheck >/tmp/verify-health-down.log 2>&1
+  health_down_status=$?
+  set -e
+  if [ "$health_down_status" -ne 0 ]; then
+    report "mvp_healthcheck devuelve FALLA cuando el backend (8100) no responde" 0
+  else
+    report "mvp_healthcheck devuelve FALLA cuando el backend (8100) no responde" 1
+  fi
+  ( cd "$HEALTH_TMP_DIR/8100" && exec "$HEALTH_PY" -m http.server 8100 --bind 127.0.0.1 >/dev/null 2>&1 ) &
+  backend_http_pid=$!
+  track_pid "$backend_http_pid"
+  sleep 1
+  set +e
+  mvp_healthcheck >/tmp/verify-health-up.log 2>&1
+  health_up_status=$?
+  set -e
+  if [ "$health_up_status" -eq 0 ]; then
+    report "mvp_healthcheck devuelve OK con ambos puertos (8100/3100) respondiendo" 0
+  else
+    echo "--- log healthcheck arriba ---"; cat /tmp/verify-health-up.log
+    report "mvp_healthcheck devuelve OK con ambos puertos (8100/3100) respondiendo" 1
+  fi
+fi
+# Comprobación por código: rollback_version llama a mvp_healthcheck y sale con error si falla,
+# sin afirmar éxito antes de comprobarlo.
+if awk '/^rollback_version\(\)/,/^}/' "$SCRIPT_DIR/../rollback.sh" | grep -q 'mvp_healthcheck'; then
+  report "rollback.sh version llama a mvp_healthcheck tras reiniciar los servicios" 0
+else
+  report "rollback.sh version llama a mvp_healthcheck tras reiniciar los servicios" 1
+fi
+
+echo "=== Prueba focalizada R2-2.3: temporal único para el healthcheck de activate (punto 3) ==="
+if grep -q '/tmp/\.deploy-activate-healthcheck\.log' "$SCRIPT_DIR/../deploy.sh" "$SCRIPT_DIR/../rollback.sh" 2>/dev/null; then
+  report "ningún nombre de archivo temporal fijo (/tmp/.deploy-activate-healthcheck.log) sigue en deploy.sh/rollback.sh" 1
+else
+  report "ningún nombre de archivo temporal fijo (/tmp/.deploy-activate-healthcheck.log) sigue en deploy.sh/rollback.sh" 0
+fi
+if grep -qE 'hc_log="\$\(mktemp\)"' "$SCRIPT_DIR/../deploy.sh" && grep -qE 'hc_log="\$\(mktemp\)"' "$SCRIPT_DIR/../rollback.sh"; then
+  report "deploy.sh (activate) y rollback.sh (version) usan mktemp para el log del healthcheck" 0
+else
+  report "deploy.sh (activate) y rollback.sh (version) usan mktemp para el log del healthcheck" 1
 fi
 
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
