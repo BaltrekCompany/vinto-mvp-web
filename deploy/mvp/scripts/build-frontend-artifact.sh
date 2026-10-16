@@ -147,8 +147,24 @@ boot_and_check() {
   # Terminar el proceso SIEMPRE: tanto si sigue vivo (éxito o timeout) como si ya murió por su
   # cuenta (error de módulo u otro crash) — en ese segundo caso "kill" ya no tiene nada que hacer,
   # pero "wait" recoge el estado para no dejar un zombie.
+  #
+  # CLOUD-DEP-02B.1-E.3: SIGTERM (lo que "kill" envía por defecto) puede ser IGNORADO por el
+  # proceso — confirmado empíricamente con un server.js que instala su propio manejador de
+  # SIGTERM sin terminar: sigue vivo indefinidamente. El "wait" de más abajo, sin esto, podría
+  # entonces bloquear esta función (y por tanto todo el build) para siempre, justo lo que la
+  # prueba de arranque acotada en el tiempo existe para evitar. Se da un margen breve tras
+  # SIGTERM y, si el proceso sigue vivo, se escala a SIGKILL (que el proceso no puede ignorar)
+  # antes de "wait" — nunca se confía en que un SIGTERM simple haya sido suficiente.
   if kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
+    local kill_wait=0
+    while [ "$kill_wait" -lt 10 ] && kill -0 "$pid" 2>/dev/null; do
+      sleep 0.2
+      kill_wait=$((kill_wait + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
   fi
   wait "$pid" 2>/dev/null || true
   if [ "$ok" -eq 1 ]; then
@@ -254,14 +270,18 @@ isolated_boot_gate() {
   local isolated
   isolated="$(mktemp -d)"
   assert_isolated_from_repo "$isolated" "$repo_dir" || { rm -rf "$isolated"; return 1; }
-  if ! tar -xzf "$artifact" -C "$isolated" 2>/tmp/isolated-boot-gate-tar.err; then
+  # CLOUD-DEP-02B.1-E.3, DEP58-01: el stderr de "tar" se captura DENTRO del propio directorio
+  # aislado (único por invocación, vía mktemp -d arriba) en vez de una ruta fija compartida bajo
+  # /tmp — nunca puede colisionar entre invocaciones concurrentes, y el "rm -rf '$isolated'" que
+  # ya existe en todos los caminos de salida de esta función lo limpia igual, sin necesitar un
+  # "rm -f" aparte sobre una ruta ajena.
+  local tar_err="$isolated/.tar-stderr.log"
+  if ! tar -xzf "$artifact" -C "$isolated" 2>"$tar_err"; then
     echo "FALLA: isolated_boot_gate: no se pudo extraer '$artifact' (artefacto incompleto o corrupto)." >&2
-    cat /tmp/isolated-boot-gate-tar.err >&2 2>/dev/null || true
-    rm -f /tmp/isolated-boot-gate-tar.err
+    cat "$tar_err" >&2 2>/dev/null || true
     rm -rf "$isolated"
     return 1
   fi
-  rm -f /tmp/isolated-boot-gate-tar.err
   if [ ! -f "$isolated/standalone/server.js" ]; then
     echo "FALLA: isolated_boot_gate: el artefacto extraído no contiene standalone/server.js. Artefacto incompleto, rechazado." >&2
     rm -rf "$isolated"

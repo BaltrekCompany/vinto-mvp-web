@@ -1538,6 +1538,125 @@ else
       echo "--- log D3/D4 ---"; cat /tmp/verify-e2-d3.log
       report "build-frontend-artifact.sh: un servidor que nunca responde produce FALLA acotada en el tiempo, sin procesos huérfanos" 1
     fi
+
+    # --- CLOUD-DEP-02B.1-E.3: correcciones focalizadas tras la auditoría del PR #58 -------------
+
+    # CLOUD-DEP-02B.1-E.3, observación 3 (ejecución concurrente): dos boot_and_check en paralelo, cada uno contra su propio
+    # servidor y puerto (pick_free_port), no deben interferirse ni colisionar.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      source /tmp/build-frontend-artifact-fixed.sh
+      for n in a b; do
+        mkdir -p "/tmp/concserver-$n"
+        printf "const http=require(\"http\");http.createServer((req,res)=>{res.end(\"hola-%s\")}).listen(process.env.PORT,process.env.HOST);\n" "$n" > "/tmp/concserver-$n/server.js"
+      done
+      ( boot_and_check /tmp/concserver-a > /tmp/conc-a.out 2>/tmp/conc-a.err ) &
+      pa=$!
+      ( boot_and_check /tmp/concserver-b > /tmp/conc-b.out 2>/tmp/conc-b.err ) &
+      pb=$!
+      wait "$pa"; ra=$?
+      wait "$pb"; rb=$?
+      [ "$ra" -eq 0 ] && [ "$rb" -eq 0 ]
+      [ "$(cat /tmp/conc-a.out)" = "OK" ] && [ "$(cat /tmp/conc-b.out)" = "OK" ]
+    ' >/tmp/verify-e3-concurrency.log 2>&1
+    e3_concurrency_ok=$?
+    set -e
+    if [ "$e3_concurrency_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: dos boot_and_check concurrentes (puertos/temporales propios) no se interfieren" 0
+    else
+      echo "--- log E.3 concurrencia ---"; cat /tmp/verify-e3-concurrency.log
+      report "build-frontend-artifact.sh: dos boot_and_check concurrentes (puertos/temporales propios) no se interfieren" 1
+    fi
+
+    # CLOUD-DEP-02B.1-E.3, observación 3 (limpieza de temporales): boot_and_check no debe dejar NINGÚN archivo nuevo bajo
+    # /tmp tras resolverse, en ninguno de sus 3 caminos (OK, MISSING, FAIL) — ni su propio "$log"
+    # (mktemp) ni, para isolated_boot_gate, el ".tar-stderr.log" de DEP58-01 (que ahora vive DENTRO
+    # del directorio aislado y se borra con él, nunca en una ruta fija compartida).
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      source /tmp/build-frontend-artifact-fixed.sh
+      before="$(find /tmp -maxdepth 1 -type f | sort)"
+
+      mkdir -p /tmp/cleanserver
+      printf "const http=require(\"http\");http.createServer((req,res)=>{res.end(\"ok\")}).listen(process.env.PORT,process.env.HOST);\n" > /tmp/cleanserver/server.js
+      boot_and_check /tmp/cleanserver >/dev/null 2>&1
+
+      mkdir -p /tmp/missingserver
+      printf "import \"paquete-xyz-inexistente\";\n" > /tmp/missingserver/server.js
+      boot_and_check /tmp/missingserver >/dev/null 2>&1 || true
+
+      mkdir -p /tmp/hangserver2
+      printf "setInterval(() => {}, 1000);\n" > /tmp/hangserver2/server.js
+      BOOT_TIMEOUT_UNITS=4 boot_and_check /tmp/hangserver2 >/dev/null 2>&1 || true
+
+      after="$(find /tmp -maxdepth 1 -type f | sort)"
+      leaked="$(comm -13 <(printf "%s\n" "$before") <(printf "%s\n" "$after"))"
+      [ -z "$leaked" ]
+    ' >/tmp/verify-e3-cleanup.log 2>&1
+    e3_cleanup_ok=$?
+    set -e
+    if [ "$e3_cleanup_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: boot_and_check no deja archivos temporales propios en ninguno de sus 3 caminos (OK/MISSING/FAIL)" 0
+    else
+      echo "--- log E.3 limpieza ---"; cat /tmp/verify-e3-cleanup.log
+      report "build-frontend-artifact.sh: boot_and_check no deja archivos temporales propios en ninguno de sus 3 caminos (OK/MISSING/FAIL)" 1
+    fi
+
+    # CLOUD-DEP-02B.1-E.3, observaciones 2/3 (terminación de procesos, incluso adversa): un servidor que INSTALA SU PROPIO
+    # manejador de SIGTERM sin terminar (confirmado empíricamente: por defecto sobrevive
+    # indefinidamente a "kill") debe, aun así, quedar terminado (escalada a SIGKILL) y la función
+    # debe devolver el control en tiempo acotado — tanto si el servidor llega a responder HTTP 200
+    # antes de que se le mate, como si nunca responde.
+    set +e
+    docker exec "$FRONTEND_BUILD_CNAME" bash -c '
+      set -e
+      source /tmp/build-frontend-artifact-fixed.sh
+
+      mkdir -p /tmp/stubborn-ok
+      cat > /tmp/stubborn-ok/server.js <<EOF2
+process.on("SIGTERM", () => {});
+const http = require("http");
+http.createServer((req,res)=>{res.end("ok")}).listen(process.env.PORT, process.env.HOST);
+EOF2
+      BOOT_TIMEOUT_UNITS=6
+      start=$(date +%s)
+      set +e
+      out_ok="$(boot_and_check /tmp/stubborn-ok)"; status_ok=$?
+      set -e
+      elapsed_ok=$(( $(date +%s) - start ))
+      [ "$out_ok" = "OK" ] && [ "$status_ok" -eq 0 ] && [ "$elapsed_ok" -le 10 ]
+
+      mkdir -p /tmp/stubborn-hang
+      cat > /tmp/stubborn-hang/server.js <<EOF2
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1000);
+EOF2
+      BOOT_TIMEOUT_UNITS=4
+      start=$(date +%s)
+      set +e
+      out_hang="$(boot_and_check /tmp/stubborn-hang)"; status_hang=$?
+      set -e
+      elapsed_hang=$(( $(date +%s) - start ))
+      [ "$out_hang" = "FAIL" ] && [ "$status_hang" -ne 0 ] && [ "$elapsed_hang" -le 8 ]
+    ' >/tmp/verify-e3-sigterm.log 2>&1
+    e3_sigterm_ok=$?
+    set -e
+    if [ "$e3_sigterm_ok" -eq 0 ]; then
+      set +e
+      docker exec "$FRONTEND_BUILD_CNAME" bash -c '! ps aux | grep "[s]tubborn-ok/server.js" && ! ps aux | grep "[s]tubborn-hang/server.js"' >>/tmp/verify-e3-sigterm.log 2>&1
+      e3_sigterm_orphan_ok=$?
+      set -e
+    else
+      e3_sigterm_orphan_ok=1
+    fi
+    if [ "$e3_sigterm_ok" -eq 0 ] && [ "$e3_sigterm_orphan_ok" -eq 0 ]; then
+      report "build-frontend-artifact.sh: un servidor que ignora SIGTERM se termina igual (escalada a SIGKILL), en tiempo acotado y sin huérfanos" 0
+    else
+      echo "--- log E.3 SIGTERM ---"; cat /tmp/verify-e3-sigterm.log
+      report "build-frontend-artifact.sh: un servidor que ignora SIGTERM se termina igual (escalada a SIGKILL), en tiempo acotado y sin huérfanos" 1
+    fi
   fi
 fi
 
