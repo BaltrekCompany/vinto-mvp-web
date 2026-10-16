@@ -257,13 +257,18 @@ confirmarlo sin levantar ningún recurso persistente.
   (aunque el tarball sea válido) y rechaza un tarball manipulado para la versión aprobada —
   `runtime/active` nunca cambia en ningún caso de rechazo. Confirma además que una segunda versión
   aprobada no borra la primera.
-- **DEP56-03 (validación de Compose sin exponer secretos)**: `validate-compose` ya no ejecuta
-  `config` sin más (imprimiría la configuración resuelta, incluidas las contraseñas). Ahora exige
-  que el comando Compose disponible soporte `-q/--quiet` ("solo valida, no imprime nada") y lo
-  usa siempre; si un error de validación llegara a citar un valor, se redacta cualquier secreto
-  conocido del propio `.env` antes de mostrarlo (sustitución literal vía Python, no `sed`/glob).
-  Probado con una contraseña sintética inyectada en `docker/.env`: no aparece en stdout ni stderr,
-  ni en el camino exitoso ni en el de error (variable requerida ausente).
+- **DEP56-03 / DEP56-R2-01 (validación de Compose sin exponer secretos)**: `validate-compose` ya
+  no ejecuta `config` sin más (imprimiría la configuración resuelta, incluidas las contraseñas).
+  Exige que el comando Compose disponible soporte `-q/--quiet` ("solo valida, no imprime nada") y
+  lo usa siempre. La primera versión, al fallar la validación, intentaba REDACTAR el detalle del
+  error pasando la contraseña como ARGUMENTO a un proceso Python — visible en la lista de
+  procesos del host mientras ese proceso corría (el mismo problema que PG54-03 ya corrigió para
+  las conexiones a PostgreSQL). Corregido de raíz: la función ya NO lee ninguna contraseña en
+  absoluto, y el detalle de un error de validación NUNCA se captura, imprime ni escribe en ningún
+  archivo — solo se informa que falló, sin ningún detalle, invitando a depurar manualmente si se
+  acepta el riesgo. Probado con una contraseña sintética inyectada en `docker/.env`: no aparece en
+  stdout, stderr, ni como argumento de ningún proceso vigilado con `ps` mientras corre la
+  validación, ni en el camino exitoso ni en el de error.
 
 Hallazgo adicional corregido durante estas pruebas: dos asignaciones `var="$(grep ... | awk
 ...)"` sin `|| true` en `install-node-runtime`/`install-frontend-artifact` podían abortar el

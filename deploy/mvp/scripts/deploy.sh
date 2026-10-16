@@ -395,6 +395,19 @@ phase_install_node_runtime() {
 # Valida el YAML de docker-compose.postgres.yml con el comando Compose realmente disponible en
 # este host (lib_common.sh::detect_compose_cmd), SIN levantar ningún contenedor ni red
 # persistente — "config" solo resuelve y muestra la configuración final.
+# CLOUD-DEP-02B.1-C.3, DEP56-R2-01: la versión anterior pasaba la contraseña como ARGUMENTO de un
+# proceso Python para redactarla de un log de error — un argumento de línea de comandos es visible
+# en la lista de procesos del host mientras ese proceso corre (/proc/<pid>/cmdline, "ps aux"),
+# exactamente el mismo problema que PG54-03 ya corrigió para las conexiones a PostgreSQL. La
+# redacción, además, exigía CONSERVAR el detalle del error en algún sitio (aunque fuera
+# temporalmente) para poder reescribirlo — un riesgo innecesario.
+#
+# Diseño nuevo, completamente silencioso y fail-closed: nunca se lee ni se pasa ningún secreto a
+# esta función en absoluto (no hace falta conocer la contraseña para decidir si el YAML es
+# válido). "config --quiet" ya no imprime nada en el camino exitoso; en el camino de error, el
+# detalle de "${COMPOSE_CMD[@]} config" NUNCA se captura, nunca se imprime y nunca se escribe en
+# ningún archivo — ni siquiera con permisos restrictivos (podría, en teoría, citar un valor
+# interpolado) — solo se informa que la validación falló, un mensaje genérico, sin detalle.
 phase_validate_compose() {
   detect_compose_cmd
   local compose_dir="$SCRIPT_DIR/../docker"
@@ -402,44 +415,22 @@ phase_validate_compose() {
     echo "FALTA $compose_dir/.env. No se puede validar sin él (las variables son obligatorias en el YAML)." >&2
     exit 1
   fi
-  # CLOUD-DEP-02B.1-C.2, DEP56-03: "config" sin más imprimiría la configuración RESUELTA
-  # completa, incluida POSTGRES_BOOTSTRAP_PASSWORD en texto plano. "-q/--quiet" ("Only validate
-  # the configuration, don't print anything") valida sin imprimir nada en el camino exitoso — se
-  # exige explícitamente que el comando disponible la soporte; si no la soporta, se rechaza
-  # validar en vez de caer a un modo que sí imprimiría secretos.
+  # "-q/--quiet" ("Only validate the configuration, don't print anything") es obligatorio: si el
+  # comando disponible no la soporta, se rechaza validar en vez de caer a un modo que sí
+  # imprimiría la configuración resuelta (y las contraseñas que contiene).
   if ! "${COMPOSE_CMD[@]}" config --help 2>&1 | grep -qE '(^|[^-])(-q|--quiet)([^a-zA-Z-]|$)'; then
     echo "FALLA: '${COMPOSE_CMD[*]} config' no ofrece una opción de validación silenciosa (-q/--quiet) en este host. No se valida, para no arriesgar imprimir secretos resueltos." >&2
     exit 1
   fi
-  local log
-  log="$(mktemp)"
-  if "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" config --quiet >"$log" 2>&1; then
-    rm -f "$log"
+  # Redirigido a /dev/null, nunca capturado: si la validación falla, no queda ningún detalle en
+  # ningún sitio que pudiera citar un valor interpolado — ni stdout, ni stderr, ni un archivo.
+  if "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" \
+      config --quiet >/dev/null 2>/dev/null; then
     echo "Compose command detectado: ${COMPOSE_CMD[*]}"
-    echo "YAML válido (validación silenciosa con --quiet: no se imprimió ninguna contraseña)."
+    echo "YAML válido (validación silenciosa con --quiet: no se imprimió ninguna configuración ni contraseña)."
     return 0
   fi
-  # Un error de "config --quiet" normalmente solo cita NOMBRES de variable (confirmado:
-  # interpolar una variable requerida ausente solo menciona su nombre, nunca un valor resuelto),
-  # pero se redacta de todas formas cualquier secreto conocido del propio .env antes de mostrar
-  # nada, como segunda barrera. Sustitución LITERAL (Python, no sed/glob) para no depender de
-  # escapar caracteres especiales del secreto.
-  local bootstrap_pw
-  bootstrap_pw="$(env_value "$compose_dir/.env" POSTGRES_BOOTSTRAP_PASSWORD 2>/dev/null || true)"
-  if [ -n "$bootstrap_pw" ] && command -v python3.12 >/dev/null 2>&1; then
-    python3.12 -c '
-import sys
-secret, path = sys.argv[1], sys.argv[2]
-with open(path, "r", errors="replace") as f:
-    text = f.read()
-text = text.replace(secret, "[REDACTADO]")
-with open(path, "w") as f:
-    f.write(text)
-' "$bootstrap_pw" "$log" 2>/dev/null || true
-  fi
-  echo "FALLA: el YAML de PostgreSQL no es válido con ${COMPOSE_CMD[*]} (secretos conocidos redactados antes de mostrar esto):" >&2
-  cat "$log" >&2
-  rm -f "$log"
+  echo "FALLA: el YAML de PostgreSQL no es válido con ${COMPOSE_CMD[*]}. El detalle no se muestra aquí deliberadamente (podría citar un valor interpolado del .env); para depurar, ejecutar manualmente '${COMPOSE_CMD[*]} -f docker-compose.postgres.yml --env-file .env config --quiet' y revisar su salida usted mismo, sabiendo que puede contener datos sensibles." >&2
   exit 1
 }
 

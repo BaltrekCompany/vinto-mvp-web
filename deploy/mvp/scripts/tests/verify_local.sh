@@ -1107,10 +1107,13 @@ else
   report "deploy.sh y rollback.sh usan \${COMPOSE_CMD[@]} para levantar/detener PostgreSQL" 1
 fi
 
-echo "=== Prueba focalizada DEP56-03: validate-compose no imprime secretos ==="
+echo "=== Prueba focalizada DEP56-R2-01: validate-compose, sin secretos ni en argumentos de procesos ==="
 # Corre en ESTE host (necesita un comando Compose real disponible, no dentro de un contenedor
 # Ubuntu vacío). Camino exitoso Y camino de error, con una contraseña SINTÉTICA inyectada en
-# docker/.env — en ningún caso debe aparecer ni en stdout ni en stderr.
+# docker/.env — en ningún caso debe aparecer ni en stdout, ni en stderr, ni como argumento de
+# ningún proceso lanzado durante la validación (CLOUD-DEP-02B.1-C.3: la versión anterior pasaba
+# la contraseña como argv de un proceso Python para redactar un log, visible en la lista de
+# procesos del host mientras corría).
 SYNTHETIC_PW="S3cretSynthetic_Pw_$(_verify_unique_suffix)"
 COMPOSE_ENV="$MVP_DIR/docker/.env"
 track_tmp_path "$COMPOSE_ENV"
@@ -1120,20 +1123,39 @@ POSTGRES_BOOTSTRAP_USER=vinto_mvp_root
 POSTGRES_BOOTSTRAP_PASSWORD=$SYNTHETIC_PW
 VINTO_MVP_PGDATA_DIR=/tmp/vinto-mvp-pgdata-test
 EOF
+
+# Camino exitoso, vigilando la lista de procesos MIENTRAS corre (best-effort: se lanza en
+# segundo plano y se sondea "ps" repetidamente durante su ejecución, no solo al final).
 set +e
-CONFIRM=yes bash "$SCRIPT_DIR/../deploy.sh" validate-compose >/tmp/verify-compose-ok.out 2>/tmp/verify-compose-ok.err
+( CONFIRM=yes bash "$SCRIPT_DIR/../deploy.sh" validate-compose >/tmp/verify-compose-ok.out 2>/tmp/verify-compose-ok.err ) &
+vc_pid=$!
+pw_seen_in_ps=0
+for _ in $(seq 1 100); do
+  kill -0 "$vc_pid" 2>/dev/null || break
+  # shellcheck disable=SC2009 # se busca una SUBCADENA arbitraria (la contraseña sintética) en
+  # los argumentos de los procesos; "pgrep" no busca por contenido de argv de esta forma.
+  if ps -ef 2>/dev/null | grep -F "$SYNTHETIC_PW" | grep -v "verify_local.sh\|grep" >/dev/null 2>&1; then
+    pw_seen_in_ps=1
+    break
+  fi
+  sleep 0.05
+done
+wait "$vc_pid"
 compose_ok_status=$?
 set -e
-if [ "$compose_ok_status" -eq 0 ] && ! grep -q "$SYNTHETIC_PW" /tmp/verify-compose-ok.out /tmp/verify-compose-ok.err; then
-  report "validate-compose (camino exitoso) nunca imprime la contraseña sintética" 0
+if [ "$compose_ok_status" -eq 0 ] && [ "$pw_seen_in_ps" -eq 0 ] \
+    && ! grep -q "$SYNTHETIC_PW" /tmp/verify-compose-ok.out /tmp/verify-compose-ok.err; then
+  report "validate-compose (éxito): la contraseña sintética no aparece en stdout/stderr ni en 'ps' mientras corre" 0
 else
   echo "--- stdout ---"; cat /tmp/verify-compose-ok.out
   echo "--- stderr ---"; cat /tmp/verify-compose-ok.err
-  report "validate-compose (camino exitoso) nunca imprime la contraseña sintética" 1
+  echo "--- vista en ps: $pw_seen_in_ps ---"
+  report "validate-compose (éxito): la contraseña sintética no aparece en stdout/stderr ni en 'ps' mientras corre" 1
 fi
 
-# Camino de error: quitar una variable requerida para forzar un fallo de interpolación y
-# confirmar que, incluso al fallar, la contraseña tampoco aparece.
+# Camino de error: quitar una variable requerida para forzar un fallo de interpolación. El
+# mensaje debe ser GENÉRICO (sin el detalle de compose, sin nombres de variable ni fragmentos de
+# configuración) además de no contener la contraseña.
 cat > "$COMPOSE_ENV" <<EOF
 POSTGRES_BOOTSTRAP_DB=vinto_mvp_bootstrap
 POSTGRES_BOOTSTRAP_USER=vinto_mvp_root
@@ -1143,20 +1165,34 @@ set +e
 CONFIRM=yes bash "$SCRIPT_DIR/../deploy.sh" validate-compose >/tmp/verify-compose-err.out 2>/tmp/verify-compose-err.err
 compose_err_status=$?
 set -e
-if [ "$compose_err_status" -ne 0 ] && ! grep -q "$SYNTHETIC_PW" /tmp/verify-compose-err.out /tmp/verify-compose-err.err; then
-  report "validate-compose (camino de error, variable requerida ausente) tampoco imprime la contraseña sintética" 0
+if [ "$compose_err_status" -ne 0 ] \
+    && ! grep -q "$SYNTHETIC_PW" /tmp/verify-compose-err.out /tmp/verify-compose-err.err \
+    && ! grep -qiE 'interpolat|VINTO_MVP_PGDATA_DIR|required variable' /tmp/verify-compose-err.out /tmp/verify-compose-err.err; then
+  report "validate-compose (error): mensaje genérico, sin contraseña ni detalle de la configuración" 0
 else
   echo "--- stdout ---"; cat /tmp/verify-compose-err.out
   echo "--- stderr ---"; cat /tmp/verify-compose-err.err
-  report "validate-compose (camino de error, variable requerida ausente) tampoco imprime la contraseña sintética" 1
+  report "validate-compose (error): mensaje genérico, sin contraseña ni detalle de la configuración" 1
 fi
 rm -f "$COMPOSE_ENV"
-# Estático: confirma que la fase exige -q/--quiet (nunca cae a un "config" que imprimiría todo).
+
+# Estático: confirma que la fase exige -q/--quiet, y que su cuerpo YA NO invoca python3.12 ni lee
+# la contraseña en absoluto (nunca la pasa como argumento de ningún proceso).
 if grep -q -- '--quiet' "$SCRIPT_DIR/../deploy.sh"; then
   report "phase_validate_compose exige -q/--quiet antes de validar" 0
 else
   report "phase_validate_compose exige -q/--quiet antes de validar" 1
 fi
+validate_compose_body="$(awk '/^phase_validate_compose\(\)/,/^}/' "$SCRIPT_DIR/../deploy.sh")"
+if ! printf '%s' "$validate_compose_body" | grep -qE 'python3\.12|BOOTSTRAP_PASSWORD|bootstrap_pw'; then
+  report "phase_validate_compose ya no invoca python3.12 ni lee ninguna contraseña (nunca puede pasarla como argumento)" 0
+else
+  report "phase_validate_compose ya no invoca python3.12 ni lee ninguna contraseña (nunca puede pasarla como argumento)" 1
+fi
+
+echo "=== Verificación: DEP56-01/02 permanecen intactos (reutilizando las pruebas ya ejecutadas arriba) ==="
+echo "Ver secciones 'Prueba focalizada DEP56-01' y 'C.1-1/C.1-2' más arriba en esta misma corrida:"
+echo "forman parte de la MISMA ejecución de verify_local.sh, no de una corrida separada."
 
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"
