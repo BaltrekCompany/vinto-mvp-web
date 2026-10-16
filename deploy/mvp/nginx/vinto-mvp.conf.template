@@ -1,0 +1,106 @@
+# VINTO MVP WEB — bloque nginx EXCLUSIVO del MVP (CLOUD-DEP-02A).
+# Corregido en CLOUD-DEP-02A.2 (DEP55-05) tras la auditoría del PR #55.
+#
+# NO ES EL ARCHIVO FINAL: es una plantilla para copiar a
+# /etc/nginx/sites-available/vinto-mvp en el VPS durante DEP-02B, tras autorización explícita Y
+# PROPIA (fase independiente de deploy.sh — ver más abajo). Nunca edita ni reemplaza
+# /etc/nginx/sites-available/vinto-tvc (el bloque de TVC permanece intacto).
+#
+# Reemplazar antes de instalar:
+#   __DOMAIN__            -> vinto-mvp.baltrekservices.com (subdominio candidato)
+#   __FRONTEND_PORT__     -> 3100
+#   __BACKEND_PORT__      -> 8100
+#   __ALLOWED_CIDR__      -> al menos una IP o rango autorizado (oficina/VPN de VINTO); OBLIGATORIO,
+#                             no hay ningún valor por defecto que abra el acceso.
+#
+# Qué cambió en DEP55-05 respecto de la versión anterior (denegación por defecto, no por opción):
+#   - Antes, el bloque allow/deny estaba COMENTADO por defecto: si alguien instalaba esta plantilla
+#     sin editarla, el piloto quedaba ABIERTO a cualquier IP. Ahora el bloque está ACTIVO por
+#     defecto y con "deny all" ya presente: si no se añade ningún "allow" real antes de instalar,
+#     nginx devuelve 403 a todo el mundo. Fallar cerrado, no abierto.
+#   - HTTP PLANO (puerto 80, este archivo) es EXCLUSIVAMENTE para:
+#       a) las comprobaciones de salud de deploy.sh (curl desde 127.0.0.1, ver phase_healthcheck),
+#       b) validar que nginx sirve el dominio correcto antes de pedir el certificado.
+#     NUNCA es el medio de acceso de usuarios reales del piloto. Los cookies de sesión de la API
+#     (HttpOnly/Secure/SameSite — ver backend/app/main.py) tienen el atributo Secure: un navegador
+#     JAMÁS los envía sobre HTTP plano, así que ningún flujo de autenticación puede completarse de
+#     forma útil mientras no exista HTTPS — defensa adicional, no la única.
+#   - HTTPS (certbot) y la apertura a los primeros usuarios reales siguen siendo una FASE
+#     INDEPENDIENTE, posterior y con autorización propia (no cambia respecto de la versión
+#     anterior): instalar este archivo nunca abre el piloto por sí solo.
+#
+# Acceso restringido (satay/allow/deny vs. auth_basic): se deja preparado el primero (restricción
+# por IP/VPN) porque ya existe un rango conocido de la oficina/VPN de VINTO; si en el futuro se
+# prefiere autenticación adicional en vez de o además de la restricción por IP, descomentar el
+# bloque "auth_basic" de abajo y generar /etc/nginx/.htpasswd-vinto-mvp con `htpasswd` (fuera de
+# este repositorio, nunca versionado).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    # Redirección a HTTPS: se activa automáticamente cuando certbot emite el certificado
+    # (certbot reescribe este bloque, igual que ya hizo con vinto-tvc). Hasta entonces, este
+    # bloque sirve tráfico HTTP plano ÚNICAMENTE para las comprobaciones internas descritas arriba.
+
+    # --- Restricción de acceso del piloto cerrado — DENEGADO POR DEFECTO (DEP55-05) ------------
+    # Sin al menos un "allow" real debajo, esta línea deniega TODO el tráfico (403), incluido el
+    # de cualquier usuario real. Añadir aquí la IP/rango de la oficina/VPN de VINTO ANTES de
+    # instalar este archivo; quitar esta restricción es una decisión aparte y posterior (abrir el
+    # piloto), nunca un efecto accidental de instalar la plantilla sin editar.
+    allow __ALLOWED_CIDR__;      # OBLIGATORIO: sustituir por la IP/rango real antes de instalar.
+    deny all;
+
+    # Alternativa/complemento a la restricción por IP: autenticación adicional con auth_basic.
+    # Descomentar junto con el bloque de arriba (o en su lugar) si se decide no depender solo de IP.
+    # auth_basic "VINTO MVP — piloto cerrado";
+    # auth_basic_user_file /etc/nginx/.htpasswd-vinto-mvp;
+    # ------------------------------------------------------------------------------------------------
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /health {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /api/health {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:__FRONTEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# HTTPS (CLOUD-DEP-02A, Fase 5 punto 9: "Nginx/HTTPS en incremento posterior"): este bloque se
+# añade en DEP-02B ejecutando `certbot --nginx -d __DOMAIN__`, igual que ya está configurado para
+# vinto-tvc.baltrekservices.com. No se preconfigura aquí ninguna ruta de certificado porque
+# certbot todavía no los ha emitido para este subdominio. Abrir el piloto a los primeros usuarios
+# reales de VINTO REQUIERE que este bloque HTTPS ya exista y que el "allow" de arriba (o
+# auth_basic) siga activo: HTTPS por sí solo no sustituye la restricción de acceso del piloto
+# cerrado, son dos controles independientes.

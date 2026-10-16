@@ -1,0 +1,64 @@
+# VINTO MVP WEB — PostgreSQL 17 EXCLUSIVO del MVP (CLOUD-DEP-02A).
+#
+# Aislamiento deliberado de TVC (CLOUD-DEP-01B/02A):
+#   - Nombre de proyecto, red, volumen y contenedor propios (nunca "vinto"/"postgres-vinto"/
+#     "vinto_default", que son de TVC).
+#   - Puerto publicado SOLO en 127.0.0.1 (nunca 0.0.0.0): a diferencia de postgres-vinto (TVC),
+#     que ya está expuesto a internet en el puerto 6543 — ese hallazgo de CLOUD-DEP-01A no se
+#     corrige aquí (es de TVC), pero el MVP no debe repetirlo.
+#   - Bind-mount de datos en una ruta que NUNCA coincide con /home/ubuntu/vinto/pgdata (la de TVC).
+#
+# Este archivo NO se ejecuta en este incremento (CLOUD-DEP-02A es de preparación, no de
+# despliegue). Antes de levantarlo en el VPS (DEP-02B, con autorización explícita):
+#   1. Crear el archivo .env junto a este compose (ver deploy/mvp/env/postgres.env.example),
+#      NUNCA versionado en git, con contraseñas generadas al momento.
+#   2. Confirmar que VINTO_MVP_PGDATA_DIR apunta a una ruta nueva, vacía, fuera de /opt/vinto-web
+#      y fuera de /home/ubuntu/vinto.
+#   3. docker compose -f docker-compose.postgres.yml --env-file .env up -d
+#   4. Aplicar backend/roles/00_create_roles.sql, 00b (NO para esta instancia — ver Fase 3 §
+#      "no crear vinto_test_admin aquí"), 01-06 y las migraciones, exactamente como en
+#      CLOUD-01B-2B.1, conectando SIEMPRE a 127.0.0.1:6544, nunca a una IP pública.
+
+name: vinto-mvp
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: vinto-mvp-postgres
+    restart: unless-stopped
+    networks:
+      - vinto-mvp-internal
+    # Publicado SOLO en loopback: el backend del MVP (también en 127.0.0.1) es el único cliente
+    # pensado para conectarse desde fuera del contenedor; cualquier acceso administrativo (migrar,
+    # importar catálogos) se hace desde el propio VPS, nunca remotamente.
+    ports:
+      - "127.0.0.1:6544:5432"
+    environment:
+      # Rol de arranque del contenedor ÚNICAMENTE (equivalente al "administrador del clúster" de
+      # CLOUD-01B-2): crea los roles vinto_app/vinto_migrator/vinto_reference y luego NUNCA se usa
+      # para tráfico de aplicación. Nunca "vintoadmin" (ese es el rol de TVC) ni "postgres" a secas.
+      POSTGRES_DB: ${POSTGRES_BOOTSTRAP_DB:?Definir POSTGRES_BOOTSTRAP_DB en .env}
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?Definir POSTGRES_BOOTSTRAP_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?Definir POSTGRES_BOOTSTRAP_PASSWORD en .env}
+    volumes:
+      - type: bind
+        source: ${VINTO_MVP_PGDATA_DIR:?Definir VINTO_MVP_PGDATA_DIR en .env (ruta fuera de /opt/vinto-web y /home/ubuntu/vinto)}
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Límites de recursos (CLOUD-DEP-02A, Fase 3 §7): punto de partida conservador, no una
+    # medición de carga real del piloto.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+networks:
+  vinto-mvp-internal:
+    name: vinto-mvp-internal
+    driver: bridge
