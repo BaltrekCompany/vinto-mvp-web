@@ -123,7 +123,7 @@ phase_user_and_dirs() {
       echo "  OK: $SERVICE_USER no puede leer $path."
     fi
   done
-  if [ ! -f "$APP_DIR/shared/backend.env" ]; then
+  if ! mvp_test -f "$APP_DIR/shared/backend.env"; then
     echo "AVISO: $APP_DIR/shared/backend.env todavía no existe. Copiarlo de deploy/mvp/env/backend.env.example, completar con contraseñas reales y dejarlo con permisos 600, propietario $SERVICE_USER, antes de 'python-venv'." >&2
   fi
 }
@@ -139,8 +139,9 @@ phase_checkout() {
     exit 1
   fi
   assert_service_user_is_ours "$SERVICE_USER"
+  assert_can_read_mvp_private_paths
   local release_dir="$APP_DIR/releases/$commit"
-  if [ -e "$release_dir" ]; then
+  if mvp_test -e "$release_dir"; then
     echo "FALLA: ya existe $release_dir. Un release nunca se sobrescribe; si ya se compiló, usar 'activate $commit' directamente. Si está corrupto, revisar y borrar a mano tras confirmar que no es la versión activa." >&2
     exit 1
   fi
@@ -168,33 +169,35 @@ phase_checkout() {
     exit 1
   fi
   echo "Checkout de $actual_head confirmado en $release_dir (origin verificado, commit autorizado explícitamente)."
-  if [ -f "$APP_DIR/shared/backend.env" ]; then
+  if mvp_test -f "$APP_DIR/shared/backend.env"; then
     sudo -u "$SERVICE_USER" mkdir -p "$release_dir/backend"
     sudo -u "$SERVICE_USER" ln -s ../../../shared/backend.env "$release_dir/backend/.env"
   else
     echo "AVISO: $APP_DIR/shared/backend.env no existe todavía; crearlo antes de 'python-venv $commit'." >&2
   fi
-  if [ -e "$APP_DIR/current" ]; then
-    readlink -f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$release_dir/.previous-release-path" >/dev/null
+  if mvp_test -e "$APP_DIR/current"; then
+    mvp_readlink_f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$release_dir/.previous-release-path" >/dev/null
     echo "Referencia a la versión anterior guardada (no se activa todavía)."
   fi
 }
 
 phase_python_venv() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local commit="${1:?Uso: deploy.sh python-venv <commit-sha>}"
   require_full_sha "$commit"
   local release_dir="$APP_DIR/releases/$commit"
-  if [ ! -d "$release_dir" ]; then
+  if ! mvp_test -d "$release_dir"; then
     echo "FALLA: $release_dir no existe. Ejecutar 'checkout $commit' primero." >&2
     exit 1
   fi
-  if [ ! -f "$release_dir/backend/.env" ]; then
+  if ! mvp_test -f "$release_dir/backend/.env"; then
     echo "FALTA $release_dir/backend/.env (enlace a shared/backend.env, creado por 'checkout' si shared/backend.env ya existía). No se continúa." >&2
     exit 1
   fi
   local perms
-  perms="$(stat -L -c '%a' "$release_dir/backend/.env")"
+  # "-L" para resolver el enlace hasta shared/backend.env real: son SUS permisos los que importan.
+  perms="$(sudo -u "$SERVICE_USER" stat -L -c '%a' "$release_dir/backend/.env")"
   if [ "$perms" != "600" ]; then
     echo "$APP_DIR/shared/backend.env tiene permisos $perms, deben ser 600. Corregir a mano y reintentar." >&2
     exit 1
@@ -216,12 +219,13 @@ phase_python_venv() {
 # tocar el release. Nunca sobrescribe un "dist/" ya instalado en ese release.
 phase_install_frontend_artifact() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local commit="${1:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
   require_full_sha "$commit"
   local artifact="${2:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
   local manifest="${3:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
   local release_dir="$APP_DIR/releases/$commit"
-  if [ ! -d "$release_dir" ]; then
+  if ! mvp_test -d "$release_dir"; then
     echo "FALLA: $release_dir no existe. Ejecutar 'checkout $commit' primero." >&2
     exit 1
   fi
@@ -252,7 +256,7 @@ phase_install_frontend_artifact() {
     echo "FALLA: el checksum del artefacto ($actual_sha256) no coincide con el declarado en el manifiesto ($manifest_sha256). Artefacto rechazado, no se instala nada." >&2
     exit 1
   fi
-  if [ -e "$release_dir/dist" ]; then
+  if mvp_test -e "$release_dir/dist"; then
     echo "FALLA: $release_dir/dist ya existe. Nunca se sobrescribe un artefacto ya instalado en este release." >&2
     exit 1
   fi
@@ -319,7 +323,7 @@ PYEOF
     exit 1
   fi
 
-  if [ ! -f "$staging_dir/standalone/server.js" ]; then
+  if ! mvp_test -f "$staging_dir/standalone/server.js"; then
     echo "FALLA: el artefacto extraído (en staging) no contiene standalone/server.js. No se mueve nada al release." >&2
     exit 1
   fi
@@ -518,22 +522,23 @@ phase_validate_compose() {
 # aparte, de revertir una migración si alguna vez hiciera falta).
 phase_activate() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local commit="${1:?Uso: deploy.sh activate <commit-sha>}"
   require_full_sha "$commit"
   local release_dir="$APP_DIR/releases/$commit"
-  if [ ! -x "$release_dir/backend/.venv/bin/uvicorn" ]; then
+  if ! mvp_test -x "$release_dir/backend/.venv/bin/uvicorn"; then
     echo "FALLA: $release_dir no tiene un venv con uvicorn instalado. Ejecutar 'python-venv $commit' primero." >&2
     exit 1
   fi
-  if [ ! -f "$release_dir/dist/standalone/server.js" ]; then
+  if ! mvp_test -f "$release_dir/dist/standalone/server.js"; then
     echo "FALLA: $release_dir no tiene el build del frontend. Ejecutar 'frontend-build $commit' primero." >&2
     exit 1
   fi
 
   local previous_target=""
-  if [ -e "$APP_DIR/current" ]; then
-    previous_target="$(readlink -f "$APP_DIR/current")"
-    readlink -f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$APP_DIR/.previous-release-path" >/dev/null
+  if mvp_test -e "$APP_DIR/current"; then
+    previous_target="$(mvp_readlink_f "$APP_DIR/current")"
+    mvp_readlink_f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$APP_DIR/.previous-release-path" >/dev/null
   fi
 
   sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"
@@ -572,7 +577,7 @@ phase_activate() {
   echo "FALLA: el healthcheck no pasó tras activar $commit:" >&2
   cat "$hc_log" >&2
   rm -f "$hc_log"
-  if [ -n "$previous_target" ] && [ -d "$previous_target" ]; then
+  if [ -n "$previous_target" ] && mvp_test -d "$previous_target"; then
     echo "Revirtiendo 'current' automáticamente a la versión anterior ($previous_target)..." >&2
     sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp"
     sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
@@ -648,10 +653,11 @@ phase_postgres_bootstrap_db() {
 # Deliberadamente NO ejecuta 00b_create_test_admin_role.sql: vinto_test_admin nunca se crea aquí.
 phase_postgres_roles() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local compose_dir="$SCRIPT_DIR/../docker"
   local roles_dir="$APP_DIR/current/backend/roles"
   local backend_env="$APP_DIR/current/backend/.env"
-  if [ ! -d "$roles_dir" ]; then
+  if ! mvp_test -d "$roles_dir"; then
     echo "FALLA: $roles_dir no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
@@ -660,9 +666,9 @@ phase_postgres_roles() {
   bootstrap_user="$(env_value "$compose_dir/.env" POSTGRES_BOOTSTRAP_USER)"
   bootstrap_password="$(env_value "$compose_dir/.env" POSTGRES_BOOTSTRAP_PASSWORD)"
   local app_url migrator_url reference_url app_pw migrator_pw reference_pw
-  app_url="$(env_value "$backend_env" DATABASE_URL)"
-  migrator_url="$(env_value "$backend_env" MIGRATOR_DATABASE_URL)"
-  reference_url="$(env_value "$backend_env" REFERENCE_DATABASE_URL)"
+  app_url="$(mvp_env_value "$backend_env" DATABASE_URL)"
+  migrator_url="$(mvp_env_value "$backend_env" MIGRATOR_DATABASE_URL)"
+  reference_url="$(mvp_env_value "$backend_env" REFERENCE_DATABASE_URL)"
   app_pw="$(password_from_pg_url "$app_url")"
   migrator_pw="$(password_from_pg_url "$migrator_url")"
   reference_pw="$(password_from_pg_url "$reference_url")"
@@ -678,16 +684,20 @@ phase_postgres_roles() {
 
 phase_migrate() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local release_dir="$APP_DIR/current"
-  if [ ! -d "$release_dir/backend" ]; then
+  if ! mvp_test -d "$release_dir/backend"; then
     echo "FALLA: $release_dir/backend no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
-  cd "$release_dir/backend"
+  # "cd" al propio invocador (ubuntu) fallaría aquí: $release_dir/backend está dentro de
+  # $APP_DIR (750, exclusivo de $SERVICE_USER). "cd" y la invocación de Python deben ocurrir en
+  # el MISMO proceso con sudo -u, nunca "cd" suelto seguido de un "sudo -u" aparte — el "cd" por
+  # sí solo ya requeriría el permiso que no se tiene.
   # migrate.py lee backend/.env directamente (pydantic-settings, env_file=BACKEND_DIR/".env") y,
   # en PG_PRIVILEGE_MODE=hardened, usa MIGRATOR_DATABASE_URL (nunca la cuenta de la API): ver
   # resolve_role_url en backend/app/db_guard.py.
-  sudo -u "$SERVICE_USER" "$release_dir/backend/.venv/bin/python" migrate.py --target dev --check
+  sudo -u "$SERVICE_USER" bash -c 'cd "$1" && exec "$1/.venv/bin/python" migrate.py --target dev --check' -- "$release_dir/backend"
   echo "Si el --check anterior muestra pendientes, ejecutar 'migrate.py --target dev' (sin --check) solo tras revisar la salida."
 }
 
@@ -696,9 +706,10 @@ phase_migrate() {
 # backend/roles/README.md.
 phase_postgres_grants() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local roles_dir="$APP_DIR/current/backend/roles"
   local backend_env="$APP_DIR/current/backend/.env"
-  if [ ! -d "$roles_dir" ]; then
+  if ! mvp_test -d "$roles_dir"; then
     echo "FALLA: $roles_dir no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
@@ -707,7 +718,7 @@ phase_postgres_grants() {
   # aplicados de forma incompleta. Nunca continuar sin confirmar primero que el esquema está.
   assert_schema_migrated
   local migrator_url migrator_pw
-  migrator_url="$(env_value "$backend_env" MIGRATOR_DATABASE_URL)"
+  migrator_url="$(mvp_env_value "$backend_env" MIGRATOR_DATABASE_URL)"
   migrator_pw="$(password_from_pg_url "$migrator_url")"
   for step in 02_schema_grants 03_table_grants 04_function_grants 05_no_default_privileges 06_public_and_meta_protection; do
     echo "Ejecutando $step.sql contra vinto_piloto, como vinto_migrator..."
@@ -722,13 +733,15 @@ phase_postgres_grants() {
 # cerrado que no ensaya catálogos no aprobados.
 phase_import_reference() {
   require_confirm
+  assert_can_read_mvp_private_paths
   local release_dir="$APP_DIR/current"
-  if [ ! -d "$release_dir/backend" ]; then
+  if ! mvp_test -d "$release_dir/backend"; then
     echo "FALLA: $release_dir/backend no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
   fi
-  cd "$release_dir/backend"
-  sudo -u "$SERVICE_USER" "$release_dir/backend/.venv/bin/python" import_reference.py --target dev
+  # Ver nota de phase_migrate: "cd" y la invocación de Python deben ocurrir en el MISMO proceso
+  # con sudo -u, nunca un "cd" suelto como el invocador seguido de un "sudo -u" aparte.
+  sudo -u "$SERVICE_USER" bash -c 'cd "$1" && exec "$1/.venv/bin/python" import_reference.py --target dev' -- "$release_dir/backend"
   echo "Dry-run anterior sin --apply: revisar la salida (crear=.../ya_presentes=...) antes de aplicar."
   echo "Para aplicar de verdad: CONFIRM=yes bash deploy.sh import-reference-apply"
 }
@@ -736,8 +749,10 @@ phase_import_reference() {
 phase_import_reference_apply() {
   require_confirm
   local release_dir="$APP_DIR/current"
-  cd "$release_dir/backend"
-  sudo -u "$SERVICE_USER" "$release_dir/backend/.venv/bin/python" import_reference.py --target dev --apply
+  # Sin comprobación de existencia aquí, igual que la versión original: esta fase asume que el
+  # dry-run de "import-reference" ya se ejecutó con éxito justo antes. Ver nota de phase_migrate:
+  # "cd" y la invocación de Python deben ocurrir en el MISMO proceso con sudo -u.
+  sudo -u "$SERVICE_USER" bash -c 'cd "$1" && exec "$1/.venv/bin/python" import_reference.py --target dev --apply' -- "$release_dir/backend"
 }
 
 phase_systemd_install() {
