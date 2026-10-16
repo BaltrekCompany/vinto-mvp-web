@@ -345,6 +345,22 @@ PYEOF
 # cambia si cualquier validación falla. Nunca borra una versión anterior: cada versión vive en su
 # propio directorio (node-v<version>-linux-x64/) y "active" es un symlink que se conmuta
 # atómicamente, igual que "current" para los releases de código.
+#
+# CLOUD-DEP-02B.1-D.1 (defecto real encontrado en el VPS, DEP-02B.1-D): $APP_DIR es 750, propiedad
+# de $SERVICE_USER — el operador que invoca deploy.sh (en el VPS real, "ubuntu", que NUNCA ejecuta
+# este script completo como root/sudo) no puede ver nada dentro de ese árbol. Las comprobaciones
+# de existencia/ejecutabilidad sobre una ruta DENTRO de $APP_DIR se hacían como ese operador, así
+# que SIEMPRE fallaban con un "FALLA" que en realidad era un "permission denied" disfrazado —
+# incluso cuando la extracción (que sí usaba "sudo -u") había funcionado perfectamente. Ahora toda
+# lectura dentro de $APP_DIR/runtime se hace explícitamente "sudo -u $SERVICE_USER"; el checksum
+# del tarball de entrada sigue calculándose SIN sudo (el operador debe poder verificarlo por sí
+# mismo, y el tarball debe vivir en una ruta legible para él, nunca en un árbol exclusivo de
+# $SERVICE_USER). Además de comprobar que "bin/node" existe y es ejecutable, ahora se comprueba la
+# VERSIÓN real que reporta ("node --version", como $SERVICE_USER) contra la pedida: un directorio
+# con el nombre correcto pero contenido parcial, corrupto o de otra versión ya no se acepta como
+# "instalación existente" — se rechaza explícitamente, sin sobrescribirlo ni borrarlo nunca de
+# forma automática (eso exigiría intervención manual deliberada). Si "runtime/active" ya apunta a
+# exactamente este runtime_dir, la operación es idempotente (no vuelve a escribir INSTALLED.log).
 phase_install_node_runtime() {
   require_confirm
   local version="${1:?Uso: deploy.sh install-node-runtime <version> <tarball.tar.xz>}"
@@ -369,23 +385,76 @@ phase_install_node_runtime() {
     echo "FALLA: la versión '$version' no está en $checksums_file (no fue aprobada para este proyecto). Añadirla allí mediante una revisión de PR, con un checksum obtenido independientemente de nodejs.org, antes de poder instalarla." >&2
     exit 1
   fi
+  # El checksum se calcula SIN sudo, como el propio operador que invoca este script: el tarball
+  # debe vivir en una ruta que ESE usuario pueda leer directamente (p. ej. un directorio temporal
+  # neutral, legible también por $SERVICE_USER para la extracción de más abajo), nunca dentro de
+  # un árbol exclusivo de $SERVICE_USER — ahí el operador no podría ni siquiera comprobar que el
+  # tarball es el que cree que es.
+  if [ ! -r "$tarball" ]; then
+    echo "FALLA: '$tarball' no existe o no se puede leer con los permisos de quien invoca este script. Colocar el tarball en una ruta legible tanto para este operador como para $SERVICE_USER (que lo necesitará para extraerlo) ANTES de reintentar; nunca dentro de un árbol exclusivo de $SERVICE_USER." >&2
+    exit 1
+  fi
   local actual_sha256
   actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')" || true
   if [ "$actual_sha256" != "$expected_sha256" ]; then
     echo "FALLA: el checksum del tarball ($actual_sha256) no coincide con el aprobado en el repositorio ($expected_sha256) — posible archivo corrupto o manipulado. Rechazado, no se instala; 'runtime/active' no se modifica." >&2
     exit 1
   fi
+
+  # Identidad efectiva: toda comprobación/escritura DENTRO de $APP_DIR debe hacerse como
+  # $SERVICE_USER, nunca como el operador que invoca este script (ver nota arriba). Si
+  # "sudo -u $SERVICE_USER" no funciona en absoluto desde este invocador (sudoers mal configurado,
+  # usuario inexistente, etc.), detenerse aquí, ANTES de intentar ninguna extracción — nunca dejar
+  # que un "mkdir"/"tar" a medio camino sea lo que revele el problema de permisos.
+  assert_service_user_is_ours "$SERVICE_USER"
+  if ! sudo -u "$SERVICE_USER" true 2>/dev/null; then
+    echo "FALLA: no se puede ejecutar 'sudo -u $SERVICE_USER' desde este invocador. Revisar la configuración de sudoers antes de reintentar; no se intenta ninguna extracción." >&2
+    exit 1
+  fi
+
   local runtime_dir="$APP_DIR/runtime/node-v${version}-linux-x64"
-  if [ -e "$runtime_dir" ]; then
-    echo "$runtime_dir ya existe; no se reinstala ni se sobrescribe (una versión instalada nunca se borra al instalar otra)."
+  local expected_node_version="v${version}"
+
+  # node_runtime_version <dir> -- "" si no hay un bin/node ejecutable (como $SERVICE_USER) en ese
+  # directorio, o la versión que reporta (p. ej. "v22.18.0") si lo hay.
+  node_runtime_version() {
+    local dir="$1"
+    if sudo -u "$SERVICE_USER" test -x "$dir/bin/node"; then
+      sudo -u "$SERVICE_USER" "$dir/bin/node" --version 2>/dev/null || true
+    fi
+  }
+
+  if sudo -u "$SERVICE_USER" test -e "$runtime_dir"; then
+    local existing_version
+    existing_version="$(node_runtime_version "$runtime_dir")"
+    if [ "$existing_version" != "$expected_node_version" ]; then
+      echo "FALLA: $runtime_dir ya existe pero no contiene un Node $expected_node_version ejecutable y válido (versión detectada, como $SERVICE_USER: '${existing_version:-ninguna}'). Puede estar parcial, corrupto, o ser una versión distinta bajo el mismo nombre de directorio. No se sobrescribe ni se borra automáticamente: revisar a mano (como $SERVICE_USER) antes de reintentar." >&2
+      exit 1
+    fi
+    echo "$runtime_dir ya existe y contiene un Node $expected_node_version ejecutable y válido (verificado como $SERVICE_USER); no se reinstala ni se sobrescribe."
   else
     sudo -u "$SERVICE_USER" mkdir -p "$APP_DIR/runtime"
     sudo -u "$SERVICE_USER" tar -xJf "$tarball" -C "$APP_DIR/runtime"
-    if [ ! -x "$runtime_dir/bin/node" ]; then
-      echo "FALLA: tras extraer, no existe $runtime_dir/bin/node ejecutable. Abortando sin activar." >&2
+    local extracted_version
+    extracted_version="$(node_runtime_version "$runtime_dir")"
+    if [ "$extracted_version" != "$expected_node_version" ]; then
+      echo "FALLA: tras extraer, $runtime_dir/bin/node no es un Node $expected_node_version ejecutable y válido (versión detectada, como $SERVICE_USER: '${extracted_version:-ninguna}'). Abortando sin activar." >&2
       exit 1
     fi
   fi
+
+  # Idempotente: si "active" ya apunta exactamente a este runtime_dir, no hay nada que conmutar ni
+  # que registrar de nuevo en INSTALLED.log.
+  local current_active="" resolved_runtime_dir
+  if sudo -u "$SERVICE_USER" test -L "$APP_DIR/runtime/active"; then
+    current_active="$(sudo -u "$SERVICE_USER" readlink -f "$APP_DIR/runtime/active")" || true
+  fi
+  resolved_runtime_dir="$(sudo -u "$SERVICE_USER" readlink -f "$runtime_dir")" || true
+  if [ -n "$resolved_runtime_dir" ] && [ "$current_active" = "$resolved_runtime_dir" ]; then
+    echo "runtime/active ya apunta a $runtime_dir; operación idempotente, nada que cambiar."
+    return 0
+  fi
+
   sudo -u "$SERVICE_USER" ln -sfn "$runtime_dir" "$APP_DIR/runtime/active.tmp"
   sudo -u "$SERVICE_USER" mv -T "$APP_DIR/runtime/active.tmp" "$APP_DIR/runtime/active"
   sudo -u "$SERVICE_USER" sh -c "printf 'INSTALLED_AT=%s VERSION=%s SHA256=%s\n' \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" '$version' '$actual_sha256' >> '$APP_DIR/runtime/INSTALLED.log'"

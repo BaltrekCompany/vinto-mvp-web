@@ -763,12 +763,14 @@ else
 fi
 
 echo "=== Prueba focalizada C.1-1: runtime Node AISLADO, checksum real (CLOUD-DEP-02B.1-C.1) ==="
-# Ensayo con el tarball OFICIAL real de nodejs.org dentro de un contenedor Ubuntu 24.04 efímero:
-# rechazo de un tarball corrupto, instalación real verificada, idempotencia, y que una segunda
-# versión NUNCA borra la primera. No se simula ningún resultado: todo corre de verdad.
+echo "CLOUD-DEP-02B.1-D.1: el invocador de deploy.sh ya NO es root dentro del contenedor de ensayo"
+echo "('mvp_operator', sin privilegios, con sudo amplio pero NUNCA miembro de vinto-mvp) — exactamente"
+echo "el modelo real del VPS ('ubuntu' + sudo), que es lo que la versión anterior de esta prueba no"
+echo "ejercitaba (docker exec corría como root, que puede leer cualquier cosa sin pasar por sudo -u,"
+echo "y por eso el defecto real de phase_install_node_runtime escapó a esta batería)."
 NODE_RUNTIME_CNAME=""
 set +e
-create_container vinto-mvp-verify-noderuntime --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 600
+create_container vinto-mvp-verify-noderuntime --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 900
 noderuntime_create_status=$?
 set -e
 if [ "$noderuntime_create_status" -ne 0 ]; then
@@ -784,58 +786,231 @@ else
     set -e
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates xz-utils sudo >/dev/null
+    chmod -R a+rX /tmp/mvp
+
+    # vinto-mvp: propietario EXCLUSIVO de /opt/vinto-mvp-web (750), igual que en el VPS real.
     useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
     mkdir -p /opt/vinto-mvp-web
     chown vinto-mvp:vinto-mvp /opt/vinto-mvp-web
+    chmod 750 /opt/vinto-mvp-web
+
+    # mvp_operator: simula a "ubuntu" en el VPS real — SIN pertenecer a vinto-mvp, pero con sudo
+    # amplio (confirmado "sudo -n true" para "ubuntu" en CLOUD-DEP-02B.1-D), que es exactamente lo
+    # que deploy.sh necesita para sus "sudo -u vinto-mvp ...", nunca para correr el script entero
+    # como root. Invocar deploy.sh como root (sin "su"/sudo de por medio) NUNCA seria una prueba
+    # honesta de esta fase: root puede leer cualquier cosa sin pasar por ningún "sudo -u".
+    useradd -m -s /bin/bash mvp_operator
+    echo "mvp_operator ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mvp_operator
+    chmod 440 /etc/sudoers.d/mvp_operator
+
+    # mvp_operator_nosudo: mismo perfil, pero SIN entrada en sudoers — para el escenario de fallo
+    # de permisos (ningún "sudo -u vinto-mvp" posible desde este usuario).
+    useradd -m -s /bin/bash mvp_operator_nosudo
+
     cd /tmp
     curl -fsSLO https://nodejs.org/dist/v22.18.0/node-v22.18.0-linux-x64.tar.xz
+    chmod 644 /tmp/node-v22.18.0-linux-x64.tar.xz
   ' >/tmp/verify-noderuntime-setup.log 2>&1
   noderuntime_setup_ok=$?
   set -e
   if [ "$noderuntime_setup_ok" -ne 0 ]; then
     echo "--- log de preparación C.1-1 ---"; cat /tmp/verify-noderuntime-setup.log
-    report "runtime Node aislado: preparación (descarga oficial real) en el contenedor de ensayo" 1
+    report "runtime Node aislado: preparación (descarga oficial real + usuarios sin privilegios) en el contenedor de ensayo" 1
   else
-    report "runtime Node aislado: preparación (descarga oficial real) en el contenedor de ensayo" 0
+    report "runtime Node aislado: preparación (descarga oficial real + usuarios sin privilegios) en el contenedor de ensayo" 0
+
+    # Sanity check: mvp_operator debe estar tan aislado de /opt/vinto-mvp-web como "ubuntu" lo está
+    # en el VPS real (confirmado empíricamente en CLOUD-DEP-02B.1-D) — si esto NO fuera cierto, el
+    # resto de esta batería no estaría ejercitando el defecto real.
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      ! su -s /bin/bash mvp_operator -c "test -r /opt/vinto-mvp-web"
+    ' >/tmp/verify-noderuntime-isolation.log 2>&1
+    isolation_ok=$?
+    set -e
+    if [ "$isolation_ok" -eq 0 ]; then
+      report "mvp_operator (sin privilegios, igual que 'ubuntu' en el VPS) no puede atravesar /opt/vinto-mvp-web directamente" 0
+    else
+      echo "--- log de aislamiento ---"; cat /tmp/verify-noderuntime-isolation.log
+      report "mvp_operator (sin privilegios, igual que 'ubuntu' en el VPS) no puede atravesar /opt/vinto-mvp-web directamente" 1
+    fi
+
+    # Regresión CLOUD-DEP-02B.1-D (ronda 1): un tarball colocado dentro de un árbol EXCLUSIVO de
+    # vinto-mvp (700) es ilegible para el operador — debe rechazarse con un mensaje explícito sobre
+    # el problema de lectura, NUNCA con un "checksum no coincide" confuso, y sin tocar runtime/.
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      install -d -o vinto-mvp -g vinto-mvp -m 700 /opt/vinto-mvp-web/.exclusive-tarball-staging
+      cp /tmp/node-v22.18.0-linux-x64.tar.xz /opt/vinto-mvp-web/.exclusive-tarball-staging/
+      chown vinto-mvp:vinto-mvp /opt/vinto-mvp-web/.exclusive-tarball-staging/node-v22.18.0-linux-x64.tar.xz
+      chmod 600 /opt/vinto-mvp-web/.exclusive-tarball-staging/node-v22.18.0-linux-x64.tar.xz
+      ! su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /opt/vinto-mvp-web/.exclusive-tarball-staging/node-v22.18.0-linux-x64.tar.xz" 2>/tmp/regression-r1.err
+      grep -q "no se puede leer" /tmp/regression-r1.err
+      [ ! -e /opt/vinto-mvp-web/runtime ]
+    ' >/tmp/verify-noderuntime-regression-r1.log 2>&1
+    regression_r1_ok=$?
+    set -e
+    if [ "$regression_r1_ok" -eq 0 ]; then
+      report "install-node-runtime rechaza un tarball ilegible para el operador, con un mensaje claro (regresión de la ronda 1), sin tocar runtime/" 0
+    else
+      echo "--- log regresión ronda 1 ---"; cat /tmp/verify-noderuntime-regression-r1.log
+      report "install-node-runtime rechaza un tarball ilegible para el operador, con un mensaje claro (regresión de la ronda 1), sin tocar runtime/" 1
+    fi
 
     # DEP56-02: el checksum aprobado vive en env/node-runtime-checksums.txt (versionado), NUNCA en
     # un SHASUMS256.txt que viaje junto al tarball — "install-node-runtime" ya solo toma
-    # <version> <tarball>, ningún tercer argumento.
+    # <version> <tarball>, ningún tercer argumento. Invocado como mvp_operator (nunca como root).
     set +e
     docker exec "$NODE_RUNTIME_CNAME" bash -c '
       set -e
       cp /tmp/node-v22.18.0-linux-x64.tar.xz /tmp/corrupt.tar.xz
       printf "corrupted" >> /tmp/corrupt.tar.xz
-      cd /tmp/mvp/scripts
-      ! CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/corrupt.tar.xz
+      chmod 644 /tmp/corrupt.tar.xz
+      ! su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/corrupt.tar.xz"
       [ ! -e /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64 ]
     ' >/tmp/verify-noderuntime-corrupt.log 2>&1
     corrupt_ok=$?
     set -e
     if [ "$corrupt_ok" -eq 0 ]; then
-      report "install-node-runtime rechaza un tarball con checksum incorrecto, sin instalar nada" 0
+      report "install-node-runtime (como mvp_operator) rechaza un tarball con checksum incorrecto, sin instalar nada" 0
     else
       echo "--- log C.1-1 corrupto ---"; cat /tmp/verify-noderuntime-corrupt.log
-      report "install-node-runtime rechaza un tarball con checksum incorrecto, sin instalar nada" 1
+      report "install-node-runtime (como mvp_operator) rechaza un tarball con checksum incorrecto, sin instalar nada" 1
     fi
 
+    # 1. Runtime ausente: instalación real limpia, verificada con la VERSIÓN real reportada por el
+    #    binario (como vinto-mvp), no solo su existencia.
+    # 3. Runtime completo y ya activo: una segunda instalación de la MISMA versión es idempotente
+    #    (no reescribe INSTALLED.log).
     set +e
     docker exec "$NODE_RUNTIME_CNAME" bash -c '
       set -e
-      cd /tmp/mvp/scripts
-      CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz
+      su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz"
       [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" = "/opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64" ]
       sudo -u vinto-mvp /opt/vinto-mvp-web/runtime/active/bin/node --version | grep -qx v22.18.0
-      # Idempotencia: reinstalar la misma versión no falla ni la reemplaza.
-      CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz
+      log_lines_before="$(wc -l < /opt/vinto-mvp-web/runtime/INSTALLED.log)"
+      su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz"
+      log_lines_after="$(wc -l < /opt/vinto-mvp-web/runtime/INSTALLED.log)"
+      [ "$log_lines_before" = "$log_lines_after" ]
     ' >/tmp/verify-noderuntime-install.log 2>&1
     install_ok=$?
     set -e
     if [ "$install_ok" -eq 0 ]; then
-      report "install-node-runtime: instalación real verificada + idempotente" 0
+      report "install-node-runtime (como mvp_operator): instalación real verificada por versión + idempotente cuando ya está activo (sin reescribir INSTALLED.log)" 0
     else
       echo "--- log C.1-1 instalación ---"; cat /tmp/verify-noderuntime-install.log
-      report "install-node-runtime: instalación real verificada + idempotente" 1
+      report "install-node-runtime (como mvp_operator): instalación real verificada por versión + idempotente cuando ya está activo (sin reescribir INSTALLED.log)" 1
+    fi
+
+    # 2. Runtime completo y válido, "active" ausente: reanudación de una instalación interrumpida
+    #    (el estado exacto en que quedó el VPS real tras CLOUD-DEP-02B.1-D) — debe completar la
+    #    activación SIN volver a extraer encima del árbol ya válido (confirmado con un centinela).
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      rm -f /opt/vinto-mvp-web/runtime/active
+      [ ! -e /opt/vinto-mvp-web/runtime/active ]
+      touch /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64/.sentinel-no-reextract
+      su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz"
+      [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" = "/opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64" ]
+      [ -e /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64/.sentinel-no-reextract ]
+    ' >/tmp/verify-noderuntime-resume.log 2>&1
+    resume_ok=$?
+    set -e
+    if [ "$resume_ok" -eq 0 ]; then
+      report "install-node-runtime: reanuda una instalación interrumpida (runtime válido, 'active' ausente) sin volver a extraer" 0
+    else
+      echo "--- log reanudación ---"; cat /tmp/verify-noderuntime-resume.log
+      report "install-node-runtime: reanuda una instalación interrumpida (runtime válido, 'active' ausente) sin volver a extraer" 1
+    fi
+
+    # 4. Runtime parcial/corrupto (nombre de versión correcto, sin bin/node ejecutable): rechazar
+    #    sin sobrescribir ni borrar automáticamente.
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      mkdir -p /tmp/fakever8/node-v8.8.8-linux-x64/bin
+      printf "#!/bin/sh\necho v8.8.8\n" > /tmp/fakever8/node-v8.8.8-linux-x64/bin/node
+      chmod +x /tmp/fakever8/node-v8.8.8-linux-x64/bin/node
+      tar -cJf /tmp/node-v8.8.8-linux-x64.tar.xz -C /tmp/fakever8 node-v8.8.8-linux-x64
+      chmod 644 /tmp/node-v8.8.8-linux-x64.tar.xz
+      sha="$(sha256sum /tmp/node-v8.8.8-linux-x64.tar.xz | awk "{print \$1}")"
+      printf "8.8.8 %s\n" "$sha" >> /tmp/mvp/env/node-runtime-checksums.txt
+      chmod -R a+rX /tmp/mvp/env
+
+      mkdir -p /opt/vinto-mvp-web/runtime/node-v8.8.8-linux-x64/bin
+      chown -R vinto-mvp:vinto-mvp /opt/vinto-mvp-web/runtime/node-v8.8.8-linux-x64
+
+      ! su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 8.8.8 /tmp/node-v8.8.8-linux-x64.tar.xz"
+      [ ! -x /opt/vinto-mvp-web/runtime/node-v8.8.8-linux-x64/bin/node ]
+      [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" != "/opt/vinto-mvp-web/runtime/node-v8.8.8-linux-x64" ]
+    ' >/tmp/verify-noderuntime-partial.log 2>&1
+    partial_ok=$?
+    set -e
+    if [ "$partial_ok" -eq 0 ]; then
+      report "install-node-runtime rechaza un runtime existente parcial/sin bin/node ejecutable, sin sobrescribir ni activar" 0
+    else
+      echo "--- log parcial ---"; cat /tmp/verify-noderuntime-partial.log
+      report "install-node-runtime rechaza un runtime existente parcial/sin bin/node ejecutable, sin sobrescribir ni activar" 1
+    fi
+
+    # 5. Runtime existente cuya VERSIÓN EFECTIVA no coincide con el nombre del directorio (bin/node
+    #    ejecutable, pero reporta otra versión): rechazar, sin tocar el binario existente.
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      mkdir -p /opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64/bin
+      printf "#!/bin/sh\necho v0.0.1-wrong\n" > /opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64/bin/node
+      chmod +x /opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64/bin/node
+      chown -R vinto-mvp:vinto-mvp /opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64
+
+      mkdir -p /tmp/fakever7content
+      echo "contenido irrelevante: esta rama nunca llega a extraerlo" > /tmp/fakever7content/placeholder
+      tar -cJf /tmp/node-v7.7.7-linux-x64.tar.xz -C /tmp/fakever7content .
+      chmod 644 /tmp/node-v7.7.7-linux-x64.tar.xz
+      sha="$(sha256sum /tmp/node-v7.7.7-linux-x64.tar.xz | awk "{print \$1}")"
+      printf "7.7.7 %s\n" "$sha" >> /tmp/mvp/env/node-runtime-checksums.txt
+      chmod -R a+rX /tmp/mvp/env
+
+      ! su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 7.7.7 /tmp/node-v7.7.7-linux-x64.tar.xz"
+      [ "$(/opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64/bin/node --version)" = "v0.0.1-wrong" ]
+      [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" != "/opt/vinto-mvp-web/runtime/node-v7.7.7-linux-x64" ]
+    ' >/tmp/verify-noderuntime-wrongversion.log 2>&1
+    wrongversion_ok=$?
+    set -e
+    if [ "$wrongversion_ok" -eq 0 ]; then
+      report "install-node-runtime rechaza un runtime existente cuya versión efectiva no coincide con el nombre del directorio" 0
+    else
+      echo "--- log version incorrecta ---"; cat /tmp/verify-noderuntime-wrongversion.log
+      report "install-node-runtime rechaza un runtime existente cuya versión efectiva no coincide con el nombre del directorio" 1
+    fi
+
+    # 6. Error de permisos (sudo -u vinto-mvp no disponible para el invocador): detenerse ANTES de
+    #    intentar ninguna extracción — nunca queda un directorio nuevo a medio crear.
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      mkdir -p /tmp/fakever6/node-v6.6.6-linux-x64/bin
+      printf "#!/bin/sh\necho v6.6.6\n" > /tmp/fakever6/node-v6.6.6-linux-x64/bin/node
+      chmod +x /tmp/fakever6/node-v6.6.6-linux-x64/bin/node
+      tar -cJf /tmp/node-v6.6.6-linux-x64.tar.xz -C /tmp/fakever6 node-v6.6.6-linux-x64
+      chmod 644 /tmp/node-v6.6.6-linux-x64.tar.xz
+      sha="$(sha256sum /tmp/node-v6.6.6-linux-x64.tar.xz | awk "{print \$1}")"
+      printf "6.6.6 %s\n" "$sha" >> /tmp/mvp/env/node-runtime-checksums.txt
+      chmod -R a+rX /tmp/mvp/env
+
+      ! su -s /bin/bash mvp_operator_nosudo -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 6.6.6 /tmp/node-v6.6.6-linux-x64.tar.xz" 2>/tmp/regression-nosudo.err
+      [ ! -e /opt/vinto-mvp-web/runtime/node-v6.6.6-linux-x64 ]
+      grep -q "no se puede ejecutar .sudo -u vinto-mvp." /tmp/regression-nosudo.err
+    ' >/tmp/verify-noderuntime-nosudo.log 2>&1
+    nosudo_ok=$?
+    set -e
+    if [ "$nosudo_ok" -eq 0 ]; then
+      report "install-node-runtime se detiene ANTES de extraer si 'sudo -u vinto-mvp' no está disponible para el invocador" 0
+    else
+      echo "--- log sin sudo ---"; cat /tmp/verify-noderuntime-nosudo.log
+      report "install-node-runtime se detiene ANTES de extraer si 'sudo -u vinto-mvp' no está disponible para el invocador" 1
     fi
 
     # Versión NO aprobada (ausente de env/node-runtime-checksums.txt): debe rechazarse, aunque el
@@ -844,8 +1019,8 @@ else
     set +e
     docker exec "$NODE_RUNTIME_CNAME" bash -c '
       cp /tmp/node-v22.18.0-linux-x64.tar.xz /tmp/node-v22.99.0-linux-x64.tar.xz
-      cd /tmp/mvp/scripts
-      ! CONFIRM=yes bash deploy.sh install-node-runtime 22.99.0 /tmp/node-v22.99.0-linux-x64.tar.xz
+      chmod 644 /tmp/node-v22.99.0-linux-x64.tar.xz
+      ! su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 22.99.0 /tmp/node-v22.99.0-linux-x64.tar.xz"
     ' >/tmp/verify-noderuntime-unapproved.log 2>&1
     unapproved_ok=$?
     set -e
@@ -863,13 +1038,14 @@ else
     docker exec "$NODE_RUNTIME_CNAME" bash -c '
       set -e
       mkdir -p /tmp/fakever/node-v9.9.9-linux-x64/bin
-      printf "#!/bin/sh\necho v9.9.9-fake\n" > /tmp/fakever/node-v9.9.9-linux-x64/bin/node
+      printf "#!/bin/sh\necho v9.9.9\n" > /tmp/fakever/node-v9.9.9-linux-x64/bin/node
       chmod +x /tmp/fakever/node-v9.9.9-linux-x64/bin/node
       tar -cJf /tmp/node-v9.9.9-linux-x64.tar.xz -C /tmp/fakever node-v9.9.9-linux-x64
+      chmod 644 /tmp/node-v9.9.9-linux-x64.tar.xz
       sha="$(sha256sum /tmp/node-v9.9.9-linux-x64.tar.xz | awk "{print \$1}")"
       printf "9.9.9 %s\n" "$sha" >> /tmp/mvp/env/node-runtime-checksums.txt
-      cd /tmp/mvp/scripts
-      CONFIRM=yes bash deploy.sh install-node-runtime 9.9.9 /tmp/node-v9.9.9-linux-x64.tar.xz
+      chmod -R a+rX /tmp/mvp/env
+      su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh install-node-runtime 9.9.9 /tmp/node-v9.9.9-linux-x64.tar.xz"
       [ -d /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64 ]
       [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" = "/opt/vinto-mvp-web/runtime/node-v9.9.9-linux-x64" ]
     ' >/tmp/verify-noderuntime-multiversion.log 2>&1
