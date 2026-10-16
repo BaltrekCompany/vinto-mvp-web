@@ -570,12 +570,28 @@ r3=$?
 r4=$?
 ( unset CONFIRM; bash "$SCRIPT_DIR/../rollback.sh" version 1111111111111111111111111111111111111111 ) >/tmp/verify9e.log 2>&1
 r5=$?
+( unset CONFIRM; bash "$SCRIPT_DIR/../deploy.sh" link-backend-env 2222222222222222222222222222222222222222 ) >/tmp/verify9f.log 2>&1
+r6=$?
 set -e
-if [ "$r1" -ne 0 ] && [ "$r2" -ne 0 ] && [ "$r3" -ne 0 ] && [ "$r4" -ne 0 ] && [ "$r5" -ne 0 ]; then
-  report "cada fase de riesgo (incluida rollback.sh version) se niega a ejecutar sin confirmación explícita" 0
+if [ "$r1" -ne 0 ] && [ "$r2" -ne 0 ] && [ "$r3" -ne 0 ] && [ "$r4" -ne 0 ] && [ "$r5" -ne 0 ] && [ "$r6" -ne 0 ]; then
+  report "cada fase de riesgo (incluida rollback.sh version y link-backend-env) se niega a ejecutar sin confirmación explícita" 0
 else
-  echo "r1=$r1 r2=$r2 r3=$r3 r4=$r4 r5=$r5"
-  report "cada fase de riesgo (incluida rollback.sh version) se niega a ejecutar sin confirmación explícita" 1
+  echo "r1=$r1 r2=$r2 r3=$r3 r4=$r4 r5=$r5 r6=$r6"
+  report "cada fase de riesgo (incluida rollback.sh version y link-backend-env) se niega a ejecutar sin confirmación explícita" 1
+fi
+
+# link-backend-env (CLOUD-DEP-02B.2-C): el SHA se valida ANTES de tocar nada (ni siquiera
+# "sudo -u vinto-mvp"), igual que en "checkout" -- se puede comprobar directamente en el host,
+# sin ningún contenedor ni usuario vinto-mvp real.
+set +e
+CONFIRM=yes bash "$SCRIPT_DIR/../deploy.sh" link-backend-env not-a-full-sha >/tmp/verify9g.log 2>&1
+r7=$?
+set -e
+if [ "$r7" -ne 0 ] && grep -q "no es un SHA completo de 40 caracteres hexadecimales" /tmp/verify9g.log; then
+  report "link-backend-env rechaza un SHA que no es completo/hexadecimal, antes de tocar nada" 0
+else
+  cat /tmp/verify9g.log
+  report "link-backend-env rechaza un SHA que no es completo/hexadecimal, antes de tocar nada" 1
 fi
 
 echo "=== 10/10: inspección del diff completo contra main ==="
@@ -1986,6 +2002,232 @@ else
 fi
 echo "Punto 15 (regresión de install-node-runtime, PR #57): cubierto por la batería 'C.1-1' de este"
 echo "mismo archivo, ejecutada en esta misma corrida — ver sus resultados más arriba."
+
+echo "=== Prueba focalizada CLOUD-DEP-02B.2-C: link-backend-env (idempotencia, identidad, enlaces rotos) ==="
+echo "Esta fase nueva crea backend/.env -> shared/backend.env en un release YA clonado, sin repetir"
+echo "checkout ni python-venv (ver deploy.sh::phase_link_backend_env). Laboratorio: operador sin"
+echo "privilegios + vinto-mvp separado (mismo patrón que E.6-A.1), con la estructura de"
+echo "releases/shared fabricada directamente -- esta fase solo hace mkdir/ln/stat, nunca clona ni"
+echo "necesita git/python, así que el contenedor de ensayo no los instala."
+
+# Comprobación estática primero (sin contenedor): phase_link_backend_env nunca debe invocar
+# phase_checkout ni phase_python_venv (requisito 13 del alcance de CLOUD-DEP-02B.2-C).
+if ! awk '/^phase_link_backend_env\(\)/,/^}/' "$SCRIPT_DIR/../deploy.sh" | grep -qE 'phase_checkout|phase_python_venv'; then
+  report "link-backend-env: el cuerpo de la fase nunca llama a phase_checkout ni phase_python_venv" 0
+else
+  report "link-backend-env: el cuerpo de la fase nunca llama a phase_checkout ni phase_python_venv" 1
+fi
+
+LINKENV_CNAME=""
+set +e
+create_container vinto-mvp-verify-linkenv --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 1800
+linkenv_create_status=$?
+set -e
+if [ "$linkenv_create_status" -ne 0 ]; then
+  report "link-backend-env: batería completa (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  LINKENV_CNAME="$CREATED_NAME"
+  docker cp "$MVP_DIR" "$LINKENV_CNAME:/tmp/mvp" >/dev/null
+  export MSYS_NO_PATHCONV=1
+  set +e
+  docker exec "$LINKENV_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo >/dev/null
+
+    useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
+    useradd -m -s /bin/bash mvp_operator
+    echo "mvp_operator ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mvp_operator
+    chmod 440 /etc/sudoers.d/mvp_operator
+    useradd -m -s /bin/bash mvp_operator_nosudo
+
+    # Dos releases fabricados directamente (nunca con checkout real: esta fase no lo necesita) +
+    # un "current" apuntando a un tercer destino arbitrario, para confirmar al final (caso 11) que
+    # ninguna llamada de esta batería lo tocó.
+    mkdir -p /opt/vinto-mvp-web/releases/aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111/backend
+    mkdir -p /opt/vinto-mvp-web/releases/bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222/backend
+    mkdir -p /opt/vinto-mvp-web/releases/unrelated-target
+    mkdir -p /opt/vinto-mvp-web/shared
+    ln -sfn /opt/vinto-mvp-web/releases/unrelated-target /opt/vinto-mvp-web/current
+    chown -R vinto-mvp:vinto-mvp /opt/vinto-mvp-web
+    chmod 750 /opt/vinto-mvp-web
+  ' >/tmp/verify-linkenv-setup.log 2>&1
+  linkenv_setup_ok=$?
+  set -e
+  if [ "$linkenv_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación link-backend-env ---"; cat /tmp/verify-linkenv-setup.log
+    report "link-backend-env: preparación del laboratorio (vinto-mvp, releases fabricados, 'current' arbitrario)" 1
+  else
+    report "link-backend-env: preparación del laboratorio (vinto-mvp, releases fabricados, 'current' arbitrario)" 0
+    SHA_A=aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111
+    SHA_FAKE=dddd4444dddd4444dddd4444dddd4444dddd4444
+
+    as_operator() { docker exec "$LINKENV_CNAME" su -s /bin/bash mvp_operator -c "cd /tmp/mvp/scripts && $1"; }
+    as_nosudo()   { docker exec "$LINKENV_CNAME" su -s /bin/bash mvp_operator_nosudo -c "cd /tmp/mvp/scripts && $1"; }
+
+    # Caso 6: release inexistente.
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_FAKE" >/tmp/verify-linkenv-case6.log 2>&1
+    case6_status=$?
+    set -e
+    if [ "$case6_status" -ne 0 ] && grep -q "no existe. Ejecutar 'checkout" /tmp/verify-linkenv-case6.log; then
+      report "link-backend-env caso 6: release inexistente, rechazado con mensaje claro" 0
+    else
+      cat /tmp/verify-linkenv-case6.log
+      report "link-backend-env caso 6: release inexistente, rechazado con mensaje claro" 1
+    fi
+
+    # Caso 3: shared/backend.env todavía no existe.
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case3.log 2>&1
+    case3_status=$?
+    set -e
+    if [ "$case3_status" -ne 0 ] && grep -q "shared/backend.env no existe todavía" /tmp/verify-linkenv-case3.log; then
+      report "link-backend-env caso 3: shared/backend.env inexistente, rechazado antes de tocar nada" 0
+    else
+      cat /tmp/verify-linkenv-case3.log
+      report "link-backend-env caso 3: shared/backend.env inexistente, rechazado antes de tocar nada" 1
+    fi
+
+    # shared/backend.env SINTÉTICO del laboratorio (nunca una credencial real), con el propietario
+    # y permisos correctos para las pruebas siguientes.
+    docker exec "$LINKENV_CNAME" bash -c '
+      sudo -u vinto-mvp sh -c "printf \"DATABASE_URL=postgresql://x:y@127.0.0.1/db\n\" > /opt/vinto-mvp-web/shared/backend.env"
+      sudo -u vinto-mvp chmod 600 /opt/vinto-mvp-web/shared/backend.env
+    ' >/tmp/verify-linkenv-mkenv.log 2>&1
+
+    # Caso 4: permisos incorrectos (644 en vez de 600).
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp chmod 644 /opt/vinto-mvp-web/shared/backend.env
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case4.log 2>&1
+    case4_status=$?
+    set -e
+    if [ "$case4_status" -ne 0 ] && grep -q "deben ser 600" /tmp/verify-linkenv-case4.log; then
+      report "link-backend-env caso 4: permisos incorrectos (644) en shared/backend.env, rechazado" 0
+    else
+      cat /tmp/verify-linkenv-case4.log
+      report "link-backend-env caso 4: permisos incorrectos (644) en shared/backend.env, rechazado" 1
+    fi
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp chmod 600 /opt/vinto-mvp-web/shared/backend.env
+
+    # Caso 5: propietario incorrecto (root en vez de vinto-mvp), permisos 600 igual.
+    docker exec "$LINKENV_CNAME" chown root:root /opt/vinto-mvp-web/shared/backend.env
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case5.log 2>&1
+    case5_status=$?
+    set -e
+    if [ "$case5_status" -ne 0 ] && grep -q "pertenece a 'root'" /tmp/verify-linkenv-case5.log; then
+      report "link-backend-env caso 5: propietario incorrecto en shared/backend.env, rechazado" 0
+    else
+      cat /tmp/verify-linkenv-case5.log
+      report "link-backend-env caso 5: propietario incorrecto en shared/backend.env, rechazado" 1
+    fi
+    docker exec "$LINKENV_CNAME" chown vinto-mvp:vinto-mvp /opt/vinto-mvp-web/shared/backend.env
+
+    # Caso 9: backend/.env ya existe como archivo REGULAR (no symlink).
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp sh -c "echo not-a-link > /opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case9.log 2>&1
+    case9_status=$?
+    set -e
+    if [ "$case9_status" -ne 0 ] && grep -q "no es un enlace simbólico" /tmp/verify-linkenv-case9.log; then
+      report "link-backend-env caso 9: backend/.env ya existe como archivo regular, rechazado sin sobrescribir" 0
+    else
+      cat /tmp/verify-linkenv-case9.log
+      report "link-backend-env caso 9: backend/.env ya existe como archivo regular, rechazado sin sobrescribir" 1
+    fi
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp rm -f "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+
+    # Caso 7: enlace ROTO preexistente, hacia un destino que no existe y que además no es el
+    # esperado. "-e" por sí solo seguiría el enlace, no resolvería, y reportaría (incorrectamente)
+    # "no existe" -- un falso negativo que llevaría a un "ln -s" fallando con el error crudo de
+    # "ln", nunca con el mensaje claro que se comprueba aquí.
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp ln -s ../../../shared/no-existe.env "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case7.log 2>&1
+    case7_status=$?
+    set -e
+    if [ "$case7_status" -ne 0 ] && grep -q "ya es un enlace simbólico" /tmp/verify-linkenv-case7.log; then
+      report "link-backend-env caso 7: enlace ROTO preexistente (destino distinto), detectado vía -L y rechazado" 0
+    else
+      cat /tmp/verify-linkenv-case7.log
+      report "link-backend-env caso 7: enlace ROTO preexistente (destino distinto), detectado vía -L y rechazado" 1
+    fi
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp rm -f "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+
+    # Caso 8: enlace VÁLIDO (resuelve) pero hacia otro destino distinto del esperado.
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp sh -c "echo otra-cosa > /opt/vinto-mvp-web/shared/otro.env && chmod 600 /opt/vinto-mvp-web/shared/otro.env"
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp ln -s ../../../shared/otro.env "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case8.log 2>&1
+    case8_status=$?
+    set -e
+    if [ "$case8_status" -ne 0 ] && grep -q "ya es un enlace simbólico" /tmp/verify-linkenv-case8.log; then
+      report "link-backend-env caso 8: enlace existente hacia OTRO destino (válido), rechazado sin sobrescribir" 0
+    else
+      cat /tmp/verify-linkenv-case8.log
+      report "link-backend-env caso 8: enlace existente hacia OTRO destino (válido), rechazado sin sobrescribir" 1
+    fi
+    docker exec "$LINKENV_CNAME" sudo -u vinto-mvp rm -f "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env" /opt/vinto-mvp-web/shared/otro.env
+
+    # Caso 10: fallo de sudoers (operador sin sudo configurado hacia vinto-mvp).
+    set +e
+    as_nosudo "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case10.log 2>&1
+    case10_status=$?
+    set -e
+    if [ "$case10_status" -ne 0 ] && grep -q "no se puede ejecutar 'sudo -u vinto-mvp'" /tmp/verify-linkenv-case10.log; then
+      report "link-backend-env caso 10: sin sudoers hacia vinto-mvp, falla con mensaje explícito" 0
+    else
+      cat /tmp/verify-linkenv-case10.log
+      report "link-backend-env caso 10: sin sudoers hacia vinto-mvp, falla con mensaje explícito" 1
+    fi
+
+    # Caso 1: creación correcta (release A, ya limpio de los casos anteriores).
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case1.log 2>&1
+    case1_status=$?
+    set -e
+    MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp test -L "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
+    case1_link_exists=$?
+    target1="$(MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp readlink "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env")"
+    if [ "$case1_status" -eq 0 ] && [ "$case1_link_exists" -eq 0 ] && [ "$target1" = "../../../shared/backend.env" ]; then
+      report "link-backend-env caso 1: crea el enlace correcto (release ya existente, sin repetir checkout)" 0
+    else
+      echo "destino obtenido: '$target1'"; cat /tmp/verify-linkenv-case1.log
+      report "link-backend-env caso 1: crea el enlace correcto (release ya existente, sin repetir checkout)" 1
+    fi
+
+    # Caso 2: segunda ejecución idempotente (mismo release A, enlace ya correcto).
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case2.log 2>&1
+    case2_status=$?
+    set -e
+    if [ "$case2_status" -eq 0 ] && grep -q "idempotente" /tmp/verify-linkenv-case2.log; then
+      report "link-backend-env caso 2: segunda ejecución idempotente (no vuelve a crear ni falla)" 0
+    else
+      cat /tmp/verify-linkenv-case2.log
+      report "link-backend-env caso 2: segunda ejecución idempotente (no vuelve a crear ni falla)" 1
+    fi
+
+    # Caso 11: 'current' nunca se tocó por ninguna de las llamadas (exitosas o fallidas) de arriba.
+    current_target="$(MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp readlink -f /opt/vinto-mvp-web/current)"
+    if [ "$current_target" = "/opt/vinto-mvp-web/releases/unrelated-target" ]; then
+      report "link-backend-env caso 11: 'current' permanece intacto durante toda la batería" 0
+    else
+      echo "current observado: '$current_target' (esperado: /opt/vinto-mvp-web/releases/unrelated-target)"
+      report "link-backend-env caso 11: 'current' permanece intacto durante toda la batería" 1
+    fi
+
+    # Requisito 14 del alcance: ningún valor de shared/backend.env (ni siquiera el sintético de
+    # este laboratorio) quedó impreso en ningún log de esta batería.
+    if ! grep -l "DATABASE_URL=postgresql://x:y" /tmp/verify-linkenv-case*.log /tmp/verify-linkenv-mkenv.log 2>/dev/null; then
+      report "link-backend-env: ningún valor de shared/backend.env quedó impreso en los logs de esta batería" 0
+    else
+      report "link-backend-env: ningún valor de shared/backend.env quedó impreso en los logs de esta batería" 1
+    fi
+  fi
+  unset MSYS_NO_PATHCONV
+fi
 
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"

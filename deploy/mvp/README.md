@@ -49,7 +49,14 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
    siguen siendo ciertos (solo lectura; DEP55-R2-02: ya no mezcla dependencias de build).
 2. `env/backend.env.example` → copiar a `/opt/vinto-mvp-web/shared/backend.env` (600) con
    contraseñas reales. `deploy.sh checkout` enlaza automáticamente `releases/<sha>/backend/.env`
-   a este archivo compartido; nunca se duplica por versión.
+   a este archivo compartido; nunca se duplica por versión. **Si `checkout` ya se ejecutó ANTES
+   de que `shared/backend.env` existiera** (avisa de esto explícitamente en su salida), ese
+   release queda sin el enlace para siempre — `checkout` nunca se repite sobre un release ya
+   existente (DEP55-04). Para ese caso, una vez `shared/backend.env` exista con 600/propietario
+   correctos, ejecutar `CONFIRM=yes bash deploy.sh link-backend-env <sha>` (CLOUD-DEP-02B.2-C):
+   crea exactamente ese mismo enlace sobre el release ya en disco, sin repetir `checkout` ni
+   `python-venv`; es idempotente y nunca sobrescribe algo inesperado (ver "Contratos de
+   configuración" más abajo).
 3. `env/postgres.env.example` → copiar a `docker/.env` (no versionado) con contraseñas reales.
 4. `scripts/deploy.sh` — fase por fase, cada una con `CONFIRM=yes` explícito, en este orden:
    `user-and-dirs` → `preflight-build-deps` → `install-node-runtime <version> <tarball>`
@@ -275,3 +282,88 @@ Hallazgo adicional corregido durante estas pruebas: dos asignaciones `var="$(gre
 script de forma SILENCIOSA (sin ningún mensaje) si el `grep` no encontraba coincidencia — el
 mismo patrón que `lib_common.sh::env_value` ya evita internamente. Corregido con `|| true` y un
 mensaje explícito en cada caso, siguiendo la misma convención que el resto del archivo.
+
+## `link-backend-env` y contratos de configuración (CLOUD-DEP-02B.2-C)
+
+Incremento reducido: cierra el hueco de un release ya clonado (`checkout`) antes de que
+`shared/backend.env` existiera, y revisa/documenta los contratos de permisos de los dos archivos
+`.env` reales de este despliegue. Ninguna credencial real se agrega en ningún archivo de este
+repositorio; esta PR no se conecta al VPS ni ejecuta ninguna fase mutadora fuera de un laboratorio
+Docker efímero.
+
+### `deploy.sh link-backend-env <sha>`
+
+`checkout` (ver "Versionado por releases" arriba) solo crea `releases/<sha>/backend/.env ->
+shared/backend.env` EN EL MOMENTO del clonado, si `shared/backend.env` ya existe entonces; nunca
+se repite sobre un release existente (DEP55-04), así que un release clonado antes quedaba sin ese
+enlace para siempre. `link-backend-env` cierra ese hueco sin repetir `checkout` ni `python-venv`
+(comprobado por código en `verify_local.sh`: el cuerpo de la fase nunca invoca ninguna de las
+dos). Reutiliza exactamente el mismo enlace relativo que `checkout` ya usa
+(`../../../shared/backend.env`) y el mismo chequeo de permisos 600 que `python-venv` ya aplica,
+sumando además una comprobación de propietario que ningún script anterior hacía explícitamente
+(ver abajo). Es idempotente: una segunda ejecución con el enlace ya correcto no hace nada (`exit
+0`, sin mensaje de error). Nunca sobrescribe algo inesperado: comprueba primero `-L` (¿hay un
+enlace ahí, resuelva o no?) antes de `-e` (que seguiría un enlace roto hasta su destino y
+reportaría, incorrectamente, "no existe") — un archivo regular, un directorio, un enlace roto
+hacia otro destino, o un enlace válido hacia otro destino, se rechazan todos sin tocarlos. Nunca
+toca `current`. Probado en un laboratorio Docker efímero (operador sin privilegios + `vinto-mvp`
+separado, estructura de `releases/`/`shared/` fabricada directamente — esta fase solo hace
+`mkdir`/`ln`/`stat`, nunca clona, así que el laboratorio no instala git/python) contra los 11
+casos pedidos (enlace correcto, idempotencia, destino inexistente, permisos incorrectos,
+propietario incorrecto, release inexistente, enlace roto preexistente, enlace hacia otro destino,
+archivo regular preexistente, fallo de sudoers, `current` sin cambios), más la validación de
+`CONFIRM=yes` y de SHA completo (mismo patrón que el resto de `deploy.sh`): 16/16 PASS.
+
+### Contratos de configuración
+
+**`shared/backend.env`**: propietario `vinto-mvp:vinto-mvp`, permisos `600`. Verificado hasta
+ahora solo por `python-venv` (permisos, resueltos a través del symlink vía `stat -L`);
+`link-backend-env` añade la comprobación de **propietario** que ningún script anterior hacía de
+forma explícita — antes, un `shared/backend.env` con permisos 600 pero propiedad incorrecta
+habría fallado más adelante, en tiempo de lectura real, con un "permission denied" menos claro
+que el mensaje explícito que da ahora esta fase. Se lee siempre como texto (`mvp_env_value`,
+nunca `source`) desde `postgres-roles` (para reaprovisionar roles con las contraseñas ya
+generadas) y, fuera de `deploy.sh`, desde el proceso de la API y las herramientas administrativas
+(`migrate.py`, `import_reference.py`).
+
+**`docker/.env`**: a diferencia de `shared/backend.env`, **no tiene ningún contrato de
+propietario/permisos verificado por ningún script de este repositorio**, aunque contiene
+`POSTGRES_BOOTSTRAP_PASSWORD` en texto plano. Vive fuera del árbol 750 de `vinto-mvp`, junto a
+los scripts, en el `home` del operador `ubuntu`. **Esto es un hueco real, señalado aquí a
+propósito (Fase B de CLOUD-DEP-02B.2-C), no resuelto en esta PR**: corregirlo (una fase de
+`preflight`/`postgres-up` que exija 600 sobre `docker/.env` antes de usarlo, o moverlo bajo
+`shared/` con el mismo propietario que `backend.env`) tocaría `postgres-up`/
+`postgres-bootstrap-db`/`rollback.sh postgres`/`validate-compose`, que ya lo usan tal cual — un
+cambio de alcance mayor que el de este incremento. Mientras no se decida, el operador debe aplicar
+`chmod 600 docker/.env` a mano, igual que ya se exige para `shared/backend.env`, antes de
+`postgres-up`. Se lee vía `docker compose --env-file` (nunca `source`) y vía `env_value` en
+`postgres-bootstrap-db`/`postgres-roles`.
+
+**Comportamiento cuando falta una variable**: `env_value`/`mvp_env_value` (`lib_common.sh`)
+fallan con un mensaje explícito (nunca una cadena vacía silenciosa ni un valor por defecto) y
+`return 1`; el `set -euo pipefail` de cada script detiene la fase de inmediato. El YAML de
+Postgres usa `${VAR:?mensaje}` para sus 4 claves obligatorias: una `.env` incompleta hace fallar
+`docker compose config`/`up` con ese mensaje, antes de levantar ningún contenedor.
+
+**Variables `*_TEST` de `backend.env.example`**: `TEST_DATABASE_URL`/`MIGRATOR_TEST_DATABASE_URL`/
+`REFERENCE_TEST_DATABASE_URL` apuntan a `vinto_piloto_test`, una base que este pipeline nunca crea
+(no existe ninguna fase `postgres-bootstrap-db-test` ni equivalente). Deben completarse con
+contraseñas reales igual que el resto (nunca dejarse como `CHANGE_ME` literal en el archivo real
+— ver siguiente punto), con el entendimiento explícito de que, mientras el piloto no tenga una
+base de pruebas propia, no las usa ningún flujo de `deploy.sh`. Decisión pendiente, fuera del
+alcance de esta PR: crear esa base realmente sería una fase nueva, no una reutilización de
+`postgres-bootstrap-db`.
+
+**Prohibición de contraseñas ficticias**: ningún `.env.example` de `deploy/mvp/env/` puede
+contener algo distinto de `CHANGE_ME` — verificado automáticamente por la sección "comprobación
+de secretos en logs/artefactos" de `verify_local.sh`. Esta PR no agrega ningún valor real a
+ningún archivo del repositorio; `shared/backend.env`/`docker/.env` reales se crean y rellenan
+exclusivamente en el VPS, a mano, por quien tiene acceso a la terminal.
+
+**Prevención de filtraciones en logs/comandos/artefactos**: ninguna contraseña se pasa como
+argumento de línea de comandos (`psql`, `docker exec -e`, ni ningún proceso) — ver
+`lib_common.sh::pg_run_sql_inline`/`pg_run_sql_file` (PG54-03/DEP55-R2-03) y
+`phase_validate_compose` (DEP56-03/DEP56-R2-01). La batería de pruebas de `link-backend-env`
+añade su propia comprobación de que ningún valor del `shared/backend.env` sintético del
+laboratorio queda impreso en ningún log de esa batería — mismo criterio que la comprobación
+general ya existente, aplicado también a la fase nueva.
