@@ -52,13 +52,15 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
    a este archivo compartido; nunca se duplica por versión.
 3. `env/postgres.env.example` → copiar a `docker/.env` (no versionado) con contraseñas reales.
 4. `scripts/deploy.sh` — fase por fase, cada una con `CONFIRM=yes` explícito, en este orden:
-   `user-and-dirs` → `preflight-build-deps` (repetir: ahora ya existe el usuario de servicio, se
-   puede confirmar la ruta real de node/corepack PARA ÉL) → `checkout <sha>` (requiere además
-   `AUTHORIZED_COMMIT=<sha>`) → `python-venv <sha>` → `frontend-build <sha>` →
+   `user-and-dirs` → `preflight-build-deps` → `install-node-runtime <version> <tarball>
+   <SHASUMS256.txt>` → `checkout <sha>` (requiere además `AUTHORIZED_COMMIT=<sha>`) →
+   `python-venv <sha>` → `install-frontend-artifact <sha> <tar.gz> <manifiesto>` (artefacto
+   construido APARTE con `scripts/build-frontend-artifact.sh`, ver más abajo) →
    `preflight-startup` → `activate <sha>` →
    `postgres-up` (requiere además `TVC_BACKUP_CONFIRMED=yes`) → `postgres-bootstrap-db` →
    `postgres-roles` → `migrate` → `postgres-grants` → `import-reference` (dry-run) →
    `import-reference-apply` → `systemd-install` → `healthcheck`.
+   `validate-compose` puede ejecutarse en cualquier momento (solo lectura, resuelve el YAML).
 5. `docker/docker-compose.postgres.yml` — lo levanta `deploy.sh postgres-up`.
 6. `backend/roles/*.sql` (del repositorio principal, no de esta carpeta) — los ejecuta
    `deploy.sh postgres-roles`/`postgres-grants` en el orden de `backend/roles/README.md`,
@@ -185,3 +187,47 @@ aceptables", 3 bloqueos puntuales antes del merge:
 - **Punto 3 (archivo temporal del healthcheck)**: `/tmp/.deploy-activate-healthcheck.log` (nombre
   fijo) se sustituyó por un `mktemp` por invocación en `deploy.sh activate` y en
   `rollback.sh version`, con limpieza en todos los caminos de salida.
+
+## Build externo y runtime Node aislado (CLOUD-DEP-02B.1-C.1)
+
+Decisión arquitectónica: el frontend ya NO se compila en el VPS, y Node nunca se instala a nivel
+de sistema (nunca `apt`/NodeSource, nunca `/usr/bin/node`) — ambas cosas tocarían algo compartido
+con TVC/ETL (el PATH global, el gestor de paquetes del sistema). En su lugar:
+
+- **`scripts/build-frontend-artifact.sh`** — se ejecuta en un host Linux x86_64 APARTE (CI o un
+  dev box), nunca en el VPS. Verifica que el repositorio está exactamente en el commit pedido y
+  sin cambios locales, compila con `corepack pnpm` (versionado por `packageManager` en
+  `package.json`), empaqueta `dist/standalone/` en un `.tar.gz` y genera un manifiesto de texto
+  con el commit, la versión de Node usada y el checksum SHA-256 del artefacto.
+- **`deploy.sh install-frontend-artifact <sha> <tar.gz> <manifiesto>`** — instala ese artefacto en
+  el VPS. Rechaza el artefacto si el commit del manifiesto no coincide EXACTAMENTE con el release,
+  o si el checksum del `.tar.gz` no coincide con el del manifiesto; nunca sobrescribe un `dist/` ya
+  instalado en ese release. Verificado con un artefacto sintético: instala con commit+checksum
+  correctos, rechaza commit erróneo, artefacto manipulado y reinstalación.
+- **`deploy.sh install-node-runtime <version> <tarball> <SHASUMS256.txt>`** — instala Node OFICIAL
+  (tarball de `nodejs.org`) bajo `$APP_DIR/runtime/node-v<version>-linux-x64/`, verificando su
+  checksum contra `SHASUMS256.txt` ANTES de extraer nada; rechaza el tarball si no coincide.
+  `runtime/active` es un symlink que se conmuta atómicamente (igual que `current` para el código);
+  **nunca borra una versión anterior** al instalar otra. Verificado end-to-end con el tarball
+  OFICIAL real `node-v22.18.0-linux-x64.tar.xz`: rechazo de un tarball corrupto, instalación real
+  (confirmado `node --version` como el usuario `vinto-mvp`), idempotencia, y coexistencia de dos
+  versiones sin que la más reciente borre la anterior.
+- El unit `systemd/vinto-mvp-frontend.service` apunta su `ExecStart` a
+  `$APP_DIR/runtime/active/bin/node`, nunca a `/usr/bin/node`.
+- `preflight.sh build-deps` ya no exige `node`/`corepack` en el VPS (no se compila allí); en su
+  lugar comprueba que existe un comando Compose utilizable. `preflight.sh startup` comprueba que
+  `runtime/active/bin/node` existe antes de activar/arrancar.
+- **Hallazgo adicional, corregido de paso**: al ejercitar por primera vez `systemd-analyze verify`
+  contra los units (misma versión de systemd que el VPS, 255), apareció `Unknown key name
+  'StartLimitIntervalSec'` — esa directiva (junto con `StartLimitBurst`) pertenece a la sección
+  `[Unit]`, no a `[Service]`; estaba mal ubicada en ambos units desde su creación, así que la
+  política de reinicio controlada nunca se aplicaba de verdad. Corregido en los dos archivos.
+
+## Docker Compose: `docker compose` o `docker-compose` (Fase D, CLOUD-DEP-02B.1-C.1)
+
+El VPS real solo tiene el binario standalone `docker-compose` (v5.3.1, confirmado el mismo motor
+que el plugin oficial — su propio `--help` se autodenomina `docker compose`), no el plugin
+`docker compose`. `lib_common.sh::detect_compose_cmd` detecta cuál de los dos existe y expone el
+array `COMPOSE_CMD`, usado por `deploy.sh`/`rollback.sh` en vez de invocar `docker compose`
+literal. `deploy.sh validate-compose` resuelve el YAML con `config` (nunca `up`/`down`) para
+confirmarlo sin levantar ningún recurso persistente.

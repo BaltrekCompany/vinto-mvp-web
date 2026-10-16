@@ -2,6 +2,10 @@
 Description=VINTO MVP WEB — frontend (vinext standalone Node.js, piloto, aislado de TVC)
 After=network-online.target
 Wants=network-online.target
+# StartLimitIntervalSec/StartLimitBurst pertenecen a [Unit], no a [Service] (CLOUD-DEP-02B.1-C.1:
+# confirmado con "systemd-analyze verify" contra systemd 255, la misma versión del VPS).
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -16,16 +20,20 @@ WorkingDirectory=/opt/vinto-mvp-web/current
 # node_modules/vinext/README.md — HOST, no HOSTNAME, para evitar la colisión con la variable de
 # entorno de Linux). NEXT_PUBLIC_API_URL NO se fija aquí: ese valor se incrusta en el bundle del
 # cliente en TIEMPO DE BUILD (confirmado en CLOUD-01B-1), así que cambiarlo aquí no tendría ningún
-# efecto — se fija al compilar (ver deploy/mvp/scripts/deploy.sh, paso de build del frontend).
+# efecto — se fija al compilar, AHORA fuera del VPS (CLOUD-DEP-02B.1-C.1: ver
+# deploy/mvp/scripts/deploy.sh, fase "install-frontend-artifact").
 Environment=PORT=3100
 Environment=HOST=127.0.0.1
 
-ExecStart=/usr/bin/node /opt/vinto-mvp-web/current/dist/standalone/server.js
+# Runtime Node AISLADO (CLOUD-DEP-02B.1-C.1): nunca /usr/bin/node ni ningún Node instalado a
+# nivel de sistema/apt — ese cambiaría el PATH global, compartido con TVC/ETL. "runtime/active" es
+# un symlink mantenido por deploy.sh (fase "install-node-runtime") hacia la versión de Node
+# vigente bajo /opt/vinto-mvp-web/runtime/, verificada por checksum antes de instalarse. systemd
+# resuelve este symlink (y el de "current" arriba) al arrancar el servicio.
+ExecStart=/opt/vinto-mvp-web/runtime/active/bin/node /opt/vinto-mvp-web/current/dist/standalone/server.js
 
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 MemoryMax=512M
 CPUQuota=100%

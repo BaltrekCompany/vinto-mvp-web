@@ -762,5 +762,242 @@ else
   report "deploy.sh (activate) y rollback.sh (version) usan mktemp para el log del healthcheck" 1
 fi
 
+echo "=== Prueba focalizada C.1-1: runtime Node AISLADO, checksum real (CLOUD-DEP-02B.1-C.1) ==="
+# Ensayo con el tarball OFICIAL real de nodejs.org dentro de un contenedor Ubuntu 24.04 efímero:
+# rechazo de un tarball corrupto, instalación real verificada, idempotencia, y que una segunda
+# versión NUNCA borra la primera. No se simula ningún resultado: todo corre de verdad.
+NODE_RUNTIME_CNAME=""
+set +e
+create_container vinto-mvp-verify-noderuntime --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 600
+noderuntime_create_status=$?
+set -e
+if [ "$noderuntime_create_status" -ne 0 ]; then
+  report "runtime Node aislado: instalación real con checksum oficial (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  NODE_RUNTIME_CNAME="$CREATED_NAME"
+  docker cp "$SCRIPT_DIR/.." "$NODE_RUNTIME_CNAME:/tmp/mvp-scripts" >/dev/null
+  set +e
+  docker exec "$NODE_RUNTIME_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates xz-utils sudo >/dev/null
+    useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
+    mkdir -p /opt/vinto-mvp-web
+    chown vinto-mvp:vinto-mvp /opt/vinto-mvp-web
+    cd /tmp
+    curl -fsSLO https://nodejs.org/dist/v22.18.0/node-v22.18.0-linux-x64.tar.xz
+    curl -fsSLO https://nodejs.org/dist/v22.18.0/SHASUMS256.txt
+  ' >/tmp/verify-noderuntime-setup.log 2>&1
+  noderuntime_setup_ok=$?
+  set -e
+  if [ "$noderuntime_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación C.1-1 ---"; cat /tmp/verify-noderuntime-setup.log
+    report "runtime Node aislado: preparación (descarga oficial real) en el contenedor de ensayo" 1
+  else
+    report "runtime Node aislado: preparación (descarga oficial real) en el contenedor de ensayo" 0
+
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      cp /tmp/node-v22.18.0-linux-x64.tar.xz /tmp/corrupt.tar.xz
+      printf "corrupted" >> /tmp/corrupt.tar.xz
+      cd /tmp/mvp-scripts
+      ! CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/corrupt.tar.xz /tmp/SHASUMS256.txt
+      [ ! -e /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64 ]
+    ' >/tmp/verify-noderuntime-corrupt.log 2>&1
+    corrupt_ok=$?
+    set -e
+    if [ "$corrupt_ok" -eq 0 ]; then
+      report "install-node-runtime rechaza un tarball con checksum incorrecto, sin instalar nada" 0
+    else
+      echo "--- log C.1-1 corrupto ---"; cat /tmp/verify-noderuntime-corrupt.log
+      report "install-node-runtime rechaza un tarball con checksum incorrecto, sin instalar nada" 1
+    fi
+
+    set +e
+    docker exec "$NODE_RUNTIME_CNAME" bash -c '
+      set -e
+      cd /tmp/mvp-scripts
+      CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz /tmp/SHASUMS256.txt
+      [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" = "/opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64" ]
+      sudo -u vinto-mvp /opt/vinto-mvp-web/runtime/active/bin/node --version | grep -qx v22.18.0
+      # Idempotencia: reinstalar la misma versión no falla ni la reemplaza.
+      CONFIRM=yes bash deploy.sh install-node-runtime 22.18.0 /tmp/node-v22.18.0-linux-x64.tar.xz /tmp/SHASUMS256.txt
+      # Una versión FALSA nueva (sin descargar otro tarball real de ~30MB) nunca borra la primera.
+      mkdir -p /tmp/fakever/node-v22.99.0-linux-x64/bin
+      printf "#!/bin/sh\necho v22.99.0-fake\n" > /tmp/fakever/node-v22.99.0-linux-x64/bin/node
+      chmod +x /tmp/fakever/node-v22.99.0-linux-x64/bin/node
+      tar -cJf /tmp/node-v22.99.0-linux-x64.tar.xz -C /tmp/fakever node-v22.99.0-linux-x64
+      sha256sum /tmp/node-v22.99.0-linux-x64.tar.xz | sed "s#/tmp/##" > /tmp/SHASUMS256-fake.txt
+      CONFIRM=yes bash deploy.sh install-node-runtime 22.99.0 /tmp/node-v22.99.0-linux-x64.tar.xz /tmp/SHASUMS256-fake.txt
+      [ -d /opt/vinto-mvp-web/runtime/node-v22.18.0-linux-x64 ]
+      [ "$(readlink -f /opt/vinto-mvp-web/runtime/active)" = "/opt/vinto-mvp-web/runtime/node-v22.99.0-linux-x64" ]
+    ' >/tmp/verify-noderuntime-install.log 2>&1
+    install_ok=$?
+    set -e
+    if [ "$install_ok" -eq 0 ]; then
+      report "install-node-runtime: instalación real verificada + idempotente + no borra versiones anteriores" 0
+    else
+      echo "--- log C.1-1 instalación ---"; cat /tmp/verify-noderuntime-install.log
+      report "install-node-runtime: instalación real verificada + idempotente + no borra versiones anteriores" 1
+    fi
+  fi
+fi
+
+echo "=== Prueba focalizada C.1-2: artefacto frontend externo (commit + checksum) ==="
+ARTIFACT_CNAME=""
+set +e
+create_container vinto-mvp-verify-artifact --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 300
+artifact_create_status=$?
+set -e
+if [ "$artifact_create_status" -ne 0 ]; then
+  report "install-frontend-artifact: validación de commit/checksum (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  ARTIFACT_CNAME="$CREATED_NAME"
+  docker cp "$SCRIPT_DIR/.." "$ARTIFACT_CNAME:/tmp/mvp-scripts" >/dev/null
+  set +e
+  docker exec "$ARTIFACT_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo >/dev/null
+    useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
+    SHA_OK="1111111111111111111111111111111111111111"
+    SHA_OTHER="2222222222222222222222222222222222222222"
+    mkdir -p /opt/vinto-mvp-web/releases/$SHA_OK/backend /opt/vinto-mvp-web/releases/$SHA_OTHER/backend
+    chown -R vinto-mvp:vinto-mvp /opt/vinto-mvp-web
+
+    mkdir -p /tmp/fakeartifact/standalone
+    echo "fake server" > /tmp/fakeartifact/standalone/server.js
+    tar -czf /tmp/artifact.tar.gz -C /tmp/fakeartifact standalone
+    REAL_SHA256="$(sha256sum /tmp/artifact.tar.gz | awk "{print \$1}")"
+    printf "VINTO_MVP_ARTIFACT_COMMIT=%s\nVINTO_MVP_ARTIFACT_NODE_VERSION=22.18.0\nVINTO_MVP_ARTIFACT_SHA256=%s\n" "$SHA_OK" "$REAL_SHA256" > /tmp/artifact.manifest
+
+    cd /tmp/mvp-scripts
+    # 1. commit correcto + checksum correcto -> instala.
+    CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA_OK" /tmp/artifact.tar.gz /tmp/artifact.manifest
+    [ -f /opt/vinto-mvp-web/releases/$SHA_OK/dist/standalone/server.js ]
+
+    # 2. commit del manifiesto no coincide con el pedido -> rechaza, no instala nada para SHA_OTHER.
+    ! CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA_OTHER" /tmp/artifact.tar.gz /tmp/artifact.manifest
+    [ ! -e /opt/vinto-mvp-web/releases/$SHA_OTHER/dist ]
+
+    # 3. artefacto manipulado (checksum ya no coincide con el manifiesto) -> rechaza.
+    cp /tmp/artifact.tar.gz /tmp/tampered.tar.gz
+    printf "x" >> /tmp/tampered.tar.gz
+    sed "s/$SHA_OK/$SHA_OTHER/" /tmp/artifact.manifest > /tmp/other.manifest
+    ! CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA_OTHER" /tmp/tampered.tar.gz /tmp/other.manifest
+    [ ! -e /opt/vinto-mvp-web/releases/$SHA_OTHER/dist ]
+
+    # 4. reinstalar sobre un release que YA tiene dist/ -> rechaza, nunca sobrescribe.
+    ! CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA_OK" /tmp/artifact.tar.gz /tmp/artifact.manifest
+  ' >/tmp/verify-artifact.log 2>&1
+  artifact_ok=$?
+  set -e
+  if [ "$artifact_ok" -eq 0 ]; then
+    report "install-frontend-artifact: instala con commit+checksum correctos; rechaza commit erróneo, artefacto manipulado y sobrescritura" 0
+  else
+    echo "--- log C.1-2 ---"; cat /tmp/verify-artifact.log
+    report "install-frontend-artifact: instala con commit+checksum correctos; rechaza commit erróneo, artefacto manipulado y sobrescritura" 1
+  fi
+fi
+
+echo "=== Prueba focalizada C.1-3: sintaxis systemd (systemd-analyze, misma versión que el VPS) ==="
+# El VPS real corre systemd 255 (confirmado en CLOUD-DEP-02B.1-A); ubuntu:24.04 trae la misma
+# versión mayor. "systemd-analyze verify" no necesita que systemd sea PID 1: valida el archivo de
+# unidad igual. No se declara probado el ARRANQUE real (eso sigue pendiente del VPS), solo la
+# sintaxis — ver limitación ya documentada en la prueba 8 de este mismo archivo.
+SYSTEMD_CNAME=""
+set +e
+create_container vinto-mvp-verify-systemd --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 300
+systemd_create_status=$?
+set -e
+if [ "$systemd_create_status" -ne 0 ]; then
+  report "systemd-analyze verify sobre los 2 units del MVP (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  SYSTEMD_CNAME="$CREATED_NAME"
+  # "docker cp" SÍ necesita la conversión normal de Git Bash (el origen "$MVP_DIR/systemd" es una
+  # ruta real del HOST) — se ejecuta ANTES de activar MSYS_NO_PATHCONV, que a partir de aquí
+  # protege los argumentos /tmp/mvp-systemd/... (rutas DENTRO del contenedor) de "systemd-analyze
+  # verify": sin esa protección, Git Bash los reescribiría como rutas de Windows y produciría un
+  # error confuso que no tiene nada que ver con la unidad en sí (p. ej. "Couldn't process aliases").
+  docker cp "$MVP_DIR/systemd" "$SYSTEMD_CNAME:/tmp/mvp-systemd" >/dev/null
+  export MSYS_NO_PATHCONV=1
+  set +e
+  docker exec "$SYSTEMD_CNAME" bash -c '
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends systemd >/dev/null
+  ' >/tmp/verify-systemd-setup.log 2>&1
+  systemd_setup_ok=$?
+  set -e
+  if [ "$systemd_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación C.1-3 ---"; cat /tmp/verify-systemd-setup.log
+    report "systemd-analyze verify sobre los 2 units del MVP (omitida: no se pudo instalar systemd en el contenedor de ensayo)" 1
+  else
+    set +e
+    no_unknown_key="$(docker exec "$SYSTEMD_CNAME" systemd-analyze verify /tmp/mvp-systemd/vinto-mvp-backend.service /tmp/mvp-systemd/vinto-mvp-frontend.service 2>&1 | grep -i 'unknown key' || true)"
+    set -e
+    if [ -z "$no_unknown_key" ]; then
+      report "ningún 'Unknown key name' en los units (StartLimitIntervalSec/Burst correctamente en [Unit])" 0
+    else
+      echo "$no_unknown_key"
+      report "ningún 'Unknown key name' en los units (StartLimitIntervalSec/Burst correctamente en [Unit])" 1
+    fi
+    # "systemd-analyze verify" también comprueba que el binario de ExecStart exista y sea
+    # ejecutable (no solo la sintaxis) — en un contenedor vacío eso fallaría SIEMPRE, sin que
+    # signifique nada sobre la unidad en sí. Se crean ejecutables de relleno exactamente en las
+    # rutas que ambas unidades referencian, para una verificación honesta de la unidad completa.
+    set +e
+    docker exec "$SYSTEMD_CNAME" bash -c '
+      mkdir -p /opt/vinto-mvp-web/current/backend/.venv/bin /opt/vinto-mvp-web/runtime/active/bin
+      printf "#!/bin/sh\ntrue\n" > /opt/vinto-mvp-web/current/backend/.venv/bin/uvicorn
+      printf "#!/bin/sh\ntrue\n" > /opt/vinto-mvp-web/runtime/active/bin/node
+      chmod +x /opt/vinto-mvp-web/current/backend/.venv/bin/uvicorn /opt/vinto-mvp-web/runtime/active/bin/node
+    ' >/tmp/verify-systemd-stubs.log 2>&1
+    stubs_ok=$?
+    set -e
+    if [ "$stubs_ok" -ne 0 ]; then
+      echo "--- log C.1-3 stubs ---"; cat /tmp/verify-systemd-stubs.log
+      report "systemd-analyze verify: vinto-mvp-frontend.service sintácticamente válido (systemd 255, igual que el VPS)" 1
+    else
+      set +e
+      docker exec "$SYSTEMD_CNAME" systemd-analyze verify /tmp/mvp-systemd/vinto-mvp-frontend.service >/tmp/verify-systemd-frontend.log 2>&1
+      frontend_verify_ok=$?
+      set -e
+      if [ "$frontend_verify_ok" -eq 0 ]; then
+        report "systemd-analyze verify: vinto-mvp-frontend.service sintácticamente válido (systemd 255, igual que el VPS)" 0
+      else
+        echo "--- log C.1-3 frontend ---"; cat /tmp/verify-systemd-frontend.log
+        report "systemd-analyze verify: vinto-mvp-frontend.service sintácticamente válido (systemd 255, igual que el VPS)" 1
+      fi
+    fi
+  fi
+  unset MSYS_NO_PATHCONV
+fi
+
+echo "=== Prueba focalizada C.1-4: wrapper de Docker Compose (DEP55-02B.1-C.1, Fase D) ==="
+set +e
+( source "$SCRIPT_DIR/../lib_common.sh"; detect_compose_cmd; echo "${COMPOSE_CMD[@]}" )
+detect_status=$?
+set -e
+if [ "$detect_status" -eq 0 ]; then
+  report "detect_compose_cmd encuentra un comando compose utilizable en este host" 0
+else
+  report "detect_compose_cmd encuentra un comando compose utilizable en este host" 1
+fi
+# Estático: confirmar que deploy.sh/rollback.sh usan el wrapper (COMPOSE_CMD) y no "docker compose"
+# literal fuera de comentarios — así nunca queda un rastro sin adaptar.
+literal_compose_calls="$(grep -vE '^\s*#' "$SCRIPT_DIR/../deploy.sh" "$SCRIPT_DIR/../rollback.sh" | grep -E '\bdocker compose\b' || true)"
+if [ -z "$literal_compose_calls" ]; then
+  report "deploy.sh/rollback.sh no invocan 'docker compose' literal (usan detect_compose_cmd/COMPOSE_CMD)" 0
+else
+  echo "$literal_compose_calls"
+  report "deploy.sh/rollback.sh no invocan 'docker compose' literal (usan detect_compose_cmd/COMPOSE_CMD)" 1
+fi
+if grep -q 'COMPOSE_CMD\[@\]' "$SCRIPT_DIR/../deploy.sh" && grep -q 'COMPOSE_CMD\[@\]' "$SCRIPT_DIR/../rollback.sh"; then
+  report "deploy.sh y rollback.sh usan \${COMPOSE_CMD[@]} para levantar/detener PostgreSQL" 0
+else
+  report "deploy.sh y rollback.sh usan \${COMPOSE_CMD[@]} para levantar/detener PostgreSQL" 1
+fi
+
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"

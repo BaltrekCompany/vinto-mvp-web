@@ -37,6 +37,15 @@
 #     releases/<sha>/           <- un checkout + venv + build completo por versión desplegada
 #     current -> releases/<sha> <- symlink activo; lo referencian los units de systemd
 #
+# CLOUD-DEP-02B.1-C.1 ("build externo + runtime Node aislado"): el frontend ya NO se compila en
+# el VPS. "install-frontend-artifact" instala un .tar.gz ya construido en Linux x86_64
+# (deploy/mvp/scripts/build-frontend-artifact.sh, ejecutado fuera del VPS) tras verificar su
+# checksum y que el commit del manifiesto coincide exactamente con el release. "install-node-runtime"
+# instala Node OFICIAL bajo $APP_DIR/runtime/ (nunca /usr/bin, nunca apt, nunca el PATH global) tras
+# verificar su checksum contra SHASUMS256.txt. "validate-compose" resuelve el YAML de Postgres con
+# el comando Compose disponible (plugin "docker compose" o binario "docker-compose", el que exista
+# en el host — ver lib_common.sh::detect_compose_cmd) sin levantar ningún contenedor.
+#
 # Uso previsto (en el VPS, por fases, en este orden). DEP55-R2-02: el preflight ya no es un paso
 # único — "preflight" cubre infraestructura/coexistencia, "preflight-build-deps" dependencias de
 # compilación (repetir tras 'user-and-dirs', una vez existe el usuario de servicio) y
@@ -44,9 +53,10 @@
 #   CONFIRM=yes bash deploy.sh preflight
 #   CONFIRM=yes bash deploy.sh user-and-dirs
 #   bash deploy.sh preflight-build-deps
+#   CONFIRM=yes bash deploy.sh install-node-runtime <version> <tarball> <SHASUMS256.txt>
 #   CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh checkout <sha>
 #   CONFIRM=yes bash deploy.sh python-venv <sha>
-#   CONFIRM=yes bash deploy.sh frontend-build <sha>
+#   CONFIRM=yes bash deploy.sh install-frontend-artifact <sha> <tar.gz> <manifiesto>
 #   bash deploy.sh preflight-startup
 #   CONFIRM=yes bash deploy.sh activate <sha>
 #   CONFIRM=yes TVC_BACKUP_CONFIRMED=yes bash deploy.sh postgres-up
@@ -188,25 +198,123 @@ phase_python_venv() {
   sudo -u "$SERVICE_USER" "$release_dir/backend/.venv/bin/pip" install --no-cache-dir -r "$release_dir/backend/requirements.txt"
 }
 
-phase_frontend_build() {
+# CLOUD-DEP-02B.1-C.1: el frontend YA NO se compila en el VPS (eso exigiría Node/Corepack/pnpm
+# instalados allí, aunque fuera de forma aislada, con todo el peso de un toolchain de build). Se
+# compila fuera (deploy/mvp/scripts/build-frontend-artifact.sh, en Linux x86_64, igual arquitectura
+# que el VPS) y el resultado — un .tar.gz de dist/standalone/ + un manifiesto de texto con el
+# commit, la versión de Node usada y el checksum SHA-256 — se transfiere al VPS por el canal que
+# decida el operador (scp/rsync; fuera del alcance de este script) ANTES de llamar a esta fase.
+#
+# Esta fase NUNCA confía en el nombre de archivo ni en la ruta: valida que el manifiesto declara
+# EXACTAMENTE el commit pedido y que el checksum del artefacto coincide con el del manifiesto,
+# ANTES de extraer nada. Si cualquiera de las dos cosas no coincide, rechaza el artefacto sin
+# tocar el release. Nunca sobrescribe un "dist/" ya instalado en ese release.
+phase_install_frontend_artifact() {
   require_confirm
-  local commit="${1:?Uso: deploy.sh frontend-build <commit-sha>}"
+  local commit="${1:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
   require_full_sha "$commit"
+  local artifact="${2:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
+  local manifest="${3:?Uso: deploy.sh install-frontend-artifact <sha> <artefacto.tar.gz> <manifiesto>}"
   local release_dir="$APP_DIR/releases/$commit"
-  local domain="${VINTO_MVP_DOMAIN:?Definir VINTO_MVP_DOMAIN (p. ej. vinto-mvp.baltrekservices.com) antes de compilar}"
   if [ ! -d "$release_dir" ]; then
     echo "FALLA: $release_dir no existe. Ejecutar 'checkout $commit' primero." >&2
     exit 1
   fi
-  cd "$release_dir"
-  sudo -u "$SERVICE_USER" corepack pnpm install --frozen-lockfile
-  # NEXT_PUBLIC_API_URL se incrusta en el bundle del cliente EN TIEMPO DE BUILD (confirmado en
-  # CLOUD-01B-1): debe fijarse aquí, no en el systemd unit del frontend.
-  sudo -u "$SERVICE_USER" env NEXT_PUBLIC_API_URL="https://$domain" pnpm run build
-  if [ ! -f "$release_dir/dist/standalone/server.js" ]; then
-    echo "El build no generó dist/standalone/server.js — revisar next.config.ts (output: \"standalone\") y .sites-runtime/execution-profile.json (debe estar AUSENTE para el perfil 'portable')." >&2
+  if [ ! -f "$artifact" ]; then
+    echo "FALLA: no existe el artefacto $artifact." >&2
     exit 1
   fi
+  if [ ! -f "$manifest" ]; then
+    echo "FALLA: no existe el manifiesto $manifest." >&2
+    exit 1
+  fi
+  local manifest_commit manifest_sha256
+  manifest_commit="$(env_value "$manifest" VINTO_MVP_ARTIFACT_COMMIT)"
+  manifest_sha256="$(env_value "$manifest" VINTO_MVP_ARTIFACT_SHA256)"
+  if [ "$manifest_commit" != "$commit" ]; then
+    echo "FALLA: el manifiesto declara el commit '$manifest_commit', no coincide con el commit pedido '$commit'. Artefacto rechazado, no se instala nada." >&2
+    exit 1
+  fi
+  local actual_sha256
+  actual_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
+  if [ "$actual_sha256" != "$manifest_sha256" ]; then
+    echo "FALLA: el checksum del artefacto ($actual_sha256) no coincide con el declarado en el manifiesto ($manifest_sha256). Artefacto rechazado, no se instala nada." >&2
+    exit 1
+  fi
+  if [ -e "$release_dir/dist" ]; then
+    echo "FALLA: $release_dir/dist ya existe. Nunca se sobrescribe un artefacto ya instalado en este release." >&2
+    exit 1
+  fi
+  sudo -u "$SERVICE_USER" mkdir -p "$release_dir/dist"
+  sudo -u "$SERVICE_USER" tar -xzf "$artifact" -C "$release_dir/dist"
+  if [ ! -f "$release_dir/dist/standalone/server.js" ]; then
+    echo "FALLA: el artefacto extraído no contiene dist/standalone/server.js. No se activa este release." >&2
+    exit 1
+  fi
+  echo "Artefacto frontend instalado y verificado para $commit (commit y checksum coinciden con el manifiesto: $actual_sha256)."
+}
+
+# Instala una versión de Node AISLADA bajo $APP_DIR/runtime/, nunca en /usr/bin ni vía apt (nunca
+# toca el PATH global, compartido con TVC/ETL). Verifica el checksum SHA-256 del tarball contra el
+# archivo SHASUMS256.txt oficial de nodejs.org (descargado aparte por el operador) ANTES de
+# extraer nada; rechaza el tarball si no coincide. Nunca borra una versión anterior: cada versión
+# vive en su propio directorio (node-v<version>-linux-x64/) y "active" es un symlink que se
+# conmuta atómicamente, igual que "current" para los releases de código.
+phase_install_node_runtime() {
+  require_confirm
+  local version="${1:?Uso: deploy.sh install-node-runtime <version> <tarball.tar.xz> <SHASUMS256.txt>}"
+  local tarball="${2:?Uso: deploy.sh install-node-runtime <version> <tarball.tar.xz> <SHASUMS256.txt>}"
+  local shasums_file="${3:?Uso: deploy.sh install-node-runtime <version> <tarball.tar.xz> <SHASUMS256.txt>}"
+  if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "FALLA: '$version' no tiene forma de versión (X.Y.Z)." >&2
+    exit 1
+  fi
+  local tarball_name="node-v${version}-linux-x64.tar.xz"
+  if [ "$(basename "$tarball")" != "$tarball_name" ]; then
+    echo "FALLA: el tarball se llama '$(basename "$tarball")', se esperaba exactamente '$tarball_name'. Rechazado." >&2
+    exit 1
+  fi
+  local expected_sha256
+  expected_sha256="$(grep -E " ${tarball_name}\$" "$shasums_file" | awk '{print $1}')"
+  if [ -z "$expected_sha256" ]; then
+    echo "FALLA: no se encontró una línea para '$tarball_name' en $shasums_file. Rechazado." >&2
+    exit 1
+  fi
+  local actual_sha256
+  actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
+  if [ "$actual_sha256" != "$expected_sha256" ]; then
+    echo "FALLA: el checksum del tarball ($actual_sha256) no coincide con el oficial ($expected_sha256) — posible archivo corrupto o manipulado. Rechazado, no se instala." >&2
+    exit 1
+  fi
+  local runtime_dir="$APP_DIR/runtime/node-v${version}-linux-x64"
+  if [ -e "$runtime_dir" ]; then
+    echo "$runtime_dir ya existe; no se reinstala ni se sobrescribe (una versión instalada nunca se borra al instalar otra)."
+  else
+    sudo -u "$SERVICE_USER" mkdir -p "$APP_DIR/runtime"
+    sudo -u "$SERVICE_USER" tar -xJf "$tarball" -C "$APP_DIR/runtime"
+    if [ ! -x "$runtime_dir/bin/node" ]; then
+      echo "FALLA: tras extraer, no existe $runtime_dir/bin/node ejecutable. Abortando sin activar." >&2
+      exit 1
+    fi
+  fi
+  sudo -u "$SERVICE_USER" ln -sfn "$runtime_dir" "$APP_DIR/runtime/active.tmp"
+  sudo -u "$SERVICE_USER" mv -T "$APP_DIR/runtime/active.tmp" "$APP_DIR/runtime/active"
+  sudo -u "$SERVICE_USER" sh -c "printf 'INSTALLED_AT=%s VERSION=%s SHA256=%s\n' \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" '$version' '$actual_sha256' >> '$APP_DIR/runtime/INSTALLED.log'"
+  echo "Runtime Node $version activo (runtime/active -> $runtime_dir). Checksum verificado: $actual_sha256."
+}
+
+# Valida el YAML de docker-compose.postgres.yml con el comando Compose realmente disponible en
+# este host (lib_common.sh::detect_compose_cmd), SIN levantar ningún contenedor ni red
+# persistente — "config" solo resuelve y muestra la configuración final.
+phase_validate_compose() {
+  detect_compose_cmd
+  local compose_dir="$SCRIPT_DIR/../docker"
+  if [ ! -f "$compose_dir/.env" ]; then
+    echo "FALTA $compose_dir/.env. No se puede validar sin él (las variables son obligatorias en el YAML)." >&2
+    exit 1
+  fi
+  "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" config
+  echo "Compose command detectado: ${COMPOSE_CMD[*]}"
 }
 
 # Conmuta "current" al release ya compilado. Es la ÚNICA fase que mueve el symlink para una
@@ -320,8 +428,9 @@ phase_postgres_up() {
   assert_path_not_shared_with_other_containers "$pgdata_dir"
   sudo mkdir -p "$pgdata_dir"
   sudo chown 999:999 "$pgdata_dir"  # UID/GID del rol postgres dentro de la imagen oficial
-  docker compose -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" up -d
-  docker compose -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" ps
+  detect_compose_cmd
+  "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" up -d
+  "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" ps
 }
 
 # Crea la base de negocio "vinto_piloto" dentro del contenedor del MVP (el contenedor arranca
@@ -479,7 +588,9 @@ case "${1:-}" in
   user-and-dirs) phase_user_and_dirs ;;
   checkout) phase_checkout "${2:-}" ;;
   python-venv) phase_python_venv "${2:-}" ;;
-  frontend-build) phase_frontend_build "${2:-}" ;;
+  install-frontend-artifact) phase_install_frontend_artifact "${2:-}" "${3:-}" "${4:-}" ;;
+  install-node-runtime) phase_install_node_runtime "${2:-}" "${3:-}" "${4:-}" ;;
+  validate-compose) phase_validate_compose ;;
   activate) phase_activate "${2:-}" ;;
   postgres-up) phase_postgres_up ;;
   postgres-bootstrap-db) phase_postgres_bootstrap_db ;;
@@ -491,7 +602,7 @@ case "${1:-}" in
   systemd-install) phase_systemd_install ;;
   healthcheck) phase_healthcheck ;;
   *)
-    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|python-venv <sha>|frontend-build <sha>|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
+    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball> <SHASUMS256.txt>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
     exit 1
     ;;
 esac

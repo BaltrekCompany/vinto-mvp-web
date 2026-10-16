@@ -108,11 +108,12 @@ rollback_postgres() {
   require_confirm
   local compose_dir="$SCRIPT_DIR/../docker"
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
+  detect_compose_cmd
   if [ ! -f "$compose_dir/.env" ]; then
     echo "AVISO: no existe $compose_dir/.env; se intenta 'down' igualmente por nombre de proyecto (vinto-mvp)." >&2
-    docker compose -f "$compose_dir/docker-compose.postgres.yml" -p "$MVP_COMPOSE_PROJECT" down
+    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" -p "$MVP_COMPOSE_PROJECT" down
   else
-    docker compose -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down
+    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down
   fi
   echo "Contenedor $MVP_POSTGRES_CONTAINER detenido. El bind-mount de datos NO se tocó (este script no tiene ninguna opción para borrarlo)."
   echo "postgres-vinto (TVC) no se tocó."

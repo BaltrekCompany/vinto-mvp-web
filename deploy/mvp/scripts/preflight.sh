@@ -12,12 +12,15 @@
 # arranque — una dependencia de compilación ausente (p. ej. Node) bloqueaba un chequeo de
 # infraestructura que no la necesita para nada. Ahora son 3 etapas independientes:
 #   infra        — puertos, rutas, identidad de recursos, TVC, Docker, backup. NO depende de
-#                  node/python/git/corepack: estos NUNCA aparecen en esta etapa.
-#   build-deps   — SOLO las dependencias necesarias para compilar/migrar (node, corepack, git,
-#                  curl, python3.12), y que la ruta real de node/corepack para el usuario de
-#                  servicio coincide con la que los units de systemd asumen.
+#                  python/git/curl/compose: estos NUNCA aparecen en esta etapa.
+#   build-deps   — SOLO las dependencias necesarias en ESTE host (git, curl, python3.12, un
+#                  comando compose disponible). CLOUD-DEP-02B.1-C.1: node/corepack/pnpm YA NO
+#                  aparecen aquí — el frontend se compila fuera del VPS (ver
+#                  deploy/mvp/scripts/build-frontend-artifact.sh); el VPS solo necesita un Node
+#                  AISLADO para EJECUTAR el resultado, comprobado en 'startup'.
 #   startup      — justo antes de activar/arrancar: puertos todavía libres, el release a activar
-#                  está completo, el contenedor de PostgreSQL (si se requiere) está saludable.
+#                  está completo, el runtime Node aislado existe, el contenedor de PostgreSQL (si
+#                  se requiere) está saludable.
 # Sin argumento, ejecuta las 3 en orden (equivalente a antes, para una revisión rápida manual).
 #
 # Uso: bash preflight.sh {infra|build-deps|startup|all}
@@ -177,12 +180,16 @@ stage_build_deps() {
 echo "=== VINTO MVP WEB — preflight: dependencias de build/migración (solo lectura) ==="
 echo "Esta etapa es independiente de 'infra': una dependencia ausente aquí nunca debe impedir un"
 echo "chequeo de infraestructura que no la necesita (DEP55-R2-02)."
+echo "CLOUD-DEP-02B.1-C.1: el frontend ya NO se compila en el VPS (se compila externamente, ver"
+echo "deploy/mvp/scripts/build-frontend-artifact.sh) — por eso node/corepack/pnpm YA NO son"
+echo "dependencias de ESTE host; solo se necesita un Node AISLADO para EJECUTAR el resultado,"
+echo "comprobado en la etapa 'startup', justo antes de activar."
 
-for bin in git curl node; do
+for bin in git curl; do
   if command -v "$bin" >/dev/null 2>&1; then
     ok "dependencia '$bin' disponible ($(command -v "$bin"))"
   else
-    fail "dependencia '$bin'" "no está instalada; requerida antes de 'checkout'/'frontend-build'"
+    fail "dependencia '$bin'" "no está instalada; requerida antes de 'checkout'"
   fi
 done
 if command -v python3.12 >/dev/null 2>&1; then
@@ -190,42 +197,26 @@ if command -v python3.12 >/dev/null 2>&1; then
 else
   fail "dependencia 'python3.12'" "no está instalada; requerida para el venv del backend"
 fi
-if command -v corepack >/dev/null 2>&1; then
-  ok "dependencia 'corepack' (pnpm) disponible ($(command -v corepack))"
+
+# Compose: se necesita ALGUNO de los dos (plugin "docker compose" o binario standalone
+# "docker-compose") para postgres-up/postgres-roles más adelante. No se instala nada aquí.
+if docker compose version >/dev/null 2>&1; then
+  ok "comando compose disponible: 'docker compose' (plugin, $(docker compose version --short 2>/dev/null))"
+elif command -v docker-compose >/dev/null 2>&1; then
+  ok "comando compose disponible: 'docker-compose' (binario standalone, $(docker-compose version --short 2>/dev/null || docker-compose --version 2>/dev/null))"
 else
-  fail "dependencia 'corepack'" "no está instalada; requerida para compilar el frontend"
+  fail "docker compose / docker-compose" "ninguno de los dos está disponible; requerido para 'postgres-up'/'validate-compose'"
 fi
 
-# Las rutas reales de node/corepack para el USUARIO DE SERVICIO pueden diferir de las del usuario
-# que ejecuta este preflight (p. ej. node instalado vía nvm en el home de "ubuntu", invisible para
-# un usuario de sistema sin ese PATH) — DEP55-R2-02: "confirmar las rutas reales de Node/Corepack
-# que utilizará el usuario de servicio". Solo se puede comprobar una vez que ese usuario existe.
-if id "$MVP_SERVICE_USER" >/dev/null 2>&1; then
-  service_node="$(sudo -u "$MVP_SERVICE_USER" sh -c 'command -v node' 2>/dev/null || true)"
-  if [ -z "$service_node" ]; then
-    fail "node para $MVP_SERVICE_USER" "no se encuentra node en el PATH de $MVP_SERVICE_USER (aunque exista para otro usuario). El unit de systemd usa /usr/bin/node explícitamente: instalar node donde $MVP_SERVICE_USER pueda ejecutarlo, o actualizar ExecStart si la ruta real es otra."
-  elif [ "$service_node" != "/usr/bin/node" ]; then
-    warn "node para $MVP_SERVICE_USER" "resuelve a '$service_node', no a '/usr/bin/node' (la ruta que usa deploy/mvp/systemd/vinto-mvp-frontend.service). Actualizar el ExecStart del unit a la ruta real antes de 'systemd-install', o instalar node en /usr/bin."
-  else
-    ok "node para $MVP_SERVICE_USER resuelve a /usr/bin/node, igual que ExecStart del unit del frontend"
-  fi
-  service_corepack="$(sudo -u "$MVP_SERVICE_USER" sh -c 'command -v corepack' 2>/dev/null || true)"
-  if [ -z "$service_corepack" ]; then
-    fail "corepack para $MVP_SERVICE_USER" "no se encuentra en el PATH de $MVP_SERVICE_USER; requerido por deploy.sh frontend-build (se ejecuta como ese usuario)."
-  else
-    ok "corepack para $MVP_SERVICE_USER disponible ($service_corepack)"
-  fi
-else
-  warn "rutas de node/corepack para $MVP_SERVICE_USER" "el usuario todavía no existe (se crea en 'user-and-dirs'); repetir esta etapa después de crearlo y antes de 'frontend-build'."
-fi
-
-echo "--- Instalación recomendada de Node/Corepack (solo documentación; no se instala nada aquí) ---"
-echo "Fijar una versión concreta de Node (p. ej. paquete NodeSource para la versión LTS que exige"
-echo "package.json: \"engines\": { \"node\": \">=22.18.0\" }), nunca 'apt install nodejs' genérico sin"
-echo "anclar versión. Corepack ya viene con Node >=16.9; 'corepack enable' una sola vez. pnpm queda"
-echo "fijado por 'packageManager' en package.json (pnpm@11.25.0) — corepack lo resuelve solo, sin"
-echo "instalar pnpm manualmente. Alternativa sin red en el VPS: compilar el frontend en CI/local y"
-echo "desplegar dist/standalone/ ya construido (artefacto), saltando 'frontend-build' en el VPS."
+echo "--- Instalación recomendada (solo documentación; no se instala nada aquí) ---"
+echo "Node: runtime oficial AISLADO bajo \$APP_DIR/runtime/ vía 'deploy.sh install-node-runtime'"
+echo "(verifica checksum SHA-256 contra SHASUMS256.txt antes de extraer); nunca apt/NodeSource"
+echo "instalando en /usr/bin ni modificando el PATH global compartido con TVC/ETL."
+echo "Frontend: compilar en un host Linux x86_64 aparte con"
+echo "deploy/mvp/scripts/build-frontend-artifact.sh, transferir el .tar.gz + manifiesto al VPS, e"
+echo "instalar con 'deploy.sh install-frontend-artifact' (verifica commit y checksum antes de"
+echo "extraer). pnpm queda fijado por 'packageManager' en package.json (pnpm@11.25.0) — solo en el"
+echo "host de build, nunca en el VPS."
 }
 
 stage_startup() {
@@ -244,12 +235,22 @@ done
 if [ -L "$MVP_APP_DIR/current" ]; then
   release_dir="$(readlink -f "$MVP_APP_DIR/current")"
   if [ -x "$release_dir/backend/.venv/bin/uvicorn" ] && [ -f "$release_dir/dist/standalone/server.js" ]; then
-    ok "'current' -> $release_dir está completo (venv + build del frontend)"
+    ok "'current' -> $release_dir está completo (venv + artefacto frontend instalado)"
   else
-    fail "'current'" "apunta a $release_dir pero falta el venv o el build del frontend; no arrancar los servicios todavía"
+    fail "'current'" "apunta a $release_dir pero falta el venv o el artefacto frontend; no arrancar los servicios todavía"
   fi
 else
   warn "'current'" "todavía no existe (esperado antes de la primera 'activate')"
+fi
+
+# Runtime Node AISLADO (CLOUD-DEP-02B.1-C.1): el unit de systemd del frontend usa
+# $MVP_APP_DIR/runtime/active/bin/node, nunca /usr/bin/node. Si no existe todavía, no se puede
+# arrancar el frontend.
+if [ -x "$MVP_APP_DIR/runtime/active/bin/node" ]; then
+  node_version="$("$MVP_APP_DIR/runtime/active/bin/node" --version 2>/dev/null || echo '?')"
+  ok "runtime/active -> $(readlink -f "$MVP_APP_DIR/runtime/active" 2>/dev/null) ($node_version), coincide con el ExecStart del unit del frontend"
+else
+  fail "runtime/active" "no existe todavía un Node ejecutable en $MVP_APP_DIR/runtime/active/bin/node; ejecutar 'deploy.sh install-node-runtime' antes de 'systemd-install'/'activate'"
 fi
 
 if docker ps --format '{{.Names}}' | grep -qx "$MVP_POSTGRES_CONTAINER"; then
