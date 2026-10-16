@@ -186,15 +186,22 @@ funcione a medias (lectura sin escritura): la hace fallar de inmediato con `insu
 cualquier intento de uso, lo que se detecta en la primera prueba, no en producción.
 
 **Caso especial: funciones invocables directamente con `SELECT` (no funciones de trigger).** A
-diferencia de una tabla, PostgreSQL concede `EXECUTE` a `PUBLIC` por defecto sobre toda función nueva, y
-**ningún `ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS` lo evita** para objetos futuros — es una limitación
-de PostgreSQL documentada desde hace años (BUG #8685) y confirmada aquí de forma empírica (PG54-FINAL):
-tras ejecutar ese `ALTER DEFAULT PRIVILEGES`, una función recién creada seguía con `EXECUTE` concedido a
-`PUBLIC`. La única forma fiable es revocarlo del objeto ya creado. Por eso, toda migración `0007` en
-adelante que cree una función invocable directamente (no una función de trigger — esas devuelven el
-pseudotipo `trigger` y PostgreSQL rechaza invocarlas fuera de un disparador, sin importar el `EXECUTE`
-que tengan) **debe incluir, en el mismo archivo, `REVOKE EXECUTE ON FUNCTION <nombre>(<tipos>) FROM
-PUBLIC;` inmediatamente después de crearla**, antes de conceder `EXECUTE` a quien sí la necesite. Ver
-`backend/roles/04_function_grants.sql` (aplica este mismo patrón retroactivamente, solo como `GRANT`/
-`REVOKE` de infraestructura, a `vinto_txn.management_start_year` de `0004_bobbin_production.sql`, sin
-reescribir esa migración).
+diferencia de una tabla, PostgreSQL concede `EXECUTE` a `PUBLIC` por defecto sobre toda función nueva.
+`ALTER DEFAULT PRIVILEGES ... IN SCHEMA x REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` **no lo evita**
+(verificado: con `IN SCHEMA`, un `REVOKE` sobre funciones no registra nada en `pg_default_acl`; limitación
+de PostgreSQL documentada desde hace años, BUG #8685). La variante **sin** `IN SCHEMA` —
+`ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` — **sí
+funciona**: verificado que protege, con alcance global por rol creador, toda función nueva que
+`vinto_migrator` cree en cualquier esquema (confirmado también en un esquema sin ninguna entrada propia),
+sin afectar a funciones creadas por otro rol. Ya se aplica en `backend/roles/05_no_default_privileges.sql`
+y cubre automáticamente toda función invocable directamente que una migración `0007` en adelante cree
+(no una función de trigger — esas devuelven el pseudotipo `trigger` y PostgreSQL rechaza invocarlas fuera
+de un disparador, sin importar el `EXECUTE` que tengan). Aun así, declarar explícitamente a quién SÍ se
+le concede `EXECUTE` (`GRANT EXECUTE ON FUNCTION ... TO vinto_app;`) sigue siendo buena práctica, por la
+misma disciplina de privilegios explícitos que exige este modelo para tablas.
+
+Ese default **no protege retroactivamente** una función creada antes de aplicarlo: por eso
+`vinto_txn.management_start_year` (de `0004_bobbin_production.sql`, sin reescribir esa migración) sigue
+necesitando su propio `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC;` explícito sobre el objeto ya
+existente, en `backend/roles/04_function_grants.sql` — la única vía fiable para un objeto que ya existía
+cuando se configuró el default.

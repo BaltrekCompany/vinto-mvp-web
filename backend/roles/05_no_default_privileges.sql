@@ -33,20 +33,36 @@ ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA vinto_master, vinto_c
 ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA vinto_master, vinto_config, vinto_txn, vinto_audit, vinto_auth
   REVOKE ALL ON SEQUENCES FROM PUBLIC;
 
--- FUNCIONES: deliberadamente SIN "ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS" aquí. A diferencia de
--- tablas/secuencias, verificado empíricamente (y documentado como limitación de PostgreSQL desde hace
--- años: BUG #8685 "alter default privileges cannot revoke default execute privilege on functions",
--- vigente también en los hilos de pgsql-hackers sobre "Removing the default grant of EXECUTE on
--- functions/procedures to PUBLIC") que esta sentencia NO suprime el EXECUTE que PostgreSQL concede a
--- PUBLIC por defecto sobre toda función nueva: tras ejecutarla, una función recién creada seguía con
--- proacl NULL y PUBLIC con EXECUTE=true. Escribirla aquí daría una falsa sensación de protección.
+-- FUNCIONES: precisión incorporada tras la auditoría de ChatGPT sobre PR #54 (verificación final).
+-- La corrección anterior de este archivo concluyó, de un experimento con
+-- "ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator IN SCHEMA <esquemas> REVOKE EXECUTE ON FUNCTIONS
+-- FROM PUBLIC", que NINGUNA forma de ALTER DEFAULT PRIVILEGES podía suprimir el EXECUTE que PostgreSQL
+-- concede a PUBLIC por defecto sobre una función nueva. Repetido el experimento distinguiendo las dos
+-- variantes que documenta https://www.postgresql.org/docs/17/sql-alterdefaultprivileges.html:
+--   (a) "... IN SCHEMA x REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"  -> NO crea entrada en pg_default_acl
+--       para un REVOKE (confirmado: pg_default_acl queda vacío); el EXECUTE de PUBLIC NO se suprime.
+--   (b) "... FOR ROLE vinto_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" (SIN "IN SCHEMA")  -> SÍ
+--       crea una entrada global (defaclnamespace = 0) para ese rol; una función nueva creada por
+--       vinto_migrator en CUALQUIER esquema (se verificó en vinto_txn y en un esquema distinto sin
+--       ninguna entrada propia) queda con proacl NO NULO y PUBLIC/vinto_app/vinto_reference en
+--       EXECUTE=false. Una función creada por OTRO rol (no vinto_migrator) no se ve afectada: el
+--       alcance global es "por rol creador", no "para todo el clúster".
+-- La variante (b) sí funciona y es la que se aplica abajo. La documentación/el comentario anteriores de
+-- este archivo quedan corregidos: el problema era el "IN SCHEMA" combinado con REVOKE sobre funciones,
+-- no el mecanismo de ALTER DEFAULT PRIVILEGES para funciones en general.
+ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+-- Esto NO protege retroactivamente una función ya existente (verificado: vinto_txn.management_start_year,
+-- creada antes de este ALTER DEFAULT PRIVILEGES por la migración 0004, siguió con PUBLIC en
+-- EXECUTE=true después de aplicarlo). El REVOKE explícito sobre ese objeto en 04_function_grants.sql
+-- sigue siendo necesario y no se elimina.
 --
--- La única forma fiable es revocarlo del OBJETO YA CREADO (funciona siempre, verificado). Por eso: toda
--- migración futura (0007 en adelante) que cree una función invocable directamente con SELECT (no una
--- función de trigger, que PostgreSQL rechaza invocar directamente sin importar el EXECUTE — ver
--- 04_function_grants.sql) DEBE incluir, en el mismo archivo, su propio
--- "REVOKE EXECUTE ON FUNCTION <nombre>(<tipos>) FROM PUBLIC;" inmediatamente después de crearla, antes
--- de conceder EXECUTE a los roles que sí la necesiten.
+-- Toda migración futura (0007 en adelante) que cree una función invocable directamente con SELECT (no
+-- una función de trigger, que PostgreSQL rechaza invocar directamente sin importar el EXECUTE — ver
+-- 04_function_grants.sql) queda protegida por este default global SIN necesitar su propio REVOKE; aun
+-- así, conviene declarar explícitamente a quién SÍ se le concede EXECUTE (GRANT EXECUTE ON FUNCTION
+-- ... TO vinto_app;), por la misma disciplina de "declarar explícitamente cada privilegio" que exige
+-- este modelo para tablas.
 
 -- NO ejecutar ningún "... GRANT ... TO vinto_app" ni "... TO vinto_reference" en este archivo. Si una
 -- migración futura necesita que vinto_app lea o escriba una tabla nueva, el GRANT va DENTRO de esa

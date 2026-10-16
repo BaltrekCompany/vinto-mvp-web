@@ -446,26 +446,41 @@ def _run_role_model(boot_password, passwords):
         expect_ok("tabla futura sin migración-GRANT: vinto_app/vinto_reference/PUBLIC sin ningún privilegio (SELECT/INSERT/UPDATE/DELETE)",
                  future_table_is_fail_closed)
 
-        def future_function_follows_the_mandatory_revoke_convention():
-            # PG54-FINAL: a diferencia de una tabla, CREATE FUNCTION SÍ concede EXECUTE a PUBLIC por
-            # defecto, y ningún ALTER DEFAULT PRIVILEGES lo evita (ver backend/roles/
-            # 05_no_default_privileges.sql). La convención obligatoria para toda migración futura es
-            # revocarlo del objeto recién creado de inmediato; esta prueba demuestra que, siguiéndola,
-            # PUBLIC/vinto_app/vinto_reference quedan sin EXECUTE.
+        def future_function_protected_by_global_default():
+            # PG54-FINAL (verificación de ChatGPT): "ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator
+            # REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" (SIN "IN SCHEMA", aplicado en
+            # backend/roles/05_no_default_privileges.sql) SÍ protege automáticamente, con alcance global
+            # por rol creador, a cualquier función nueva — sin necesitar un REVOKE explícito por función.
+            # Esta prueba crea la función SIN ningún REVOKE propio y confirma que ya queda protegida.
             migrator_conn.execute("CREATE FUNCTION vinto_txn.futura_funcion_0007(x date) RETURNS integer LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT 1 $$")
-            migrator_conn.execute("REVOKE EXECUTE ON FUNCTION vinto_txn.futura_funcion_0007(date) FROM PUBLIC")
             try:
                 rows = migrator_conn.execute(
                     "SELECT role, has_function_privilege(role, 'vinto_txn.futura_funcion_0007(date)', 'EXECUTE') "
                     "FROM (VALUES ('vinto_app'),('vinto_reference'),('public')) AS r(role)").fetchall()
                 granted = [role for role, has in rows if has]
                 if granted:
-                    raise AssertionError(f"una función futura con REVOKE EXECUTE...FROM PUBLIC explícito sigue concediendo EXECUTE a: {granted!r}")
+                    raise AssertionError(f"una función futura SIN REVOKE propio quedó con EXECUTE para: {granted!r} (el default global no la protegió)")
             finally:
                 migrator_conn.execute("DROP FUNCTION IF EXISTS vinto_txn.futura_funcion_0007(date)")
 
-        expect_ok("función futura siguiendo la convención obligatoria (REVOKE EXECUTE...FROM PUBLIC explícito): "
-                 "vinto_app/vinto_reference/PUBLIC sin EXECUTE", future_function_follows_the_mandatory_revoke_convention)
+        expect_ok("función futura SIN REVOKE propio, protegida solo por el default global de vinto_migrator: "
+                 "vinto_app/vinto_reference/PUBLIC sin EXECUTE", future_function_protected_by_global_default)
+
+        def other_role_function_not_covered_by_migrator_default():
+            # No atribuir el default de vinto_migrator a otra identidad: una función creada por un rol
+            # DISTINTO (aquí, el administrador del clúster) no debe heredar ese REVOKE global.
+            with psycopg.connect(url(BOOT_USER, boot_password, DB), autocommit=True) as boot_conn:
+                boot_conn.execute("CREATE FUNCTION public.futura_funcion_otro_rol(x date) RETURNS integer LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT 1 $$")
+                try:
+                    has_it = boot_conn.execute(
+                        "SELECT has_function_privilege('public', 'public.futura_funcion_otro_rol(date)', 'EXECUTE')").fetchone()[0]
+                    if not has_it:
+                        raise AssertionError("una función creada por el administrador del clúster (no vinto_migrator) quedó sin EXECUTE para PUBLIC: el default de vinto_migrator se filtró a otra identidad")
+                finally:
+                    boot_conn.execute("DROP FUNCTION IF EXISTS public.futura_funcion_otro_rol(date)")
+
+        expect_ok("el default global de vinto_migrator NO se atribuye a una función creada por otra identidad",
+                 other_role_function_not_covered_by_migrator_default)
 
         def management_start_year_is_not_public():
             rows = migrator_conn.execute(

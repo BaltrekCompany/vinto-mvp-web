@@ -16,17 +16,19 @@
 -- invocarse directamente con SELECT, así que es la única donde el privilegio por defecto de PostgreSQL
 -- importa de verdad.
 --
--- PG54-FINAL: CREATE FUNCTION concede EXECUTE a PUBLIC por defecto — y, a diferencia de las tablas,
--- NINGÚN "ALTER DEFAULT PRIVILEGES ... REVOKE ... ON FUNCTIONS FROM PUBLIC" lo evita para objetos
--- futuros: es una limitación de PostgreSQL documentada desde hace años (PostgreSQL BUG #8685,
--- "alter default privileges cannot revoke default execute privilege on functions", y el hilo más
--- reciente "Removing the default grant of EXECUTE on functions/procedures to PUBLIC" en pgsql-hackers),
--- confirmada aquí de forma empírica: tras "ALTER DEFAULT PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS
--- FROM PUBLIC", una función nueva seguía teniendo proacl NULL y PUBLIC seguía con EXECUTE=true. La
--- única forma fiable es revocarlo del OBJETO YA CREADO, que sí funciona siempre (verificado). Por eso
--- toda migración futura que cree una función invocable directamente DEBE incluir, en el mismo archivo,
--- su propio "REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC;" (ver backend/migrations/README.md) — no basta
--- con no concederlo explícitamente a nadie, como sí basta para una tabla nueva.
+-- PG54-FINAL (verificación final de ChatGPT sobre PR #54): CREATE FUNCTION concede EXECUTE a PUBLIC
+-- por defecto. "ALTER DEFAULT PRIVILEGES ... IN SCHEMA x REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" NO lo
+-- evita (verificado: no registra nada en pg_default_acl para un REVOKE con IN SCHEMA), pero
+-- "ALTER DEFAULT PRIVILEGES FOR ROLE vinto_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" (SIN
+-- "IN SCHEMA", alcance global por rol creador — ver https://www.postgresql.org/docs/17/
+-- sql-alterdefaultprivileges.html) SÍ funciona y ya se aplica en 05_no_default_privileges.sql para
+-- TODA función que vinto_migrator cree desde ahora en cualquier esquema.
+--
+-- Eso NO protege retroactivamente a management_start_year, creada por la migración 0004 ANTES de que
+-- existiera ese default (verificado: proacl seguía NULL y PUBLIC con EXECUTE=true después de aplicar
+-- el default global). Por eso el REVOKE explícito de abajo, sobre el objeto ya existente, sigue siendo
+-- necesario — es la única vía fiable para un objeto creado antes del default, y además funciona siempre
+-- (a diferencia del REVOKE con IN SCHEMA, que no registra nada).
 
 \set ON_ERROR_STOP on
 
