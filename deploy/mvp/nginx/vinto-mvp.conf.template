@@ -1,0 +1,76 @@
+# VINTO MVP WEB — bloque nginx EXCLUSIVO del MVP (CLOUD-DEP-02A).
+#
+# NO ES EL ARCHIVO FINAL: es una plantilla para copiar a
+# /etc/nginx/sites-available/vinto-mvp en el VPS durante DEP-02B, tras autorización explícita.
+# Nunca edita ni reemplaza /etc/nginx/sites-available/vinto-tvc (el bloque de TVC permanece intacto).
+#
+# Reemplazar antes de instalar:
+#   __DOMAIN__            -> vinto-mvp.baltrekservices.com (subdominio candidato)
+#   __FRONTEND_PORT__     -> 3100
+#   __BACKEND_PORT__      -> 8100
+#
+# Protección de tráfico no autorizado durante el piloto cerrado (CLOUD-DEP-02A, Fase 3 §9):
+# el bloque "allow/deny" de abajo está comentado por defecto. Antes de abrir el piloto a los
+# primeros usuarios reales de VINTO, descomentar y completar con las IP/rangos autorizados (o
+# sustituir por auth_basic). Quitarlo solo cuando se decida abrir el acceso de forma más amplia,
+# nunca antes de validar internamente.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    # Redirección a HTTPS: se activa automáticamente cuando certbot emite el certificado
+    # (certbot reescribe este bloque, igual que ya hizo con vinto-tvc). Hasta entonces, este
+    # bloque sirve también el tráfico HTTP plano del piloto en modo cerrado.
+
+    # --- Restricción de acceso temporal del piloto (Fase 3 §9) --------------------------------
+    # satisfy any;
+    # allow 203.0.113.10;       # ejemplo: IP de la oficina/VPN de VINTO
+    # allow 203.0.113.0/24;
+    # deny all;
+    # --------------------------------------------------------------------------------------------
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /health {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /api/health {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:__FRONTEND_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# HTTPS (CLOUD-DEP-02A, Fase 5 punto 9: "Nginx/HTTPS en incremento posterior"): este bloque se
+# añade en DEP-02B ejecutando `certbot --nginx -d __DOMAIN__`, igual que ya está configurado para
+# vinto-tvc.baltrekservices.com. No se preconfigura aquí ninguna ruta de certificado porque
+# certbot todavía no los ha emitido para este subdominio.

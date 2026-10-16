@@ -1,0 +1,46 @@
+[Unit]
+Description=VINTO MVP WEB — backend FastAPI (piloto, aislado de TVC)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Usuario de servicio DEDICADO (CLOUD-DEP-02A, Fase 3 §1): nunca "ubuntu" (el que usa TVC).
+# Debe crearse como cuenta de sistema sin shell de login, sin contraseña, propietaria
+# EXCLUSIVAMENTE de /opt/vinto-mvp-web (ver deploy/mvp/scripts/deploy.sh, paso de creación de usuario).
+User=vinto-mvp
+Group=vinto-mvp
+WorkingDirectory=/opt/vinto-mvp-web/backend
+
+# Las credenciales NO se pasan aquí: backend/app/config.py ya lee backend/.env directamente
+# (pydantic-settings, env_file=BACKEND_DIR/".env"). Usar "EnvironmentFile=" en su lugar las
+# expondría en texto plano vía `systemctl show -p Environment` / journald. backend/.env debe
+# existir con permisos 600, propietario vinto-mvp:vinto-mvp, y NUNCA en git (ver
+# deploy/mvp/env/backend.env.example).
+ExecStart=/opt/vinto-mvp-web/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100
+
+# Política de reinicio controlada (CLOUD-DEP-02A, Fase 3 §8): reinicia solo ante fallo real,
+# nunca en bucle inmediato ni de forma indefinida sin límite.
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Límites de CPU/memoria (Fase 3 §7). Ajustar según el tamaño real del piloto; estos valores son
+# un punto de partida conservador, no una medición de carga real (no se hizo ningún benchmark).
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=256
+
+# Endurecimiento de proceso — ninguno de estos directivas toca TVC ni ningún otro servicio.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/vinto-mvp-web/backend
+# El backend nunca necesita escribir fuera de su propio árbol (no genera archivos de datos locales:
+# toda la persistencia es PostgreSQL). Si en el futuro necesitara una ruta de logs propia, añadirla
+# aquí explícitamente en vez de relajar ProtectSystem.
+
+[Install]
+WantedBy=multi-user.target

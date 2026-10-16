@@ -1,0 +1,38 @@
+[Unit]
+Description=VINTO MVP WEB — frontend (vinext standalone Node.js, piloto, aislado de TVC)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vinto-mvp
+Group=vinto-mvp
+WorkingDirectory=/opt/vinto-mvp-web
+
+# PORT/HOST son las dos variables que vinext lee en TIEMPO DE EJECUCIÓN (confirmado en CLOUD-01B-1:
+# node_modules/vinext/README.md — HOST, no HOSTNAME, para evitar la colisión con la variable de
+# entorno de Linux). NEXT_PUBLIC_API_URL NO se fija aquí: ese valor se incrusta en el bundle del
+# cliente en TIEMPO DE BUILD (confirmado en CLOUD-01B-1), así que cambiarlo aquí no tendría ningún
+# efecto — se fija al compilar (ver deploy/mvp/scripts/deploy.sh, paso de build del frontend).
+Environment=PORT=3100
+Environment=HOST=127.0.0.1
+
+ExecStart=/usr/bin/node /opt/vinto-mvp-web/dist/standalone/server.js
+
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=256
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/vinto-mvp-web/dist
+
+[Install]
+WantedBy=multi-user.target
