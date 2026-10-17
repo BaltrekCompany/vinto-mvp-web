@@ -60,6 +60,9 @@
 #   bash deploy.sh preflight-build-deps
 #   CONFIRM=yes bash deploy.sh install-node-runtime <version> <tarball>
 #   CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh checkout <sha>
+#   CONFIRM=yes bash deploy.sh link-backend-env <sha>  (solo si 'checkout' avisó que
+#     shared/backend.env todavía no existía; ver CLOUD-DEP-02B.2-C más abajo — normalmente
+#     'checkout' ya crea este enlace por sí solo y este paso no hace falta)
 #   CONFIRM=yes bash deploy.sh python-venv <sha>
 #   CONFIRM=yes bash deploy.sh install-frontend-artifact <sha> <tar.gz> <manifiesto>
 #   bash deploy.sh preflight-startup
@@ -179,6 +182,105 @@ phase_checkout() {
     mvp_readlink_f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$release_dir/.previous-release-path" >/dev/null
     echo "Referencia a la versión anterior guardada (no se activa todavía)."
   fi
+}
+
+# CLOUD-DEP-02B.2-C: 'checkout' solo crea backend/.env -> shared/backend.env EN EL MOMENTO del
+# clonado, si shared/backend.env ya existe entonces (ver phase_checkout más arriba); un release
+# clonado ANTES de que shared/backend.env existiera queda sin ese enlace para siempre, y
+# 'checkout' nunca se repite sobre un release ya existente (DEP55-04). Esta fase cierra ese hueco
+# SIN repetir checkout ni python-venv: crea (o confirma que ya existe) exactamente ese mismo
+# enlace relativo, sobre un release que ya está en disco.
+#
+# Idempotente por diseño: una segunda ejecución con el enlace ya correcto no hace nada (exit 0).
+# Nunca sobrescribe algo inesperado: un archivo regular, un directorio, o un enlace que apunte a
+# otro destino se rechazan sin tocarlos. Deliberadamente se comprueba "-L" ANTES de "-e": "-e"
+# sigue el enlace hasta su destino final, así que un enlace ROTO (el destino no existe en este
+# instante) haría que "-e" reportara "no existe" — un falso negativo que llevaría a intentar
+# "ln -s" sobre un enlace que, de hecho, ya está ahí (fallaría con un error de "ln" confuso en vez
+# de un mensaje claro). "-L" detecta la presencia del enlace en sí, resuelva o no.
+#
+# DEP60-01 (auditoría del PR #60): "shared/backend.env" debe ser un ARCHIVO REGULAR, nunca un
+# enlace simbólico, INCLUSO si ese enlace resolviera a un archivo válido con permisos/propietario
+# correctos. Antes, "mvp_test -f" seguía un enlace hasta su destino y lo aceptaría en ese caso —
+# un enlace introduce una segunda ruta de control sobre el contenido real (quien pueda reescribir
+# el DESTINO del enlace cambia efectivamente las credenciales sin tocar nunca
+# "shared/backend.env" en sí) que esta fase no puede verificar de forma fiable con un chequeo de
+# permisos/propietario sobre el enlace. Se rechaza explícitamente ANTES de cualquier otra
+# comprobación. Una vez descartado ese caso, "stat" sin "-L" sobre el propio archivo (ya
+# confirmado regular, nunca un enlace) es equivalente a "stat -L" y evita la inconsistencia previa
+# entre el chequeo de propietario (sin "-L") y el de permisos (con "-L"). Además, tras crear (o
+# confirmar) el enlace backend/.env, se verifica que resuelve EXACTAMENTE al mismo
+# "shared/backend.env" real (comparando "readlink -f" de ambos), no solo que el texto del enlace
+# es el esperado.
+phase_link_backend_env() {
+  require_confirm
+  local commit="${1:?Uso: deploy.sh link-backend-env <commit-sha>}"
+  require_full_sha "$commit"
+  assert_service_user_is_ours "$SERVICE_USER"
+  assert_can_read_mvp_private_paths
+  local release_dir="$APP_DIR/releases/$commit"
+  if ! mvp_test -d "$release_dir"; then
+    echo "FALLA: $release_dir no existe. Ejecutar 'checkout $commit' primero (esta fase nunca clona ni hace checkout)." >&2
+    exit 1
+  fi
+  if mvp_test -L "$APP_DIR/shared/backend.env"; then
+    echo "FALLA: $APP_DIR/shared/backend.env es un enlace simbólico. Debe ser un archivo regular, incluso si el enlace resuelve a un archivo válido (DEP60-01): un enlace añade una segunda ruta de control sobre el contenido que esta fase no puede verificar de forma fiable. Reemplazarlo por el archivo real antes de continuar." >&2
+    exit 1
+  fi
+  if ! mvp_test -f "$APP_DIR/shared/backend.env"; then
+    echo "FALLA: $APP_DIR/shared/backend.env no existe todavía. Crearlo (ver env/backend.env.example), con permisos 600 y propietario $SERVICE_USER, antes de continuar." >&2
+    exit 1
+  fi
+  local owner
+  owner="$(mvp_stat '%U' "$APP_DIR/shared/backend.env")"
+  if [ "$owner" != "$SERVICE_USER" ]; then
+    echo "FALLA: $APP_DIR/shared/backend.env pertenece a '$owner', debe pertenecer a $SERVICE_USER. Corregir (chown) antes de continuar; no se crea ningún enlace hacia un archivo con propietario incorrecto." >&2
+    exit 1
+  fi
+  local perms
+  # Ya se confirmó arriba que NO es un enlace (DEP60-01): "stat" sin "-L" sobre el propio archivo
+  # regular es equivalente a "stat -L" aquí, sin la inconsistencia previa entre este chequeo y el
+  # de propietario de arriba (que tampoco usaba "-L").
+  perms="$(mvp_stat '%a' "$APP_DIR/shared/backend.env")"
+  if [ "$perms" != "600" ]; then
+    echo "FALLA: $APP_DIR/shared/backend.env tiene permisos $perms, deben ser 600. Corregir a mano y reintentar." >&2
+    exit 1
+  fi
+  local link_path="$release_dir/backend/.env"
+  local expected_target="../../../shared/backend.env"
+  local resolved_backend_env
+  resolved_backend_env="$(mvp_readlink_f "$APP_DIR/shared/backend.env")"
+  if mvp_test -L "$link_path"; then
+    local existing_target
+    existing_target="$(sudo -u "$SERVICE_USER" readlink "$link_path")"
+    if [ "$existing_target" != "$expected_target" ]; then
+      echo "FALLA: $link_path ya es un enlace simbólico, pero apunta a '$existing_target', no a '$expected_target'. No se sobrescribe un enlace ajeno ni roto hacia otro destino." >&2
+      exit 1
+    fi
+    # Requisito 4 (DEP60-01): el texto del enlace coincide, pero confirmar TAMBIÉN que resuelve
+    # exactamente al shared/backend.env real -- no basta con comparar cadenas de texto.
+    local resolved_link
+    resolved_link="$(mvp_readlink_f "$link_path")"
+    if [ "$resolved_link" != "$resolved_backend_env" ]; then
+      echo "FALLA: $link_path tiene el texto de enlace esperado, pero resuelve a '$resolved_link', no a '$resolved_backend_env' (shared/backend.env real). No se continúa sin entender la discrepancia." >&2
+      exit 1
+    fi
+    echo "$link_path ya es el enlace esperado -> shared/backend.env (resuelve exactamente a $resolved_backend_env); operación idempotente, nada que cambiar."
+    return 0
+  fi
+  if mvp_test -e "$link_path"; then
+    echo "FALLA: $link_path ya existe y no es un enlace simbólico (archivo regular o directorio). No se sobrescribe." >&2
+    exit 1
+  fi
+  sudo -u "$SERVICE_USER" mkdir -p "$release_dir/backend"
+  sudo -u "$SERVICE_USER" ln -s "$expected_target" "$link_path"
+  local resolved_new_link
+  resolved_new_link="$(mvp_readlink_f "$link_path")"
+  if [ "$resolved_new_link" != "$resolved_backend_env" ]; then
+    echo "FALLA: el enlace recién creado en $link_path resuelve a '$resolved_new_link', no a '$resolved_backend_env' (shared/backend.env real). No se confirma la operación como exitosa; revisar a mano." >&2
+    exit 1
+  fi
+  echo "Enlace creado: $link_path -> shared/backend.env (resuelve exactamente a $resolved_backend_env; release $commit ya existente, no se repitió checkout)."
 }
 
 phase_python_venv() {
@@ -788,6 +890,7 @@ case "${1:-}" in
   preflight-startup) phase_preflight_startup ;;
   user-and-dirs) phase_user_and_dirs ;;
   checkout) phase_checkout "${2:-}" ;;
+  link-backend-env) phase_link_backend_env "${2:-}" ;;
   python-venv) phase_python_venv "${2:-}" ;;
   install-frontend-artifact) phase_install_frontend_artifact "${2:-}" "${3:-}" "${4:-}" ;;
   install-node-runtime) phase_install_node_runtime "${2:-}" "${3:-}" ;;
@@ -803,7 +906,7 @@ case "${1:-}" in
   systemd-install) phase_systemd_install ;;
   healthcheck) phase_healthcheck ;;
   *)
-    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
+    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|link-backend-env <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
     exit 1
     ;;
 esac
