@@ -533,40 +533,59 @@ _pg_unique_suffix() {
   printf '%s-%s-%s' "$$" "$RANDOM" "$(date +%s%N 2>/dev/null || date +%s)"
 }
 
-# Escribe un .pgpass temporal DENTRO del contenedor, en una ruta única, y la imprime por stdout
-# para que el llamador la capture y la use tanto en PGPASSFILE como en su propia limpieza.
-_pg_write_pgpass() {
-  local role="$1" password="$2" db="$3"
+# Escribe un .pgpass temporal DENTRO del contenedor indicado, en una ruta única, y la imprime
+# por stdout para que el llamador la capture y la use tanto en PGPASSFILE como en su propia
+# limpieza. Variante parametrizada por contenedor (CLOUD-DEP-02B.2-D.2): backup.sh necesita
+# escribirlo tanto en el contenedor REAL del MVP (para "pg_dump") como en un contenedor EFÍMERO
+# de restauración de prueba (para "pg_restore"), nunca en el mismo -- _pg_write_pgpass sigue
+# existiendo tal cual para no tocar a pg_run_sql_inline/pg_run_sql_file, que siguen operando
+# siempre sobre $MVP_POSTGRES_CONTAINER.
+_pg_write_pgpass_in() {
+  local container="$1" role="$2" password="$3" db="$4"
   local remote
   remote="/tmp/.deploy-pgpass-$(_pg_unique_suffix)"
   printf '127.0.0.1:5432:%s:%s:%s\n' "$db" "$role" "$password" \
-    | docker exec -i "$MVP_POSTGRES_CONTAINER" sh -c "umask 077; cat > '$remote'" || return 1
+    | docker exec -i "$container" sh -c "umask 077; cat > '$remote'" || return 1
   printf '%s' "$remote"
+}
+_pg_write_pgpass() {
+  local role="$1" password="$2" db="$3"
+  _pg_write_pgpass_in "$MVP_POSTGRES_CONTAINER" "$role" "$password" "$db"
+}
+
+# pg_run_sql_inline_in <container> <role> <password> <db> <sentencia-sql>: variante parametrizada
+# por contenedor (CLOUD-DEP-02B.2-D.2) -- backup.sh la usa para verificar el contenido restaurado
+# en el contenedor EFÍMERO de prueba, nunca en $MVP_POSTGRES_CONTAINER. "pg_run_sql_inline" (sin
+# "_in") sigue existiendo igual, siempre sobre $MVP_POSTGRES_CONTAINER, para no tocar a sus
+# llamadores existentes.
+pg_run_sql_inline_in() {
+  local container="$1" role="$2" password="$3" db="$4" sql="$5"
+  local pgpass_path
+  pgpass_path="$(_pg_write_pgpass_in "$container" "$role" "$password" "$db")" || {
+    echo "pg_run_sql_inline_in: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
+    return 1
+  }
+  # shellcheck disable=SC2064 # se expande AHORA a propósito: la ruta exacta de ESTA llamada.
+  trap "docker exec '$container' rm -f '$pgpass_path' >/dev/null 2>&1" EXIT INT TERM
+  # DEP55-R2-03: "docker exec" se lanza en segundo plano y se espera con "wait" (builtin), nunca
+  # en primer plano directamente. Bash difiere la ejecución de un trap hasta que el comando en
+  # primer plano termina — si psql se quedara colgado (o tardara mucho), una señal recibida
+  # mientras tanto no limpiaría nada hasta que terminara por sí solo. "wait" SÍ se interrumpe de
+  # inmediato al llegar una señal con trap, permitiendo una limpieza pronta en vez de diferida.
+  docker exec -e PGPASSFILE="$pgpass_path" "$container" \
+    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -tAc "$sql" &
+  local dpid=$! status=0
+  wait "$dpid" || status=$?
+  docker exec "$container" rm -f "$pgpass_path" >/dev/null 2>&1
+  trap - EXIT INT TERM
+  return "$status"
 }
 
 # pg_run_sql_inline <role> <password> <db> <sentencia-sql>
 pg_run_sql_inline() {
   local role="$1" password="$2" db="$3" sql="$4"
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
-  local pgpass_path
-  pgpass_path="$(_pg_write_pgpass "$role" "$password" "$db")" || {
-    echo "pg_run_sql_inline: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
-    return 1
-  }
-  # shellcheck disable=SC2064 # se expande AHORA a propósito: la ruta exacta de ESTA llamada.
-  trap "docker exec '$MVP_POSTGRES_CONTAINER' rm -f '$pgpass_path' >/dev/null 2>&1" EXIT INT TERM
-  # DEP55-R2-03: "docker exec" se lanza en segundo plano y se espera con "wait" (builtin), nunca
-  # en primer plano directamente. Bash difiere la ejecución de un trap hasta que el comando en
-  # primer plano termina — si psql se quedara colgado (o tardara mucho), una señal recibida
-  # mientras tanto no limpiaría nada hasta que terminara por sí solo. "wait" SÍ se interrumpe de
-  # inmediato al llegar una señal con trap, permitiendo una limpieza pronta en vez de diferida.
-  docker exec -e PGPASSFILE="$pgpass_path" "$MVP_POSTGRES_CONTAINER" \
-    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -tAc "$sql" &
-  local dpid=$! status=0
-  wait "$dpid" || status=$?
-  docker exec "$MVP_POSTGRES_CONTAINER" rm -f "$pgpass_path" >/dev/null 2>&1
-  trap - EXIT INT TERM
-  return "$status"
+  pg_run_sql_inline_in "$MVP_POSTGRES_CONTAINER" "$role" "$password" "$db" "$sql"
 }
 
 # pg_run_sql_file <role> <password> <db> <archivo-sql-local> [NOMBRE=valor ...]
@@ -602,4 +621,210 @@ pg_run_sql_file() {
   [ -n "$envfile" ] && rm -f "$envfile"
   trap - EXIT INT TERM
   return "$status"
+}
+
+# --- Dump/restore de PostgreSQL (CLOUD-DEP-02B.2-D.2, backup.sh) -------------------------------
+#
+# Mismo patrón de seguridad que pg_run_sql_inline/pg_run_sql_file (PG54-03/DEP55-R2-03): la
+# contraseña NUNCA se pasa como argumento de línea de comandos ni como "docker exec -e" literal
+# -- se escribe en un .pgpass temporal DENTRO del contenedor correspondiente, vía stdin, en una
+# ruta única por llamada, borrada en todos los caminos de salida (trap EXIT INT TERM). A
+# diferencia de pg_run_sql_inline/pg_run_sql_file (que siempre operan sobre $MVP_POSTGRES_CONTAINER,
+# el contenedor REAL del MVP), estas dos funciones toman el contenedor como parámetro explícito:
+# backup.sh necesita volcar ("pg_dump") el contenedor real pero restaurar ("pg_restore") en un
+# contenedor EFÍMERO de verificación, nunca el mismo, y nunca deben confundirse por un valor
+# global compartido.
+
+# pg_restore_custom <container> <role> <password> <db> <ruta_dump_en_el_host>
+# Restaura con "--no-owner --no-privileges": el contenedor EFÍMERO de verificación nunca tiene
+# los mismos roles (vinto_app/vinto_migrator/vinto_reference) que el dump original -- intentar
+# reproducir propietario/privilegios exactos fallaría contra roles inexistentes. Esta función
+# verifica INTEGRIDAD de esquema/datos, nunca el modelo de privilegios (eso ya lo cubre
+# backend/roles/ + su propia batería, roles_e2e.py).
+pg_restore_custom() {
+  local container="$1" role="$2" password="$3" db="$4" dump_path="$5"
+  local pgpass_path
+  pgpass_path="$(_pg_write_pgpass_in "$container" "$role" "$password" "$db")" || {
+    echo "pg_restore_custom: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
+    return 1
+  }
+  # shellcheck disable=SC2064
+  trap "docker exec '$container' rm -f '$pgpass_path' >/dev/null 2>&1" EXIT INT TERM
+  docker exec -i -e PGPASSFILE="$pgpass_path" "$container" \
+    pg_restore -h 127.0.0.1 -U "$role" -d "$db" --no-owner --no-privileges < "$dump_path" &
+  local dpid=$! status=0
+  wait "$dpid" || status=$?
+  docker exec "$container" rm -f "$pgpass_path" >/dev/null 2>&1
+  trap - EXIT INT TERM
+  return "$status"
+}
+
+# pg_dump_and_manifest_snapshot_consistent <container> <role> <password> <db> <dump_host_out> <manifest_host_out>
+#
+# DEP62-08 (auditoría del PR #62, opción A -- implementada, no solo diseñada): "pg_dump" y el
+# recuento de filas para el manifiesto de contenido comparten el MISMO snapshot MVCC de
+# PostgreSQL, así que ninguno de los dos puede ver una escritura concurrente que el otro no vea
+# (consistencia real, no solo "capturados con una ventana de milisegundos entre uno y otro").
+#
+# Mecanismo (verificado empíricamente antes de implementarlo, ver notas de la PR): UNA sola
+# sesión "psql" (una sola invocación de "docker exec -i", nunca un coproceso ni una sesión
+# interactiva de larga duración con sincronización manual):
+#   1. "BEGIN ISOLATION LEVEL REPEATABLE READ" + "SELECT pg_export_snapshot() AS snap \gset"
+#      exporta el snapshot de ESA transacción.
+#   2. "\setenv PGSNAP :snap" copia el ID exportado a una variable de ENTORNO real (psql NO
+#      interpola variables ":nombre" dentro de "\!" directamente -- confirmado empíricamente;
+#      "\setenv" es el puente documentado para que un comando de shell sí pueda leerlo).
+#   3. "\! pg_dump --snapshot=\"\$PGSNAP\" ..." -- un PROCESO "pg_dump" SEPARADO, lanzado por
+#      psql dentro del MISMO contenedor, importa ESE snapshot exacto. La transacción que lo
+#      exportó sigue abierta (no se hace COMMIT todavía), así que el snapshot sigue siendo válido.
+#   4. TODAVÍA dentro de la MISMA transacción (sin necesitar importar nada: es la misma sesión),
+#      se captura el manifiesto con una sola consulta ("query_to_xml"+"xpath", built-in de
+#      PostgreSQL, sin extensiones) que cuenta las filas de CADA tabla de usuario -- ninguna
+#      escritura posterior a la apertura de la transacción puede alterar lo que esta consulta ve,
+#      por la MISMA razón MVCC que protege a "pg_dump". "\o <ruta>" redirige el resultado a un
+#      archivo DENTRO del contenedor (el cliente "psql" corre ahí, nunca en el host) -- una
+#      consulta de 0 filas (base sin tablas de usuario, DEP62-06) sigue creando el archivo, vacío
+#      pero presente, porque "\o" abre el archivo antes de ejecutar la consulta.
+#   5. "COMMIT" cierra la transacción (y por tanto el snapshot) solo al final, tras haber usado
+#      ambas cosas.
+# El volcado y el manifiesto quedan DENTRO del contenedor (esa es la ruta de "psql"/"\!", no la
+# del host que invoca "docker exec") -- se extraen con "docker cp" al terminar la sesión, nunca
+# antes de confirmar que "pg_dump" (dentro de "\!") terminó con código 0 (capturado explícitamente
+# en el propio script, porque "ON_ERROR_STOP" de psql no aborta la sesión solo porque un "\!"
+# devuelva un código de salida distinto de cero).
+pg_dump_and_manifest_snapshot_consistent() {
+  local container="$1" role="$2" password="$3" db="$4" dump_host_out="$5" manifest_host_out="$6"
+  local pgpass_path
+  pgpass_path="$(_pg_write_pgpass_in "$container" "$role" "$password" "$db")" || {
+    echo "pg_dump_and_manifest_snapshot_consistent: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
+    return 1
+  }
+  local suffix in_dump in_manifest in_exitcode script session_log
+  suffix="$(_pg_unique_suffix)"
+  in_dump="/tmp/.deploy-snapdump-$suffix"
+  in_manifest="/tmp/.deploy-snapmanifest-$suffix"
+  in_exitcode="/tmp/.deploy-snapexit-$suffix"
+  script="$(mktemp)"
+  chmod 600 "$script"
+  cat > "$script" <<'PSQLEOF'
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT pg_export_snapshot() AS snap \gset
+\setenv PGSNAP :snap
+\! PGPASSFILE=__PGPASS__ pg_dump -h 127.0.0.1 -U __ROLE__ -d __DB__ --snapshot="$PGSNAP" -Fc -f __DUMPPATH__ ; echo $? > __EXITPATH__
+\o __MANIFESTPATH__
+SELECT quote_ident(table_schema) || '.' || quote_ident(table_name),
+       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text
+FROM information_schema.tables
+WHERE table_schema NOT IN ('pg_catalog','information_schema')
+ORDER BY 1;
+\o
+COMMIT;
+PSQLEOF
+  sed -i \
+    -e "s#__PGPASS__#$pgpass_path#g" \
+    -e "s#__ROLE__#$role#g" \
+    -e "s#__DB__#$db#g" \
+    -e "s#__DUMPPATH__#$in_dump#g" \
+    -e "s#__EXITPATH__#$in_exitcode#g" \
+    -e "s#__MANIFESTPATH__#$in_manifest#g" \
+    "$script"
+  # shellcheck disable=SC2064 # se expanden AHORA: las rutas exactas de ESTA llamada.
+  trap "docker exec '$container' rm -f '$pgpass_path' '$in_dump' '$in_manifest' '$in_exitcode' >/dev/null 2>&1; rm -f '$script'" EXIT INT TERM
+  session_log="$(mktemp)"
+  if ! docker exec -i -e PGPASSFILE="$pgpass_path" "$container" \
+      psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -tA -F $'\t' < "$script" >"$session_log" 2>&1; then
+    echo "pg_dump_and_manifest_snapshot_consistent: la sesión de psql (snapshot compartido) falló. Detalle:" >&2
+    cat "$session_log" >&2
+    rm -f "$session_log"
+    trap - EXIT INT TERM
+    docker exec "$container" rm -f "$pgpass_path" "$in_dump" "$in_manifest" "$in_exitcode" >/dev/null 2>&1
+    rm -f "$script"
+    return 1
+  fi
+  rm -f "$session_log"
+  local pgdump_exit
+  pgdump_exit="$(docker exec "$container" cat "$in_exitcode" 2>/dev/null || echo "desconocido")"
+  if [ "$pgdump_exit" != "0" ]; then
+    echo "pg_dump_and_manifest_snapshot_consistent: pg_dump (dentro de la sesión con snapshot compartido) terminó con código $pgdump_exit." >&2
+    trap - EXIT INT TERM
+    docker exec "$container" rm -f "$pgpass_path" "$in_dump" "$in_manifest" "$in_exitcode" >/dev/null 2>&1
+    rm -f "$script"
+    return 1
+  fi
+  if ! docker cp "$container:$in_dump" "$dump_host_out" >/dev/null 2>&1; then
+    echo "pg_dump_and_manifest_snapshot_consistent: no se pudo extraer el volcado del contenedor." >&2
+    trap - EXIT INT TERM
+    docker exec "$container" rm -f "$pgpass_path" "$in_dump" "$in_manifest" "$in_exitcode" >/dev/null 2>&1
+    rm -f "$script"
+    return 1
+  fi
+  # DEP62-06: el manifiesto puede ser legítimamente de 0 bytes (base sin tablas de usuario) --
+  # "docker cp" de un archivo de 0 bytes funciona igual; nunca se exige tamaño no-cero aquí.
+  if ! docker cp "$container:$in_manifest" "$manifest_host_out" >/dev/null 2>&1; then
+    echo "pg_dump_and_manifest_snapshot_consistent: no se pudo extraer el manifiesto del contenedor." >&2
+    trap - EXIT INT TERM
+    docker exec "$container" rm -f "$pgpass_path" "$in_dump" "$in_manifest" "$in_exitcode" >/dev/null 2>&1
+    rm -f "$script"
+    return 1
+  fi
+  docker exec "$container" rm -f "$pgpass_path" "$in_dump" "$in_manifest" "$in_exitcode" >/dev/null 2>&1
+  trap - EXIT INT TERM
+  rm -f "$script"
+  return 0
+}
+
+# --- Directorio privado de backups (CLOUD-DEP-02B.2-D.2) ---------------------------------------
+#
+# assert_private_dir <path>: exige que el directorio exista con permisos EXACTAMENTE 700 y
+# propietario = quien invoca este proceso (mismo criterio dinámico que
+# docker_env_contract_check, "id -un", nunca un nombre fijo). Nunca lo crea ni le cambia permisos
+# si ya existe con algo distinto -- igual filosofía fail-closed que el resto de este archivo
+# (reportar y detener, nunca "arreglar" silenciosamente algo que un operador pudo haber dejado
+# así a propósito o por error). backup.sh sí crea el directorio con 700 la PRIMERA vez que no
+# existe en absoluto (eso no es "corregir algo existente", es "establecerlo correctamente desde
+# cero").
+assert_private_dir() {
+  local path="$1"
+  if [ ! -e "$path" ]; then
+    echo "FALLA: $path no existe. Crearlo (p. ej. 'mkdir -p $path && chmod 700 $path', como el operador que ejecutará los backups) antes de continuar." >&2
+    exit 1
+  fi
+  if [ -L "$path" ]; then
+    echo "FALLA: $path es un enlace simbólico. Debe ser un directorio regular." >&2
+    exit 1
+  fi
+  if [ ! -d "$path" ]; then
+    echo "FALLA: $path existe pero no es un directorio." >&2
+    exit 1
+  fi
+  local owner perms expected_owner
+  expected_owner="$(id -un)"
+  owner="$(stat -c '%U' "$path" 2>/dev/null || true)"
+  if [ "$owner" != "$expected_owner" ]; then
+    echo "FALLA: $path pertenece a '$owner', debe pertenecer a '$expected_owner' (quien ejecuta este script)." >&2
+    exit 1
+  fi
+  perms="$(stat -c '%a' "$path" 2>/dev/null || true)"
+  if [ "$perms" != "700" ]; then
+    echo "FALLA: $path tiene permisos ${perms:-desconocidos}, deben ser exactamente 700." >&2
+    exit 1
+  fi
+}
+
+# assert_enough_free_space <path> <min_MB>: rechaza continuar si el sistema de archivos que
+# contiene <path> tiene menos de <min_MB> megabytes libres. "pg_dump" no permite conocer de
+# antemano el tamaño exacto del volcado; este umbral es una red de seguridad mínima, configurable
+# por el operador, no una garantía de espacio suficiente para cualquier volumen de datos.
+assert_enough_free_space() {
+  local path="$1" min_mb="$2"
+  local avail_mb
+  avail_mb="$(df -Pm "$path" 2>/dev/null | awk 'NR==2 {print $4}')"
+  if [ -z "$avail_mb" ]; then
+    echo "FALLA: no se pudo determinar el espacio libre en $path. No se continúa sin saberlo." >&2
+    exit 1
+  fi
+  if [ "$avail_mb" -lt "$min_mb" ]; then
+    echo "FALLA: solo quedan ${avail_mb}MB libres en el sistema de archivos de $path, se exigen al menos ${min_mb}MB. No se intenta el respaldo." >&2
+    exit 1
+  fi
 }
