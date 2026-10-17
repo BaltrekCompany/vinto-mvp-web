@@ -497,3 +497,51 @@ inexistente (explícito e idempotente en dos ejecuciones), contenedor ajeno crea
 toda la batería (permanece activo después), ningún secreto impreso, y ninguna mención de TVC
 salvo el reaseguro esperado del propio script. **11/11 PASS**, re-ejecutados junto con la
 regresión completa de PR #57/#59/#60: **57/57 PASS**.
+
+## DEP61-02 y DEP61-03: dos condiciones adicionales (segunda auditoría del PR #61)
+
+Dos hallazgos más, encontrados al revisar el camino degradado ya corregido en DEP61-01.
+
+### DEP61-02 — `detect_compose_cmd` no debe poder matar la recuperación
+
+`lib_common.sh::detect_compose_cmd` termina el proceso entero con `exit 1` si ni `docker compose`
+ni `docker-compose` están instalados — correcto para las fases **mutadoras** normales de
+`deploy.sh` (que de verdad necesitan Compose para crear/arrancar PostgreSQL), pero dentro del
+camino degradado de `rollback_postgres` esto mataría la recuperación entera incluso cuando Docker
+Engine sigue perfectamente accesible y `docker stop` directo funcionaría sin ningún problema.
+
+**Corrección**: `detect_compose_cmd` y la invocación de `compose down` se envuelven en un
+**subshell** (`( detect_compose_cmd && "${COMPOSE_CMD[@]}" ... down )`). Si no hay ningún comando
+Compose disponible, el `exit 1` de `detect_compose_cmd` termina **solo ese subshell**, nunca el
+proceso de `rollback.sh` — el script sigue y degrada igual a la detención directa. El
+comportamiento de `detect_compose_cmd` en sí **no cambia** — cualquier llamador que lo invoque
+fuera de un subshell (como ya hace `deploy.sh`) sigue terminando el proceso exactamente igual que
+antes; el alcance del cambio es exclusivamente la forma en que `rollback_postgres` lo invoca.
+
+### DEP61-03 — distinguir "no existe" de "no se pudo consultar"
+
+`lib_common.sh::resolve_confirmed_mvp_postgres_id` trataba **cualquier** fallo de `docker
+inspect` como "el contenedor no existe" — pero esa consulta también falla (mismo código de
+salida) si el daemon es inaccesible, si el operador no tiene permiso, o ante cualquier otro error.
+Confundir esos casos con "no existe" es un falso negativo peligroso: un contenedor que SÍ existe
+(y sigue corriendo) se reportaría como "nada que detener", dejando al operador con una falsa
+sensación de que la recuperación funcionó.
+
+**Corrección**: se distingue por el **texto** del error (`no such object`/`no such container`,
+la señal estable que usa el cliente de Docker para "realmente no existe"). Solo ese caso se trata
+como ausencia legítima (idempotente, `return 0`); cualquier otro error de consulta se reporta
+explícitamente y detiene la función (`exit 1`) sin asumir nada y sin tocar nada — fail-closed,
+nunca fail-open disfrazado de idempotencia. La llamada a `docker inspect` se protege con el
+patrón `if var=$(cmd); then ... else ...; fi` (nunca una asignación suelta): una asignación suelta
+fuera de un `if` **no** está exenta de `set -e` y habría matado el script en cuanto `docker
+inspect` devolviera un código distinto de 0 — exactamente el mismo tipo de regresión silenciosa
+que esta corrección debía evitar, detectada por la propia batería de pruebas de esta corrección
+antes de cerrarla (confirmado en código antes del commit final, no en producción).
+
+### Pruebas
+
+Dos casos nuevos, con Docker real: `DOCKER_HOST` apuntando a un socket inexistente (daemon
+inaccesible → error explícito, nunca "no existe"); el plugin de Compose renombrado temporalmente
+mientras Docker Engine sigue operativo y un contenedor legítimo existe (creado con `docker run`,
+no con Compose) → degrada igual a detención directa. Re-ejecutados junto con toda la regresión
+anterior: **59/59 PASS**.

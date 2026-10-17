@@ -2551,6 +2551,10 @@ echo "docker/.env. Laboratorio: un contenedor Ubuntu con el SOCKET de Docker mon
 echo "chmod/stat/ln -s sean semántica POSIX real -- un host Windows no garantiza esto en /tmp, ver"
 echo "nota más abajo) y el CLI de Docker instalado, controlando contenedores HERMANOS en el MISMO"
 echo "demonio que el resto de este archivo. Nombres de proyecto/contenedor/red ÚNICOS por prueba."
+echo "Incluye además DEP61-02 (Compose no disponible pero Docker Engine operativo: ya no mata la"
+echo "recuperación entera, ver el subshell en rollback.sh) y DEP61-03 (daemon inaccesible o"
+echo "consulta fallida: nunca se confunde con 'contenedor ausente', ver"
+echo "lib_common.sh::resolve_confirmed_mvp_postgres_id)."
 
 DEP61_SECRET="SECRETO-SINTETICO-DEP61-$(date +%s)-NUNCA-UNA-CREDENCIAL-REAL"
 DEP61_WRAPPER_NAME=""
@@ -2768,6 +2772,45 @@ if [ "\$t7a" -eq 0 ] && [ "\$t7b" -eq 0 ] \
 else
   result T7 1
 fi
+
+# T13 (DEP61-03): daemon INACCESIBLE -- "docker inspect" falla, pero NUNCA con el texto "no such
+# object"/"no such container" (esa es la única señal de ausencia real). Debe fallar
+# EXPLÍCITAMENTE, nunca confundirse con "no existe; nada que detener".
+set +e
+log_t13="\$(DOCKER_HOST=unix:///tmp/dep61-bogus-\$\$.sock do_rollback t13 2>&1)"; t13_status=\$?
+set -e
+echo "\$log_t13"
+if [ "\$t13_status" -ne 0 ] \
+    && printf '%s' "\$log_t13" | grep -q "error DISTINTO de 'no existe'" \
+    && ! printf '%s' "\$log_t13" | grep -q "no existe; nada que detener"; then
+  result T13 0
+else
+  result T13 1
+fi
+
+# T14 (DEP61-02): Docker Compose NO disponible en este host, pero Docker Engine SÍ operativo --
+# debe seguir degradando a detención directa, nunca morir por culpa de "detect_compose_cmd".
+# El contenedor se crea con "docker run" (nunca con compose, ya deshabilitado) pero docker/.env
+# SÍ es válido: se intenta el camino normal, que debe fallar por ausencia de la herramienta, no
+# por el contrato de seguridad del archivo.
+mv /usr/libexec/docker/cli-plugins/docker-compose /usr/libexec/docker/cli-plugins/docker-compose.disabled
+write_valid_env t14
+docker run -d --name vinto-mvp-postgres-dep61-t14 \
+  --label com.docker.compose.project=vinto-mvp-dep61-t14 \
+  -e POSTGRES_DB=bootdb -e POSTGRES_USER=bootuser -e POSTGRES_PASSWORD=x postgres:17 >/dev/null
+wait_exec_ready vinto-mvp-postgres-dep61-t14
+set +e
+log_t14="\$(do_rollback t14 2>&1)"; t14_status=\$?
+set -e
+echo "\$log_t14"
+mv /usr/libexec/docker/cli-plugins/docker-compose.disabled /usr/libexec/docker/cli-plugins/docker-compose
+if [ "\$t14_status" -eq 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t14)" = "false" ] \
+    && printf '%s' "\$log_t14" | grep -q "detenido directamente"; then
+  result T14 0
+else
+  result T14 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t14 >/dev/null 2>&1 || true
 INNEREOF
     docker exec -i "$DEP61_WRAPPER_NAME" bash -s < "$DEP61_INNER" >/tmp/verify-dep61-inner.log 2>&1
     dep61_inner_status=$?
@@ -2809,6 +2852,16 @@ INNEREOF
       report "DEP61-01 T7: contenedor del MVP inexistente -- explícito e idempotente en dos ejecuciones" 0
     else
       report "DEP61-01 T7: contenedor del MVP inexistente -- explícito e idempotente en dos ejecuciones" 1
+    fi
+    if [ "$(dep61_result_of T13)" = "0" ]; then
+      report "DEP61-03 T13: daemon inaccesible -- error explícito, nunca confundido con 'no existe'" 0
+    else
+      report "DEP61-03 T13: daemon inaccesible -- error explícito, nunca confundido con 'no existe'" 1
+    fi
+    if [ "$(dep61_result_of T14)" = "0" ]; then
+      report "DEP61-02 T14: Docker Compose no disponible, Docker Engine operativo -- degrada a detención directa" 0
+    else
+      report "DEP61-02 T14: Docker Compose no disponible, Docker Engine operativo -- degrada a detención directa" 1
     fi
     if [ "$dep61_inner_status" -ne 0 ] && ! grep -q '^RESULT:' /tmp/verify-dep61-inner.log; then
       echo "--- log interno DEP61-01 (fallo antes de producir ningún RESULT) ---"

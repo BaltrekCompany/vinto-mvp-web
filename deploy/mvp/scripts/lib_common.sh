@@ -412,29 +412,56 @@ assert_docker_env_contract() {
 # pero CUALQUIER señal de identidad no coincide, se detiene (exit 1) — mismo criterio fail-closed
 # que el resto de las funciones "assert_*" de este archivo, nunca se opera sobre un contenedor
 # cuya identidad no se pudo confirmar del todo.
+#
+# DEP61-03 (auditoría del PR #61): la versión anterior trataba CUALQUIER fallo de "docker inspect"
+# como "el contenedor no existe" — pero "docker inspect" también falla (mismo código de salida)
+# si el daemon es inaccesible, si el operador no tiene permiso, o ante cualquier otro error de
+# consulta. Confundir esos casos con "no existe" es un falso negativo peligroso: un contenedor que
+# SÍ existe (y sigue corriendo) se reportaría como "nada que detener", dejando a quien opera con
+# una falsa sensación de que la recuperación funcionó. Ahora se distingue por el TEXTO del error
+# ("no such object"/"no such container", la señal estable que usa el cliente de Docker para
+# "realmente no existe"): solo ESE caso se trata como ausencia legítima; cualquier otro error de
+# consulta se reporta explícitamente y detiene la función (exit 1) sin asumir nada y sin tocar
+# nada — fail-closed, nunca fail-open disfrazado de idempotencia.
 # shellcheck disable=SC2034 # usada por rollback.sh tras "source"; ShellCheck no lo ve si este
 # archivo se analiza solo (igual que COMPOSE_CMD más arriba).
 MVP_POSTGRES_CONTAINER_ID=""
 resolve_confirmed_mvp_postgres_id() {
   MVP_POSTGRES_CONTAINER_ID=""
   local name="$1" expected_image="$2"
-  if ! docker inspect "$name" >/dev/null 2>&1; then
-    return 0
+  local inspected status
+  # "if var=$(cmd); then" (nunca una asignación suelta fuera de un "if"): la condición de un "if"
+  # es el único contexto exento de "set -e" que captura CORRECTAMENTE tanto la salida como el
+  # código de salida de un comando que puede fallar legítimamente (aquí, "docker inspect" sobre
+  # un contenedor que no existe). Una asignación suelta ("inspected=\"\$(...)\""; "status=\$?")
+  # habría disparado "set -e" en cuanto "docker inspect" devolviera un código distinto de 0 --
+  # matando el script ANTES de poder distinguir "no existe" de cualquier otro error (regresión
+  # real detectada en la propia batería de pruebas de esta corrección).
+  if inspected="$(docker inspect "$name" --format '{{.Id}}|{{ index .Config.Labels "com.docker.compose.project" }}|{{.Config.Image}}' 2>&1)"; then
+    status=0
+  else
+    status=$?
   fi
-  local project
-  project="$(docker inspect "$name" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+  if [ "$status" -ne 0 ]; then
+    if printf '%s' "$inspected" | grep -qi "no such object\|no such container"; then
+      return 0
+    fi
+    echo "FALLA: no se pudo consultar '$name' en Docker -- la consulta falló con un error DISTINTO de 'no existe' (posible daemon inaccesible, permisos insuficientes, u otro problema). No se asume que el contenedor no existe ni se toca nada; revisar el daemon/los permisos antes de reintentar. Detalle: $inspected" >&2
+    exit 1
+  fi
+  local cid project image rest
+  cid="${inspected%%|*}"
+  rest="${inspected#*|}"
+  project="${rest%%|*}"
+  image="${rest#*|}"
   if [ "$project" != "$MVP_COMPOSE_PROJECT" ]; then
     echo "FALLA DE IDENTIDAD: el contenedor '$name' existe pero su etiqueta com.docker.compose.project es '${project:-ninguna}', no '$MVP_COMPOSE_PROJECT'. Podría ser de TVC/ETL u otro proyecto. Abortando SIN tocarlo." >&2
     exit 1
   fi
-  local image
-  image="$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null || true)"
   if [ "$image" != "$expected_image" ]; then
     echo "FALLA DE IDENTIDAD: el contenedor '$name' existe y su etiqueta de proyecto es correcta, pero su imagen es '${image:-ninguna}', no '$expected_image' (la que fija docker-compose.postgres.yml). Nunca se opera sobre un contenedor cuya imagen no coincide con la esperada. Abortando SIN tocarlo." >&2
     exit 1
   fi
-  local cid
-  cid="$(docker inspect "$name" --format '{{.Id}}' 2>/dev/null || true)"
   if [ -z "$cid" ]; then
     echo "FALLA: no se pudo resolver el ID real de '$name' tras confirmar su identidad (nombre, etiqueta de proyecto e imagen). Abortando SIN tocarlo." >&2
     exit 1

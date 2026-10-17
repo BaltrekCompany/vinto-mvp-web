@@ -130,6 +130,16 @@ rollback_version() {
 # esos dos recursos Docker creados a propósito; eliminarlos, si se desea, es una decisión aparte
 # del operador (p. ej. una vez restaurado docker/.env, repetir "rollback.sh postgres" con el
 # archivo ya válido).
+#
+# DEP61-02 (auditoría del PR #61): "lib_common.sh::detect_compose_cmd" termina el proceso entero
+# con "exit 1" si ni "docker compose" ni "docker-compose" están instalados — correcto para las
+# fases MUTADORAS normales de deploy.sh (que de verdad necesitan Compose), pero aquí mataría la
+# recuperación entera incluso cuando Docker Engine sigue perfectamente accesible y "docker stop"
+# directo funcionaría sin problema. Se invoca dentro de un SUBSHELL "( ... )": si no hay ningún
+# comando Compose disponible, el "exit 1" de "detect_compose_cmd" termina SOLO ese subshell, no
+# el proceso de rollback.sh — el script sigue y degrada igual a la detención directa. Nunca se
+# cambia el comportamiento de "detect_compose_cmd" en sí (seguiría terminando el proceso para
+# cualquier llamador que lo invoque fuera de un subshell, como ya hace deploy.sh).
 rollback_postgres() {
   require_confirm
   local compose_dir="$SCRIPT_DIR/../docker"
@@ -142,11 +152,13 @@ rollback_postgres() {
 
   local degraded=0
   if docker_env_contract_check "$compose_dir/.env"; then
-    detect_compose_cmd
     local down_status=0
-    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down || down_status=$?
+    # Subshell deliberado (DEP61-02): si "detect_compose_cmd" no encuentra ningún comando Compose,
+    # su "exit 1" termina SOLO este subshell -- nunca el proceso de rollback.sh completo.
+    ( detect_compose_cmd && "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down ) \
+      || down_status=$?
     if [ "$down_status" -ne 0 ]; then
-      echo "AVISO: 'docker compose down' con docker/.env falló (código $down_status) — posible contenido corrupto u otro problema no detectado por el contrato de seguridad del archivo (que nunca inspecciona claves/valores). Se degrada a detención directa del contenedor ya identificado." >&2
+      echo "AVISO: 'docker compose down' con docker/.env falló, o ningún comando Docker Compose está disponible en este host (código $down_status) — posible contenido corrupto del archivo (no detectado por su contrato de seguridad, que nunca inspecciona claves/valores) o ausencia de la herramienta Compose. Se degrada a detención directa del contenedor ya identificado; Docker Engine en sí no hace falta que tenga Compose instalado para esto." >&2
       degraded=1
     fi
   else
