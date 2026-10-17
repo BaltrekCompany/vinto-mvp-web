@@ -545,3 +545,137 @@ inaccesible → error explícito, nunca "no existe"); el plugin de Compose renom
 mientras Docker Engine sigue operativo y un contenedor legítimo existe (creado con `docker run`,
 no con Compose) → degrada igual a detención directa. Re-ejecutados junto con toda la regresión
 anterior: **59/59 PASS**.
+
+## `backup.sh`: dump y restauración verificable de PostgreSQL MVP (CLOUD-DEP-02B.2-D.2)
+
+Script **nuevo**, deliberadamente separado de `deploy.sh`/`rollback.sh` (DEP55-01: "ningún script
+de despliegue toca backups"). No se instala ni se ejecuta contra el VPS en este incremento —
+diseñado, implementado y probado en un laboratorio Docker aislado con datos sintéticos.
+
+### Arquitectura (Fase A)
+
+Reutiliza, en vez de reinventar, los mecanismos ya auditados del resto del pipeline:
+
+- **Identidad del contenedor**: `lib_common.sh::resolve_confirmed_mvp_postgres_id` (DEP61-01/02/03)
+  — nombre + etiqueta de proyecto compose + imagen, nunca solo el nombre. Nunca opera sobre un
+  contenedor cuya identidad no confirmó.
+- **`docker/.env`**: `lib_common.sh::assert_docker_env_contract` (DEP60-01/CLOUD-DEP-02B.2-D.1) —
+  mismo contrato fail-closed que `deploy.sh`.
+- **Credenciales**: nunca como argumento ni como `docker exec -e` literal. `pg_dump_custom`/
+  `pg_restore_custom` (nuevas, generalizando `_pg_write_pgpass`/`pg_run_sql_inline` a un
+  contenedor parametrizado en vez de siempre `$MVP_POSTGRES_CONTAINER`) reutilizan el mismo
+  patrón `.pgpass` temporal dentro del contenedor, `docker exec -i` + `wait`, `trap` de limpieza.
+- **Roles**: el volcado (`pg_dump`) usa el rol de arranque (`POSTGRES_BOOTSTRAP_USER`), el único
+  con visibilidad completa de `vinto_piloto` — `vinto_app`/`vinto_reference` no la tienen. La
+  restauración de prueba usa `--no-owner --no-privileges`: el contenedor efímero nunca tiene los
+  roles `vinto_app`/`vinto_migrator`/`vinto_reference` reales, así que reproducir propietario o
+  privilegios exactos fallaría contra roles inexistentes — esta herramienta verifica integridad
+  de esquema/datos, nunca el modelo de privilegios (eso ya lo cubre `backend/roles/`).
+- **Aislamiento de TVC**: la restauración de prueba vive en un contenedor **efímero** propio, con
+  `--network none` (ni siquiera puede alcanzar la red de TVC aunque algo intentara hacerlo) y su
+  propio PGDATA interno — nunca el bind-mount real del MVP ni el de TVC.
+
+### Implementación (Fase B — `backup.sh create`)
+
+1. Identidad del contenedor + contrato de `docker/.env`, ambos ANTES de tocar nada.
+2. `assert_private_dir` (nueva en `lib_common.sh`): directorio de backups con permisos
+   EXACTAMENTE `700` y propietario = quien invoca (`id -un`, mismo criterio dinámico que
+   `docker_env_contract_check`) — nunca lo crea ni le cambia permisos si ya existe distinto
+   (fail-closed); el operador debe crearlo una vez, a mano.
+3. `assert_enough_free_space`: rechaza antes de intentar `pg_dump` si el filesystem del
+   directorio de backups tiene menos del mínimo configurable (`VINTO_MVP_BACKUP_MIN_FREE_MB`,
+   por defecto 500MB).
+4. `pg_dump -Fc` (formato custom — el único que soporta verificación/restauración selectiva),
+   nombre único por marca de tiempo UTC + PID (`vinto-mvp-<db>-<AAAAMMDD-HHMMSS>-<pid>.dump`).
+   Escribe primero a `.partial`; solo lo renombra al nombre final si `pg_dump` completó con éxito
+   y el archivo no quedó vacío — un fallo en cualquier paso deja el `.partial` (nunca el nombre
+   final) y **nunca toca un backup anterior**.
+5. Checksum SHA-256 junto al archivo, ambos `600`.
+6. Nunca sobrescribe: si el nombre final (o su `.partial`) ya existiera, se detiene antes de
+   intentar nada.
+
+### Verificación de restauración (Fase C — `backup.sh verify <dump>`)
+
+1. Comprueba el checksum ANTES de cualquier otra cosa — un archivo corrupto se marca
+   `<dump>.CORRUPT` y nunca se intenta restaurar.
+2. Crea un contenedor Postgres **efímero**, `--network none`, recursos limitados
+   (`--cpus 1 --memory 512m`), con credenciales **generadas para esta sola ejecución** (nunca las
+   de `docker/.env` ni ninguna credencial real).
+3. Restaura con `pg_restore --no-owner --no-privileges`.
+4. Verifica que la restauración produjo al menos una tabla de usuario (comprobación genérica,
+   sin asumir el esquema específico de VINTO — la batería de pruebas, aparte, compara un recuento
+   EXACTO de filas contra una tabla sembrada conocida, para una verificación más rigurosa en el
+   laboratorio).
+5. Solo si TODO lo anterior tuvo éxito, crea `<dump>.verified` (vacío; solo su existencia
+   importa) — la única marca de que un backup es confiable. Un backup sin ese marcador es
+   "sin verificar", nunca se asume válido.
+6. El contenedor efímero se elimina SIEMPRE (éxito o fallo) por su ID confirmado — nunca por un
+   nombre vuelto a buscar. **Hallazgo real durante la implementación**: la limpieza basada solo
+   en `trap ... EXIT` fallaba, porque `pg_restore_custom`/`pg_run_sql_inline_in` (llamadas desde
+   dentro de esta misma función) tienen su PROPIO `trap ... EXIT INT TERM` para su `.pgpass`
+   temporal y lo DESARMAN al terminar (`trap - EXIT INT TERM`) — como los traps son del PROCESO
+   completo, ese desarme interno se llevaba también el trap que esta función había dejado puesto
+   antes de llamarlas. Corregido llamando a la limpieza EXPLÍCITAMENTE antes de cada `exit` (nunca
+   solo confiando en el trap) y reinstalando el trap después de cada llamada a una de esas
+   funciones, para que una señal (INT/TERM) recibida en el resto de la ejecución siga limpiando.
+
+### Retención (Fase D, propuesta — `backup.sh prune`)
+
+Política inicial propuesta: 1 backup diario, retener los **7 más recientes YA VERIFICADOS** + 1
+copia semanal adicional (la verificada más antigua que quede tras aplicar la retención diaria).
+Un backup extraordinario, manual, después de cada `migrate`/`import-reference-apply` reales (ver
+CLOUD-DEP-02B.2-B). `prune` nunca elimina un backup sin marcador `.verified` — podría ser el
+único resguardo disponible si algo salió mal después. **Esta fase nunca se programa en cron desde
+este repositorio** (restricción explícita de este incremento); es una herramienta manual para
+cuando el operador decida aplicarla.
+
+### Pruebas (Fase E)
+
+Laboratorio Docker con el mismo contenedor envoltorio (socket de Docker montado) que las
+baterías de DEP61 — necesario porque un host Windows vía Git Bash no garantiza semántica POSIX
+real en `/tmp` (mismo hallazgo que DEP61-01). Cubre los 12 escenarios pedidos — backup exitoso,
+restauración exitosa, verificación rigurosa de filas (25/25 exactas contra una tabla sembrada
+conocida), archivo corrupto, espacio insuficiente, contraseña incorrecta, contenedor ausente,
+contenedor de identidad ajena, fallo de restauración (contenido inválido con checksum que SÍ
+coincide — caso distinto de "corrupto"), preservación del backup anterior ante un fallo,
+limpieza segura, ausencia de secretos — más el comando de conveniencia `create-and-verify` y la
+política de retención `prune`. **17/17 PASS**, re-ejecutados junto con toda la regresión
+anterior: **76/76 PASS**.
+
+**Hallazgo real durante las pruebas**: la imagen oficial de `postgres` confía (`pg_hba.conf`,
+regla `trust`) en CUALQUIER conexión desde `127.0.0.1` por defecto — incluso con
+`POSTGRES_HOST_AUTH_METHOD` puesto explícitamente. Como `pg_dump_custom`/`pg_restore_custom`
+conectan siempre vía `docker exec ... -h 127.0.0.1` (dentro del propio contenedor, nunca por la
+red), un backup real nunca pediría contraseña de verdad en esta configuración por defecto. Las
+pruebas de "contraseña incorrecta" (#6) y "preservación" (#10) fuerzan autenticación real editando
+`pg_hba.conf` del contenedor de prueba vía `docker exec` (reemplazando `trust` por
+`scram-sha-256`) y recargando con `pg_reload_conf()` — nunca vía un bind-mount (que apuntaría a
+una ruta del demonio, no del contenedor envoltorio). Esto es una característica de la imagen
+oficial de Docker, no un defecto de `backup.sh`; se documenta aquí como contexto relevante para
+quien configure `pg_hba.conf` en el VPS real.
+
+### Procedimiento de operación posterior (no ejecutado en este incremento)
+
+1. En el VPS, crear el directorio de backups a mano: `mkdir -p /home/ubuntu/vinto-mvp-backups &&
+   chmod 700 /home/ubuntu/vinto-mvp-backups` (ruta configurable vía `VINTO_MVP_BACKUP_DIR`).
+2. `CONFIRM=yes bash backup.sh create-and-verify` tras cada `migrate`/`import-reference-apply`
+   reales, y periódicamente (diario) una vez el piloto esté en operación.
+3. Revisar manualmente `backup.sh list` de vez en cuando; ejecutar `backup.sh prune` cuando se
+   acumulen más backups verificados de los que la retención propuesta recomienda conservar.
+4. Nunca se programa en cron desde este repositorio — si se decide automatizarlo, es una decisión
+   y un incremento aparte, explícitamente autorizado.
+
+### Riesgos residuales
+
+- La comprobación de "al menos una tabla de usuario" en `verify` es deliberadamente genérica
+  (no asume el esquema de 6 esquemas de VINTO); una verificación más estricta (recuento de
+  esquemas/tablas esperados) requeriría acoplar `backup.sh` al esquema real, fuera de alcance de
+  este incremento.
+- `assert_private_dir` no recorre toda la cadena de directorios hasta la raíz (como ya se
+  documentó para `docker/.env`), solo el directorio de backups en sí.
+- No se ensayó el procedimiento de `prune` contra el volumen de backups real de un piloto en
+  producción, solo contra datos sintéticos con nombres de archivo fabricados.
+- El hallazgo de `pg_hba.conf`/`trust` (ver arriba) implica que, dentro de este modelo, cualquiera
+  con acceso a `docker exec` sobre el contenedor de Postgres del MVP puede conectarse sin
+  contraseña — un riesgo ya inherente a la imagen oficial sin personalizar `pg_hba.conf`, no
+  introducido por `backup.sh`, pero que vale la pena que quien administra el VPS conozca.
