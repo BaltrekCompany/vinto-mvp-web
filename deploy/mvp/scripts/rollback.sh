@@ -108,20 +108,69 @@ rollback_version() {
 
 # Detiene el contenedor de PostgreSQL del MVP. NUNCA borra el bind-mount de datos: eso es
 # deliberadamente imposible desde este script (DEP55-01 punto 1 y 6) — ver la nota al principio
-# del archivo. docker compose down, por diseño, no borra bind-mounts (son del host, no volúmenes
-# gestionados por Docker), así que esta función es segura incluso sin ninguna lógica adicional.
+# del archivo. "docker compose down", por diseño, no borra bind-mounts (son del host, no
+# volúmenes gestionados por Docker), así que el camino normal es seguro incluso sin ninguna
+# lógica adicional.
+#
+# DEP61-01 (auditoría del PR #61): el camino degradado anterior (cuando docker/.env falta o es
+# inseguro) invocaba "docker compose ... -p proyecto down" SIN --env-file — pero
+# docker-compose.postgres.yml exige "${VAR:?mensaje}" para las 4 claves de entorno/volumen, así
+# que Compose fallaba al RESOLVER el archivo YAML antes de intentar detener nada: la
+# "recuperación" no recuperaba nada en absoluto (confirmado: Compose aborta en la fase de
+# interpolación, nunca llega a ejecutar "down"). Corregido de raíz: el camino degradado ya NUNCA
+# pasa por Compose. Resuelve primero la identidad ESTRICTA del contenedor
+# (lib_common.sh::resolve_confirmed_mvp_postgres_id — nombre + etiqueta de proyecto + imagen,
+# nunca solo el nombre) y, si docker/.env no es válido (o si, siendo válido, "compose down"
+# fallara igual por cualquier otro motivo — p. ej. un archivo con permisos/propietario correctos
+# pero CONTENIDO corrupto, que el contrato de seguridad del archivo no puede detectar porque
+# nunca inspecciona claves ni valores), usa "docker stop" DIRECTAMENTE sobre el ID ya confirmado
+# — nunca lee ni una sola variable de docker/.env, nunca fabrica credenciales falsas para
+# completar el YAML. Deliberadamente CONSERVADOR: solo detiene, nunca elimina el contenedor ni
+# toca la red "vinto-mvp-internal" (a diferencia de "compose down", que sí los elimina) — deja
+# esos dos recursos Docker creados a propósito; eliminarlos, si se desea, es una decisión aparte
+# del operador (p. ej. una vez restaurado docker/.env, repetir "rollback.sh postgres" con el
+# archivo ya válido).
+#
+# DEP61-02 (auditoría del PR #61): "lib_common.sh::detect_compose_cmd" termina el proceso entero
+# con "exit 1" si ni "docker compose" ni "docker-compose" están instalados — correcto para las
+# fases MUTADORAS normales de deploy.sh (que de verdad necesitan Compose), pero aquí mataría la
+# recuperación entera incluso cuando Docker Engine sigue perfectamente accesible y "docker stop"
+# directo funcionaría sin problema. Se invoca dentro de un SUBSHELL "( ... )": si no hay ningún
+# comando Compose disponible, el "exit 1" de "detect_compose_cmd" termina SOLO ese subshell, no
+# el proceso de rollback.sh — el script sigue y degrada igual a la detención directa. Nunca se
+# cambia el comportamiento de "detect_compose_cmd" en sí (seguiría terminando el proceso para
+# cualquier llamador que lo invoque fuera de un subshell, como ya hace deploy.sh).
 rollback_postgres() {
   require_confirm
   local compose_dir="$SCRIPT_DIR/../docker"
-  assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
-  detect_compose_cmd
-  if [ ! -f "$compose_dir/.env" ]; then
-    echo "AVISO: no existe $compose_dir/.env; se intenta 'down' igualmente por nombre de proyecto (vinto-mvp)." >&2
-    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" -p "$MVP_COMPOSE_PROJECT" down
-  else
-    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down
+  resolve_confirmed_mvp_postgres_id "$MVP_POSTGRES_CONTAINER" "postgres:17"
+  if [ -z "$MVP_POSTGRES_CONTAINER_ID" ]; then
+    echo "$MVP_POSTGRES_CONTAINER no existe; nada que detener (idempotente)."
+    echo "postgres-vinto (TVC) no se tocó."
+    return 0
   fi
-  echo "Contenedor $MVP_POSTGRES_CONTAINER detenido. El bind-mount de datos NO se tocó (este script no tiene ninguna opción para borrarlo)."
+
+  local degraded=0
+  if docker_env_contract_check "$compose_dir/.env"; then
+    local down_status=0
+    # Subshell deliberado (DEP61-02): si "detect_compose_cmd" no encuentra ningún comando Compose,
+    # su "exit 1" termina SOLO este subshell -- nunca el proceso de rollback.sh completo.
+    ( detect_compose_cmd && "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down ) \
+      || down_status=$?
+    if [ "$down_status" -ne 0 ]; then
+      echo "AVISO: 'docker compose down' con docker/.env falló, o ningún comando Docker Compose está disponible en este host (código $down_status) — posible contenido corrupto del archivo (no detectado por su contrato de seguridad, que nunca inspecciona claves/valores) o ausencia de la herramienta Compose. Se degrada a detención directa del contenedor ya identificado; Docker Engine en sí no hace falta que tenga Compose instalado para esto." >&2
+      degraded=1
+    fi
+  else
+    echo "AVISO: $DOCKER_ENV_CONTRACT_REASON Se degrada a detención directa del contenedor ya identificado (ID confirmado), sin leer docker/.env ni depender de sus variables." >&2
+    degraded=1
+  fi
+
+  if [ "$degraded" -eq 1 ]; then
+    docker stop "$MVP_POSTGRES_CONTAINER_ID" >/dev/null
+    echo "Contenedor $MVP_POSTGRES_CONTAINER detenido directamente (ID confirmado: $MVP_POSTGRES_CONTAINER_ID), sin usar docker/.env ni Docker Compose. A diferencia del camino normal, el contenedor queda DETENIDO pero NO eliminado y la red 'vinto-mvp-internal' no se toca — recursos Docker que quedan creados a propósito (recuperación conservadora, nunca destructiva por defecto)."
+  fi
+  echo "El bind-mount de datos NO se tocó (este script no tiene ninguna opción para borrarlo)."
   echo "postgres-vinto (TVC) no se tocó."
 }
 

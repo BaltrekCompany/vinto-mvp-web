@@ -280,6 +280,197 @@ assert_service_user_is_ours() {
   fi
 }
 
+# --- Contrato de seguridad de docker/.env (CLOUD-DEP-02B.2-D.1) --------------------------------
+#
+# docker/.env contiene POSTGRES_BOOTSTRAP_PASSWORD (el rol de arranque del clúster de Postgres,
+# equivalente a un administrador del clúster) en texto plano. A diferencia de
+# shared/backend.env — que SÍ debe ser legible por $MVP_SERVICE_USER, porque el proceso de la API
+# y las herramientas administrativas corren bajo esa identidad —, docker/.env NUNCA debe ser
+# legible por $MVP_SERVICE_USER: solo lo necesita el operador que invoca "docker compose"
+# directamente (en el VPS real, "ubuntu"), nunca el proceso del MVP. Si $MVP_SERVICE_USER pudiera
+# leerlo, comprometer el backend filtraría también la contraseña de arranque del clúster, hoy
+# fuera de su alcance.
+#
+# docker_env_contract_check <path>: NUNCA llama a "exit" ni imprime el contenido del archivo —
+# deja el resultado en el código de retorno (0 = cumple el contrato) y el motivo del primer fallo
+# en DOCKER_ENV_CONTRACT_REASON (una frase para el operador, nunca un valor leído del archivo).
+# Los llamadores deciden qué hacer con un fallo: las fases MUTADORAS de deploy.sh deben detenerse
+# (ver assert_docker_env_contract, más abajo); rollback.sh, en cambio, debe degradar a su camino
+# ya existente de "tratarlo como ausente" — una recuperación legítima nunca debe volverse
+# imposible solo porque este archivo de configuración tenga un problema de permisos.
+#
+# El propietario esperado se resuelve con "id -un" (quien invoca ESTE proceso), nunca con un
+# nombre de usuario fijo como "ubuntu": el VPS real podría nombrar distinto a ese operador, y
+# deploy.sh/rollback.sh nunca se ejecutan completos como root/sudo (ver nota en deploy.sh).
+DOCKER_ENV_CONTRACT_REASON=""
+docker_env_contract_check() {
+  DOCKER_ENV_CONTRACT_REASON=""
+  local path="${1:-}"
+  if [ -z "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="ruta vacía."
+    return 1
+  fi
+  case "$path" in
+    "$MVP_APP_DIR"|"$MVP_APP_DIR"/*)
+      DOCKER_ENV_CONTRACT_REASON="$path está dentro de $MVP_APP_DIR (el árbol privado de $MVP_SERVICE_USER). docker/.env nunca debe vivir ahí: mezclaría su modelo de permisos con el de shared/backend.env."
+      return 1
+      ;;
+  esac
+  # "-L" ANTES de cualquier otra comprobación (misma lección de DEP60-01 para shared/backend.env):
+  # nunca un enlace simbólico, incluso si resuelve a un archivo válido con permisos/propietario
+  # correctos — un enlace añade una segunda ruta de control sobre el contenido real.
+  if [ -L "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path es un enlace simbólico. Debe ser un archivo regular, incluso si el enlace resuelve a un archivo válido."
+    return 1
+  fi
+  if [ ! -e "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path no existe."
+    return 1
+  fi
+  if [ -d "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path es un directorio, no un archivo regular."
+    return 1
+  fi
+  if [ ! -f "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path existe pero no es un archivo regular."
+    return 1
+  fi
+  # El directorio que lo contiene no debe ser escribible por grupo ni por otros: cualquiera con
+  # ese acceso podría sustituir el archivo por otro bajo el mismo nombre, sin tocar el archivo en
+  # sí (y por tanto sin que ninguna comprobación posterior sobre EL ARCHIVO lo detecte).
+  local parent_dir perms_dir group_other_bits
+  parent_dir="$(dirname "$path")"
+  perms_dir="$(stat -c '%a' "$parent_dir" 2>/dev/null || true)"
+  if [ -n "$perms_dir" ]; then
+    group_other_bits="${perms_dir: -2}"
+    case "$group_other_bits" in
+      *[2367]*)
+        DOCKER_ENV_CONTRACT_REASON="el directorio $parent_dir tiene permisos $perms_dir (escribible por grupo u otros); cualquiera con ese acceso podría sustituir $path. Corregir el directorio antes de continuar."
+        return 1
+        ;;
+    esac
+  fi
+  local expected_owner actual_owner
+  expected_owner="$(id -un)"
+  actual_owner="$(stat -c '%U' "$path" 2>/dev/null || true)"
+  if [ "$actual_owner" != "$expected_owner" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path pertenece a '$actual_owner', debe pertenecer a '$expected_owner' (quien invoca este script y ejecuta Docker Compose)."
+    return 1
+  fi
+  # Nunca $MVP_SERVICE_USER: ni como propietario ni con acceso de lectura por ningún otro medio
+  # (grupo, otros, ACL) -- comprobación explícita y activa, no solo "el propietario no es
+  # vinto-mvp" (un permiso de grupo/otros demasiado abierto filtraría el secreto igual).
+  if [ "$actual_owner" = "$MVP_SERVICE_USER" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path pertenece a $MVP_SERVICE_USER. Nunca debe pertenecer al usuario de servicio del MVP: contiene el secreto de arranque del clúster de Postgres, que $MVP_SERVICE_USER no necesita y no debe poder leer."
+    return 1
+  fi
+  local perms
+  perms="$(stat -c '%a' "$path" 2>/dev/null || true)"
+  if [ "$perms" != "600" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path tiene permisos ${perms:-desconocidos}, deben ser exactamente 600."
+    return 1
+  fi
+  # Con propietario y permisos YA confirmados correctos, esta comprobación ACTIVA es la última
+  # línea de defensa contra un mecanismo que "stat" no refleja (p. ej. una ACL POSIX que concede
+  # lectura a $MVP_SERVICE_USER pese a que los bits clásicos de owner/group/other ya parecen 600)
+  # -- nunca el primer motivo de rechazo para un error simple de permisos, que ya se reportó arriba
+  # con un mensaje más específico.
+  if id "$MVP_SERVICE_USER" >/dev/null 2>&1 && sudo -u "$MVP_SERVICE_USER" test -r "$path" 2>/dev/null; then
+    DOCKER_ENV_CONTRACT_REASON="$MVP_SERVICE_USER puede leer $path (permisos demasiado abiertos, probablemente vía ACL: propietario y modo 600 ya son correctos). $MVP_SERVICE_USER nunca debe tener acceso a este archivo."
+    return 1
+  fi
+  # Defensivo frente a otros mecanismos que "stat" no refleja: confirmar que el operador actual
+  # puede leerlo de verdad, no solo que propietario/permisos parecen correctos.
+  if [ ! -r "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path no es legible por el operador actual ($expected_owner), aunque propietario y permisos parezcan correctos (revisar ACLs)."
+    return 1
+  fi
+  return 0
+}
+
+# Variante que detiene la fase (deploy.sh): usarla ANTES de cualquier operación mutadora que
+# dependa de docker/.env. Nunca cambia permisos/propietario automáticamente — solo reporta y
+# detiene; corregirlo es siempre una acción manual y deliberada del operador.
+assert_docker_env_contract() {
+  if ! docker_env_contract_check "$1"; then
+    echo "FALLA: $DOCKER_ENV_CONTRACT_REASON" >&2
+    exit 1
+  fi
+}
+
+# --- Identidad ESTRICTA del contenedor de Postgres del MVP (DEP61-01) --------------------------
+#
+# resolve_confirmed_mvp_postgres_id <nombre> <imagen-esperada>: para operaciones de RECUPERACIÓN
+# que no pueden confiar en Docker Compose (ver rollback.sh::rollback_postgres) y por tanto no
+# pueden dejar que Compose decida, por sí solo, si un contenedor es "nuestro". Nunca basta con el
+# nombre: exige ADEMÁS que la etiqueta de proyecto compose y la imagen coincidan EXACTAMENTE con
+# lo que docker-compose.postgres.yml declara, y solo entonces resuelve y fija el ID real (hash)
+# del contenedor en MVP_POSTGRES_CONTAINER_ID. Toda operación posterior debe actuar sobre ESE ID,
+# nunca volver a buscar por nombre (evita una sustitución entre la comprobación y la acción,
+# TOCTOU). "No existe" es un estado LEGÍTIMO, nunca un error: deja MVP_POSTGRES_CONTAINER_ID
+# vacío y retorna 0, para que el llamador lo trate de forma explícita e idempotente. Si existe
+# pero CUALQUIER señal de identidad no coincide, se detiene (exit 1) — mismo criterio fail-closed
+# que el resto de las funciones "assert_*" de este archivo, nunca se opera sobre un contenedor
+# cuya identidad no se pudo confirmar del todo.
+#
+# DEP61-03 (auditoría del PR #61): la versión anterior trataba CUALQUIER fallo de "docker inspect"
+# como "el contenedor no existe" — pero "docker inspect" también falla (mismo código de salida)
+# si el daemon es inaccesible, si el operador no tiene permiso, o ante cualquier otro error de
+# consulta. Confundir esos casos con "no existe" es un falso negativo peligroso: un contenedor que
+# SÍ existe (y sigue corriendo) se reportaría como "nada que detener", dejando a quien opera con
+# una falsa sensación de que la recuperación funcionó. Ahora se distingue por el TEXTO del error
+# ("no such object"/"no such container", la señal estable que usa el cliente de Docker para
+# "realmente no existe"): solo ESE caso se trata como ausencia legítima; cualquier otro error de
+# consulta se reporta explícitamente y detiene la función (exit 1) sin asumir nada y sin tocar
+# nada — fail-closed, nunca fail-open disfrazado de idempotencia.
+# shellcheck disable=SC2034 # usada por rollback.sh tras "source"; ShellCheck no lo ve si este
+# archivo se analiza solo (igual que COMPOSE_CMD más arriba).
+MVP_POSTGRES_CONTAINER_ID=""
+resolve_confirmed_mvp_postgres_id() {
+  MVP_POSTGRES_CONTAINER_ID=""
+  local name="$1" expected_image="$2"
+  local inspected status
+  # "if var=$(cmd); then" (nunca una asignación suelta fuera de un "if"): la condición de un "if"
+  # es el único contexto exento de "set -e" que captura CORRECTAMENTE tanto la salida como el
+  # código de salida de un comando que puede fallar legítimamente (aquí, "docker inspect" sobre
+  # un contenedor que no existe). Una asignación suelta ("inspected=\"\$(...)\""; "status=\$?")
+  # habría disparado "set -e" en cuanto "docker inspect" devolviera un código distinto de 0 --
+  # matando el script ANTES de poder distinguir "no existe" de cualquier otro error (regresión
+  # real detectada en la propia batería de pruebas de esta corrección).
+  if inspected="$(docker inspect "$name" --format '{{.Id}}|{{ index .Config.Labels "com.docker.compose.project" }}|{{.Config.Image}}' 2>&1)"; then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -ne 0 ]; then
+    if printf '%s' "$inspected" | grep -qi "no such object\|no such container"; then
+      return 0
+    fi
+    echo "FALLA: no se pudo consultar '$name' en Docker -- la consulta falló con un error DISTINTO de 'no existe' (posible daemon inaccesible, permisos insuficientes, u otro problema). No se asume que el contenedor no existe ni se toca nada; revisar el daemon/los permisos antes de reintentar. Detalle: $inspected" >&2
+    exit 1
+  fi
+  local cid project image rest
+  cid="${inspected%%|*}"
+  rest="${inspected#*|}"
+  project="${rest%%|*}"
+  image="${rest#*|}"
+  if [ "$project" != "$MVP_COMPOSE_PROJECT" ]; then
+    echo "FALLA DE IDENTIDAD: el contenedor '$name' existe pero su etiqueta com.docker.compose.project es '${project:-ninguna}', no '$MVP_COMPOSE_PROJECT'. Podría ser de TVC/ETL u otro proyecto. Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  if [ "$image" != "$expected_image" ]; then
+    echo "FALLA DE IDENTIDAD: el contenedor '$name' existe y su etiqueta de proyecto es correcta, pero su imagen es '${image:-ninguna}', no '$expected_image' (la que fija docker-compose.postgres.yml). Nunca se opera sobre un contenedor cuya imagen no coincide con la esperada. Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  if [ -z "$cid" ]; then
+    echo "FALLA: no se pudo resolver el ID real de '$name' tras confirmar su identidad (nombre, etiqueta de proyecto e imagen). Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2034 # usada por rollback.sh tras "source"; ShellCheck no lo ve si este
+  # archivo se analiza solo (igual que COMPOSE_CMD, más arriba).
+  MVP_POSTGRES_CONTAINER_ID="$cid"
+}
+
 # Verifica que una ruta de datos (bind-mount) propuesta no está ya en uso como mount de OTRO
 # contenedor (TVC/ETL u otro), y que no está dentro de los directorios de TVC (DEP55-03:
 # "volumen o bind-mount potencialmente compartido").

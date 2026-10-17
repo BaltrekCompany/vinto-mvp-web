@@ -326,18 +326,9 @@ nunca `source`) desde `postgres-roles` (para reaprovisionar roles con las contra
 generadas) y, fuera de `deploy.sh`, desde el proceso de la API y las herramientas administrativas
 (`migrate.py`, `import_reference.py`).
 
-**`docker/.env`**: a diferencia de `shared/backend.env`, **no tiene ningún contrato de
-propietario/permisos verificado por ningún script de este repositorio**, aunque contiene
-`POSTGRES_BOOTSTRAP_PASSWORD` en texto plano. Vive fuera del árbol 750 de `vinto-mvp`, junto a
-los scripts, en el `home` del operador `ubuntu`. **Esto es un hueco real, señalado aquí a
-propósito (Fase B de CLOUD-DEP-02B.2-C), no resuelto en esta PR**: corregirlo (una fase de
-`preflight`/`postgres-up` que exija 600 sobre `docker/.env` antes de usarlo, o moverlo bajo
-`shared/` con el mismo propietario que `backend.env`) tocaría `postgres-up`/
-`postgres-bootstrap-db`/`rollback.sh postgres`/`validate-compose`, que ya lo usan tal cual — un
-cambio de alcance mayor que el de este incremento. Mientras no se decida, el operador debe aplicar
-`chmod 600 docker/.env` a mano, igual que ya se exige para `shared/backend.env`, antes de
-`postgres-up`. Se lee vía `docker compose --env-file` (nunca `source`) y vía `env_value` en
-`postgres-bootstrap-db`/`postgres-roles`.
+**`docker/.env`**: contrato de seguridad implementado en CLOUD-DEP-02B.2-D.1 (ver sección dedicada
+más abajo) — a diferencia de `shared/backend.env`, el hueco documentado originalmente en
+CLOUD-DEP-02B.2-C ya está cerrado.
 
 **Comportamiento cuando falta una variable**: `env_value`/`mvp_env_value` (`lib_common.sh`)
 fallan con un mensaje explícito (nunca una cadena vacía silenciosa ni un valor por defecto) y
@@ -367,3 +358,190 @@ argumento de línea de comandos (`psql`, `docker exec -e`, ni ningún proceso) �
 añade su propia comprobación de que ningún valor del `shared/backend.env` sintético del
 laboratorio queda impreso en ningún log de esa batería — mismo criterio que la comprobación
 general ya existente, aplicado también a la fase nueva.
+
+## Endurecimiento de `docker/.env` (CLOUD-DEP-02B.2-D.1)
+
+Cierra el hueco señalado en CLOUD-DEP-02B.2-C: `docker/.env` contiene `POSTGRES_BOOTSTRAP_PASSWORD`
+en texto plano y, hasta este incremento, ningún script verificaba su propietario, sus permisos, ni
+rechazaba un enlace simbólico.
+
+### Contrato exacto
+
+- **Archivo regular, nunca un enlace simbólico** — incluso si el enlace resolviera a un archivo
+  válido con permisos y propietario correctos (misma lección que DEP60-01 para
+  `shared/backend.env`).
+- **Propietario = quien invoca el script**, resuelto dinámicamente con `id -un` en el momento de
+  la comprobación — **nunca un nombre de usuario fijo como `ubuntu`**: el VPS real podría nombrar
+  distinto a ese operador, y `deploy.sh`/`rollback.sh` nunca se ejecutan completos como root/sudo.
+- **Permisos exactamente `600`.**
+- **El directorio que lo contiene no puede ser escribible por grupo ni por otros** — si lo fuera,
+  cualquiera con ese acceso podría sustituir el archivo sin que ninguna comprobación sobre el
+  archivo en sí lo detectara.
+- **Nunca legible por `vinto-mvp`** — ni como propietario ni por ningún otro medio (grupo, otros,
+  ACL). Se comprueba de forma ACTIVA (`sudo -u vinto-mvp test -r`), no solo infiriéndolo de
+  propietario/modo: una ACL POSIX que conceda lectura a `vinto-mvp` recalcula además la máscara
+  (el bit de grupo que `stat` reporta cambia en la práctica, confirmado empíricamente: `600` ->
+  `640`), así que normalmente ya queda cubierto por el chequeo de permisos — la comprobación activa
+  queda como defensa en profundidad para un mecanismo que `stat` no refleje en absoluto.
+
+### Dónde vive la lógica
+
+`lib_common.sh::docker_env_contract_check <path>` es el guardián compartido: nunca llama a `exit`
+ni imprime el contenido del archivo — deja el resultado en su código de retorno y el motivo del
+primer fallo en `DOCKER_ENV_CONTRACT_REASON` (una frase para el operador, nunca un valor leído del
+archivo). Cada llamador decide qué hacer con un fallo:
+
+- **Fases mutadoras de `deploy.sh`** (`validate-compose`, `postgres-up`, `postgres-bootstrap-db`,
+  `postgres-roles`) usan `assert_docker_env_contract`, que se detiene (`exit 1`) con el motivo. Se
+  invoca ANTES de cualquier operación mutadora o de leer ningún valor del archivo.
+- **`rollback.sh rollback_postgres`** usa `docker_env_contract_check` directamente y, si falla por
+  CUALQUIER motivo (ausente, symlink, permisos, propietario, legible por `vinto-mvp`), degrada al
+  mismo camino ya existente de "tratarlo como ausente" (`down` por nombre de proyecto, sin
+  `--env-file`) — una operación de **recuperación** nunca debe volverse imposible solo porque este
+  archivo de configuración tenga un problema de permisos.
+- **`preflight.sh stage_infra`** reporta el estado como diagnóstico de solo lectura: `OK` si no
+  existe todavía (esperado antes de la primera `postgres-up`, igual que `shared/backend.env` antes
+  del primer `checkout`), `OK` si existe y cumple el contrato, `FALLA` si existe pero lo viola.
+
+### Procedimiento seguro de creación posterior
+
+1. Copiar `env/postgres.env.example` a `docker/.env`, en el VPS, por quien tiene acceso a la
+   terminal — nunca generado ni transcrito en una conversación con un asistente.
+2. Generar cada contraseña con `openssl rand -base64 24` (o equivalente) directamente en esa
+   terminal.
+3. `chmod 600 docker/.env` y confirmar que el propietario es quien ejecuta `deploy.sh`/`docker
+   compose` (normalmente ya lo es, por ser quien creó el archivo).
+4. Confirmar que el directorio que lo contiene (`deploy/mvp/docker/`) no es escribible por grupo
+   ni por otros.
+5. Nunca aplicar `setfacl` ni ningún otro mecanismo que conceda acceso a `vinto-mvp` sobre este
+   archivo — no lo necesita.
+
+### Diferencia respecto a `shared/backend.env`
+
+| | `shared/backend.env` | `docker/.env` |
+|---|---|---|
+| Propietario correcto | `vinto-mvp` | quien invoca el script (nunca `vinto-mvp`) |
+| Quién debe poder leerlo | `vinto-mvp` (proceso de la API, `migrate.py`, `import_reference.py`) | solo el operador — `vinto-mvp` nunca |
+| Por qué la diferencia | el proceso del MVP corre bajo esa identidad | Postgres se administra desde fuera del MVP; si `vinto-mvp` pudiera leerlo, comprometer el backend filtraría también el secreto de arranque del clúster |
+
+### Comportamiento cuando falta el archivo
+
+- **Fases mutadoras de `deploy.sh`**: `FALLA` explícita (`$path no existe.`) — nunca continúan sin
+  él.
+- **`rollback.sh rollback_postgres`**: comportamiento preexistente, sin cambios — se trata como
+  legítimamente ausente (esperado si `postgres-up` nunca se ejecutó) y continúa con `down` por
+  nombre de proyecto.
+- **`preflight.sh`**: `OK`, nunca bloquea — es el estado esperado antes del primer `postgres-up`.
+
+### Limitaciones operativas y riesgos residuales
+
+- La comprobación del directorio padre solo mira el directorio INMEDIATO que contiene el archivo,
+  no toda la cadena de directorios hasta la raíz (proporcional al resto del repositorio; una
+  cadena completa de "ruta segura" tipo `ssh` sería un cambio de alcance mayor).
+- El chequeo activo `sudo -u vinto-mvp test -r` requiere que `sudo -u vinto-mvp` funcione desde el
+  invocador; si no funciona (p. ej. antes de `user-and-dirs`, cuando `vinto-mvp` todavía no
+  existe), esa comprobación específica se omite en silencio — el contrato sigue siendo fail-closed
+  gracias a los chequeos de propietario/permisos, que no dependen de `vinto-mvp` existiendo.
+- `rollback_postgres` ya **no** depende de `detect_compose_cmd` para su camino degradado (ver
+  DEP61-01 más abajo); su comportamiento ante un `docker/.env` inseguro se prueba ahora
+  end-to-end con Docker real, no solo por código.
+- Probado en `ubuntu:24.04` con ACLs POSIX estándar; no se ensayó contra NFS, SELinux, ni otros
+  mecanismos de control de acceso que `stat`/ACL POSIX no cubran.
+
+## DEP61-01: `rollback_postgres` sin depender de `docker/.env` (auditoría del PR #61)
+
+**Hallazgo bloqueante**: el camino degradado original (cuando `docker/.env` faltaba o era
+inseguro) invocaba `docker compose ... -p proyecto down` **sin** `--env-file`. Pero
+`docker-compose.postgres.yml` exige `${VAR:?mensaje}` para sus 4 claves obligatorias
+(`POSTGRES_BOOTSTRAP_DB/USER/PASSWORD`, `VINTO_MVP_PGDATA_DIR`) — sin un `--env-file` que las
+resuelva, **Compose fallaba al interpretar el propio YAML, antes de intentar detener nada**
+(confirmado empíricamente). La "recuperación" no recuperaba absolutamente nada.
+
+### Corrección
+
+El camino degradado ya **nunca pasa por Docker Compose**. `rollback_postgres` ahora:
+
+1. Resuelve primero la identidad del contenedor con
+   `lib_common.sh::resolve_confirmed_mvp_postgres_id` — exige nombre **+** etiqueta de proyecto
+   compose **+** imagen (`postgres:17`, la que fija el YAML) coincidiendo, nunca solo el nombre
+   (requisitos 3/4 del alcance). Si el contenedor no existe, es un estado legítimo e idempotente
+   (`return 0`, mensaje explícito, nunca un error). Si existe pero cualquier señal no coincide,
+   se detiene (`exit 1`) sin tocarlo.
+2. Si `docker/.env` cumple el contrato de seguridad (DEP60-01/CLOUD-DEP-02B.2-D.1), intenta el
+   camino normal (`compose down --env-file`) — comportamiento sin cambios para el caso válido.
+3. Si el contrato falla, **o si incluso siendo válido `compose down` falla por otro motivo**
+   (p. ej. contenido corrupto: una clave obligatoria ausente, que el contrato de seguridad del
+   archivo no puede detectar porque nunca inspecciona claves/valores), degrada a `docker stop`
+   **directo** sobre el ID ya confirmado — nunca lee `docker/.env`, nunca fabrica credenciales
+   ficticias para completar el YAML (requisito 8).
+4. El camino degradado es deliberadamente **conservador**: solo detiene, nunca elimina el
+   contenedor ni la red `vinto-mvp-internal` (a diferencia de `compose down`, que sí los elimina)
+   — recursos Docker que quedan creados a propósito; eliminarlos es una decisión aparte del
+   operador (p. ej. repetir `rollback.sh postgres` una vez `docker/.env` esté restaurado).
+
+### Pruebas (Docker real, no solo por código)
+
+Un host Windows vía Git Bash **no garantiza semántica POSIX real** en su `/tmp` (confirmado
+empíricamente: `chmod 600` seguido de `stat -c '%a'` seguía reportando `644`; `ln -s` no siempre
+creaba un enlace real) — necesario para que `docker_env_contract_check` pruebe lo que de verdad
+importa. La batería usa un contenedor Ubuntu con el **socket de Docker montado**
+(`-v /var/run/docker.sock:/var/run/docker.sock`) y el CLI de Docker instalado dentro: los
+contenedores que crea son **hermanos** en el mismo demonio que ve el resto de esta suite, con
+semántica de archivo Linux real para `chmod`/`stat`/`ln -s`.
+
+Casos cubiertos, todos con Docker real: `docker/.env` válido (camino normal sin cambios),
+ausente, en `644`, como enlace simbólico (hacia un destino válido), con contenido corrupto (clave
+obligatoria ausente — Compose falla, degrada igual sin fabricar nada), contenedor con el nombre
+esperado pero identidad ajena (imagen distinta: rechazado, sigue activo), contenedor del MVP
+inexistente (explícito e idempotente en dos ejecuciones), contenedor ajeno creado **antes** de
+toda la batería (permanece activo después), ningún secreto impreso, y ninguna mención de TVC
+salvo el reaseguro esperado del propio script. **11/11 PASS**, re-ejecutados junto con la
+regresión completa de PR #57/#59/#60: **57/57 PASS**.
+
+## DEP61-02 y DEP61-03: dos condiciones adicionales (segunda auditoría del PR #61)
+
+Dos hallazgos más, encontrados al revisar el camino degradado ya corregido en DEP61-01.
+
+### DEP61-02 — `detect_compose_cmd` no debe poder matar la recuperación
+
+`lib_common.sh::detect_compose_cmd` termina el proceso entero con `exit 1` si ni `docker compose`
+ni `docker-compose` están instalados — correcto para las fases **mutadoras** normales de
+`deploy.sh` (que de verdad necesitan Compose para crear/arrancar PostgreSQL), pero dentro del
+camino degradado de `rollback_postgres` esto mataría la recuperación entera incluso cuando Docker
+Engine sigue perfectamente accesible y `docker stop` directo funcionaría sin ningún problema.
+
+**Corrección**: `detect_compose_cmd` y la invocación de `compose down` se envuelven en un
+**subshell** (`( detect_compose_cmd && "${COMPOSE_CMD[@]}" ... down )`). Si no hay ningún comando
+Compose disponible, el `exit 1` de `detect_compose_cmd` termina **solo ese subshell**, nunca el
+proceso de `rollback.sh` — el script sigue y degrada igual a la detención directa. El
+comportamiento de `detect_compose_cmd` en sí **no cambia** — cualquier llamador que lo invoque
+fuera de un subshell (como ya hace `deploy.sh`) sigue terminando el proceso exactamente igual que
+antes; el alcance del cambio es exclusivamente la forma en que `rollback_postgres` lo invoca.
+
+### DEP61-03 — distinguir "no existe" de "no se pudo consultar"
+
+`lib_common.sh::resolve_confirmed_mvp_postgres_id` trataba **cualquier** fallo de `docker
+inspect` como "el contenedor no existe" — pero esa consulta también falla (mismo código de
+salida) si el daemon es inaccesible, si el operador no tiene permiso, o ante cualquier otro error.
+Confundir esos casos con "no existe" es un falso negativo peligroso: un contenedor que SÍ existe
+(y sigue corriendo) se reportaría como "nada que detener", dejando al operador con una falsa
+sensación de que la recuperación funcionó.
+
+**Corrección**: se distingue por el **texto** del error (`no such object`/`no such container`,
+la señal estable que usa el cliente de Docker para "realmente no existe"). Solo ese caso se trata
+como ausencia legítima (idempotente, `return 0`); cualquier otro error de consulta se reporta
+explícitamente y detiene la función (`exit 1`) sin asumir nada y sin tocar nada — fail-closed,
+nunca fail-open disfrazado de idempotencia. La llamada a `docker inspect` se protege con el
+patrón `if var=$(cmd); then ... else ...; fi` (nunca una asignación suelta): una asignación suelta
+fuera de un `if` **no** está exenta de `set -e` y habría matado el script en cuanto `docker
+inspect` devolviera un código distinto de 0 — exactamente el mismo tipo de regresión silenciosa
+que esta corrección debía evitar, detectada por la propia batería de pruebas de esta corrección
+antes de cerrarla (confirmado en código antes del commit final, no en producción).
+
+### Pruebas
+
+Dos casos nuevos, con Docker real: `DOCKER_HOST` apuntando a un socket inexistente (daemon
+inaccesible → error explícito, nunca "no existe"); el plugin de Compose renombrado temporalmente
+mientras Docker Engine sigue operativo y un contenedor legítimo existe (creado con `docker run`,
+no con Compose) → degrada igual a detención directa. Re-ejecutados junto con toda la regresión
+anterior: **59/59 PASS**.
