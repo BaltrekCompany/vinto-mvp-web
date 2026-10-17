@@ -2537,10 +2537,310 @@ else
   unset MSYS_NO_PATHCONV
 fi
 
-echo "Límite conocido de esta batería: rollback_postgres también llama a 'detect_compose_cmd'"
-echo "(requiere un comando Docker Compose real), que no está disponible en el contenedor Ubuntu"
-echo "simple de este laboratorio -- su comportamiento degradado se confirma por código (más"
-echo "arriba) y reutilizando la MISMA función ya probada en vivo contra los 12 casos A1-A12."
+echo "El comportamiento REAL de rollback_postgres (con Docker Compose real, DEP61-01) se prueba"
+echo "en vivo más abajo, en la batería dedicada a esa corrección — no solo por código."
+
+echo "=== Prueba focalizada DEP61-01: rollback_postgres sin depender de docker/.env ==="
+echo "El camino degradado anterior invocaba 'docker compose ... down' SIN --env-file, pero"
+echo "docker-compose.postgres.yml exige \${VAR:?mensaje} para 4 claves -- Compose fallaba al"
+echo "RESOLVER el YAML antes de intentar detener nada (confirmado empíricamente). Corregido:"
+echo "ahora resuelve primero la identidad ESTRICTA del contenedor (nombre + etiqueta de proyecto"
+echo "compose + imagen, nunca solo el nombre) y, si docker/.env no sirve por cualquier motivo,"
+echo "usa 'docker stop' DIRECTO sobre el ID ya confirmado -- nunca pasa por Compose, nunca lee"
+echo "docker/.env. Laboratorio: un contenedor Ubuntu con el SOCKET de Docker montado (para que"
+echo "chmod/stat/ln -s sean semántica POSIX real -- un host Windows no garantiza esto en /tmp, ver"
+echo "nota más abajo) y el CLI de Docker instalado, controlando contenedores HERMANOS en el MISMO"
+echo "demonio que el resto de este archivo. Nombres de proyecto/contenedor/red ÚNICOS por prueba."
+
+DEP61_SECRET="SECRETO-SINTETICO-DEP61-$(date +%s)-NUNCA-UNA-CREDENCIAL-REAL"
+DEP61_WRAPPER_NAME=""
+
+# Contenedor AJENO creado ANTES de la batería (requisito: "contenedor ajeno permanece activo") --
+# nunca lleva ninguna etiqueta ni nombre relacionado con el MVP ni con TVC, y se verifica al
+# final que ninguna prueba de abajo lo tocó.
+set +e
+create_container verify-dep61-bystander alpine:3 sleep 300
+dep61_bystander_status=$?
+set -e
+DEP61_BYSTANDER_NAME="$CREATED_NAME"
+
+set +e
+create_container dep61-wrapper -v //var/run/docker.sock:/var/run/docker.sock ubuntu:24.04 sleep 1800
+dep61_wrapper_status=$?
+set -e
+if [ "$dep61_wrapper_status" -ne 0 ]; then
+  report "DEP61-01: batería completa (omitida: no se pudo crear el contenedor envoltorio con el socket de Docker montado)" 1
+else
+  DEP61_WRAPPER_NAME="$CREATED_NAME"
+  docker cp "$MVP_DIR" "$DEP61_WRAPPER_NAME:/tmp/mvp" >/dev/null
+  set +e
+  docker exec "$DEP61_WRAPPER_NAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    find /tmp/mvp -name "*.sh" -exec sed -i "s/\r$//" {} + 2>/dev/null || true
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends docker.io docker-compose-v2 >/dev/null
+  ' >/tmp/verify-dep61-setup.log 2>&1
+  dep61_setup_ok=$?
+  set -e
+  if [ "$dep61_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación DEP61-01 ---"; cat /tmp/verify-dep61-setup.log
+    report "DEP61-01: preparación (contenedor envoltorio con docker CLI real, vía socket montado)" 1
+  else
+    report "DEP61-01: preparación (contenedor envoltorio con docker CLI real, vía socket montado)" 0
+
+    # NOTA (por qué un contenedor y no el host directamente): "chmod"/"ln -s" sobre el /tmp de un
+    # host Windows vía Git Bash NO producen semántica POSIX real (confirmado empíricamente: un
+    # "chmod 600" seguido de "stat -c '%a'" reporta "644" de todas formas, y "ln -s" no siempre
+    # crea un enlace real) -- docker_env_contract_check (permisos/symlink) necesita un filesystem
+    # Linux real para que esta batería pruebe lo que de verdad importa. El socket montado permite
+    # que "docker"/"docker compose", instalados DENTRO de este contenedor, controlen contenedores
+    # HERMANOS en el mismo demonio que ve el resto de este archivo (y el propio host).
+    DEP61_INNER="$(mktemp)"
+    track_tmp_path "$DEP61_INNER"
+    cat > "$DEP61_INNER" <<INNEREOF
+set -u
+cd /tmp/mvp
+cp docker/docker-compose.postgres.yml docker/docker-compose.postgres.yml.orig
+
+write_compose() {
+  sed -e "s/^name: vinto-mvp\\\$/name: vinto-mvp-dep61-\$1/" \
+      -e "s/container_name: vinto-mvp-postgres/container_name: vinto-mvp-postgres-dep61-\$1/" \
+      -e "s/vinto-mvp-internal/vinto-mvp-internal-dep61-\$1/g" \
+      docker/docker-compose.postgres.yml.orig > docker/docker-compose.postgres.yml
+}
+write_valid_env() {
+  printf 'POSTGRES_BOOTSTRAP_DB=bootdb\nPOSTGRES_BOOTSTRAP_USER=bootuser\nPOSTGRES_BOOTSTRAP_PASSWORD=$DEP61_SECRET\nVINTO_MVP_PGDATA_DIR=/tmp/pgdata-\$1\n' > docker/.env
+  chmod 600 docker/.env
+}
+do_rollback() {
+  ( cd scripts && CONFIRM=yes \
+      MVP_POSTGRES_CONTAINER="vinto-mvp-postgres-dep61-\$1" \
+      MVP_COMPOSE_PROJECT="vinto-mvp-dep61-\$1" \
+      bash rollback.sh postgres )
+}
+is_running() { docker inspect --format '{{.State.Running}}' "\$1" 2>/dev/null || echo false; }
+wait_exec_ready() {
+  local n=0
+  while [ "\$n" -lt 30 ]; do
+    docker exec "\$1" true >/dev/null 2>&1 && return 0
+    sleep 0.5
+    n=\$((n + 1))
+  done
+  return 1
+}
+result() { echo "RESULT:\$1:\$2"; }
+
+# T1: docker/.env VÁLIDO -- camino normal (compose down elimina contenedor + red).
+write_compose t1
+write_valid_env t1
+docker compose -f docker/docker-compose.postgres.yml --env-file docker/.env up -d
+wait_exec_ready vinto-mvp-postgres-dep61-t1
+set +e
+log_t1="\$(do_rollback t1 2>&1)"; t1_status=\$?
+set -e
+echo "\$log_t1"
+if [ "\$t1_status" -eq 0 ] && ! docker inspect vinto-mvp-postgres-dep61-t1 >/dev/null 2>&1; then
+  result T1 0
+else
+  result T1 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t1 >/dev/null 2>&1 || true
+docker network rm vinto-mvp-internal-dep61-t1 >/dev/null 2>&1 || true
+
+# T2: docker/.env AUSENTE -- recuperación funcional (detención directa; datos verificados tras
+# reiniciar el contenedor, no solo asumidos).
+write_compose t2
+write_valid_env t2
+docker compose -f docker/docker-compose.postgres.yml --env-file docker/.env up -d
+wait_exec_ready vinto-mvp-postgres-dep61-t2
+docker exec vinto-mvp-postgres-dep61-t2 sh -c 'echo ok > /var/lib/postgresql/data/MARKER'
+rm -f docker/.env
+set +e
+log_t2="\$(do_rollback t2 2>&1)"; t2_status=\$?
+set -e
+echo "\$log_t2"
+if [ "\$t2_status" -eq 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t2)" = "false" ] \
+    && docker inspect vinto-mvp-postgres-dep61-t2 >/dev/null 2>&1 \
+    && printf '%s' "\$log_t2" | grep -q "detenido directamente"; then
+  docker start vinto-mvp-postgres-dep61-t2 >/dev/null
+  wait_exec_ready vinto-mvp-postgres-dep61-t2
+  marker_t2="\$(docker exec vinto-mvp-postgres-dep61-t2 cat /var/lib/postgresql/data/MARKER 2>/dev/null || true)"
+  docker stop vinto-mvp-postgres-dep61-t2 >/dev/null
+  if [ "\$marker_t2" = "ok" ]; then result T2 0; else result T2 1; fi
+else
+  result T2 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t2 >/dev/null 2>&1 || true
+docker network rm vinto-mvp-internal-dep61-t2 >/dev/null 2>&1 || true
+
+# T3: docker/.env en 644 -- recuperación funcional SIN leerlo (nunca aparece el secreto en el log).
+write_compose t3
+write_valid_env t3
+docker compose -f docker/docker-compose.postgres.yml --env-file docker/.env up -d
+wait_exec_ready vinto-mvp-postgres-dep61-t3
+chmod 644 docker/.env
+set +e
+log_t3="\$(do_rollback t3 2>&1)"; t3_status=\$?
+set -e
+echo "\$log_t3"
+if [ "\$t3_status" -eq 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t3)" = "false" ] \
+    && ! printf '%s' "\$log_t3" | grep -q "$DEP61_SECRET"; then
+  result T3 0
+else
+  result T3 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t3 >/dev/null 2>&1 || true
+docker network rm vinto-mvp-internal-dep61-t3 >/dev/null 2>&1 || true
+
+# T4: docker/.env como ENLACE simbólico hacia un destino VÁLIDO -- recuperación funcional sin
+# leerlo (DEP60-01 aplicado también aquí: rechazado por ser symlink, nunca por contenido).
+write_compose t4
+write_valid_env t4
+docker compose -f docker/docker-compose.postgres.yml --env-file docker/.env up -d
+wait_exec_ready vinto-mvp-postgres-dep61-t4
+mv docker/.env docker/.env.real
+ln -s .env.real docker/.env
+set +e
+log_t4="\$(do_rollback t4 2>&1)"; t4_status=\$?
+set -e
+echo "\$log_t4"
+if [ "\$t4_status" -eq 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t4)" = "false" ] \
+    && ! printf '%s' "\$log_t4" | grep -q "$DEP61_SECRET" \
+    && printf '%s' "\$log_t4" | grep -q "enlace simbólico"; then
+  result T4 0
+else
+  result T4 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t4 >/dev/null 2>&1 || true
+docker network rm vinto-mvp-internal-dep61-t4 >/dev/null 2>&1 || true
+rm -f docker/.env docker/.env.real
+
+# T5: archivo "corrupto" -- 600, propietario correcto (pasa el contrato de SEGURIDAD del archivo,
+# que nunca inspecciona claves/valores), pero falta POSTGRES_BOOTSTRAP_PASSWORD: Compose falla al
+# resolver "\${POSTGRES_BOOTSTRAP_PASSWORD:?...}" -- debe degradar igual, SIN fabricar un valor.
+write_compose t5
+write_valid_env t5
+docker compose -f docker/docker-compose.postgres.yml --env-file docker/.env up -d
+wait_exec_ready vinto-mvp-postgres-dep61-t5
+printf 'POSTGRES_BOOTSTRAP_DB=bootdb\nPOSTGRES_BOOTSTRAP_USER=bootuser\nVINTO_MVP_PGDATA_DIR=/tmp/pgdata-t5\n' > docker/.env
+chmod 600 docker/.env
+set +e
+log_t5="\$(do_rollback t5 2>&1)"; t5_status=\$?
+set -e
+echo "\$log_t5"
+if [ "\$t5_status" -eq 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t5)" = "false" ] \
+    && printf '%s' "\$log_t5" | grep -q "falló" \
+    && printf '%s' "\$log_t5" | grep -q "detenido directamente"; then
+  result T5 0
+else
+  result T5 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t5 >/dev/null 2>&1 || true
+docker network rm vinto-mvp-internal-dep61-t5 >/dev/null 2>&1 || true
+
+# T6: contenedor con el NOMBRE esperado pero identidad AJENA (imagen distinta, pese a la etiqueta
+# de proyecto correcta) -- rechazo; requisitos 3/4: nunca solo el nombre como evidencia.
+docker run -d --name vinto-mvp-postgres-dep61-t6 \
+  --label com.docker.compose.project=vinto-mvp-dep61-t6 alpine:3 sleep 300 >/dev/null
+set +e
+log_t6="\$(do_rollback t6 2>&1)"; t6_status=\$?
+set -e
+echo "\$log_t6"
+if [ "\$t6_status" -ne 0 ] && [ "\$(is_running vinto-mvp-postgres-dep61-t6)" = "true" ] \
+    && printf '%s' "\$log_t6" | grep -q "FALLA DE IDENTIDAD"; then
+  result T6 0
+else
+  result T6 1
+fi
+docker rm -f vinto-mvp-postgres-dep61-t6 >/dev/null 2>&1 || true
+
+# T7: contenedor del MVP INEXISTENTE -- explícito e idempotente en dos ejecuciones consecutivas.
+set +e
+log_t7a="\$(do_rollback t7 2>&1)"; t7a=\$?
+log_t7b="\$(do_rollback t7 2>&1)"; t7b=\$?
+set -e
+echo "\$log_t7a"; echo "\$log_t7b"
+if [ "\$t7a" -eq 0 ] && [ "\$t7b" -eq 0 ] \
+    && printf '%s' "\$log_t7a" | grep -q "no existe; nada que detener" \
+    && printf '%s' "\$log_t7b" | grep -q "no existe; nada que detener"; then
+  result T7 0
+else
+  result T7 1
+fi
+INNEREOF
+    docker exec -i "$DEP61_WRAPPER_NAME" bash -s < "$DEP61_INNER" >/tmp/verify-dep61-inner.log 2>&1
+    dep61_inner_status=$?
+
+    dep61_result_of() {
+      grep "^RESULT:$1:" /tmp/verify-dep61-inner.log | tail -n1 | cut -d: -f3
+    }
+    if [ "$(dep61_result_of T1)" = "0" ]; then
+      report "DEP61-01 T1: docker/.env válido -- camino normal (compose down elimina el contenedor)" 0
+    else
+      report "DEP61-01 T1: docker/.env válido -- camino normal (compose down elimina el contenedor)" 1
+    fi
+    if [ "$(dep61_result_of T2)" = "0" ]; then
+      report "DEP61-01 T2: docker/.env ausente -- recuperación funcional (detención directa; datos verificados tras reiniciar)" 0
+    else
+      report "DEP61-01 T2: docker/.env ausente -- recuperación funcional (detención directa; datos verificados tras reiniciar)" 1
+    fi
+    if [ "$(dep61_result_of T3)" = "0" ]; then
+      report "DEP61-01 T3: docker/.env en 644 -- recuperación funcional sin leerlo" 0
+    else
+      report "DEP61-01 T3: docker/.env en 644 -- recuperación funcional sin leerlo" 1
+    fi
+    if [ "$(dep61_result_of T4)" = "0" ]; then
+      report "DEP61-01 T4: docker/.env como enlace simbólico (destino válido) -- recuperación funcional sin leerlo" 0
+    else
+      report "DEP61-01 T4: docker/.env como enlace simbólico (destino válido) -- recuperación funcional sin leerlo" 1
+    fi
+    if [ "$(dep61_result_of T5)" = "0" ]; then
+      report "DEP61-01 T5: docker/.env con contenido corrupto (clave obligatoria ausente) -- recuperación segura, sin fabricar credenciales" 0
+    else
+      report "DEP61-01 T5: docker/.env con contenido corrupto (clave obligatoria ausente) -- recuperación segura, sin fabricar credenciales" 1
+    fi
+    if [ "$(dep61_result_of T6)" = "0" ]; then
+      report "DEP61-01 T6: nombre esperado pero identidad ajena (imagen distinta) -- rechazado, contenedor sigue activo" 0
+    else
+      report "DEP61-01 T6: nombre esperado pero identidad ajena (imagen distinta) -- rechazado, contenedor sigue activo" 1
+    fi
+    if [ "$(dep61_result_of T7)" = "0" ]; then
+      report "DEP61-01 T7: contenedor del MVP inexistente -- explícito e idempotente en dos ejecuciones" 0
+    else
+      report "DEP61-01 T7: contenedor del MVP inexistente -- explícito e idempotente en dos ejecuciones" 1
+    fi
+    if [ "$dep61_inner_status" -ne 0 ] && ! grep -q '^RESULT:' /tmp/verify-dep61-inner.log; then
+      echo "--- log interno DEP61-01 (fallo antes de producir ningún RESULT) ---"
+      cat /tmp/verify-dep61-inner.log
+    fi
+
+    # T11: ningún secreto (ni el sintético de este laboratorio) quedó impreso en el log interno.
+    if ! grep -q "$DEP61_SECRET" /tmp/verify-dep61-inner.log; then
+      report "DEP61-01 T11: ningún valor secreto quedó impreso en los logs de esta batería" 0
+    else
+      report "DEP61-01 T11: ningún valor secreto quedó impreso en los logs de esta batería" 1
+    fi
+    # T12: la ÚNICA aparición esperada de "postgres-vinto" es el mensaje de reaseguro que
+    # rollback.sh ya imprime siempre ("postgres-vinto (TVC) no se tocó.") -- cualquier OTRA
+    # mención (o cualquier mención de vinto_default) sería indicio de que algo tocó TVC de verdad.
+    if ! grep -E "postgres-vinto|vinto_default" /tmp/verify-dep61-inner.log /tmp/verify-dep61-setup.log \
+        | grep -qv "postgres-vinto (TVC) no se tocó"; then
+      report "DEP61-01 T12: la única mención de TVC en los logs es el reaseguro esperado de rollback.sh (nunca tocado)" 0
+    else
+      report "DEP61-01 T12: la única mención de TVC en los logs es el reaseguro esperado de rollback.sh (nunca tocado)" 1
+    fi
+  fi
+fi
+
+# T9: el contenedor AJENO creado ANTES de toda la batería (sin ninguna etiqueta ni nombre
+# relacionado con el MVP) permanece activo después de T1-T7 -- ninguna prueba lo tocó.
+if [ "$dep61_bystander_status" -eq 0 ] \
+    && [ "$(docker inspect --format '{{.State.Running}}' "$DEP61_BYSTANDER_NAME" 2>/dev/null)" = "true" ]; then
+  report "DEP61-01 T9: el contenedor ajeno, creado ANTES de la batería, permanece activo tras T1-T7" 0
+else
+  report "DEP61-01 T9: el contenedor ajeno, creado ANTES de la batería, permanece activo tras T1-T7" 1
+fi
 
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"

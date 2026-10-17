@@ -398,6 +398,52 @@ assert_docker_env_contract() {
   fi
 }
 
+# --- Identidad ESTRICTA del contenedor de Postgres del MVP (DEP61-01) --------------------------
+#
+# resolve_confirmed_mvp_postgres_id <nombre> <imagen-esperada>: para operaciones de RECUPERACIÓN
+# que no pueden confiar en Docker Compose (ver rollback.sh::rollback_postgres) y por tanto no
+# pueden dejar que Compose decida, por sí solo, si un contenedor es "nuestro". Nunca basta con el
+# nombre: exige ADEMÁS que la etiqueta de proyecto compose y la imagen coincidan EXACTAMENTE con
+# lo que docker-compose.postgres.yml declara, y solo entonces resuelve y fija el ID real (hash)
+# del contenedor en MVP_POSTGRES_CONTAINER_ID. Toda operación posterior debe actuar sobre ESE ID,
+# nunca volver a buscar por nombre (evita una sustitución entre la comprobación y la acción,
+# TOCTOU). "No existe" es un estado LEGÍTIMO, nunca un error: deja MVP_POSTGRES_CONTAINER_ID
+# vacío y retorna 0, para que el llamador lo trate de forma explícita e idempotente. Si existe
+# pero CUALQUIER señal de identidad no coincide, se detiene (exit 1) — mismo criterio fail-closed
+# que el resto de las funciones "assert_*" de este archivo, nunca se opera sobre un contenedor
+# cuya identidad no se pudo confirmar del todo.
+# shellcheck disable=SC2034 # usada por rollback.sh tras "source"; ShellCheck no lo ve si este
+# archivo se analiza solo (igual que COMPOSE_CMD más arriba).
+MVP_POSTGRES_CONTAINER_ID=""
+resolve_confirmed_mvp_postgres_id() {
+  MVP_POSTGRES_CONTAINER_ID=""
+  local name="$1" expected_image="$2"
+  if ! docker inspect "$name" >/dev/null 2>&1; then
+    return 0
+  fi
+  local project
+  project="$(docker inspect "$name" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+  if [ "$project" != "$MVP_COMPOSE_PROJECT" ]; then
+    echo "FALLA DE IDENTIDAD: el contenedor '$name' existe pero su etiqueta com.docker.compose.project es '${project:-ninguna}', no '$MVP_COMPOSE_PROJECT'. Podría ser de TVC/ETL u otro proyecto. Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  local image
+  image="$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null || true)"
+  if [ "$image" != "$expected_image" ]; then
+    echo "FALLA DE IDENTIDAD: el contenedor '$name' existe y su etiqueta de proyecto es correcta, pero su imagen es '${image:-ninguna}', no '$expected_image' (la que fija docker-compose.postgres.yml). Nunca se opera sobre un contenedor cuya imagen no coincide con la esperada. Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  local cid
+  cid="$(docker inspect "$name" --format '{{.Id}}' 2>/dev/null || true)"
+  if [ -z "$cid" ]; then
+    echo "FALLA: no se pudo resolver el ID real de '$name' tras confirmar su identidad (nombre, etiqueta de proyecto e imagen). Abortando SIN tocarlo." >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2034 # usada por rollback.sh tras "source"; ShellCheck no lo ve si este
+  # archivo se analiza solo (igual que COMPOSE_CMD, más arriba).
+  MVP_POSTGRES_CONTAINER_ID="$cid"
+}
+
 # Verifica que una ruta de datos (bind-mount) propuesta no está ya en uso como mount de OTRO
 # contenedor (TVC/ETL u otro), y que no está dentro de los directorios de TVC (DEP55-03:
 # "volumen o bind-mount potencialmente compartido").

@@ -442,10 +442,58 @@ archivo). Cada llamador decide qué hacer con un fallo:
   invocador; si no funciona (p. ej. antes de `user-and-dirs`, cuando `vinto-mvp` todavía no
   existe), esa comprobación específica se omite en silencio — el contrato sigue siendo fail-closed
   gracias a los chequeos de propietario/permisos, que no dependen de `vinto-mvp` existiendo.
-- `rollback_postgres` también depende de `detect_compose_cmd` (requiere un comando Docker Compose
-  real) — su comportamiento degradado ante un `docker/.env` inseguro se confirma por código
-  (`verify_local.sh`) y reutilizando la misma función ya probada en vivo contra 12 casos directos,
-  no con un ensayo end-to-end completo de `rollback.sh postgres` (limitación de laboratorio, igual
-  categoría que la ya documentada para systemd en la prueba 8 de `verify_local.sh`).
+- `rollback_postgres` ya **no** depende de `detect_compose_cmd` para su camino degradado (ver
+  DEP61-01 más abajo); su comportamiento ante un `docker/.env` inseguro se prueba ahora
+  end-to-end con Docker real, no solo por código.
 - Probado en `ubuntu:24.04` con ACLs POSIX estándar; no se ensayó contra NFS, SELinux, ni otros
   mecanismos de control de acceso que `stat`/ACL POSIX no cubran.
+
+## DEP61-01: `rollback_postgres` sin depender de `docker/.env` (auditoría del PR #61)
+
+**Hallazgo bloqueante**: el camino degradado original (cuando `docker/.env` faltaba o era
+inseguro) invocaba `docker compose ... -p proyecto down` **sin** `--env-file`. Pero
+`docker-compose.postgres.yml` exige `${VAR:?mensaje}` para sus 4 claves obligatorias
+(`POSTGRES_BOOTSTRAP_DB/USER/PASSWORD`, `VINTO_MVP_PGDATA_DIR`) — sin un `--env-file` que las
+resuelva, **Compose fallaba al interpretar el propio YAML, antes de intentar detener nada**
+(confirmado empíricamente). La "recuperación" no recuperaba absolutamente nada.
+
+### Corrección
+
+El camino degradado ya **nunca pasa por Docker Compose**. `rollback_postgres` ahora:
+
+1. Resuelve primero la identidad del contenedor con
+   `lib_common.sh::resolve_confirmed_mvp_postgres_id` — exige nombre **+** etiqueta de proyecto
+   compose **+** imagen (`postgres:17`, la que fija el YAML) coincidiendo, nunca solo el nombre
+   (requisitos 3/4 del alcance). Si el contenedor no existe, es un estado legítimo e idempotente
+   (`return 0`, mensaje explícito, nunca un error). Si existe pero cualquier señal no coincide,
+   se detiene (`exit 1`) sin tocarlo.
+2. Si `docker/.env` cumple el contrato de seguridad (DEP60-01/CLOUD-DEP-02B.2-D.1), intenta el
+   camino normal (`compose down --env-file`) — comportamiento sin cambios para el caso válido.
+3. Si el contrato falla, **o si incluso siendo válido `compose down` falla por otro motivo**
+   (p. ej. contenido corrupto: una clave obligatoria ausente, que el contrato de seguridad del
+   archivo no puede detectar porque nunca inspecciona claves/valores), degrada a `docker stop`
+   **directo** sobre el ID ya confirmado — nunca lee `docker/.env`, nunca fabrica credenciales
+   ficticias para completar el YAML (requisito 8).
+4. El camino degradado es deliberadamente **conservador**: solo detiene, nunca elimina el
+   contenedor ni la red `vinto-mvp-internal` (a diferencia de `compose down`, que sí los elimina)
+   — recursos Docker que quedan creados a propósito; eliminarlos es una decisión aparte del
+   operador (p. ej. repetir `rollback.sh postgres` una vez `docker/.env` esté restaurado).
+
+### Pruebas (Docker real, no solo por código)
+
+Un host Windows vía Git Bash **no garantiza semántica POSIX real** en su `/tmp` (confirmado
+empíricamente: `chmod 600` seguido de `stat -c '%a'` seguía reportando `644`; `ln -s` no siempre
+creaba un enlace real) — necesario para que `docker_env_contract_check` pruebe lo que de verdad
+importa. La batería usa un contenedor Ubuntu con el **socket de Docker montado**
+(`-v /var/run/docker.sock:/var/run/docker.sock`) y el CLI de Docker instalado dentro: los
+contenedores que crea son **hermanos** en el mismo demonio que ve el resto de esta suite, con
+semántica de archivo Linux real para `chmod`/`stat`/`ln -s`.
+
+Casos cubiertos, todos con Docker real: `docker/.env` válido (camino normal sin cambios),
+ausente, en `644`, como enlace simbólico (hacia un destino válido), con contenido corrupto (clave
+obligatoria ausente — Compose falla, degrada igual sin fabricar nada), contenedor con el nombre
+esperado pero identidad ajena (imagen distinta: rechazado, sigue activo), contenedor del MVP
+inexistente (explícito e idempotente en dos ejecuciones), contenedor ajeno creado **antes** de
+toda la batería (permanece activo después), ningún secreto impreso, y ninguna mención de TVC
+salvo el reaseguro esperado del propio script. **11/11 PASS**, re-ejecutados junto con la
+regresión completa de PR #57/#59/#60: **57/57 PASS**.
