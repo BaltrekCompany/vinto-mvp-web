@@ -2096,6 +2096,28 @@ else
       sudo -u vinto-mvp chmod 600 /opt/vinto-mvp-web/shared/backend.env
     ' >/tmp/verify-linkenv-mkenv.log 2>&1
 
+    # Caso 12 (DEP60-01, auditoría del PR #60): shared/backend.env convertido en un ENLACE
+    # simbólico hacia un archivo VÁLIDO (mismos 600 y propietario vinto-mvp en el destino real) --
+    # debe rechazarse IGUAL, nunca aceptarse solo porque el enlace resuelve correctamente.
+    docker exec "$LINKENV_CNAME" bash -c '
+      sudo -u vinto-mvp mv /opt/vinto-mvp-web/shared/backend.env /opt/vinto-mvp-web/shared/backend.env.real
+      sudo -u vinto-mvp ln -s backend.env.real /opt/vinto-mvp-web/shared/backend.env
+    ' >/tmp/verify-linkenv-case12-setup.log 2>&1
+    set +e
+    as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case12.log 2>&1
+    case12_status=$?
+    set -e
+    if [ "$case12_status" -ne 0 ] && grep -q "es un enlace simbólico. Debe ser un archivo regular" /tmp/verify-linkenv-case12.log; then
+      report "link-backend-env caso 12 (DEP60-01): shared/backend.env como enlace hacia un destino VÁLIDO, rechazado igual" 0
+    else
+      cat /tmp/verify-linkenv-case12.log
+      report "link-backend-env caso 12 (DEP60-01): shared/backend.env como enlace hacia un destino VÁLIDO, rechazado igual" 1
+    fi
+    docker exec "$LINKENV_CNAME" bash -c '
+      sudo -u vinto-mvp rm -f /opt/vinto-mvp-web/shared/backend.env
+      sudo -u vinto-mvp mv /opt/vinto-mvp-web/shared/backend.env.real /opt/vinto-mvp-web/shared/backend.env
+    ' >/tmp/verify-linkenv-case12-restore.log 2>&1
+
     # Caso 4: permisos incorrectos (644 en vez de 600).
     docker exec "$LINKENV_CNAME" sudo -u vinto-mvp chmod 644 /opt/vinto-mvp-web/shared/backend.env
     set +e
@@ -2190,20 +2212,29 @@ else
     MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp test -L "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env"
     case1_link_exists=$?
     target1="$(MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp readlink "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env")"
-    if [ "$case1_status" -eq 0 ] && [ "$case1_link_exists" -eq 0 ] && [ "$target1" = "../../../shared/backend.env" ]; then
-      report "link-backend-env caso 1: crea el enlace correcto (release ya existente, sin repetir checkout)" 0
+    # Requisito 4 (DEP60-01): no basta con que el TEXTO del enlace sea el esperado -- confirmar
+    # que "readlink -f" de backend/.env resuelve EXACTAMENTE a "readlink -f" del propio
+    # shared/backend.env real (misma comparación que hace ahora phase_link_backend_env), y que el
+    # mensaje de éxito deja constancia explícita de esa resolución.
+    resolved_link1="$(MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp readlink -f "/opt/vinto-mvp-web/releases/$SHA_A/backend/.env")"
+    resolved_shared1="$(MSYS_NO_PATHCONV=1 docker exec "$LINKENV_CNAME" sudo -u vinto-mvp readlink -f /opt/vinto-mvp-web/shared/backend.env)"
+    if [ "$case1_status" -eq 0 ] && [ "$case1_link_exists" -eq 0 ] && [ "$target1" = "../../../shared/backend.env" ] \
+        && [ -n "$resolved_link1" ] && [ "$resolved_link1" = "$resolved_shared1" ] \
+        && grep -q "resuelve exactamente a" /tmp/verify-linkenv-case1.log; then
+      report "link-backend-env caso 1: crea el enlace correcto y resuelve exactamente a shared/backend.env (release ya existente, sin repetir checkout)" 0
     else
-      echo "destino obtenido: '$target1'"; cat /tmp/verify-linkenv-case1.log
-      report "link-backend-env caso 1: crea el enlace correcto (release ya existente, sin repetir checkout)" 1
+      echo "destino obtenido: '$target1' -- resuelto: '$resolved_link1' (esperado: '$resolved_shared1')"; cat /tmp/verify-linkenv-case1.log
+      report "link-backend-env caso 1: crea el enlace correcto y resuelve exactamente a shared/backend.env (release ya existente, sin repetir checkout)" 1
     fi
 
-    # Caso 2: segunda ejecución idempotente (mismo release A, enlace ya correcto).
+    # Caso 2: segunda ejecución idempotente (mismo release A, enlace ya correcto), confirmando
+    # también que la ruta idempotente vuelve a verificar la resolución exacta (no solo el texto).
     set +e
     as_operator "CONFIRM=yes bash deploy.sh link-backend-env $SHA_A" >/tmp/verify-linkenv-case2.log 2>&1
     case2_status=$?
     set -e
-    if [ "$case2_status" -eq 0 ] && grep -q "idempotente" /tmp/verify-linkenv-case2.log; then
-      report "link-backend-env caso 2: segunda ejecución idempotente (no vuelve a crear ni falla)" 0
+    if [ "$case2_status" -eq 0 ] && grep -q "idempotente" /tmp/verify-linkenv-case2.log && grep -q "resuelve exactamente a" /tmp/verify-linkenv-case2.log; then
+      report "link-backend-env caso 2: segunda ejecución idempotente (no vuelve a crear ni falla), resolución exacta reconfirmada" 0
     else
       cat /tmp/verify-linkenv-case2.log
       report "link-backend-env caso 2: segunda ejecución idempotente (no vuelve a crear ni falla)" 1

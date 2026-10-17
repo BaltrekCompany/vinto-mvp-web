@@ -198,6 +198,20 @@ phase_checkout() {
 # instante) haría que "-e" reportara "no existe" — un falso negativo que llevaría a intentar
 # "ln -s" sobre un enlace que, de hecho, ya está ahí (fallaría con un error de "ln" confuso en vez
 # de un mensaje claro). "-L" detecta la presencia del enlace en sí, resuelva o no.
+#
+# DEP60-01 (auditoría del PR #60): "shared/backend.env" debe ser un ARCHIVO REGULAR, nunca un
+# enlace simbólico, INCLUSO si ese enlace resolviera a un archivo válido con permisos/propietario
+# correctos. Antes, "mvp_test -f" seguía un enlace hasta su destino y lo aceptaría en ese caso —
+# un enlace introduce una segunda ruta de control sobre el contenido real (quien pueda reescribir
+# el DESTINO del enlace cambia efectivamente las credenciales sin tocar nunca
+# "shared/backend.env" en sí) que esta fase no puede verificar de forma fiable con un chequeo de
+# permisos/propietario sobre el enlace. Se rechaza explícitamente ANTES de cualquier otra
+# comprobación. Una vez descartado ese caso, "stat" sin "-L" sobre el propio archivo (ya
+# confirmado regular, nunca un enlace) es equivalente a "stat -L" y evita la inconsistencia previa
+# entre el chequeo de propietario (sin "-L") y el de permisos (con "-L"). Además, tras crear (o
+# confirmar) el enlace backend/.env, se verifica que resuelve EXACTAMENTE al mismo
+# "shared/backend.env" real (comparando "readlink -f" de ambos), no solo que el texto del enlace
+# es el esperado.
 phase_link_backend_env() {
   require_confirm
   local commit="${1:?Uso: deploy.sh link-backend-env <commit-sha>}"
@@ -207,6 +221,10 @@ phase_link_backend_env() {
   local release_dir="$APP_DIR/releases/$commit"
   if ! mvp_test -d "$release_dir"; then
     echo "FALLA: $release_dir no existe. Ejecutar 'checkout $commit' primero (esta fase nunca clona ni hace checkout)." >&2
+    exit 1
+  fi
+  if mvp_test -L "$APP_DIR/shared/backend.env"; then
+    echo "FALLA: $APP_DIR/shared/backend.env es un enlace simbólico. Debe ser un archivo regular, incluso si el enlace resuelve a un archivo válido (DEP60-01): un enlace añade una segunda ruta de control sobre el contenido que esta fase no puede verificar de forma fiable. Reemplazarlo por el archivo real antes de continuar." >&2
     exit 1
   fi
   if ! mvp_test -f "$APP_DIR/shared/backend.env"; then
@@ -220,24 +238,35 @@ phase_link_backend_env() {
     exit 1
   fi
   local perms
-  # "-L" para resolver hasta el archivo real, igual que python-venv: son SUS permisos los que
-  # importan, nunca los de un enlace intermedio.
-  perms="$(sudo -u "$SERVICE_USER" stat -L -c '%a' "$APP_DIR/shared/backend.env")"
+  # Ya se confirmó arriba que NO es un enlace (DEP60-01): "stat" sin "-L" sobre el propio archivo
+  # regular es equivalente a "stat -L" aquí, sin la inconsistencia previa entre este chequeo y el
+  # de propietario de arriba (que tampoco usaba "-L").
+  perms="$(mvp_stat '%a' "$APP_DIR/shared/backend.env")"
   if [ "$perms" != "600" ]; then
     echo "FALLA: $APP_DIR/shared/backend.env tiene permisos $perms, deben ser 600. Corregir a mano y reintentar." >&2
     exit 1
   fi
   local link_path="$release_dir/backend/.env"
   local expected_target="../../../shared/backend.env"
+  local resolved_backend_env
+  resolved_backend_env="$(mvp_readlink_f "$APP_DIR/shared/backend.env")"
   if mvp_test -L "$link_path"; then
     local existing_target
     existing_target="$(sudo -u "$SERVICE_USER" readlink "$link_path")"
-    if [ "$existing_target" = "$expected_target" ]; then
-      echo "$link_path ya es el enlace esperado -> shared/backend.env; operación idempotente, nada que cambiar."
-      return 0
+    if [ "$existing_target" != "$expected_target" ]; then
+      echo "FALLA: $link_path ya es un enlace simbólico, pero apunta a '$existing_target', no a '$expected_target'. No se sobrescribe un enlace ajeno ni roto hacia otro destino." >&2
+      exit 1
     fi
-    echo "FALLA: $link_path ya es un enlace simbólico, pero apunta a '$existing_target', no a '$expected_target'. No se sobrescribe un enlace ajeno ni roto hacia otro destino." >&2
-    exit 1
+    # Requisito 4 (DEP60-01): el texto del enlace coincide, pero confirmar TAMBIÉN que resuelve
+    # exactamente al shared/backend.env real -- no basta con comparar cadenas de texto.
+    local resolved_link
+    resolved_link="$(mvp_readlink_f "$link_path")"
+    if [ "$resolved_link" != "$resolved_backend_env" ]; then
+      echo "FALLA: $link_path tiene el texto de enlace esperado, pero resuelve a '$resolved_link', no a '$resolved_backend_env' (shared/backend.env real). No se continúa sin entender la discrepancia." >&2
+      exit 1
+    fi
+    echo "$link_path ya es el enlace esperado -> shared/backend.env (resuelve exactamente a $resolved_backend_env); operación idempotente, nada que cambiar."
+    return 0
   fi
   if mvp_test -e "$link_path"; then
     echo "FALLA: $link_path ya existe y no es un enlace simbólico (archivo regular o directorio). No se sobrescribe." >&2
@@ -245,7 +274,13 @@ phase_link_backend_env() {
   fi
   sudo -u "$SERVICE_USER" mkdir -p "$release_dir/backend"
   sudo -u "$SERVICE_USER" ln -s "$expected_target" "$link_path"
-  echo "Enlace creado: $link_path -> shared/backend.env (release $commit ya existente; no se repitió checkout)."
+  local resolved_new_link
+  resolved_new_link="$(mvp_readlink_f "$link_path")"
+  if [ "$resolved_new_link" != "$resolved_backend_env" ]; then
+    echo "FALLA: el enlace recién creado en $link_path resuelve a '$resolved_new_link', no a '$resolved_backend_env' (shared/backend.env real). No se confirma la operación como exitosa; revisar a mano." >&2
+    exit 1
+  fi
+  echo "Enlace creado: $link_path -> shared/backend.env (resuelve exactamente a $resolved_backend_env; release $commit ya existente, no se repitió checkout)."
 }
 
 phase_python_venv() {
