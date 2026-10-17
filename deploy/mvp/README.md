@@ -602,45 +602,35 @@ Reutiliza, en vez de reinventar, los mecanismos ya auditados del resto del pipel
    (`--cpus 1 --memory 512m`), con credenciales **generadas para esta sola ejecución** (nunca las
    de `docker/.env` ni ninguna credencial real).
 3. Restaura con `pg_restore --no-owner --no-privileges`.
-4. Verifica que la restauración produjo al menos una tabla de usuario (comprobación genérica,
-   sin asumir el esquema específico de VINTO — la batería de pruebas, aparte, compara un recuento
-   EXACTO de filas contra una tabla sembrada conocida, para una verificación más rigurosa en el
-   laboratorio).
-5. Solo si TODO lo anterior tuvo éxito, crea `<dump>.verified` (vacío; solo su existencia
-   importa) — la única marca de que un backup es confiable. Un backup sin ese marcador es
-   "sin verificar", nunca se asume válido.
-6. El contenedor efímero se elimina SIEMPRE (éxito o fallo) por su ID confirmado — nunca por un
-   nombre vuelto a buscar. **Hallazgo real durante la implementación**: la limpieza basada solo
-   en `trap ... EXIT` fallaba, porque `pg_restore_custom`/`pg_run_sql_inline_in` (llamadas desde
-   dentro de esta misma función) tienen su PROPIO `trap ... EXIT INT TERM` para su `.pgpass`
-   temporal y lo DESARMAN al terminar (`trap - EXIT INT TERM`) — como los traps son del PROCESO
-   completo, ese desarme interno se llevaba también el trap que esta función había dejado puesto
-   antes de llamarlas. Corregido llamando a la limpieza EXPLÍCITAMENTE antes de cada `exit` (nunca
-   solo confiando en el trap) y reinstalando el trap después de cada llamada a una de esas
-   funciones, para que una señal (INT/TERM) recibida en el resto de la ejecución siga limpiando.
+4. **(Corregido en DEP62-01, ver sección dedicada abajo)** Compara el contenido restaurado,
+   tabla por tabla y de forma EXACTA, contra un manifiesto de filas capturado en el momento de
+   `create` — ya no "al menos una tabla de usuario".
+5. Solo si TODO lo anterior tuvo éxito, crea `<dump>.verified` de forma atómica — la única marca
+   de que un backup es confiable. Un backup sin ese marcador es "sin verificar"; una
+   (re)verificación que falla **invalida** cualquier `.verified` anterior (DEP62-02).
+6. El contenedor efímero se elimina SIEMPRE (éxito, fallo o interrupción) por su ID confirmado —
+   nunca por un nombre vuelto a buscar (ver DEP62-04 abajo para cómo se garantiza esto de forma
+   estructural, no solo con un trap reinstalado a mano).
 
-### Retención (Fase D, propuesta — `backup.sh prune`)
+### Retención (Fase D — `backup.sh prune` / `backup.sh prune-apply`)
 
-Política inicial propuesta: 1 backup diario, retener los **7 más recientes YA VERIFICADOS** + 1
-copia semanal adicional (la verificada más antigua que quede tras aplicar la retención diaria).
-Un backup extraordinario, manual, después de cada `migrate`/`import-reference-apply` reales (ver
-CLOUD-DEP-02B.2-B). `prune` nunca elimina un backup sin marcador `.verified` — podría ser el
-único resguardo disponible si algo salió mal después. **Esta fase nunca se programa en cron desde
-este repositorio** (restricción explícita de este incremento); es una herramienta manual para
-cuando el operador decida aplicarla.
+**Política documentada e implementada (DEP62-05, ver sección dedicada abajo)**: agrupación por
+**día calendario** (UTC), no por "últimos N archivos" — se conservan TODOS los backups
+verificados de los `$RETENTION_DAILY` días con al menos uno (por defecto 7; varios backups del
+mismo día, p. ej. uno extra tras una migración, se conservan juntos) + 1 copia semanal (el
+verificado más antiguo que quede fuera de esos días) + el backup verificado más reciente,
+siempre, sin excepción. `prune` (sin argumentos) es un **dry-run**: muestra los candidatos, nunca
+borra nada; `prune-apply` aplica la poda, revalidando el estado de cada candidato en el momento
+de borrar y exigiendo `CONFIRM=yes`. Nunca elimina un backup sin marcador `.verified`. **Nunca se
+programa en cron desde este repositorio.**
 
 ### Pruebas (Fase E)
 
 Laboratorio Docker con el mismo contenedor envoltorio (socket de Docker montado) que las
 baterías de DEP61 — necesario porque un host Windows vía Git Bash no garantiza semántica POSIX
-real en `/tmp` (mismo hallazgo que DEP61-01). Cubre los 12 escenarios pedidos — backup exitoso,
-restauración exitosa, verificación rigurosa de filas (25/25 exactas contra una tabla sembrada
-conocida), archivo corrupto, espacio insuficiente, contraseña incorrecta, contenedor ausente,
-contenedor de identidad ajena, fallo de restauración (contenido inválido con checksum que SÍ
-coincide — caso distinto de "corrupto"), preservación del backup anterior ante un fallo,
-limpieza segura, ausencia de secretos — más el comando de conveniencia `create-and-verify` y la
-política de retención `prune`. **17/17 PASS**, re-ejecutados junto con toda la regresión
-anterior: **76/76 PASS**.
+real en `/tmp` (mismo hallazgo que DEP61-01). Ver la sección "DEP62-01 a 05" más abajo para el
+detalle completo y los resultados actuales (la cobertura original de 17 pruebas fue sustituida
+por una batería de 24, que incluye los 10 escenarios adicionales pedidos en la segunda auditoría).
 
 **Hallazgo real durante las pruebas**: la imagen oficial de `postgres` confía (`pg_hba.conf`,
 regla `trust`) en CUALQUIER conexión desde `127.0.0.1` por defecto — incluso con
@@ -660,17 +650,136 @@ quien configure `pg_hba.conf` en el VPS real.
    chmod 700 /home/ubuntu/vinto-mvp-backups` (ruta configurable vía `VINTO_MVP_BACKUP_DIR`).
 2. `CONFIRM=yes bash backup.sh create-and-verify` tras cada `migrate`/`import-reference-apply`
    reales, y periódicamente (diario) una vez el piloto esté en operación.
-3. Revisar manualmente `backup.sh list` de vez en cuando; ejecutar `backup.sh prune` cuando se
-   acumulen más backups verificados de los que la retención propuesta recomienda conservar.
+3. Revisar manualmente `backup.sh list`; `backup.sh prune` (dry-run) para ver qué se podaría, y
+   solo entonces `CONFIRM=yes bash backup.sh prune-apply` si se decide aplicarlo.
 4. Nunca se programa en cron desde este repositorio — si se decide automatizarlo, es una decisión
    y un incremento aparte, explícitamente autorizado.
 
-### Riesgos residuales
+## DEP62-01 a 05: cinco correcciones tras la segunda auditoría del PR #62
 
-- La comprobación de "al menos una tabla de usuario" en `verify` es deliberadamente genérica
-  (no asume el esquema de 6 esquemas de VINTO); una verificación más estricta (recuento de
-  esquemas/tablas esperados) requeriría acoplar `backup.sh` al esquema real, fuera de alcance de
-  este incremento.
+### DEP62-01 — Integridad de CONTENIDO, no solo "al menos una tabla"
+
+**Antes**: `verify` solo comprobaba que la restauración produjera como mínimo una tabla de
+usuario — un backup con la mitad de las tablas vacías, o con una tabla entera ausente, habría
+pasado igual.
+
+**Corrección**: un **manifiesto** (`<dump>.manifest`, con su propio `.sha256`) se captura en
+`create`, INMEDIATAMENTE antes de `pg_dump`, listando cada tabla de usuario (`esquema.tabla`) con
+su recuento de filas EXACTO en ese momento. `verify` nunca vuelve a consultar la fuente viva (que
+podría haber cambiado para cuando se ejecute `verify`, posiblemente mucho después) — compara
+siempre el contenido restaurado contra este manifiesto YA CONGELADO, tabla por tabla, de forma
+exacta. Una tabla legítimamente vacía (0 filas en el manifiesto) se compara igual que cualquier
+otra: `0 == 0` pasa. Una tabla del manifiesto que no existe tras restaurar (consulta que falla
+por "relation does not exist") se trata como fallo explícito, distinto de un simple desajuste de
+conteo. Ninguna comprobación requerida puede fallar sin que `verify` rechace el backup.
+
+**Opción evaluada y NO implementada, documentada por transparencia**: la forma perfectamente
+consistente de capturar el manifiesto sería compartir el snapshot MVCC exacto de `pg_dump` vía
+`pg_export_snapshot()` + `pg_dump --snapshot=<id>` + `SET TRANSACTION SNAPSHOT '<id>'` en la
+conexión que cuenta filas, manteniendo una transacción separada abierta durante todo el volcado.
+Se decidió no implementarlo en este incremento: exige orquestar una sesión `psql` de larga
+duración con escritura/lectura intercalada a través de `docker exec` (un coproceso, con
+sincronización explícita por cada instrucción) — una pieza de infraestructura nueva y de
+fragilidad no trivial de probar de forma fiable, para un piloto de bajo volumen de escritura
+donde la ventana real entre "capturar el manifiesto" e "iniciar `pg_dump`" es del orden de
+milisegundos. El mecanismo adoptado (capturar inmediatamente antes, nunca comparar contra la
+fuente de nuevo después) es la alternativa pragmática, documentada aquí como riesgo residual.
+
+### DEP62-02 — Coherencia de estado (`.verified`/`.CORRUPT`)
+
+**Antes**: un backup verificado con éxito y luego dañado (o que fallara una reverificación por
+cualquier motivo) conservaba su marcador `.verified` ya existente — una afirmación que ya no era
+cierta.
+
+**Corrección**: `backup_state()` (nueva, único lugar que decide el estado) la usan por igual
+`list`, `verify` y `prune` — nunca hay dos interpretaciones distintas del mismo marcador.
+`phase_verify` invalida (`rm -f <dump>.verified`) en TODA rama de fallo, incluyendo una
+reverificación de un backup antes válido; un checksum que vuelve a coincidir limpia a su vez
+cualquier `.CORRUPT` anterior (los dos estados son mutuamente excluyentes). El marcador
+`.verified` se escribe de forma **atómica** (archivo de staging propio + `mv`, con metadatos de
+auditoría: momento de verificación y manifiesto usado) — nunca una escritura directa sobre el
+nombre final que `list`/`prune` ya podrían estar observando. `prune-apply` nunca borra sin volver
+a comprobar `backup_state()` de cada candidato en el instante mismo de borrar.
+
+### DEP62-03 — Permisos desde la creación, no solo tras `chmod`
+
+**Corrección**: `umask 077` se fija como la PRIMERA línea tras `set -euo pipefail` — todo archivo
+que este script cree (`.partial`, `.dump`, `.sha256`, `.manifest`, `.verified`, cualquier archivo
+de control) nace con `600` desde el primer `open()`, nunca con un permiso más amplio ni por un
+instante. Los `chmod 600` explícitos que siguen son defensa en profundidad, nunca el único
+mecanismo — la batería de pruebas comprueba los permisos reales inmediatamente después de crear
+cada archivo, no después de un `chmod` aparte.
+
+### DEP62-04 — Limpieza garantizada del contenedor efímero
+
+**Hallazgo real durante la primera versión de esta corrección**: reinstalar `trap cleanup_ephemeral
+EXIT INT TERM` manualmente después de cada llamada a `pg_restore_custom`/`pg_run_sql_inline_in`
+dejaba una ventana real sin protección (esas funciones comparten el patrón `.pgpass` que
+desarma el trap de PROCESO al terminar, y un simple "volver a ponerlo después" no cubre un fallo
+que ocurra ANTES de llegar a esa línea).
+
+**Corrección estructural**: toda llamada a esas funciones, mientras el trap de `phase_verify`
+esté activo, se envuelve en un **subshell** `( ... )` — el `trap`/`trap -` que hagan por dentro
+nunca toca la tabla de traps del proceso PADRE, así que el trap de limpieza permanece intacto sin
+importar qué hagan por dentro. Auditados también: asignaciones de sustitución de comandos sin
+proteger de `set -e` (la misma clase de regresión ya corregida en DEP61-03 para
+`resolve_confirmed_mvp_postgres_id`, encontrada de nuevo aquí en `table_count=$(...)` y corregida
+con el patrón `if var=$(cmd); then ... fi`); y una función (`_prune_plan`) cuyo ÚLTIMO comando
+podía evaluar a falso en el camino normal (`[ "$keep_this" -eq 0 ] && PRUNE_DELETE+=(...)`,
+falso cuando el archivo SÍ se conserva) — sin un `return 0` explícito al final, eso mataba el
+script entero bajo `set -e` en silencio, confirmado con pruebas reales durante esta corrección.
+Casos de interrupción (SIGTERM durante `pg_restore`) y de fallo de SQL posterior a una
+restauración exitosa quedan cubiertos por pruebas dedicadas (ver abajo).
+
+### DEP62-05 — Retención: "últimos N archivos" vs. "N días calendario"
+
+**Antes**: `prune` conservaba los "7 backups verificados más recientes" — contar ARCHIVOS, no
+DÍAS. Varios backups del mismo día (p. ej. uno extra tras una migración) podrían desplazar la
+cobertura de otros días dentro del mismo presupuesto de 7.
+
+**Corrección**: la política documentada y la única que el código implementa ahora es "N DÍAS
+calendario (UTC) con backup verificado", extraído del nombre de archivo. Todos los backups
+verificados de un mismo día dentro de la ventana se conservan JUNTOS (nunca se colapsan). Más 1
+copia semanal (el verificado más antiguo que quede fuera de esos días) y el backup verificado más
+reciente, SIEMPRE, sin excepción (caso límite cubierto explícitamente: `RETENTION_DAILY=0`).
+`prune` (sin argumentos) es ahora un **dry-run** que solo muestra los candidatos; `prune-apply`
+aplica la poda, revalidando el estado de cada candidato en el instante de borrar y exigiendo
+`CONFIRM=yes`.
+
+### Pruebas (24, sustituyen a las 17 anteriores)
+
+Mismo laboratorio (contenedor envoltorio con el socket de Docker montado). Cubre, con Docker
+real: backup exitoso con permisos 600 desde la creación; restauración exitosa con comparación
+real contra el manifiesto; verificación rigurosa independiente (25/25 filas); tabla vacía
+legítima (0 filas) junto a una no vacía; archivo corrupto (checksum del dump); espacio
+insuficiente; contraseña incorrecta (forzando autenticación real, ver nota sobre `pg_hba.conf`
+más abajo); contenedor ausente; identidad ajena; fallo de restauración con checksum que sí
+coincide; restauración incompleta (tabla del manifiesto ausente tras restaurar); reverificación
+fallida que invalida un `.verified` anterior; corrupción después de verificar: invalida y marca
+`.CORRUPT`; interrupción (SIGTERM) durante `verify`, sin contenedores huérfanos; preservación del
+backup anterior ante un `create` fallido; `create-and-verify`; retención con varios backups del
+mismo día; conservación del backup más reciente con `RETENTION_DAILY=0`; contenedor del MVP
+inexistente; limpieza segura tras toda la batería; ausencia de secretos; TVC nunca tocado; un
+contenedor ajeno, creado ANTES de toda la batería, permanece activo después.
+
+**24/24 PASS.** Regresión completa re-ejecutada junto con la batería nueva (sustituyendo la
+anterior de 17): **83/83 PASS**. ShellCheck limpio.
+
+**Hallazgo real durante las pruebas** (sin cambios respecto a la primera versión): la imagen
+oficial de `postgres` confía (`pg_hba.conf`, regla `trust`) en CUALQUIER conexión desde
+`127.0.0.1` por defecto — incluso con `POSTGRES_HOST_AUTH_METHOD` puesto explícitamente. Las
+pruebas de "contraseña incorrecta" y "preservación" fuerzan autenticación real editando
+`pg_hba.conf` del contenedor de prueba vía `docker exec` (reemplazando `trust` por
+`scram-sha-256`) y recargando con `pg_reload_conf()` — nunca vía un bind-mount (que apuntaría a
+una ruta del demonio, no del contenedor envoltorio). Esto es una característica de la imagen
+oficial de Docker, no un defecto de `backup.sh`.
+
+### Riesgos residuales (actualizados)
+
+- La consistencia del manifiesto frente a `pg_dump` depende de capturarlo inmediatamente antes
+  (no de un snapshot MVCC compartido) — ver DEP62-01 arriba para el mecanismo evaluado y
+  descartado, y la ventana de inconsistencia teórica que queda (milisegundos, bajo escritura
+  concurrente).
 - `assert_private_dir` no recorre toda la cadena de directorios hasta la raíz (como ya se
   documentó para `docker/.env`), solo el directorio de backups en sí.
 - No se ensayó el procedimiento de `prune` contra el volumen de backups real de un piloto en
