@@ -280,6 +280,124 @@ assert_service_user_is_ours() {
   fi
 }
 
+# --- Contrato de seguridad de docker/.env (CLOUD-DEP-02B.2-D.1) --------------------------------
+#
+# docker/.env contiene POSTGRES_BOOTSTRAP_PASSWORD (el rol de arranque del clúster de Postgres,
+# equivalente a un administrador del clúster) en texto plano. A diferencia de
+# shared/backend.env — que SÍ debe ser legible por $MVP_SERVICE_USER, porque el proceso de la API
+# y las herramientas administrativas corren bajo esa identidad —, docker/.env NUNCA debe ser
+# legible por $MVP_SERVICE_USER: solo lo necesita el operador que invoca "docker compose"
+# directamente (en el VPS real, "ubuntu"), nunca el proceso del MVP. Si $MVP_SERVICE_USER pudiera
+# leerlo, comprometer el backend filtraría también la contraseña de arranque del clúster, hoy
+# fuera de su alcance.
+#
+# docker_env_contract_check <path>: NUNCA llama a "exit" ni imprime el contenido del archivo —
+# deja el resultado en el código de retorno (0 = cumple el contrato) y el motivo del primer fallo
+# en DOCKER_ENV_CONTRACT_REASON (una frase para el operador, nunca un valor leído del archivo).
+# Los llamadores deciden qué hacer con un fallo: las fases MUTADORAS de deploy.sh deben detenerse
+# (ver assert_docker_env_contract, más abajo); rollback.sh, en cambio, debe degradar a su camino
+# ya existente de "tratarlo como ausente" — una recuperación legítima nunca debe volverse
+# imposible solo porque este archivo de configuración tenga un problema de permisos.
+#
+# El propietario esperado se resuelve con "id -un" (quien invoca ESTE proceso), nunca con un
+# nombre de usuario fijo como "ubuntu": el VPS real podría nombrar distinto a ese operador, y
+# deploy.sh/rollback.sh nunca se ejecutan completos como root/sudo (ver nota en deploy.sh).
+DOCKER_ENV_CONTRACT_REASON=""
+docker_env_contract_check() {
+  DOCKER_ENV_CONTRACT_REASON=""
+  local path="${1:-}"
+  if [ -z "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="ruta vacía."
+    return 1
+  fi
+  case "$path" in
+    "$MVP_APP_DIR"|"$MVP_APP_DIR"/*)
+      DOCKER_ENV_CONTRACT_REASON="$path está dentro de $MVP_APP_DIR (el árbol privado de $MVP_SERVICE_USER). docker/.env nunca debe vivir ahí: mezclaría su modelo de permisos con el de shared/backend.env."
+      return 1
+      ;;
+  esac
+  # "-L" ANTES de cualquier otra comprobación (misma lección de DEP60-01 para shared/backend.env):
+  # nunca un enlace simbólico, incluso si resuelve a un archivo válido con permisos/propietario
+  # correctos — un enlace añade una segunda ruta de control sobre el contenido real.
+  if [ -L "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path es un enlace simbólico. Debe ser un archivo regular, incluso si el enlace resuelve a un archivo válido."
+    return 1
+  fi
+  if [ ! -e "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path no existe."
+    return 1
+  fi
+  if [ -d "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path es un directorio, no un archivo regular."
+    return 1
+  fi
+  if [ ! -f "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path existe pero no es un archivo regular."
+    return 1
+  fi
+  # El directorio que lo contiene no debe ser escribible por grupo ni por otros: cualquiera con
+  # ese acceso podría sustituir el archivo por otro bajo el mismo nombre, sin tocar el archivo en
+  # sí (y por tanto sin que ninguna comprobación posterior sobre EL ARCHIVO lo detecte).
+  local parent_dir perms_dir group_other_bits
+  parent_dir="$(dirname "$path")"
+  perms_dir="$(stat -c '%a' "$parent_dir" 2>/dev/null || true)"
+  if [ -n "$perms_dir" ]; then
+    group_other_bits="${perms_dir: -2}"
+    case "$group_other_bits" in
+      *[2367]*)
+        DOCKER_ENV_CONTRACT_REASON="el directorio $parent_dir tiene permisos $perms_dir (escribible por grupo u otros); cualquiera con ese acceso podría sustituir $path. Corregir el directorio antes de continuar."
+        return 1
+        ;;
+    esac
+  fi
+  local expected_owner actual_owner
+  expected_owner="$(id -un)"
+  actual_owner="$(stat -c '%U' "$path" 2>/dev/null || true)"
+  if [ "$actual_owner" != "$expected_owner" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path pertenece a '$actual_owner', debe pertenecer a '$expected_owner' (quien invoca este script y ejecuta Docker Compose)."
+    return 1
+  fi
+  # Nunca $MVP_SERVICE_USER: ni como propietario ni con acceso de lectura por ningún otro medio
+  # (grupo, otros, ACL) -- comprobación explícita y activa, no solo "el propietario no es
+  # vinto-mvp" (un permiso de grupo/otros demasiado abierto filtraría el secreto igual).
+  if [ "$actual_owner" = "$MVP_SERVICE_USER" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path pertenece a $MVP_SERVICE_USER. Nunca debe pertenecer al usuario de servicio del MVP: contiene el secreto de arranque del clúster de Postgres, que $MVP_SERVICE_USER no necesita y no debe poder leer."
+    return 1
+  fi
+  local perms
+  perms="$(stat -c '%a' "$path" 2>/dev/null || true)"
+  if [ "$perms" != "600" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path tiene permisos ${perms:-desconocidos}, deben ser exactamente 600."
+    return 1
+  fi
+  # Con propietario y permisos YA confirmados correctos, esta comprobación ACTIVA es la última
+  # línea de defensa contra un mecanismo que "stat" no refleja (p. ej. una ACL POSIX que concede
+  # lectura a $MVP_SERVICE_USER pese a que los bits clásicos de owner/group/other ya parecen 600)
+  # -- nunca el primer motivo de rechazo para un error simple de permisos, que ya se reportó arriba
+  # con un mensaje más específico.
+  if id "$MVP_SERVICE_USER" >/dev/null 2>&1 && sudo -u "$MVP_SERVICE_USER" test -r "$path" 2>/dev/null; then
+    DOCKER_ENV_CONTRACT_REASON="$MVP_SERVICE_USER puede leer $path (permisos demasiado abiertos, probablemente vía ACL: propietario y modo 600 ya son correctos). $MVP_SERVICE_USER nunca debe tener acceso a este archivo."
+    return 1
+  fi
+  # Defensivo frente a otros mecanismos que "stat" no refleja: confirmar que el operador actual
+  # puede leerlo de verdad, no solo que propietario/permisos parecen correctos.
+  if [ ! -r "$path" ]; then
+    DOCKER_ENV_CONTRACT_REASON="$path no es legible por el operador actual ($expected_owner), aunque propietario y permisos parezcan correctos (revisar ACLs)."
+    return 1
+  fi
+  return 0
+}
+
+# Variante que detiene la fase (deploy.sh): usarla ANTES de cualquier operación mutadora que
+# dependa de docker/.env. Nunca cambia permisos/propietario automáticamente — solo reporta y
+# detiene; corregirlo es siempre una acción manual y deliberada del operador.
+assert_docker_env_contract() {
+  if ! docker_env_contract_check "$1"; then
+    echo "FALLA: $DOCKER_ENV_CONTRACT_REASON" >&2
+    exit 1
+  fi
+}
+
 # Verifica que una ruta de datos (bind-mount) propuesta no está ya en uso como mount de OTRO
 # contenedor (TVC/ETL u otro), y que no está dentro de los directorios de TVC (DEP55-03:
 # "volumen o bind-mount potencialmente compartido").

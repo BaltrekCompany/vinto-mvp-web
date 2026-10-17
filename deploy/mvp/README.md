@@ -326,18 +326,9 @@ nunca `source`) desde `postgres-roles` (para reaprovisionar roles con las contra
 generadas) y, fuera de `deploy.sh`, desde el proceso de la API y las herramientas administrativas
 (`migrate.py`, `import_reference.py`).
 
-**`docker/.env`**: a diferencia de `shared/backend.env`, **no tiene ningún contrato de
-propietario/permisos verificado por ningún script de este repositorio**, aunque contiene
-`POSTGRES_BOOTSTRAP_PASSWORD` en texto plano. Vive fuera del árbol 750 de `vinto-mvp`, junto a
-los scripts, en el `home` del operador `ubuntu`. **Esto es un hueco real, señalado aquí a
-propósito (Fase B de CLOUD-DEP-02B.2-C), no resuelto en esta PR**: corregirlo (una fase de
-`preflight`/`postgres-up` que exija 600 sobre `docker/.env` antes de usarlo, o moverlo bajo
-`shared/` con el mismo propietario que `backend.env`) tocaría `postgres-up`/
-`postgres-bootstrap-db`/`rollback.sh postgres`/`validate-compose`, que ya lo usan tal cual — un
-cambio de alcance mayor que el de este incremento. Mientras no se decida, el operador debe aplicar
-`chmod 600 docker/.env` a mano, igual que ya se exige para `shared/backend.env`, antes de
-`postgres-up`. Se lee vía `docker compose --env-file` (nunca `source`) y vía `env_value` en
-`postgres-bootstrap-db`/`postgres-roles`.
+**`docker/.env`**: contrato de seguridad implementado en CLOUD-DEP-02B.2-D.1 (ver sección dedicada
+más abajo) — a diferencia de `shared/backend.env`, el hueco documentado originalmente en
+CLOUD-DEP-02B.2-C ya está cerrado.
 
 **Comportamiento cuando falta una variable**: `env_value`/`mvp_env_value` (`lib_common.sh`)
 fallan con un mensaje explícito (nunca una cadena vacía silenciosa ni un valor por defecto) y
@@ -367,3 +358,94 @@ argumento de línea de comandos (`psql`, `docker exec -e`, ni ningún proceso) �
 añade su propia comprobación de que ningún valor del `shared/backend.env` sintético del
 laboratorio queda impreso en ningún log de esa batería — mismo criterio que la comprobación
 general ya existente, aplicado también a la fase nueva.
+
+## Endurecimiento de `docker/.env` (CLOUD-DEP-02B.2-D.1)
+
+Cierra el hueco señalado en CLOUD-DEP-02B.2-C: `docker/.env` contiene `POSTGRES_BOOTSTRAP_PASSWORD`
+en texto plano y, hasta este incremento, ningún script verificaba su propietario, sus permisos, ni
+rechazaba un enlace simbólico.
+
+### Contrato exacto
+
+- **Archivo regular, nunca un enlace simbólico** — incluso si el enlace resolviera a un archivo
+  válido con permisos y propietario correctos (misma lección que DEP60-01 para
+  `shared/backend.env`).
+- **Propietario = quien invoca el script**, resuelto dinámicamente con `id -un` en el momento de
+  la comprobación — **nunca un nombre de usuario fijo como `ubuntu`**: el VPS real podría nombrar
+  distinto a ese operador, y `deploy.sh`/`rollback.sh` nunca se ejecutan completos como root/sudo.
+- **Permisos exactamente `600`.**
+- **El directorio que lo contiene no puede ser escribible por grupo ni por otros** — si lo fuera,
+  cualquiera con ese acceso podría sustituir el archivo sin que ninguna comprobación sobre el
+  archivo en sí lo detectara.
+- **Nunca legible por `vinto-mvp`** — ni como propietario ni por ningún otro medio (grupo, otros,
+  ACL). Se comprueba de forma ACTIVA (`sudo -u vinto-mvp test -r`), no solo infiriéndolo de
+  propietario/modo: una ACL POSIX que conceda lectura a `vinto-mvp` recalcula además la máscara
+  (el bit de grupo que `stat` reporta cambia en la práctica, confirmado empíricamente: `600` ->
+  `640`), así que normalmente ya queda cubierto por el chequeo de permisos — la comprobación activa
+  queda como defensa en profundidad para un mecanismo que `stat` no refleje en absoluto.
+
+### Dónde vive la lógica
+
+`lib_common.sh::docker_env_contract_check <path>` es el guardián compartido: nunca llama a `exit`
+ni imprime el contenido del archivo — deja el resultado en su código de retorno y el motivo del
+primer fallo en `DOCKER_ENV_CONTRACT_REASON` (una frase para el operador, nunca un valor leído del
+archivo). Cada llamador decide qué hacer con un fallo:
+
+- **Fases mutadoras de `deploy.sh`** (`validate-compose`, `postgres-up`, `postgres-bootstrap-db`,
+  `postgres-roles`) usan `assert_docker_env_contract`, que se detiene (`exit 1`) con el motivo. Se
+  invoca ANTES de cualquier operación mutadora o de leer ningún valor del archivo.
+- **`rollback.sh rollback_postgres`** usa `docker_env_contract_check` directamente y, si falla por
+  CUALQUIER motivo (ausente, symlink, permisos, propietario, legible por `vinto-mvp`), degrada al
+  mismo camino ya existente de "tratarlo como ausente" (`down` por nombre de proyecto, sin
+  `--env-file`) — una operación de **recuperación** nunca debe volverse imposible solo porque este
+  archivo de configuración tenga un problema de permisos.
+- **`preflight.sh stage_infra`** reporta el estado como diagnóstico de solo lectura: `OK` si no
+  existe todavía (esperado antes de la primera `postgres-up`, igual que `shared/backend.env` antes
+  del primer `checkout`), `OK` si existe y cumple el contrato, `FALLA` si existe pero lo viola.
+
+### Procedimiento seguro de creación posterior
+
+1. Copiar `env/postgres.env.example` a `docker/.env`, en el VPS, por quien tiene acceso a la
+   terminal — nunca generado ni transcrito en una conversación con un asistente.
+2. Generar cada contraseña con `openssl rand -base64 24` (o equivalente) directamente en esa
+   terminal.
+3. `chmod 600 docker/.env` y confirmar que el propietario es quien ejecuta `deploy.sh`/`docker
+   compose` (normalmente ya lo es, por ser quien creó el archivo).
+4. Confirmar que el directorio que lo contiene (`deploy/mvp/docker/`) no es escribible por grupo
+   ni por otros.
+5. Nunca aplicar `setfacl` ni ningún otro mecanismo que conceda acceso a `vinto-mvp` sobre este
+   archivo — no lo necesita.
+
+### Diferencia respecto a `shared/backend.env`
+
+| | `shared/backend.env` | `docker/.env` |
+|---|---|---|
+| Propietario correcto | `vinto-mvp` | quien invoca el script (nunca `vinto-mvp`) |
+| Quién debe poder leerlo | `vinto-mvp` (proceso de la API, `migrate.py`, `import_reference.py`) | solo el operador — `vinto-mvp` nunca |
+| Por qué la diferencia | el proceso del MVP corre bajo esa identidad | Postgres se administra desde fuera del MVP; si `vinto-mvp` pudiera leerlo, comprometer el backend filtraría también el secreto de arranque del clúster |
+
+### Comportamiento cuando falta el archivo
+
+- **Fases mutadoras de `deploy.sh`**: `FALLA` explícita (`$path no existe.`) — nunca continúan sin
+  él.
+- **`rollback.sh rollback_postgres`**: comportamiento preexistente, sin cambios — se trata como
+  legítimamente ausente (esperado si `postgres-up` nunca se ejecutó) y continúa con `down` por
+  nombre de proyecto.
+- **`preflight.sh`**: `OK`, nunca bloquea — es el estado esperado antes del primer `postgres-up`.
+
+### Limitaciones operativas y riesgos residuales
+
+- La comprobación del directorio padre solo mira el directorio INMEDIATO que contiene el archivo,
+  no toda la cadena de directorios hasta la raíz (proporcional al resto del repositorio; una
+  cadena completa de "ruta segura" tipo `ssh` sería un cambio de alcance mayor).
+- El chequeo activo `sudo -u vinto-mvp test -r` requiere que `sudo -u vinto-mvp` funcione desde el
+  invocador; si no funciona (p. ej. antes de `user-and-dirs`, cuando `vinto-mvp` todavía no
+  existe), esa comprobación específica se omite en silencio — el contrato sigue siendo fail-closed
+  gracias a los chequeos de propietario/permisos, que no dependen de `vinto-mvp` existiendo.
+- `rollback_postgres` también depende de `detect_compose_cmd` (requiere un comando Docker Compose
+  real) — su comportamiento degradado ante un `docker/.env` inseguro se confirma por código
+  (`verify_local.sh`) y reutilizando la misma función ya probada en vivo contra 12 casos directos,
+  no con un ensayo end-to-end completo de `rollback.sh postgres` (limitación de laboratorio, igual
+  categoría que la ya documentada para systemd en la prueba 8 de `verify_local.sh`).
+- Probado en `ubuntu:24.04` con ACLs POSIX estándar; no se ensayó contra NFS, SELinux, ni otros
+  mecanismos de control de acceso que `stat`/ACL POSIX no cubran.

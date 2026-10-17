@@ -586,10 +586,9 @@ phase_install_node_runtime() {
 phase_validate_compose() {
   detect_compose_cmd
   local compose_dir="$SCRIPT_DIR/../docker"
-  if [ ! -f "$compose_dir/.env" ]; then
-    echo "FALTA $compose_dir/.env. No se puede validar sin él (las variables son obligatorias en el YAML)." >&2
-    exit 1
-  fi
+  # CLOUD-DEP-02B.2-D.1: contrato de seguridad completo (archivo regular, propietario, 600, nunca
+  # legible por vinto-mvp) ANTES de pasárselo a Compose — ver lib_common.sh::docker_env_contract_check.
+  assert_docker_env_contract "$compose_dir/.env"
   # "-q/--quiet" ("Only validate the configuration, don't print anything") es obligatorio: si el
   # comando disponible no la soporta, se rechaza validar en vez de caer a un modo que sí
   # imprimiría la configuración resuelta (y las contraseñas que contiene).
@@ -710,10 +709,8 @@ phase_postgres_up() {
     exit 1
   fi
   local compose_dir="$SCRIPT_DIR/../docker"
-  if [ ! -f "$compose_dir/.env" ]; then
-    echo "FALTA $compose_dir/.env (copiar de deploy/mvp/env/postgres.env.example y completar a mano). No se continúa." >&2
-    exit 1
-  fi
+  # CLOUD-DEP-02B.2-D.1: mismo contrato de seguridad que validate-compose, ANTES de levantar nada.
+  assert_docker_env_contract "$compose_dir/.env"
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
   assert_network_is_ours "$MVP_NETWORK"
   local pgdata_dir
@@ -733,6 +730,9 @@ phase_postgres_up() {
 phase_postgres_bootstrap_db() {
   require_confirm
   local compose_dir="$SCRIPT_DIR/../docker"
+  # CLOUD-DEP-02B.2-D.1: antes de leer ningún valor de docker/.env, exigir el mismo contrato de
+  # seguridad que validate-compose/postgres-up (antes, esta fase no comprobaba nada en absoluto).
+  assert_docker_env_contract "$compose_dir/.env"
   local bootstrap_db bootstrap_user bootstrap_password
   bootstrap_db="$(env_value "$compose_dir/.env" POSTGRES_BOOTSTRAP_DB)"
   bootstrap_user="$(env_value "$compose_dir/.env" POSTGRES_BOOTSTRAP_USER)"
@@ -757,6 +757,9 @@ phase_postgres_roles() {
   require_confirm
   assert_can_read_mvp_private_paths
   local compose_dir="$SCRIPT_DIR/../docker"
+  # CLOUD-DEP-02B.2-D.1: mismo contrato antes de leer docker/.env (antes, esta fase tampoco
+  # comprobaba nada).
+  assert_docker_env_contract "$compose_dir/.env"
   local roles_dir="$APP_DIR/current/backend/roles"
   local backend_env="$APP_DIR/current/backend/.env"
   if ! mvp_test -d "$roles_dir"; then

@@ -2260,5 +2260,287 @@ else
   unset MSYS_NO_PATHCONV
 fi
 
+echo "=== Prueba focalizada CLOUD-DEP-02B.2-D.1: contrato de seguridad de docker/.env ==="
+echo "docker_env_contract_check (lib_common.sh) es el guardián compartido nuevo: nunca llama a"
+echo "'exit' ni imprime el contenido del archivo -- deja el motivo del primer fallo en"
+echo "DOCKER_ENV_CONTRACT_REASON (solo metadatos, nunca un valor leído) y cada llamador decide qué"
+echo "hacer. Las fases MUTADORAS de deploy.sh se detienen (assert_docker_env_contract);"
+echo "rollback.sh degrada al camino ya existente de 'tratarlo como ausente' -- una recuperación"
+echo "legítima nunca debe volverse imposible solo por un problema de permisos en este archivo."
+
+# Comprobación estática primero: las 4 fases que consumen docker/.env deben llamar al guardián
+# nuevo, y rollback_postgres debe usarlo en modo degradado (nunca un "exit 1" propio sobre el
+# resultado del contrato).
+docker_env_wired=0
+for phase_fn in phase_validate_compose phase_postgres_up phase_postgres_bootstrap_db phase_postgres_roles; do
+  awk "/^$phase_fn\\(\\)/,/^}/" "$SCRIPT_DIR/../deploy.sh" | grep -q 'assert_docker_env_contract' || docker_env_wired=1
+done
+if [ "$docker_env_wired" -eq 0 ]; then
+  report "las 4 fases que consumen docker/.env llaman a assert_docker_env_contract" 0
+else
+  report "las 4 fases que consumen docker/.env llaman a assert_docker_env_contract" 1
+fi
+if awk '/^rollback_postgres\(\)/,/^}/' "$SCRIPT_DIR/../rollback.sh" | grep -q 'docker_env_contract_check' \
+    && ! awk '/^rollback_postgres\(\)/,/^}/' "$SCRIPT_DIR/../rollback.sh" | grep -qE '^\s*exit 1\s*$'; then
+  report "rollback_postgres usa el guardián en modo degradado (nunca 'exit 1' propio sobre el contrato)" 0
+else
+  report "rollback_postgres usa el guardián en modo degradado (nunca 'exit 1' propio sobre el contrato)" 1
+fi
+
+DOCKERENV_CNAME=""
+set +e
+create_container vinto-mvp-verify-dockerenv --label com.docker.compose.project=vinto-mvp ubuntu:24.04 sleep 1800
+dockerenv_create_status=$?
+set -e
+if [ "$dockerenv_create_status" -ne 0 ]; then
+  report "docker/.env: batería completa (omitida: no se pudo crear el contenedor de ensayo)" 1
+else
+  DOCKERENV_CNAME="$CREATED_NAME"
+  docker cp "$MVP_DIR" "$DOCKERENV_CNAME:/tmp/mvp" >/dev/null
+  export MSYS_NO_PATHCONV=1
+  set +e
+  docker exec "$DOCKERENV_CNAME" bash -c '
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo acl >/dev/null
+
+    useradd --system --no-create-home --shell /usr/sbin/nologin vinto-mvp
+    # mvp_operator: dueño legítimo del docker/.env de este laboratorio.
+    useradd -m -s /bin/bash mvp_operator
+    echo "mvp_operator ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mvp_operator
+    chmod 440 /etc/sudoers.d/mvp_operator
+    # mvp_operator_b: un SEGUNDO operador, nunca dueño de nada de este laboratorio -- demuestra
+    # que el contrato se resuelve dinámicamente contra quien invoca (id -un), no un nombre fijo.
+    useradd -m -s /bin/bash mvp_operator_b
+    echo "mvp_operator_b ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/mvp_operator_b
+    chmod 440 /etc/sudoers.d/mvp_operator_b
+
+    mkdir -p /opt/docker-env-lab
+    chown mvp_operator:mvp_operator /opt/docker-env-lab
+    chmod 755 /opt/docker-env-lab
+
+    # "docker cp" copia como root; mvp_operator necesita poder crear el docker/.env de prueba
+    # dentro del checkout copiado (para los casos B13/B14, que ejercitan las fases REALES de
+    # deploy.sh en la ruta que de verdad esperan, scripts/../docker/.env).
+    chown -R mvp_operator:mvp_operator /tmp/mvp
+  ' >/tmp/verify-dockerenv-setup.log 2>&1
+  dockerenv_setup_ok=$?
+  set -e
+  if [ "$dockerenv_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación docker/.env ---"; cat /tmp/verify-dockerenv-setup.log
+    report "docker/.env: preparación del laboratorio (dos operadores + vinto-mvp + acl)" 1
+  else
+    report "docker/.env: preparación del laboratorio (dos operadores + vinto-mvp + acl)" 0
+
+    check_contract_as() {
+      local user="$1" path="$2" logfile="$3"
+      docker exec "$DOCKERENV_CNAME" su -s /bin/bash "$user" -c \
+        "source /tmp/mvp/scripts/lib_common.sh; docker_env_contract_check '$path'; echo RC=\$?; echo REASON=\$DOCKER_ENV_CONTRACT_REASON" \
+        >"$logfile" 2>&1
+    }
+    rc_of() { grep -m1 '^RC=' "$1" | sed 's/^RC=//'; }
+
+    GOOD_ENV=/opt/docker-env-lab/good.env
+    SECRET_MARKER="SECRETO-SINTETICO-$(date +%s)-NUNCA-UNA-CREDENCIAL-REAL"
+
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "printf 'POSTGRES_BOOTSTRAP_PASSWORD=$SECRET_MARKER\n' > $GOOD_ENV && chmod 600 $GOOD_ENV" \
+      >/tmp/verify-dockerenv-mk.log 2>&1
+
+    # Caso A1: archivo correcto (propietario mvp_operator, 600) -- aceptado.
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a1.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a1.log)" = "0" ]; then
+      report "docker/.env caso A1: archivo correcto (propietario correcto, 600), aceptado" 0
+    else
+      cat /tmp/verify-dockerenv-a1.log
+      report "docker/.env caso A1: archivo correcto (propietario correcto, 600), aceptado" 1
+    fi
+
+    # Caso A2: modo 644 -- rechazado.
+    docker exec "$DOCKERENV_CNAME" chmod 644 "$GOOD_ENV"
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a2.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a2.log)" = "1" ] && grep -q "deben ser exactamente 600" /tmp/verify-dockerenv-a2.log; then
+      report "docker/.env caso A2: modo 644, rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a2.log
+      report "docker/.env caso A2: modo 644, rechazado" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" chmod 600 "$GOOD_ENV"
+
+    # Caso A3: propietario incorrecto (root en vez de mvp_operator) -- rechazado.
+    docker exec "$DOCKERENV_CNAME" chown root:root "$GOOD_ENV"
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a3.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a3.log)" = "1" ] && grep -q "pertenece a 'root'" /tmp/verify-dockerenv-a3.log; then
+      report "docker/.env caso A3: propietario incorrecto (root), rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a3.log
+      report "docker/.env caso A3: propietario incorrecto (root), rechazado" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" chown mvp_operator:mvp_operator "$GOOD_ENV"
+
+    # Caso A4: enlace simbólico VÁLIDO (resuelve a un archivo con permisos/propietario correctos)
+    # -- rechazado igual (misma lección de DEP60-01 para shared/backend.env).
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "mv $GOOD_ENV /opt/docker-env-lab/good.env.real && ln -s good.env.real $GOOD_ENV"
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a4.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a4.log)" = "1" ] && grep -q "enlace simbólico" /tmp/verify-dockerenv-a4.log; then
+      report "docker/.env caso A4: enlace simbólico hacia un destino VÁLIDO, rechazado igual" 0
+    else
+      cat /tmp/verify-dockerenv-a4.log
+      report "docker/.env caso A4: enlace simbólico hacia un destino VÁLIDO, rechazado igual" 1
+    fi
+
+    # Caso A5: enlace simbólico ROTO (mismo archivo, ahora hacia un destino que no existe) --
+    # rechazado con el MISMO motivo ("-L" se dispara antes de intentar resolver nada).
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "rm -f $GOOD_ENV && ln -s no-existe.env $GOOD_ENV"
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a5.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a5.log)" = "1" ] && grep -q "enlace simbólico" /tmp/verify-dockerenv-a5.log; then
+      report "docker/.env caso A5: enlace simbólico ROTO, rechazado con el mismo motivo (-L, no solo -e)" 0
+    else
+      cat /tmp/verify-dockerenv-a5.log
+      report "docker/.env caso A5: enlace simbólico ROTO, rechazado con el mismo motivo (-L, no solo -e)" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "rm -f $GOOD_ENV && mv /opt/docker-env-lab/good.env.real $GOOD_ENV"
+
+    # Caso A6: archivo inexistente -- rechazado.
+    check_contract_as mvp_operator /opt/docker-env-lab/no-existe.env /tmp/verify-dockerenv-a6.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a6.log)" = "1" ] && grep -q "no existe" /tmp/verify-dockerenv-a6.log; then
+      report "docker/.env caso A6: archivo inexistente, rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a6.log
+      report "docker/.env caso A6: archivo inexistente, rechazado" 1
+    fi
+
+    # Caso A7: directorio en lugar de archivo -- rechazado.
+    docker exec "$DOCKERENV_CNAME" mkdir -p /opt/docker-env-lab/adir
+    check_contract_as mvp_operator /opt/docker-env-lab/adir /tmp/verify-dockerenv-a7.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a7.log)" = "1" ] && grep -q "es un directorio" /tmp/verify-dockerenv-a7.log; then
+      report "docker/.env caso A7: directorio en vez de archivo, rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a7.log
+      report "docker/.env caso A7: directorio en vez de archivo, rechazado" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" rmdir /opt/docker-env-lab/adir
+
+    # Caso A8: directorio PADRE inseguro (escribible por grupo/otros), archivo en sí correcto --
+    # rechazado (requisito 5: "rechace ... directorios inseguros").
+    docker exec "$DOCKERENV_CNAME" chmod 777 /opt/docker-env-lab
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a8.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a8.log)" = "1" ] && grep -q "escribible por grupo u otros" /tmp/verify-dockerenv-a8.log; then
+      report "docker/.env caso A8: directorio padre escribible por grupo/otros, rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a8.log
+      report "docker/.env caso A8: directorio padre escribible por grupo/otros, rechazado" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" chmod 755 /opt/docker-env-lab
+
+    # Caso A9 ("operador sin permisos"): un SEGUNDO operador (mvp_operator_b), nunca dueño de
+    # este archivo, lo comprueba -- rechazado, y el motivo nombra a QUIEN invoca (resuelto con
+    # "id -un", nunca un nombre de usuario fijo).
+    check_contract_as mvp_operator_b "$GOOD_ENV" /tmp/verify-dockerenv-a9.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a9.log)" = "1" ] && grep -q "debe pertenecer a 'mvp_operator_b'" /tmp/verify-dockerenv-a9.log; then
+      report "docker/.env caso A9: operador sin permisos (no es el dueño), rechazado con el operador correcto resuelto dinámicamente" 0
+    else
+      cat /tmp/verify-dockerenv-a9.log
+      report "docker/.env caso A9: operador sin permisos (no es el dueño), rechazado con el operador correcto resuelto dinámicamente" 1
+    fi
+
+    # Caso A10: vinto-mvp obtiene una entrada ACL de lectura sobre el archivo. En la práctica,
+    # "setfacl -m" recalcula la máscara ACL, así que el bit de GRUPO que "stat -c '%a'" reporta
+    # también cambia (confirmado empíricamente: 600 -> 640) -- el rechazo puede producirse por el
+    # chequeo de permisos (600) o por la comprobación ACTIVA ("sudo -u vinto-mvp test -r"), según
+    # cuál se evalúe primero; AMBOS son un resultado correcto (nunca se acepta el archivo). La
+    # comprobación activa sigue siendo valiosa como defensa en profundidad para mecanismos que
+    # "stat" no refleje en absoluto (p. ej. ACLs NFSv4, o cambios futuros en esta lógica) aunque
+    # este escenario concreto de ACL POSIX ya quede cubierto por el chequeo de permisos.
+    docker exec "$DOCKERENV_CNAME" setfacl -m u:vinto-mvp:r "$GOOD_ENV"
+    check_contract_as mvp_operator "$GOOD_ENV" /tmp/verify-dockerenv-a10.log
+    if [ "$(rc_of /tmp/verify-dockerenv-a10.log)" = "1" ] \
+        && grep -qE "permisos demasiado abiertos|deben ser exactamente 600" /tmp/verify-dockerenv-a10.log; then
+      report "docker/.env caso A10 (requisito 9): vinto-mvp con una entrada ACL de lectura, rechazado" 0
+    else
+      cat /tmp/verify-dockerenv-a10.log
+      report "docker/.env caso A10 (requisito 9): vinto-mvp con una entrada ACL de lectura, rechazado" 1
+    fi
+    docker exec "$DOCKERENV_CNAME" setfacl -b "$GOOD_ENV"
+
+    # Caso A11: confirmación directa (fuera de nuestra función) de que vinto-mvp NO puede leer el
+    # archivo en su estado normal y correcto -- la garantía real en la que se apoya el requisito 9.
+    set +e
+    docker exec "$DOCKERENV_CNAME" sudo -u vinto-mvp test -r "$GOOD_ENV"
+    a11_vinto_can_read=$?
+    set -e
+    if [ "$a11_vinto_can_read" -ne 0 ]; then
+      report "docker/.env caso A11: vinto-mvp no puede leer docker/.env en su estado normal (600, dueño correcto)" 0
+    else
+      report "docker/.env caso A11: vinto-mvp no puede leer docker/.env en su estado normal (600, dueño correcto)" 1
+    fi
+
+    # Caso A12 ("configuración incompleta"): archivo seguro (600, dueño correcto) pero SIN una
+    # clave obligatoria -- el contrato de ARCHIVO pasa, pero env_value (capa de CONTENIDO,
+    # inalterada por esta corrección) rechaza la lectura de la clave ausente. Las dos capas
+    # (seguridad del archivo + completitud del contenido) se componen correctamente.
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "printf 'POSTGRES_BOOTSTRAP_DB=x\n' > /opt/docker-env-lab/incomplete.env && chmod 600 /opt/docker-env-lab/incomplete.env"
+    check_contract_as mvp_operator /opt/docker-env-lab/incomplete.env /tmp/verify-dockerenv-a12-file.log
+    set +e
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "source /tmp/mvp/scripts/lib_common.sh; env_value /opt/docker-env-lab/incomplete.env POSTGRES_BOOTSTRAP_PASSWORD" \
+      >/tmp/verify-dockerenv-a12-key.log 2>&1
+    a12_key_status=$?
+    set -e
+    if [ "$(rc_of /tmp/verify-dockerenv-a12-file.log)" = "0" ] && [ "$a12_key_status" -ne 0 ] \
+        && grep -q "no se encontró la clave" /tmp/verify-dockerenv-a12-key.log; then
+      report "docker/.env caso A12: archivo seguro pero con una clave obligatoria ausente, rechazado por la capa de contenido" 0
+    else
+      cat /tmp/verify-dockerenv-a12-file.log /tmp/verify-dockerenv-a12-key.log
+      report "docker/.env caso A12: archivo seguro pero con una clave obligatoria ausente, rechazado por la capa de contenido" 1
+    fi
+
+    # Caso B13/B14: integración REAL con las fases de deploy.sh (no solo la función aislada) --
+    # un docker/.env en 644 en la ubicación real que deploy.sh espera (scripts/../docker/.env)
+    # debe rechazarse ANTES de cualquier intento de contactar PostgreSQL/Docker.
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "printf 'POSTGRES_BOOTSTRAP_PASSWORD=$SECRET_MARKER\n' > /tmp/mvp/docker/.env && chmod 644 /tmp/mvp/docker/.env"
+    set +e
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh postgres-bootstrap-db" >/tmp/verify-dockerenv-b13.log 2>&1
+    b13_status=$?
+    set -e
+    if [ "$b13_status" -ne 0 ] && grep -q "deben ser exactamente 600" /tmp/verify-dockerenv-b13.log; then
+      report "docker/.env caso B13: 'deploy.sh postgres-bootstrap-db' rechaza docker/.env en 644 antes de contactar PostgreSQL" 0
+    else
+      cat /tmp/verify-dockerenv-b13.log
+      report "docker/.env caso B13: 'deploy.sh postgres-bootstrap-db' rechaza docker/.env en 644 antes de contactar PostgreSQL" 1
+    fi
+    set +e
+    docker exec "$DOCKERENV_CNAME" su -s /bin/bash mvp_operator -c \
+      "cd /tmp/mvp/scripts && CONFIRM=yes bash deploy.sh postgres-roles" >/tmp/verify-dockerenv-b14.log 2>&1
+    b14_status=$?
+    set -e
+    if [ "$b14_status" -ne 0 ] && grep -q "deben ser exactamente 600" /tmp/verify-dockerenv-b14.log; then
+      report "docker/.env caso B14: 'deploy.sh postgres-roles' rechaza docker/.env en 644 antes de leer roles/backend" 0
+    else
+      cat /tmp/verify-dockerenv-b14.log
+      report "docker/.env caso B14: 'deploy.sh postgres-roles' rechaza docker/.env en 644 antes de leer roles/backend" 1
+    fi
+
+    # Ningún valor secreto (ni el sintético de este laboratorio) quedó impreso en ningún log.
+    if ! grep -l "$SECRET_MARKER" /tmp/verify-dockerenv-*.log 2>/dev/null; then
+      report "docker/.env: ningún valor secreto quedó impreso en los logs de esta batería" 0
+    else
+      report "docker/.env: ningún valor secreto quedó impreso en los logs de esta batería" 1
+    fi
+  fi
+  unset MSYS_NO_PATHCONV
+fi
+
+echo "Límite conocido de esta batería: rollback_postgres también llama a 'detect_compose_cmd'"
+echo "(requiere un comando Docker Compose real), que no está disponible en el contenedor Ubuntu"
+echo "simple de este laboratorio -- su comportamiento degradado se confirma por código (más"
+echo "arriba) y reutilizando la MISMA función ya probada en vivo contra los 12 casos A1-A12."
+
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"

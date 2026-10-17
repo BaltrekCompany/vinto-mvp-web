@@ -115,11 +115,18 @@ rollback_postgres() {
   local compose_dir="$SCRIPT_DIR/../docker"
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
   detect_compose_cmd
-  if [ ! -f "$compose_dir/.env" ]; then
-    echo "AVISO: no existe $compose_dir/.env; se intenta 'down' igualmente por nombre de proyecto (vinto-mvp)." >&2
-    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" -p "$MVP_COMPOSE_PROJECT" down
-  else
+  # CLOUD-DEP-02B.2-D.1: a diferencia de las fases MUTADORAS de deploy.sh (que se detienen si
+  # docker/.env no cumple el contrato de seguridad -- ver lib_common.sh::assert_docker_env_contract),
+  # este script es una operación de RECUPERACIÓN: nunca debe volverse imposible solo porque ese
+  # archivo de configuración tenga un problema de permisos. Si el contrato falla por CUALQUIER
+  # motivo (ausente, symlink, permisos, propietario, legible por vinto-mvp), se degrada al mismo
+  # camino ya existente de "tratarlo como ausente" -- "down" por nombre de proyecto, que no
+  # necesita ningún secreto para detener el contenedor.
+  if docker_env_contract_check "$compose_dir/.env"; then
     "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" --env-file "$compose_dir/.env" down
+  else
+    echo "AVISO: $DOCKER_ENV_CONTRACT_REASON Se continúa igual tratándolo como ausente -- 'down' por nombre de proyecto (vinto-mvp), que no necesita sus secretos." >&2
+    "${COMPOSE_CMD[@]}" -f "$compose_dir/docker-compose.postgres.yml" -p "$MVP_COMPOSE_PROJECT" down
   fi
   echo "Contenedor $MVP_POSTGRES_CONTAINER detenido. El bind-mount de datos NO se tocó (este script no tiene ninguna opción para borrarlo)."
   echo "postgres-vinto (TVC) no se tocó."

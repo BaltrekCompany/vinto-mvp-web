@@ -170,6 +170,22 @@ else
   warn "backup de TVC" "TVC_BACKUP_CONFIRMED no es 'yes' — confirmar con quien administra TVC que el backup existe y está verificado ANTES de autorizar deploy.sh postgres-up/postgres-roles/migrate (no bloquea este preflight de solo lectura, pero deploy.sh exigirá esta misma variable en esas fases)"
 fi
 
+# 7b. Contrato de seguridad de docker/.env (CLOUD-DEP-02B.2-D.1): diagnóstico de solo lectura,
+#     nunca bloqueante por su AUSENCIA (esperado antes de la primera 'postgres-up' — "legítimamente
+#     ausente", igual que shared/backend.env antes del primer checkout). Si YA existe pero viola el
+#     contrato (symlink, permisos, propietario, legible por vinto-mvp), eso SÍ es una FALLA real:
+#     deploy.sh lo rechazará de todas formas en postgres-up/postgres-bootstrap-db/postgres-roles
+#     (lib_common.sh::assert_docker_env_contract), pero detectarlo aquí, antes de llegar a esas
+#     fases mutadoras, es justo el propósito de este preflight.
+DOCKER_ENV_PATH="$SCRIPT_DIR/../docker/.env"
+if [ ! -e "$DOCKER_ENV_PATH" ] && [ ! -L "$DOCKER_ENV_PATH" ]; then
+  ok "docker/.env todavía no existe (esperado antes de la primera 'postgres-up')"
+elif docker_env_contract_check "$DOCKER_ENV_PATH"; then
+  ok "docker/.env existe y cumple el contrato de seguridad (archivo regular, 600, propietario correcto, no legible por $MVP_SERVICE_USER)"
+else
+  fail "docker/.env" "$DOCKER_ENV_CONTRACT_REASON"
+fi
+
 # 8. Primera instalación vs actualización: clasificación informativa, no bloqueante por sí sola
 #    (los conflictos de propiedad de arriba ya bloquearon si correspondía).
 echo "--- Clasificación del despliegue ---"
