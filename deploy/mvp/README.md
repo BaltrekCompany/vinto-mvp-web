@@ -561,10 +561,13 @@ Reutiliza, en vez de reinventar, los mecanismos ya auditados del resto del pipel
   contenedor cuya identidad no confirmó.
 - **`docker/.env`**: `lib_common.sh::assert_docker_env_contract` (DEP60-01/CLOUD-DEP-02B.2-D.1) —
   mismo contrato fail-closed que `deploy.sh`.
-- **Credenciales**: nunca como argumento ni como `docker exec -e` literal. `pg_dump_custom`/
-  `pg_restore_custom` (nuevas, generalizando `_pg_write_pgpass`/`pg_run_sql_inline` a un
-  contenedor parametrizado en vez de siempre `$MVP_POSTGRES_CONTAINER`) reutilizan el mismo
-  patrón `.pgpass` temporal dentro del contenedor, `docker exec -i` + `wait`, `trap` de limpieza.
+- **Credenciales**: nunca como argumento ni como `docker exec -e` literal.
+  `pg_dump_and_manifest_snapshot_consistent`/`pg_restore_custom` (generalizando
+  `_pg_write_pgpass`/`pg_run_sql_inline` a un contenedor parametrizado en vez de siempre
+  `$MVP_POSTGRES_CONTAINER`) reutilizan el mismo patrón `.pgpass` temporal dentro del
+  contenedor, `docker exec -i`, `trap` de limpieza. La contraseña del contenedor efímero de
+  `verify` (DEP62-07, ver sección dedicada abajo) tampoco se pasa nunca como `docker run -e`:
+  se copia a un archivo dentro del contenedor, TODAVÍA DETENIDO, antes de arrancarlo.
 - **Roles**: el volcado (`pg_dump`) usa el rol de arranque (`POSTGRES_BOOTSTRAP_USER`), el único
   con visibilidad completa de `vinto_piloto` — `vinto_app`/`vinto_reference` no la tienen. La
   restauración de prueba usa `--no-owner --no-privileges`: el contenedor efímero nunca tiene los
@@ -617,9 +620,10 @@ Reutiliza, en vez de reinventar, los mecanismos ya auditados del resto del pipel
 **Política documentada e implementada (DEP62-05, ver sección dedicada abajo)**: agrupación por
 **día calendario** (UTC), no por "últimos N archivos" — se conservan TODOS los backups
 verificados de los `$RETENTION_DAILY` días con al menos uno (por defecto 7; varios backups del
-mismo día, p. ej. uno extra tras una migración, se conservan juntos) + 1 copia semanal (el
-verificado más antiguo que quede fuera de esos días) + el backup verificado más reciente,
-siempre, sin excepción. `prune` (sin argumentos) es un **dry-run**: muestra los candidatos, nunca
+mismo día, p. ej. uno extra tras una migración, se conservan juntos) + 1 copia adicional (el
+verificado más antiguo que quede fuera de esos días — **no** una política temporal semanal real;
+ver DEP62, revisión adicional #1, abajo) + el backup verificado más reciente, siempre, sin
+excepción. `prune` (sin argumentos) es un **dry-run**: muestra los candidatos, nunca
 borra nada; `prune-apply` aplica la poda, revalidando el estado de cada candidato en el momento
 de borrar y exigiendo `CONFIRM=yes`. Nunca elimina un backup sin marcador `.verified`. **Nunca se
 programa en cron desde este repositorio.**
@@ -634,9 +638,10 @@ por una batería de 24, que incluye los 10 escenarios adicionales pedidos en la 
 
 **Hallazgo real durante las pruebas**: la imagen oficial de `postgres` confía (`pg_hba.conf`,
 regla `trust`) en CUALQUIER conexión desde `127.0.0.1` por defecto — incluso con
-`POSTGRES_HOST_AUTH_METHOD` puesto explícitamente. Como `pg_dump_custom`/`pg_restore_custom`
-conectan siempre vía `docker exec ... -h 127.0.0.1` (dentro del propio contenedor, nunca por la
-red), un backup real nunca pediría contraseña de verdad en esta configuración por defecto. Las
+`POSTGRES_HOST_AUTH_METHOD` puesto explícitamente. Como `pg_dump_and_manifest_snapshot_consistent`/
+`pg_restore_custom` conectan siempre vía `docker exec ... -h 127.0.0.1` (dentro del propio
+contenedor, nunca por la red), un backup real nunca pediría contraseña de verdad en esta
+configuración por defecto. Las
 pruebas de "contraseña incorrecta" (#6) y "preservación" (#10) fuerzan autenticación real editando
 `pg_hba.conf` del contenedor de prueba vía `docker exec` (reemplazando `trust` por
 `scram-sha-256`) y recargando con `pg_reload_conf()` — nunca vía un bind-mount (que apuntaría a
@@ -673,17 +678,12 @@ otra: `0 == 0` pasa. Una tabla del manifiesto que no existe tras restaurar (cons
 por "relation does not exist") se trata como fallo explícito, distinto de un simple desajuste de
 conteo. Ninguna comprobación requerida puede fallar sin que `verify` rechace el backup.
 
-**Opción evaluada y NO implementada, documentada por transparencia**: la forma perfectamente
-consistente de capturar el manifiesto sería compartir el snapshot MVCC exacto de `pg_dump` vía
-`pg_export_snapshot()` + `pg_dump --snapshot=<id>` + `SET TRANSACTION SNAPSHOT '<id>'` en la
-conexión que cuenta filas, manteniendo una transacción separada abierta durante todo el volcado.
-Se decidió no implementarlo en este incremento: exige orquestar una sesión `psql` de larga
-duración con escritura/lectura intercalada a través de `docker exec` (un coproceso, con
-sincronización explícita por cada instrucción) — una pieza de infraestructura nueva y de
-fragilidad no trivial de probar de forma fiable, para un piloto de bajo volumen de escritura
-donde la ventana real entre "capturar el manifiesto" e "iniciar `pg_dump`" es del orden de
-milisegundos. El mecanismo adoptado (capturar inmediatamente antes, nunca comparar contra la
-fuente de nuevo después) es la alternativa pragmática, documentada aquí como riesgo residual.
+**Nota (actualizada en la auditoría R2 del PR #62, ver DEP62-08 abajo)**: la primera versión de
+esta corrección documentaba aquí la captura "inmediatamente antes de `pg_dump`" (nunca comparada
+contra la fuente de nuevo después) como alternativa pragmática a compartir un snapshot MVCC real,
+por asumir que esto último exigiría un coproceso con sincronización manual. Esa suposición resultó
+incorrecta: DEP62-08 implementa el snapshot compartido real (opción A), sin coproceso. El
+manifiesto y `pg_dump` comparten ahora el MISMO snapshot — ver esa sección para el mecanismo.
 
 ### DEP62-02 — Coherencia de estado (`.verified`/`.CORRUPT`)
 
@@ -721,7 +721,9 @@ que ocurra ANTES de llegar a esa línea).
 **Corrección estructural**: toda llamada a esas funciones, mientras el trap de `phase_verify`
 esté activo, se envuelve en un **subshell** `( ... )` — el `trap`/`trap -` que hagan por dentro
 nunca toca la tabla de traps del proceso PADRE, así que el trap de limpieza permanece intacto sin
-importar qué hagan por dentro. Auditados también: asignaciones de sustitución de comandos sin
+importar qué hagan por dentro. (Renombrado en la auditoría R2 a `cleanup_on_exit` y ampliado para
+cubrir también la invalidación de `.verified` ante interrupción — ver DEP62, revisión adicional
+#2, abajo; el mecanismo del subshell en sí no cambió.) Auditados también: asignaciones de sustitución de comandos sin
 proteger de `set -e` (la misma clase de regresión ya corregida en DEP61-03 para
 `resolve_confirmed_mvp_postgres_id`, encontrada de nuevo aquí en `table_count=$(...)` y corregida
 con el patrón `if var=$(cmd); then ... fi`); y una función (`_prune_plan`) cuyo ÚLTIMO comando
@@ -740,8 +742,11 @@ cobertura de otros días dentro del mismo presupuesto de 7.
 **Corrección**: la política documentada y la única que el código implementa ahora es "N DÍAS
 calendario (UTC) con backup verificado", extraído del nombre de archivo. Todos los backups
 verificados de un mismo día dentro de la ventana se conservan JUNTOS (nunca se colapsan). Más 1
-copia semanal (el verificado más antiguo que quede fuera de esos días) y el backup verificado más
-reciente, SIEMPRE, sin excepción (caso límite cubierto explícitamente: `RETENTION_DAILY=0`).
+copia adicional (el verificado más antiguo que quede fuera de esos días) y el backup verificado
+más reciente, SIEMPRE, sin excepción (caso límite cubierto explícitamente: `RETENTION_DAILY=0`).
+**Corrección adicional (revisión R2, ver DEP62 revisión adicional #1 abajo)**: esa copia
+adicional nunca se llamó ni se documentó como "semanal" en el código real — el nombre era
+engañoso en una versión anterior de este README; se corrige aquí.
 `prune` (sin argumentos) es ahora un **dry-run** que solo muestra los candidatos; `prune-apply`
 aplica la poda, revalidando el estado de cada candidato en el instante de borrar y exigiendo
 `CONFIRM=yes`.
@@ -774,12 +779,11 @@ pruebas de "contraseña incorrecta" y "preservación" fuerzan autenticación rea
 una ruta del demonio, no del contenedor envoltorio). Esto es una característica de la imagen
 oficial de Docker, no un defecto de `backup.sh`.
 
-### Riesgos residuales (actualizados)
+### Riesgos residuales (actualizados tras la auditoría R2)
 
-- La consistencia del manifiesto frente a `pg_dump` depende de capturarlo inmediatamente antes
-  (no de un snapshot MVCC compartido) — ver DEP62-01 arriba para el mecanismo evaluado y
-  descartado, y la ventana de inconsistencia teórica que queda (milisegundos, bajo escritura
-  concurrente).
+- ~~La consistencia del manifiesto frente a `pg_dump` depende de capturarlo inmediatamente antes
+  (no de un snapshot MVCC compartido)~~ — **resuelto en DEP62-08**: manifiesto y `pg_dump`
+  comparten ahora el mismo snapshot MVCC real; ya no depende de una ventana de milisegundos.
 - `assert_private_dir` no recorre toda la cadena de directorios hasta la raíz (como ya se
   documentó para `docker/.env`), solo el directorio de backups en sí.
 - No se ensayó el procedimiento de `prune` contra el volumen de backups real de un piloto en
@@ -788,3 +792,136 @@ oficial de Docker, no un defecto de `backup.sh`.
   con acceso a `docker exec` sobre el contenedor de Postgres del MVP puede conectarse sin
   contraseña — un riesgo ya inherente a la imagen oficial sin personalizar `pg_hba.conf`, no
   introducido por `backup.sh`, pero que vale la pena que quien administra el VPS conozca.
+
+## DEP62-06 a 08: tres correcciones adicionales tras la auditoría R2 del PR #62
+
+### DEP62-06 — Backup de esquema vacío
+
+**Antes**: `_manifest_capture` admitía un manifiesto de 0 bytes como representación válida de una
+base sin tablas de usuario, pero `phase_create` lo rechazaba con `[ -s "$staging_manifest" ]`
+("no vacío") — una contradicción directa: el propio código que debía aceptar ese caso lo
+rechazaba.
+
+**Corrección**: las dos comprobaciones de `phase_create` que antes exigían `-s` (no vacío) sobre
+el manifiesto ahora exigen `-e` (existe) — el dump en sí SIGUE exigiendo `-s` (nunca puede ser
+legítimamente vacío: como mínimo lleva el catálogo de `pg_dump`). La única señal fiable de una
+captura fallida en silencio es la AUSENCIA del archivo, nunca su tamaño —
+`pg_dump_and_manifest_snapshot_consistent` (ver DEP62-08 abajo) siempre crea el archivo del
+manifiesto, incluso vacío, antes de ejecutar la consulta (`\o <ruta>` en la sesión de `psql`
+abre el archivo antes de consultar). Prueba añadida (R2T1): un contenedor Postgres con CERO
+tablas de usuario, `create` + `verify` exitosos, manifiesto confirmado de 0 bytes, y
+"Manifiesto comparado: 0 tabla(s) revisada(s)" en la salida de `verify`.
+
+### DEP62-07 — Secreto efímero en argumentos
+
+**Antes**: `phase_verify` creaba el contenedor temporal con `docker run -d ... -e
+POSTGRES_PASSWORD="$ephemeral_password"` — el valor literal queda expuesto en `docker inspect`
+(`Config.Env`) durante TODA la vida del contenedor, no solo un instante.
+
+**Corrección**: el contenedor efímero se crea TODAVÍA DETENIDO (`docker create`, sin
+`POSTGRES_PASSWORD`, solo `POSTGRES_PASSWORD_FILE=/tmp/ephemeral_pw`), la contraseña se escribe a
+un archivo temporal local (`600`) que se copia DENTRO del contenedor detenido con `docker cp`
+(nunca como argumento de ningún comando), el archivo temporal del host se borra, y solo entonces
+se arranca (`docker start`) — momento en el que el entrypoint oficial de la imagen lee
+`POSTGRES_PASSWORD_FILE`. Verificado empíricamente: tras `docker start`, `docker inspect
+... Config.Env` solo contiene la RUTA (`POSTGRES_PASSWORD_FILE=/tmp/ephemeral_pw`), nunca el
+secreto; `docker top`/`ps aux` dentro del contenedor tampoco lo muestra en ningún argumento de
+proceso. Las credenciales siguen siendo generadas solo para esta ejecución, nunca reutilizadas
+del MVP ni de TVC. Prueba añadida (R2T2): mientras el contenedor efímero existe de verdad (no
+después, por log), se inspecciona en vivo — se exige la presencia de
+`POSTGRES_PASSWORD_FILE=` y la AUSENCIA ESTRUCTURAL de `POSTGRES_PASSWORD=` (la variante
+peligrosa) tanto en `docker inspect` como en `docker top`. Esto es deliberadamente más estricto
+que solo revisar los logs después: una contraseña que nunca se expone no puede buscarse por su
+valor en un log, así que la única prueba real es inspeccionar la superficie de exposición
+mientras existe.
+
+### DEP62-08 — Consistencia del snapshot
+
+**Antes**: el manifiesto (una sesión `psql` aparte, antes de `pg_dump`) y `pg_dump` (un proceso
+separado, después) no compartían ningún snapshot MVCC — una escritura concurrente bien
+cronometrada en el hueco entre ambos podía quedar incluida en uno y excluida del otro, y
+`verify` fallaría al comparar (o, peor, ambos podrían coincidir por pura casualidad en una
+ejecución de prueba sin tráfico real).
+
+**Corrección (alternativa A, implementada — no solo diseñada)**: nueva función
+`lib_common.sh::pg_dump_and_manifest_snapshot_consistent`, una ÚNICA sesión `psql` (una sola
+invocación de `docker exec -i`, sin coproceso) que: `BEGIN ISOLATION LEVEL REPEATABLE READ` +
+`SELECT pg_export_snapshot() AS snap \gset` exporta el snapshot de esa transacción; `\setenv
+PGSNAP :snap` copia el ID a una variable de ENTORNO real (`psql` no interpola variables `:nombre`
+dentro de `\!` directamente — confirmado empíricamente); `\! pg_dump --snapshot="$PGSNAP" ...`
+lanza un `pg_dump` SEPARADO que importa ESE snapshot exacto, con la transacción que lo exportó
+aún abierta; TODAVÍA dentro de la MISMA transacción se captura el manifiesto con una sola
+consulta (`query_to_xml`+`xpath`, built-in de PostgreSQL, sin extensiones) que cuenta las filas
+de cada tabla; `COMMIT` cierra la transacción (y el snapshot) solo al final, tras haber usado
+ambas cosas. El volcado y el manifiesto quedan dentro del contenedor y se extraen con `docker
+cp` solo tras confirmar que `pg_dump` (dentro del `\!`) terminó con código 0. `phase_create`
+llama a esta única función en vez de `_manifest_capture` + `pg_dump_custom` por separado (ambas
+eliminadas de `lib_common.sh`, sin otros llamadores). Prueba añadida (R2T3): una tabla con
+400.000 filas (para que la captura tarde varios segundos) + un escritor concurrente que inserta
+en ráfagas DURANTE esa ventana; `verify` comparando el dump restaurado contra el manifiesto, de
+forma EXACTA, es la prueba de que ambos coincidieron sobre el mismo estado — con el defecto
+original, una escritura bien cronometrada habría hecho que uno viera la fila nueva y el otro no,
+y esa comparación habría fallado.
+
+### Revisión adicional #1 — la copia "semanal" nunca fue una política temporal semanal real
+
+**Antes**: el código (comentarios, mensajes de `prune`) y este README llamaban "copia semanal" a
+la copia conservada fuera de la ventana de `$RETENTION_DAILY` días. En realidad es simplemente
+"el backup verificado más antiguo que sobrevive al corte de N días", sin relación con una semana
+calendario real — si `prune-apply` se ejecuta con poca frecuencia, esa copia puede tener meses de
+antigüedad, no una semana.
+
+**Corrección**: documentación (comentarios de `backup.sh`, mensaje de `prune`, este README)
+corregida para describir exactamente lo que el código implementa — "una copia adicional: la
+verificada más antigua fuera de los días recientes" — sin usar la palabra "semanal" en ningún
+lugar. Ningún cambio de LÓGICA: la política de retención en sí (qué se conserva y qué se
+elimina) es idéntica a la de DEP62-05, solo se corrigió cómo se describe. Prueba añadida (R2T5):
+el mensaje de `prune` ya no contiene "semanal" y sí describe la "copia adicional".
+
+### Revisión adicional #2 — `.verified` ante una reverificación interrumpida
+
+**Antes**: el trap de `phase_verify` (`cleanup_ephemeral`) solo limpiaba el contenedor efímero;
+la invalidación de `.verified` ocurría en llamadas explícitas `invalidate_verified` repetidas
+antes de cada `exit 1`. Una señal (SIGINT/SIGTERM) que interrumpiera una REVERIFICACIÓN de un
+backup YA marcado `.verified` por una ejecución anterior genuinamente válida podía terminar el
+proceso sin pasar por ninguna de esas llamadas explícitas, dejando el marcador antiguo intacto —
+una afirmación de confianza que esta ejecución interrumpida nunca llegó a confirmar ni refutar.
+
+**Corrección**: un ÚNICO manejador (`cleanup_on_exit`, instalado con `trap ... EXIT INT TERM` al
+inicio de `phase_verify`, antes de hacer nada más) cubre AMBAS responsabilidades — limpieza del
+contenedor efímero (si llegó a existir) e invalidación de `.verified` — y se activa ante
+CUALQUIER salida de la función: un fallo explícito o una señal que la interrumpa en cualquier
+punto. Una bandera local (`verify_committed`) se pone en `1` justo antes de desarmar el trap, SOLO
+tras escribir con éxito el nuevo marcador — así el limpiador nunca borra el marcador que esta
+misma ejecución acaba de confirmar, pero SIEMPRE lo borra ante cualquier otro desenlace. Prueba
+añadida (R2T4): un backup se verifica con éxito una vez (`.verified` real); una reverificación
+inmediatamente después se interrumpe con SIGTERM a mitad de camino; se confirma que el
+`.verified` de la primera verificación (válida) ya NO existe tras la interrupción, y que ningún
+contenedor efímero queda huérfano.
+
+### Pruebas (5 nuevas, más toda la regresión anterior re-ejecutada)
+
+Mismo laboratorio (contenedor envoltorio con el socket de Docker montado, reutilizado de la
+batería R1 dentro de la misma corrida). R2T1 (DEP62-06, esquema vacío), R2T2 (DEP62-07,
+inspección en vivo del contenedor efímero), R2T3 (DEP62-08, escritura concurrente durante la
+captura), R2T4 (revisión adicional #2, interrupción de una reverificación), R2T5 (revisión
+adicional #1, mensaje de retención corregido) — reportadas por separado, más limpieza segura de
+contenedores efímeros, ausencia de secretos en los logs y TVC nunca tocado, igual que en R1.
+
+**Batería R2 completa: 9/9 PASS** (preparación + las 5 pruebas nuevas + limpieza/secretos/TVC).
+**Batería R1 (regresión, re-ejecutada con el `backup.sh`/`lib_common.sh` ya corregidos): 24/24
+PASS**, sin cambios de comportamiento observable pese a que `phase_create` ahora llama a
+`pg_dump_and_manifest_snapshot_consistent` en vez de `_manifest_capture` + `pg_dump_custom` por
+separado.
+
+**Regresión completa de todo `verify_local.sh`** (todas las baterías del repositorio, no solo
+las de `backup.sh`): **155/157 PASS**. Las 2 fallas restantes son preexistentes y **no están
+relacionadas con este incremento** (ninguna toca `backup.sh`/`lib_common.sh`, y ninguno de los
+dos scripts que señalan fue tocado en esta rama): una es un falso positivo de una prueba que
+busca el texto literal `docker compose` en los FUENTES de `rollback.sh` y encuentra esa frase
+dentro de un mensaje de `AVISO` (texto para humanos, nunca un comando ejecutado — `rollback.sh`
+sí usa `${COMPOSE_CMD[@]}` realmente, como confirma la prueba inmediatamente siguiente en la
+misma batería); la otra es una contaminación entre pruebas de una batería no relacionada
+(`DEP56-R2-01`, validación de `docker-compose.yml`), que encuentra un `docker/.env` real con
+permisos `644` dejado por una prueba anterior de ESA misma batería, ajena por completo a
+`backup.sh`.

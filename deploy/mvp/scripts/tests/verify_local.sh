@@ -3477,5 +3477,321 @@ else
   report "CLOUD-DEP-02B.2-D.2-R1: el contenedor ajeno, creado ANTES de la batería, permanece activo tras toda la batería" 1
 fi
 
+echo "=== Prueba focalizada CLOUD-DEP-02B.2-D.2-R2: backup.sh (DEP62-06 a 08 + revisión adicional) ==="
+echo "Corrige 3 hallazgos adicionales de la segunda auditoría del PR #62: un manifiesto de ESQUEMA"
+echo "VACÍO (0 tablas de usuario) ya no contradice la exigencia de 'create' (DEP62-06); la"
+echo "contraseña efímera de 'verify' ya nunca se pasa como 'docker run -e' literal, sino por un"
+echo "archivo copiado a un contenedor creado TODAVÍA DETENIDO (DEP62-07); y el manifiesto y"
+echo "pg_dump comparten ahora el MISMO snapshot MVCC real, en vez de capturarse en dos momentos"
+echo "separados (DEP62-08). Más dos revisiones adicionales: la copia 'semanal' de retención se"
+echo "redocumenta como lo que realmente implementa el código, y una reverificación interrumpida"
+echo "por señal ya no conserva un '.verified' desactualizado de una verificación anterior válida."
+
+if [ -z "$DEP62_WRAPPER_NAME" ]; then
+  report "CLOUD-DEP-02B.2-D.2-R2: batería completa (omitida: el contenedor envoltorio de la batería R1 no está disponible)" 1
+else
+  # Refresca el árbol copiado al envoltorio con el estado ACTUAL del repositorio (las correcciones
+  # R2 de backup.sh/lib_common.sh) -- "docker cp" sobre un directorio ya existente sobrescribe los
+  # archivos con el mismo nombre, nunca necesita borrar primero.
+  docker cp "$MVP_DIR" "$DEP62_WRAPPER_NAME:/tmp/mvp" >/dev/null
+  set +e
+  docker exec "$DEP62_WRAPPER_NAME" bash -c '
+    set -e
+    find /tmp/mvp -name "*.sh" -exec sed -i "s/\r$//" {} + 2>/dev/null || true
+    chmod +x /tmp/mvp/scripts/backup.sh
+  ' >/tmp/verify-dep62r2-setup.log 2>&1
+  dep62r2_setup_ok=$?
+  set -e
+  if [ "$dep62r2_setup_ok" -ne 0 ]; then
+    echo "--- log de preparación CLOUD-DEP-02B.2-D.2-R2 ---"; cat /tmp/verify-dep62r2-setup.log
+    report "CLOUD-DEP-02B.2-D.2-R2: preparación (refresco del árbol con las correcciones R2 en el envoltorio ya existente)" 1
+  else
+    report "CLOUD-DEP-02B.2-D.2-R2: preparación (refresco del árbol con las correcciones R2 en el envoltorio ya existente)" 0
+
+    DEP62R2_PW_T1="SECRETO-SINTETICO-DEP62R2-T1-$(date +%s)-NUNCA-REAL"
+    DEP62R2_PW_T2="SECRETO-SINTETICO-DEP62R2-T2-$(date +%s)-NUNCA-REAL"
+    DEP62R2_PW_T3="SECRETO-SINTETICO-DEP62R2-T3-$(date +%s)-NUNCA-REAL"
+    DEP62R2_PW_T4="SECRETO-SINTETICO-DEP62R2-T4-$(date +%s)-NUNCA-REAL"
+
+    DEP62R2_INNER="$(mktemp)"
+    track_tmp_path "$DEP62R2_INNER"
+    cat > "$DEP62R2_INNER" <<INNEREOF
+set -u
+cd /tmp/mvp
+
+wait_pg_ready() {
+  local n=0
+  while [ "\$n" -lt 90 ]; do
+    docker exec "\$1" pg_isready -U "\$2" -d "\$3" >/dev/null 2>&1 && { sleep 2; return 0; }
+    sleep 1
+    n=\$((n + 1))
+  done
+  return 1
+}
+mk_mvp_container() {
+  local suffix="\$1" password="\$2" extra_sql="\${3:-}"
+  docker run -d --name "vinto-mvp-postgres-dep62r2-\$suffix" \
+    --label com.docker.compose.project="vinto-mvp-dep62r2-\$suffix" \
+    -e POSTGRES_DB=vinto_piloto -e POSTGRES_USER=bootuser -e POSTGRES_PASSWORD="\$password" \
+    postgres:17 >/dev/null
+  wait_pg_ready "vinto-mvp-postgres-dep62r2-\$suffix" bootuser vinto_piloto
+  docker exec -e PGPASSWORD="\$password" "vinto-mvp-postgres-dep62r2-\$suffix" \
+    psql -h 127.0.0.1 -U bootuser -d vinto_piloto -v ON_ERROR_STOP=1 -c \
+    "CREATE TABLE verify_seed (id serial primary key, note text); INSERT INTO verify_seed (note) SELECT 'row-' || g FROM generate_series(1,25) g;" >/dev/null
+  if [ -n "\$extra_sql" ]; then
+    docker exec -e PGPASSWORD="\$password" "vinto-mvp-postgres-dep62r2-\$suffix" \
+      psql -h 127.0.0.1 -U bootuser -d vinto_piloto -v ON_ERROR_STOP=1 -c "\$extra_sql" >/dev/null
+  fi
+}
+mk_mvp_container_no_tables() {
+  local suffix="\$1" password="\$2"
+  docker run -d --name "vinto-mvp-postgres-dep62r2-\$suffix" \
+    --label com.docker.compose.project="vinto-mvp-dep62r2-\$suffix" \
+    -e POSTGRES_DB=vinto_piloto -e POSTGRES_USER=bootuser -e POSTGRES_PASSWORD="\$password" \
+    postgres:17 >/dev/null
+  wait_pg_ready "vinto-mvp-postgres-dep62r2-\$suffix" bootuser vinto_piloto
+}
+write_docker_env() {
+  printf 'POSTGRES_BOOTSTRAP_DB=vinto_piloto\nPOSTGRES_BOOTSTRAP_USER=bootuser\nPOSTGRES_BOOTSTRAP_PASSWORD=%s\nVINTO_MVP_PGDATA_DIR=/tmp/unused-pgdata\n' "\$1" > docker/.env
+  chmod 600 docker/.env
+}
+run_backup() {
+  local suffix="\$1"; shift
+  ( cd scripts && CONFIRM=yes \
+      MVP_POSTGRES_CONTAINER="vinto-mvp-postgres-dep62r2-\$suffix" \
+      MVP_COMPOSE_PROJECT="vinto-mvp-dep62r2-\$suffix" \
+      VINTO_MVP_BACKUP_DIR="/tmp/backups-dep62r2-\$suffix" \
+      bash backup.sh "\$@" )
+}
+result() { echo "RESULT:\$1:\$2"; }
+
+# R2T1 (DEP62-06): esquema SIN tablas de usuario -- manifiesto de 0 bytes es una representación
+# VÁLIDA, nunca un fallo de captura; create+verify deben tener éxito igual, con "0 tabla(s)
+# revisada(s))" en la comparación.
+mkdir -p /tmp/backups-dep62r2-t1 && chmod 700 /tmp/backups-dep62r2-t1
+mk_mvp_container_no_tables t1 "$DEP62R2_PW_T1"
+write_docker_env "$DEP62R2_PW_T1"
+set +e
+log_create_r2t1="\$(run_backup t1 create 2>&1)"; create_r2t1_status=\$?
+set -e
+echo "\$log_create_r2t1"
+dump_path_r2t1="\$(printf '%s' "\$log_create_r2t1" | grep -oE '/tmp/backups-dep62r2-t1/[^ ]+\.dump' | head -n1)"
+manifest_size_r2t1="\$(stat -c '%s' "\$dump_path_r2t1.manifest" 2>/dev/null || echo '?')"
+set +e
+log_verify_r2t1="\$(run_backup t1 verify "\$dump_path_r2t1" 2>&1)"; verify_r2t1_status=\$?
+set -e
+echo "\$log_verify_r2t1"
+if [ "\$create_r2t1_status" -eq 0 ] && [ "\$verify_r2t1_status" -eq 0 ] \
+    && [ -f "\$dump_path_r2t1.verified" ] && [ "\$manifest_size_r2t1" = "0" ] \
+    && printf '%s' "\$log_verify_r2t1" | grep -q "Manifiesto comparado: 0 tabla"; then
+  result R2T1 0
+else
+  echo "manifest_size=\$manifest_size_r2t1"
+  result R2T1 1
+fi
+docker rm -f vinto-mvp-postgres-dep62r2-t1 >/dev/null 2>&1 || true
+
+# R2T2 (DEP62-07): la contraseña efímera de verify jamás aparece como "docker run/create -e
+# POSTGRES_PASSWORD=" literal. Se comprueba EN VIVO, mientras el contenedor efímero existe
+# ("docker inspect"/"docker top"): nunca solo revisando los logs después -- una contraseña que
+# nunca se expone no puede buscarse por su VALOR; lo que se comprueba es la AUSENCIA ESTRUCTURAL
+# del patrón peligroso "POSTGRES_PASSWORD=" (la variante literal) y la PRESENCIA del patrón
+# seguro "POSTGRES_PASSWORD_FILE=" (que en "docker inspect" solo revela una ruta).
+mkdir -p /tmp/backups-dep62r2-t2 && chmod 700 /tmp/backups-dep62r2-t2
+mk_mvp_container t2 "$DEP62R2_PW_T2"
+write_docker_env "$DEP62R2_PW_T2"
+log_create_r2t2="\$(run_backup t2 create 2>&1)"
+dump_path_r2t2="\$(printf '%s' "\$log_create_r2t2" | grep -oE '/tmp/backups-dep62r2-t2/[^ ]+\.dump' | head -n1)"
+
+( cd scripts && CONFIRM=yes MVP_POSTGRES_CONTAINER=vinto-mvp-postgres-dep62r2-t2 \
+    MVP_COMPOSE_PROJECT=vinto-mvp-dep62r2-t2 VINTO_MVP_BACKUP_DIR=/tmp/backups-dep62r2-t2 \
+    bash backup.sh verify "\$dump_path_r2t2" ) >/tmp/verify-dep62r2-t2-bg.log 2>&1 &
+t2_bgpid=\$!
+
+ephemeral_cid_r2t2=""
+for i in \$(seq 1 120); do
+  ephemeral_cid_r2t2="\$(docker ps -q --filter 'name=vinto-mvp-backup-verify-' | head -n1)"
+  [ -n "\$ephemeral_cid_r2t2" ] && break
+  sleep 0.25
+done
+
+inspect_r2t2="" top_r2t2=""
+if [ -n "\$ephemeral_cid_r2t2" ]; then
+  inspect_r2t2="\$(docker inspect "\$ephemeral_cid_r2t2" 2>/dev/null)"
+  top_r2t2="\$(docker top "\$ephemeral_cid_r2t2" 2>/dev/null || true)"
+fi
+
+wait "\$t2_bgpid"; t2_status=\$?
+echo "\$(cat /tmp/verify-dep62r2-t2-bg.log)"
+
+if [ -n "\$ephemeral_cid_r2t2" ] && [ "\$t2_status" -eq 0 ] \
+    && printf '%s' "\$inspect_r2t2" | grep -q 'POSTGRES_PASSWORD_FILE=' \
+    && ! printf '%s' "\$inspect_r2t2" | grep -q 'POSTGRES_PASSWORD=' \
+    && ! printf '%s' "\$top_r2t2" | grep -q 'POSTGRES_PASSWORD='; then
+  result R2T2 0
+else
+  echo "ephemeral_cid=\$ephemeral_cid_r2t2 status=\$t2_status"
+  printf '%s' "\$inspect_r2t2" | grep -i password || true
+  result R2T2 1
+fi
+docker rm -f vinto-mvp-postgres-dep62r2-t2 >/dev/null 2>&1 || true
+
+# R2T3 (DEP62-08): escritura CONCURRENTE durante la captura -- el manifiesto y pg_dump deben
+# seguir de acuerdo entre sí (mismo snapshot MVCC), nunca uno con rezago respecto al otro.
+# Tabla grande para que la captura tarde varios segundos; un escritor concurrente inserta en
+# ráfagas durante exactamente esa ventana. "verify" comparando el dump restaurado contra el
+# manifiesto, EXACTO, es la prueba de que ambos coincidieron sobre el mismo estado -- si
+# compartieran un snapshot distinto (el defecto original de DEP62-08), una escritura bien
+# cronometrada en el hueco entre capturar el manifiesto e iniciar pg_dump habría hecho que uno
+# viera la fila nueva y el otro no, y esta comparación habría fallado.
+mkdir -p /tmp/backups-dep62r2-t3 && chmod 700 /tmp/backups-dep62r2-t3
+mk_mvp_container t3 "$DEP62R2_PW_T3" "INSERT INTO verify_seed (note) SELECT 'bulk-' || g FROM generate_series(1,400000) g;"
+write_docker_env "$DEP62R2_PW_T3"
+baseline_count_r2t3="\$(docker exec -e PGPASSWORD="$DEP62R2_PW_T3" vinto-mvp-postgres-dep62r2-t3 \
+  psql -h 127.0.0.1 -U bootuser -d vinto_piloto -tAc 'SELECT count(*) FROM verify_seed;' | tr -d '[:space:]')"
+
+( cd scripts && CONFIRM=yes MVP_POSTGRES_CONTAINER=vinto-mvp-postgres-dep62r2-t3 \
+    MVP_COMPOSE_PROJECT=vinto-mvp-dep62r2-t3 VINTO_MVP_BACKUP_DIR=/tmp/backups-dep62r2-t3 \
+    bash backup.sh create ) >/tmp/verify-dep62r2-t3-create.log 2>&1 &
+t3_bgpid=\$!
+
+for i in \$(seq 1 15); do
+  docker exec -e PGPASSWORD="$DEP62R2_PW_T3" vinto-mvp-postgres-dep62r2-t3 \
+    psql -h 127.0.0.1 -U bootuser -d vinto_piloto -c \
+    "INSERT INTO verify_seed (note) SELECT 'concurrent-\$i-' || g FROM generate_series(1,50) g;" >/dev/null 2>&1 || true
+  sleep 0.3
+done
+
+wait "\$t3_bgpid"; t3_create_status=\$?
+log_create_r2t3="\$(cat /tmp/verify-dep62r2-t3-create.log)"
+echo "\$log_create_r2t3"
+dump_path_r2t3="\$(printf '%s' "\$log_create_r2t3" | grep -oE '/tmp/backups-dep62r2-t3/[^ ]+\.dump' | head -n1)"
+
+live_count_after_r2t3="\$(docker exec -e PGPASSWORD="$DEP62R2_PW_T3" vinto-mvp-postgres-dep62r2-t3 \
+  psql -h 127.0.0.1 -U bootuser -d vinto_piloto -tAc 'SELECT count(*) FROM verify_seed;' | tr -d '[:space:]')"
+manifest_count_r2t3="\$(grep 'public.verify_seed' "\$dump_path_r2t3.manifest" 2>/dev/null | cut -f2)"
+echo "baseline=\$baseline_count_r2t3 manifest=\$manifest_count_r2t3 live_after_escritor=\$live_count_after_r2t3"
+
+set +e
+log_verify_r2t3="\$(run_backup t3 verify "\$dump_path_r2t3" 2>&1)"; verify_r2t3_status=\$?
+set -e
+echo "\$log_verify_r2t3"
+
+if [ "\$t3_create_status" -eq 0 ] && [ "\$verify_r2t3_status" -eq 0 ] \
+    && ! printf '%s' "\$log_verify_r2t3" | grep -qE "no coincide|ausente"; then
+  result R2T3 0
+else
+  result R2T3 1
+fi
+docker rm -f vinto-mvp-postgres-dep62r2-t3 >/dev/null 2>&1 || true
+
+# R2T4 (revisión adicional #2): reverificación de un backup YA verificado, interrumpida por
+# señal (SIGTERM) a mitad de camino -- el ".verified" anterior (de la primera verificación,
+# genuinamente válida) NO debe sobrevivir a una reverificación que nunca llegó a confirmar nada.
+mkdir -p /tmp/backups-dep62r2-t4 && chmod 700 /tmp/backups-dep62r2-t4
+mk_mvp_container t4 "$DEP62R2_PW_T4" "INSERT INTO verify_seed (note) SELECT 'bulk-' || g FROM generate_series(1,200000) g;"
+write_docker_env "$DEP62R2_PW_T4"
+log_create_r2t4="\$(run_backup t4 create 2>&1)"
+dump_path_r2t4="\$(printf '%s' "\$log_create_r2t4" | grep -oE '/tmp/backups-dep62r2-t4/[^ ]+\.dump' | head -n1)"
+
+set +e
+log_verify1_r2t4="\$(run_backup t4 verify "\$dump_path_r2t4" 2>&1)"; verify1_r2t4_status=\$?
+set -e
+verified_exists_before="\$([ -f "\$dump_path_r2t4.verified" ] && echo yes || echo no)"
+
+( cd scripts && CONFIRM=yes MVP_POSTGRES_CONTAINER=vinto-mvp-postgres-dep62r2-t4 \
+    MVP_COMPOSE_PROJECT=vinto-mvp-dep62r2-t4 VINTO_MVP_BACKUP_DIR=/tmp/backups-dep62r2-t4 \
+    bash backup.sh verify "\$dump_path_r2t4" ) >/tmp/verify-dep62r2-t4-bg.log 2>&1 &
+sleep 3
+pkill -TERM -f "backup.sh verify" >/dev/null 2>&1 || true
+wait >/dev/null 2>&1 || true
+sleep 1
+echo "\$(cat /tmp/verify-dep62r2-t4-bg.log)"
+
+verified_exists_after="\$([ -f "\$dump_path_r2t4.verified" ] && echo yes || echo no)"
+orphans_r2t4="\$(docker ps -a --filter 'name=vinto-mvp-backup-verify-' --format '{{.Names}}')"
+echo "verified_before=\$verified_exists_before verified_after_interrupt=\$verified_exists_after orphans=\$orphans_r2t4"
+
+if [ "\$verify1_r2t4_status" -eq 0 ] && [ "\$verified_exists_before" = "yes" ] \
+    && [ "\$verified_exists_after" = "no" ] && [ -z "\$orphans_r2t4" ]; then
+  result R2T4 0
+else
+  result R2T4 1
+fi
+for o in \$orphans_r2t4; do docker rm -f "\$o" >/dev/null 2>&1 || true; done
+docker rm -f vinto-mvp-postgres-dep62r2-t4 >/dev/null 2>&1 || true
+
+# R2T5 (revisión adicional #1): el mensaje de "prune" ya no llama "semanal" a la copia
+# adicional fuera de la ventana de días -- describe lo que el código realmente implementa.
+PRUNE_DIR_R2T5=/tmp/backups-dep62r2-prune5
+mkdir -p "\$PRUNE_DIR_R2T5" && chmod 700 "\$PRUNE_DIR_R2T5"
+f="\$PRUNE_DIR_R2T5/vinto-mvp-vinto_piloto-20250101-000000-fakea.dump"
+printf 'fake' > "\$f"; chmod 600 "\$f"; : > "\$f.verified"
+f2="\$PRUNE_DIR_R2T5/vinto-mvp-vinto_piloto-20250102-000000-fakeb.dump"
+printf 'fake' > "\$f2"; chmod 600 "\$f2"; : > "\$f2.verified"
+log_prune_r2t5="\$( ( cd scripts && VINTO_MVP_BACKUP_DIR="\$PRUNE_DIR_R2T5" VINTO_MVP_BACKUP_RETENTION_DAILY=7 bash backup.sh prune ) 2>&1 )"
+echo "\$log_prune_r2t5"
+if ! printf '%s' "\$log_prune_r2t5" | grep -qi "semanal" \
+    && printf '%s' "\$log_prune_r2t5" | grep -q "copia adicional"; then
+  result R2T5 0
+else
+  result R2T5 1
+fi
+INNEREOF
+    docker exec -i "$DEP62_WRAPPER_NAME" bash -s < "$DEP62R2_INNER" >/tmp/verify-dep62r2-inner.log 2>&1
+    dep62r2_inner_status=$?
+
+    dep62r2_result_of() {
+      grep "^RESULT:$1:" /tmp/verify-dep62r2-inner.log | tail -n1 | cut -d: -f3
+    }
+    dep62r2_label=(
+      "R2T1:DEP62-06 esquema sin tablas de usuario -- manifiesto de 0 bytes, create+verify exitosos"
+      "R2T2:DEP62-07 contraseña efímera ausente de docker inspect/top -- solo POSTGRES_PASSWORD_FILE"
+      "R2T3:DEP62-08 escritura concurrente durante la captura -- manifiesto y pg_dump coinciden"
+      "R2T4:revisión adicional #2 -- reverificación interrumpida no conserva un .verified anterior"
+      "R2T5:revisión adicional #1 -- el mensaje de retención ya no llama 'semanal' a la copia extra"
+    )
+    for entry in "${dep62r2_label[@]}"; do
+      id="${entry%%:*}"
+      desc="${entry#*:}"
+      if [ "$(dep62r2_result_of "$id")" = "0" ]; then
+        report "CLOUD-DEP-02B.2-D.2-R2 $id: $desc" 0
+      else
+        report "CLOUD-DEP-02B.2-D.2-R2 $id: $desc" 1
+      fi
+    done
+    if [ "$dep62r2_inner_status" -ne 0 ] && ! grep -q '^RESULT:' /tmp/verify-dep62r2-inner.log; then
+      echo "--- log interno CLOUD-DEP-02B.2-D.2-R2 (fallo antes de producir ningún RESULT) ---"
+      cat /tmp/verify-dep62r2-inner.log
+    fi
+
+    # Limpieza segura: ningún contenedor efímero de verificación quedó huérfano al cabo de TODA
+    # la batería R2 (incluida la interrupción de R2T4).
+    leftover_ephemeral_r2="$(docker ps -a --filter "name=vinto-mvp-backup-verify-" --format '{{.Names}}')"
+    if [ -z "$leftover_ephemeral_r2" ]; then
+      report "CLOUD-DEP-02B.2-D.2-R2: limpieza segura, ningún contenedor efímero queda huérfano tras toda la batería" 0
+    else
+      echo "Contenedores efímeros huérfanos: $leftover_ephemeral_r2"
+      for o in $leftover_ephemeral_r2; do docker rm -f "$o" >/dev/null 2>&1 || true; done
+      report "CLOUD-DEP-02B.2-D.2-R2: limpieza segura, ningún contenedor efímero queda huérfano tras toda la batería" 1
+    fi
+
+    # Ningún secreto sintético de esta batería quedó impreso en ningún log.
+    if ! grep -qE "$DEP62R2_PW_T1|$DEP62R2_PW_T2|$DEP62R2_PW_T3|$DEP62R2_PW_T4" \
+        /tmp/verify-dep62r2-inner.log /tmp/verify-dep62r2-setup.log \
+        /tmp/verify-dep62r2-t2-bg.log 2>/dev/null; then
+      report "CLOUD-DEP-02B.2-D.2-R2: ningún valor secreto quedó impreso en los logs de esta batería" 0
+    else
+      report "CLOUD-DEP-02B.2-D.2-R2: ningún valor secreto quedó impreso en los logs de esta batería" 1
+    fi
+    # Nunca toca TVC.
+    if ! grep -qE "postgres-vinto|vinto_default" /tmp/verify-dep62r2-inner.log /tmp/verify-dep62r2-setup.log; then
+      report "CLOUD-DEP-02B.2-D.2-R2: ningún log de esta batería nombra postgres-vinto/vinto_default (TVC)" 0
+    else
+      report "CLOUD-DEP-02B.2-D.2-R2: ningún log de esta batería nombra postgres-vinto/vinto_default (TVC)" 1
+    fi
+  fi
+fi
+
 echo "=== Resultado: $PASS OK, $FAILED FALLAS ==="
 exit "$FAILED"

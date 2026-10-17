@@ -14,8 +14,11 @@
 #     (lib_common.sh::assert_docker_env_contract, DEP60-01/CLOUD-DEP-02B.2-D.1): archivo regular,
 #     600, propietario = quien invoca, nunca legible por vinto-mvp.
 #   - "pg_dump"/"pg_restore" nunca reciben la contraseña como argumento ni como "docker exec -e"
-#     literal (lib_common.sh::pg_dump_custom/pg_restore_custom, mismo patrón .pgpass que
-#     pg_run_sql_inline/pg_run_sql_file).
+#     literal (lib_common.sh::pg_dump_and_manifest_snapshot_consistent/pg_restore_custom, mismo
+#     patrón .pgpass que pg_run_sql_inline/pg_run_sql_file). El contenedor EFÍMERO de
+#     verificación tampoco recibe su contraseña como "docker run -e" literal (DEP62-07): se
+#     crea detenido ("docker create"), recibe la contraseña por archivo copiado con "docker cp"
+#     y solo entonces se inicia ("docker start") con "POSTGRES_PASSWORD_FILE".
 #   - Nunca toca TVC: ningún comando aquí nombra postgres-vinto, vinto-web.service, /opt/vinto-web
 #     ni vinto_default. La restauración de prueba vive en un contenedor EFÍMERO propio, con
 #     --network none (ni siquiera puede alcanzar la red de TVC aunque quisiera) y su propio
@@ -104,40 +107,16 @@ backup_state() {
 # Formato: una línea "esquema.tabla<TAB>filas" por tabla de usuario (ninguna línea para una base
 # legítimamente vacía -- 0 tablas es un manifiesto válido, no un error).
 #
-# Nota de arquitectura (evaluada, no implementada en este incremento): la forma PERFECTAMENTE
-# consistente de capturar esto sería compartir el snapshot MVCC exacto de "pg_dump" vía
-# "pg_export_snapshot()" + "pg_dump --snapshot=<id>" + "SET TRANSACTION SNAPSHOT '<id>'" en la
-# conexión que cuenta filas, manteniendo una transacción separada abierta mientras dura todo el
-# volcado. Se evaluó y se decidió NO implementarlo en este incremento: exige orquestar una sesión
-# "psql" de larga duración con escritura/lectura intercalada a través de "docker exec" (un
-# coproceso), con sincronización explícita por cada instrucción -- una pieza de infraestructura
-# nueva y de fragilidad no trivial de probar de forma fiable, para un piloto de bajo volumen de
-# escritura donde la ventana real entre "capturar el manifiesto" e "iniciar pg_dump" es del orden
-# de milisegundos. Mecanismo equivalente adoptado: capturar el manifiesto INMEDIATAMENTE ANTES de
-# invocar "pg_dump", en la misma llamada a "create", nunca comparado contra la fuente de nuevo
-# después. Riesgo residual documentado en el README.
-
-# _manifest_capture <container> <role> <password> <db> <ruta_salida>
-_manifest_capture() {
-  local container="$1" role="$2" password="$3" db="$4" output_path="$5"
-  local qualified_list
-  if ! qualified_list="$(pg_run_sql_inline_in "$container" "$role" "$password" "$db" \
-      "SELECT quote_ident(table_schema) || '.' || quote_ident(table_name) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1;")"; then
-    echo "_manifest_capture: no se pudo enumerar las tablas de origen." >&2
-    return 1
-  fi
-  : > "$output_path"
-  local qualified cnt
-  while IFS= read -r qualified; do
-    [ -z "$qualified" ] && continue
-    if ! cnt="$(pg_run_sql_inline_in "$container" "$role" "$password" "$db" "SELECT count(*) FROM $qualified;")"; then
-      echo "_manifest_capture: no se pudo contar filas de $qualified en el origen." >&2
-      return 1
-    fi
-    printf '%s\t%s\n' "$qualified" "$cnt" >> "$output_path"
-  done <<< "$qualified_list"
-  return 0
-}
+# DEP62-08: el manifiesto y "pg_dump" comparten el MISMO snapshot MVCC (alternativa A). Se
+# implementa en lib_common.sh::pg_dump_and_manifest_snapshot_consistent -- una única sesión
+# "psql" que abre "BEGIN ISOLATION LEVEL REPEATABLE READ", exporta su snapshot con
+# "pg_export_snapshot()", invoca "pg_dump --snapshot=<id>" (vía "\!" shell-escape dentro de la
+# MISMA sesión) para que lea exactamente ese snapshot, y SOLO DESPUÉS consulta el conteo de cada
+# tabla (en la MISMA transacción REPEATABLE READ, así que ve exactamente lo que "pg_dump" vio),
+# todo antes de "COMMIT". Esto reemplaza la nota de la versión anterior de este archivo, que
+# documentaba esta misma idea como "evaluada, no implementada" por asumir que exigía un coproceso
+# con sincronización manual -- demostrado innecesario: "\gset" + "\setenv" + "\!" dentro de un
+# único "psql -f" permiten hacerlo con una sola invocación, sin coproceso.
 
 # _manifest_verify <container> <role> <password> <db> <ruta_manifiesto> -- compara el contenido
 # YA RESTAURADO contra el manifiesto congelado, tabla por tabla, EXACTO (nunca "al menos una
@@ -201,21 +180,24 @@ phase_create() {
     exit 1
   fi
 
-  echo "Capturando manifiesto de contenido (DEP62-01) de $BACKUP_DB antes de volcar..."
-  if ! _manifest_capture "$MVP_POSTGRES_CONTAINER_ID" "$bootstrap_user" "$bootstrap_password" "$BACKUP_DB" "$staging_manifest"; then
-    echo "FALLA: no se pudo capturar el manifiesto de contenido. El último backup válido anterior (si existe) NO se tocó." >&2
-    rm -f "$staging_manifest"
-    exit 1
-  fi
-
-  echo "Volcando $BACKUP_DB (contenedor confirmado: $MVP_POSTGRES_CONTAINER_ID) a $staging_path..."
-  if ! pg_dump_custom "$MVP_POSTGRES_CONTAINER_ID" "$bootstrap_user" "$bootstrap_password" "$BACKUP_DB" "$staging_path"; then
-    echo "FALLA: pg_dump falló. El último backup válido anterior (si existe) NO se tocó." >&2
+  echo "Volcando $BACKUP_DB y capturando su manifiesto de contenido (DEP62-01) bajo el MISMO snapshot MVCC (DEP62-08) a $staging_path..."
+  if ! pg_dump_and_manifest_snapshot_consistent "$MVP_POSTGRES_CONTAINER_ID" "$bootstrap_user" "$bootstrap_password" "$BACKUP_DB" "$staging_path" "$staging_manifest"; then
+    echo "FALLA: la captura con snapshot compartido (volcado + manifiesto) falló. El último backup válido anterior (si existe) NO se tocó." >&2
     rm -f "$staging_path" "$staging_manifest"
     exit 1
   fi
   if [ ! -s "$staging_path" ]; then
     echo "FALLA: pg_dump terminó sin error pero el archivo resultante está vacío. Se descarta; el último backup válido anterior NO se tocó." >&2
+    rm -f "$staging_path" "$staging_manifest"
+    exit 1
+  fi
+  # DEP62-06: un manifiesto de CERO BYTES es una representación VÁLIDA de una base sin tablas de
+  # usuario -- "pg_dump_and_manifest_snapshot_consistent" siempre crea el archivo (incluso vacío,
+  # vía "\o" antes de la consulta), así que su sola AUSENCIA (nunca su tamaño) es la única señal
+  # fiable de una captura que falló en silencio. Por eso aquí se exige "-e" (existe), nunca "-s"
+  # (no vacío) -- exigir "-s" rechazaría precisamente el caso legítimo que esta corrección cubre.
+  if [ ! -e "$staging_manifest" ]; then
+    echo "FALLA: no se generó el archivo de manifiesto. El último backup válido anterior (si existe) NO se tocó." >&2
     rm -f "$staging_path" "$staging_manifest"
     exit 1
   fi
@@ -230,8 +212,11 @@ phase_create() {
   # concurrencia); mientras tanto, "verify" exige AMBOS archivos (dump y checksum) para
   # continuar, así que nunca puede confundir un dump recién movido pero aún sin checksum con uno
   # verificable.
-  if [ ! -s "$staging_path" ] || [ ! -s "$staging_manifest" ]; then
-    echo "FALLA: el volcado o el manifiesto quedaron vacíos antes de promoverlos. El último backup válido anterior NO se tocó." >&2
+  # DEP62-06: el dump NUNCA puede ser legítimamente vacío (siempre lleva el esquema/catálogo de
+  # pg_dump como mínimo), así que sigue exigiendo "-s"; el manifiesto sí puede serlo (base sin
+  # tablas de usuario), así que solo exige "-e", igual que arriba.
+  if [ ! -s "$staging_path" ] || [ ! -e "$staging_manifest" ]; then
+    echo "FALLA: el volcado quedó vacío o el manifiesto desapareció antes de promoverlos. El último backup válido anterior NO se tocó." >&2
     rm -f "$staging_path" "$staging_manifest"
     exit 1
   fi
@@ -261,11 +246,28 @@ phase_verify() {
   require_confirm
   local dump_path="${1:?Uso: backup.sh verify <ruta-del-.dump>}"
   local manifest_path="$dump_path.manifest"
+  local ephemeral_cid="" ephemeral_pwfile="" verify_committed=0
 
-  # DEP62-02, punto 1/3: esta (re)verificación decide el estado desde cero -- cualquier fallo de
-  # aquí en adelante invalida explícitamente un ".verified" que pudiera existir de una ejecución
-  # anterior. Nunca se asume que un marcador viejo sigue siendo cierto.
-  invalidate_verified() { rm -f "$dump_path.verified"; }
+  # Revisión adicional #2 (auditoría R2 del PR #62): mientras una (re)verificación está en
+  # curso, el backup se trata como "en duda" de punta a punta -- un SOLO manejador de trap,
+  # instalado ANTES de hacer nada más, cubre a la vez la limpieza del contenedor efímero Y la
+  # invalidación de ".verified". Esto reemplaza los pares repetidos "invalidate_verified;
+  # cleanup_ephemeral; trap - EXIT INT TERM" antes de cada "exit 1" de la versión anterior: con
+  # el trap siempre armado, CUALQUIER salida (un fallo explícito O una señal INT/TERM que
+  # interrumpa la restauración o la comparación a mitad de camino) dispara el mismo limpiador.
+  # Solo el camino de ÉXITO, justo tras escribir el nuevo marcador, pone "verify_committed=1"
+  # ANTES de desarmar el trap -- así el limpiador nunca borra el marcador que esta misma
+  # ejecución acaba de confirmar como válido, pero SIEMPRE lo borra ante cualquier otro desenlace
+  # (incluida una interrupción a mitad de una reverificación de un backup que SÍ estaba
+  # verificado antes de empezar). Nunca queda un marcador desactualizado afirmando algo que esta
+  # ejecución interrumpida no llegó a confirmar.
+  cleanup_on_exit() {
+    [ -n "$ephemeral_cid" ] && docker rm -f "$ephemeral_cid" >/dev/null 2>&1
+    [ -n "$ephemeral_pwfile" ] && rm -f "$ephemeral_pwfile"
+    [ "$verify_committed" -eq 1 ] || rm -f "$dump_path.verified"
+    return 0
+  }
+  trap cleanup_on_exit EXIT INT TERM
 
   if [ ! -f "$dump_path" ]; then
     echo "FALLA: $dump_path no existe." >&2
@@ -273,7 +275,6 @@ phase_verify() {
   fi
   if [ ! -f "$dump_path.sha256" ] || [ ! -f "$manifest_path" ] || [ ! -f "$manifest_path.sha256" ]; then
     echo "FALLA: faltan uno o más archivos de control ($dump_path.sha256 / $manifest_path / $manifest_path.sha256). Nunca se verifica un backup sin todos sus acompañantes." >&2
-    invalidate_verified
     exit 1
   fi
 
@@ -281,13 +282,11 @@ phase_verify() {
   if ! ( cd "$(dirname "$dump_path")" && sha256sum -c "$(basename "$dump_path").sha256" >/dev/null ); then
     echo "FALLA: el checksum de $dump_path no coincide -- el archivo está dañado o fue alterado. No se intenta restaurar. Se marca como corrupto (nunca como verificado)." >&2
     : > "$dump_path.CORRUPT"
-    invalidate_verified
     exit 1
   fi
   if ! ( cd "$(dirname "$manifest_path")" && sha256sum -c "$(basename "$manifest_path").sha256" >/dev/null ); then
     echo "FALLA: el checksum del manifiesto de $dump_path no coincide -- el manifiesto fue alterado o está dañado. No se intenta restaurar. Se marca como corrupto (nunca como verificado)." >&2
     : > "$dump_path.CORRUPT"
-    invalidate_verified
     exit 1
   fi
   echo "Checksums OK."
@@ -308,19 +307,42 @@ phase_verify() {
   local ephemeral_name
   ephemeral_name="vinto-mvp-backup-verify-$(_pg_unique_suffix)"
 
-  echo "Creando contenedor efímero de verificación ($ephemeral_name), --network none, recursos limitados..."
-  local ephemeral_cid
-  if ! ephemeral_cid="$(docker run -d --name "$ephemeral_name" \
+  # DEP62-07: la contraseña efímera NUNCA se pasa como "docker run -e" (eso la deja en texto
+  # plano en "docker inspect" -- Config.Env -- durante TODA la vida del contenedor, no solo un
+  # instante). En su lugar: el contenedor se crea TODAVÍA DETENIDO ("docker create", sin
+  # arrancar el entrypoint), se le copia la contraseña con "docker cp" a un archivo dentro de su
+  # propio filesystem (nunca como argumento de ningún comando), y solo ENTONCES se arranca
+  # ("docker start"), momento en el que el entrypoint oficial de la imagen lee
+  # "POSTGRES_PASSWORD_FILE" -- una variable que en "docker inspect" solo revela una RUTA, nunca
+  # el secreto. Verificado empíricamente: tras "docker start", "docker inspect ... Config.Env"
+  # solo contiene la ruta; la autenticación real funciona; "ps aux" dentro del contenedor no
+  # muestra la contraseña en ningún argumento de proceso.
+  ephemeral_pwfile="$(mktemp)"
+  chmod 600 "$ephemeral_pwfile"
+  printf '%s' "$ephemeral_password" > "$ephemeral_pwfile"
+
+  echo "Creando (detenido) contenedor efímero de verificación ($ephemeral_name), --network none, recursos limitados..."
+  if ! ephemeral_cid="$(docker create --name "$ephemeral_name" \
       --network none --cpus 1 --memory 512m \
-      -e POSTGRES_DB="$ephemeral_db" -e POSTGRES_USER="$ephemeral_user" -e POSTGRES_PASSWORD="$ephemeral_password" \
+      -e POSTGRES_DB="$ephemeral_db" -e POSTGRES_USER="$ephemeral_user" \
+      -e POSTGRES_PASSWORD_FILE=/tmp/ephemeral_pw \
       "$POSTGRES_IMAGE")"; then
     echo "FALLA: no se pudo crear el contenedor efímero de verificación." >&2
-    invalidate_verified
     exit 1
   fi
   # Confirmado por su ID real (igual criterio que el resto de este archivo): toda limpieza
-  # posterior actúa sobre $ephemeral_cid, nunca sobre el nombre vuelto a buscar.
-  #
+  # posterior actúa sobre $ephemeral_cid, nunca sobre el nombre vuelto a buscar. A partir de
+  # aquí "cleanup_on_exit" (ya armado arriba) sabe limpiar este contenedor concreto.
+  if ! docker cp "$ephemeral_pwfile" "$ephemeral_cid:/tmp/ephemeral_pw" >/dev/null 2>&1; then
+    echo "FALLA: no se pudo copiar la contraseña efímera al contenedor (aún detenido)." >&2
+    exit 1
+  fi
+  rm -f "$ephemeral_pwfile"
+  if ! docker start "$ephemeral_cid" >/dev/null 2>&1; then
+    echo "FALLA: no se pudo iniciar el contenedor efímero de verificación." >&2
+    exit 1
+  fi
+
   # DEP62-04: NUNCA se confía solo en reinstalar "trap ... EXIT" tras cada llamada a
   # pg_restore_custom/pg_run_sql_inline_in -- esas funciones desarman ("trap - EXIT INT TERM") el
   # trap del PROCESO al terminar, y como los traps nunca se "apilan" entre funciones, un simple
@@ -328,11 +350,7 @@ phase_verify() {
   # llegar a esa línea de reinstalación. La solución estructural: toda llamada a esas funciones
   # mientras este trap esté activo se envuelve en un SUBSHELL "( ... )" -- el "trap"/"trap -" que
   # hagan DENTRO del subshell nunca toca la tabla de traps del proceso PADRE, así que el trap de
-  # "cleanup_ephemeral" de aquí permanece intacto sin importar qué hagan por dentro.
-  cleanup_ephemeral() {
-    docker rm -f "$ephemeral_cid" >/dev/null 2>&1 || true
-  }
-  trap cleanup_ephemeral EXIT INT TERM
+  # "cleanup_on_exit" de aquí permanece intacto sin importar qué hagan por dentro.
 
   local ready=1 n=0
   while [ "$n" -lt 60 ]; do
@@ -345,9 +363,6 @@ phase_verify() {
   done
   if [ "$ready" -ne 0 ]; then
     echo "FALLA: el contenedor efímero de verificación no respondió a tiempo. Backup NO verificado (se conserva como estaba)." >&2
-    invalidate_verified
-    cleanup_ephemeral
-    trap - EXIT INT TERM
     exit 1
   fi
   # "pg_isready" confirma que el proceso acepta conexiones, pero bajo carga del host puede haber
@@ -358,9 +373,6 @@ phase_verify() {
   echo "Restaurando $dump_path en el contenedor efímero..."
   if ! ( pg_restore_custom "$ephemeral_cid" "$ephemeral_user" "$ephemeral_password" "$ephemeral_db" "$dump_path" ); then
     echo "FALLA: pg_restore falló. Backup NO verificado; el archivo original (y su checksum) se conservan sin cambios." >&2
-    invalidate_verified
-    cleanup_ephemeral
-    trap - EXIT INT TERM
     exit 1
   fi
   # El trap de este proceso NUNCA se tocó (la llamada de arriba corrió en un subshell) -- sigue
@@ -369,9 +381,6 @@ phase_verify() {
   echo "Comparando contenido restaurado contra el manifiesto congelado (DEP62-01)..."
   if ! ( _manifest_verify "$ephemeral_cid" "$ephemeral_user" "$ephemeral_password" "$ephemeral_db" "$manifest_path" ); then
     echo "FALLA: el contenido restaurado no coincide con el manifiesto. Backup NO verificado." >&2
-    invalidate_verified
-    cleanup_ephemeral
-    trap - EXIT INT TERM
     exit 1
   fi
 
@@ -387,9 +396,13 @@ phase_verify() {
   } > "$verified_staging"
   chmod 600 "$verified_staging"
   mv "$verified_staging" "$dump_path.verified"
+  # A partir de aquí el marcador recién escrito es DEFINITIVO: "verify_committed=1" ANTES de
+  # desarmar el trap, para que ni siquiera una señal que llegara en este instante exacto borre
+  # el marcador que esta ejecución ya confirmó.
+  verify_committed=1
   echo "Backup VERIFICADO: $dump_path (marcador: $dump_path.verified, contenido comparado exactamente contra el manifiesto)."
-  cleanup_ephemeral
   trap - EXIT INT TERM
+  cleanup_on_exit
 }
 
 phase_create_and_verify() {
@@ -411,8 +424,14 @@ phase_create_and_verify() {
 # agrupa por fecha UTC (incrustada en el nombre del archivo), se conservan TODOS los backups
 # verificados de los $RETENTION_DAILY días calendario más recientes que tengan al menos uno
 # (nunca se colapsan los duplicados del mismo día: es más seguro conservarlos que arriesgar que
-# desplacen la cobertura de otro día dentro del mismo presupuesto), más UNA copia "semanal" (el
-# backup verificado más antiguo que quede fuera de esos días). El backup verificado MÁS RECIENTE
+# desplacen la cobertura de otro día dentro del mismo presupuesto), más UNA copia adicional: el
+# backup verificado más antiguo que quede fuera de esos días (revisión adicional R2 del PR #62:
+# esta copia NO corresponde a una política temporal semanal real -- no se garantiza que caiga en
+# la "semana anterior" ni en ningún punto concreto del calendario; es simplemente el más antiguo
+# de los que sobreviven al corte de $RETENTION_DAILY días, sea cual sea su antigüedad real, que
+# en la práctica normalmente será de varias semanas o meses si "prune-apply" se ejecuta con poca
+# frecuencia. Se documenta aquí exactamente como se implementa, en vez de llamarla "semanal").
+# El backup verificado MÁS RECIENTE
 # en términos absolutos SIEMPRE se conserva, sin excepción, incluso en casos límite
 # ($RETENTION_DAILY=0, un solo backup, etc.).
 #
@@ -460,7 +479,8 @@ _prune_plan() {
     fi
   done
 
-  # La copia "semanal": el más antiguo de los que NO quedaron ya conservados arriba.
+  # La copia adicional fuera de la ventana de días (nunca "semanal" -- ver nota arriba): el más
+  # antiguo de todos los verificados, conservado sin importar cuánto tiempo real tenga.
   local f_oldest="${sorted[-1]}"
   local already_kept=0 k
   for k in "${PRUNE_KEEP[@]}"; do
@@ -505,7 +525,7 @@ phase_prune() {
     return 0
   fi
   echo "=== DRY-RUN (ningún archivo se modifica) ==="
-  echo "Política: $RETENTION_DAILY día(s) calendario + 1 copia semanal; el backup verificado más reciente siempre se conserva."
+  echo "Política: $RETENTION_DAILY día(s) calendario + 1 copia adicional (la verificada más antigua fuera de esos días, NO necesariamente de la semana anterior); el backup verificado más reciente siempre se conserva."
   echo "Se conservarían ${#PRUNE_KEEP[@]} backup(s):"
   local f
   for f in "${PRUNE_KEEP[@]}"; do echo "  conservar: $f"; done
