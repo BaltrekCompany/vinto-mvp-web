@@ -482,17 +482,46 @@ assert_path_not_shared_with_other_containers() {
       exit 1
       ;;
   esac
-  if command -v docker >/dev/null 2>&1; then
-    local conflict
-    conflict="$(docker ps -a --format '{{.Names}}' | while read -r name; do
-      [ "$name" = "$MVP_POSTGRES_CONTAINER" ] && continue
-      docker inspect "$name" --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null | grep -Fx "$path" && echo "$name"
-    done | tail -n1)"
-    if [ -n "$conflict" ]; then
-      echo "FALLA: la ruta '$path' ya está montada en el contenedor ajeno '$conflict'. Abortando." >&2
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # CLOUD-DEP-02B.2-G.6-R1: la versión anterior calculaba "conflict" con
+  # "docker ps -a | while ...; done | tail -n1" y decidía "sin conflicto" leyendo esa variable.
+  # Bajo "set -euo pipefail", el caso SIN coincidencias (el camino correcto y más frecuente) hace
+  # que el "grep -Fx" de cada contenedor termine en 1 (no hubo match); ese código de salida se
+  # propaga como el estado de TODA la tubería (pipefail toma el último código no-cero de la
+  # tubería, no el de "tail -n1"), y el script abortaba silenciosamente ahí mismo — tratando
+  # "nada que reportar" como un error fatal. Rediseño: cada paso usa su propio "if ! var=\"\$(cmd)\"
+  # ... exit 1" explícito (mismo patrón que backup.sh), nunca una tubería cuyo éxito dependa de que
+  # un "grep" interno encuentre algo. Un error REAL de Docker (docker ps / docker inspect) sigue
+  # terminando en FALLA explícita, nunca se convierte en "sin conflicto" (fail-closed, B.5/B.6).
+  local container_names
+  if ! container_names="$(docker ps -a --format '{{.Names}}')"; then
+    echo "FALLA: no se pudo listar los contenedores Docker existentes (docker ps -a) para verificar que '$path' esté libre de conflictos. Abortando." >&2
+    exit 1
+  fi
+
+  local name
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    [ "$name" = "$MVP_POSTGRES_CONTAINER" ] && continue
+
+    local mounts
+    if ! mounts="$(docker inspect "$name" --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null)"; then
+      echo "FALLA: no se pudo inspeccionar el contenedor '$name' (docker inspect) para verificar que '$path' esté libre de conflictos. Abortando." >&2
       exit 1
     fi
-  fi
+
+    local mount_source
+    while IFS= read -r mount_source; do
+      [ -z "$mount_source" ] && continue
+      if [ "$mount_source" = "$path" ]; then
+        echo "FALLA: la ruta '$path' ya está montada en el contenedor ajeno '$name'. Abortando." >&2
+        exit 1
+      fi
+    done <<<"$mounts"
+  done <<<"$container_names"
 }
 
 # --- Ejecución de SQL contra el PostgreSQL del MVP sin exponer contraseñas (PG54-03) ----------
