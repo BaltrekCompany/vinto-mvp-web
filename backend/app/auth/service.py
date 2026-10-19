@@ -20,11 +20,12 @@ from dataclasses import dataclass
 import psycopg
 
 from app.auth.errors import (AccountLockedError, AuthError, InvalidCredentialsError, InvalidDisplayNameError,
-                             InvalidUsernameError, ProfileNotFoundError, UserAlreadyExistsError)
+                             InvalidReasonError, InvalidUsernameError, LastAdministratorError, ProfileNotFoundError,
+                             UserAlreadyExistsError, UserNotFoundError)
 from app.auth.passwords import (HASH_ALGORITHM, MAX_PASSWORD_LENGTH, dummy_hash, hash_password, validate_password_policy,
                                 verify_password)
 from app.auth.grants import grant_sector, sector_codes_for_user
-from app.auth.permissions import permissions_for_profiles
+from app.auth.permissions import PROFILE_PERMISSIONS, USER_MANAGE, permissions_for_profiles
 from app.config import settings
 
 USERNAME_PATTERN = re.compile(r"[a-z0-9._-]{1,64}")
@@ -179,3 +180,141 @@ def authenticate(connection, username, password, *, request_id=None) -> Authenti
     if isinstance(outcome, AuthError):
         raise outcome
     return outcome
+
+
+# ---------------------------------------------------------------------------------------------------
+# deactivate_user / reactivate_user (CLOUD-DEP-02B.2-G.12-B2)
+# ---------------------------------------------------------------------------------------------------
+
+# Perfiles que HOY otorgan user.manage, derivado de PROFILE_PERMISSIONS en vez de nombrar DATA_BALTREK
+# directamente: si el modelo de permisos cambiara, la protección de "última cuenta administrativa" sigue
+# siendo correcta sin tocar este módulo.
+ADMIN_PROFILE_CODES = frozenset(code for code, perms in PROFILE_PERMISSIONS.items() if USER_MANAGE in perms)
+
+
+@dataclass(frozen=True)
+class UserStateChange:
+    """Resultado de deactivate_user/reactivate_user. `active` es el estado resultante; `changed` es False
+    en una llamada idempotente (el usuario ya estaba en ese estado): no se escribió nada ni se generó un
+    evento de auditoría nuevo."""
+
+    user_id: uuid.UUID
+    username: str
+    active: bool
+    changed: bool
+
+
+def _clean_reason(reason) -> str:
+    cleaned = reason.strip() if isinstance(reason, str) else ""
+    if not cleaned:
+        raise InvalidReasonError("Debe indicarse un motivo")
+    return cleaned
+
+
+def _resolve_admin_actor_id(connection, actor_username) -> uuid.UUID:
+    """Verifica que el actor exista, esté activo y conserve (hoy) un perfil con user.manage; devuelve su id.
+
+    El límite real de privilegio de esta operación es el mismo que el de create_user.py (acceso directo a
+    la base de datos vía --target); exigir además un actor administrativo real hace que `audit_event.actor_id`
+    sea significativo y evita que una desactivación/reactivación quede atribuida a una cuenta inexistente,
+    inactiva o sin privilegios administrativos.
+    """
+    normalized = normalize_username(actor_username)
+    row = connection.execute(
+        """SELECT u.id FROM vinto_master."user" u JOIN vinto_auth.credential c ON c.user_id = u.id
+           WHERE lower(c.username) = %s AND u.active
+             AND EXISTS (SELECT 1 FROM vinto_master.user_profile up JOIN vinto_master.profile p ON p.id = up.profile_id
+                         WHERE up.user_id = u.id AND p.active AND p.code = ANY(%s))""",
+        (normalized, list(ADMIN_PROFILE_CODES))).fetchone()
+    if row is None:
+        raise UserNotFoundError(f"El actor {normalized!r} no existe, está inactivo o no conserva un perfil con user.manage")
+    return row[0]
+
+
+def _set_change_context(connection, *, actor_id, request_id, reason):
+    connection.execute("SELECT set_config('vinto.actor_id', %s, true)", (str(actor_id),))
+    connection.execute("SELECT set_config('vinto.request_id', %s, true)", (request_id,))
+    connection.execute("SELECT set_config('vinto.reason', %s, true)", (reason,))
+
+
+def _find_user_id_by_username(connection, normalized) -> uuid.UUID:
+    row = connection.execute(
+        'SELECT u.id FROM vinto_master."user" u JOIN vinto_auth.credential c ON c.user_id = u.id WHERE lower(c.username) = %s',
+        (normalized,)).fetchone()
+    if row is None:
+        raise UserNotFoundError(f"El usuario {normalized!r} no existe")
+    return row[0]
+
+
+def deactivate_user(connection, *, username, actor_username, reason, request_id=None) -> UserStateChange:
+    """Desactiva una cuenta: active=false y revocación PERMANENTE de sus sesiones vigentes, en UNA
+    transacción. Idempotente (no-op si ya estaba inactiva, sin fila de auditoría nueva). Nunca toca
+    credential, user_profile ni user_sector: el perfil y los sectores quedan intactos para una eventual
+    reactivación.
+
+    Protección de la última cuenta administrativa: si el usuario objetivo conserva (hoy) un perfil con
+    user.manage, la transacción bloquea con `SELECT ... FOR UPDATE` el conjunto COMPLETO de cuentas
+    activas con ese perfil, siempre en el mismo orden (ORDER BY u.id). Bajo READ COMMITTED, una fila que
+    deja de cumplir el WHERE porque otra transacción concurrente la desactivó y confirmó mientras esta
+    esperaba el bloqueo queda EXCLUIDA al reevaluarse el filtro tras desbloquear (comportamiento estándar
+    de Postgres para UPDATE/SELECT FOR UPDATE bajo READ COMMITTED): dos desactivaciones concurrentes de
+    administradores distintos nunca pueden dejar el conjunto en cero, porque la segunda en confirmar ve
+    siempre el recuento ya actualizado por la primera. Dos intentos sobre el MISMO usuario se serializan
+    por la fila de `_find_user_id_by_username`. Si dos administradores DISTINTOS se desactivan entre sí al
+    mismo tiempo, el orden de bloqueo cruzado puede producir un deadlock que PostgreSQL detecta y aborta
+    en una de las dos transacciones con un error claro: ninguna corrompe el estado ni deja cero
+    administradores; la transacción abortada simplemente debe reintentarse.
+    """
+    normalized = normalize_username(username)
+    clean_reason = _clean_reason(reason)
+    request_id = request_id or f"deactivate_user:{uuid.uuid4()}"
+    with connection.transaction():
+        actor_id = _resolve_admin_actor_id(connection, actor_username)
+        _set_change_context(connection, actor_id=actor_id, request_id=request_id, reason=clean_reason)
+        user_id = _find_user_id_by_username(connection, normalized)
+        holds_admin = connection.execute(
+            """SELECT EXISTS(SELECT 1 FROM vinto_master.user_profile up JOIN vinto_master.profile p ON p.id = up.profile_id
+                             WHERE up.user_id = %s AND p.active AND p.code = ANY(%s))""",
+            (user_id, list(ADMIN_PROFILE_CODES))).fetchone()[0]
+        if holds_admin:
+            admin_ids = [row[0] for row in connection.execute(
+                """SELECT u.id FROM vinto_master."user" u JOIN vinto_master.user_profile up ON up.user_id = u.id
+                   JOIN vinto_master.profile p ON p.id = up.profile_id
+                   WHERE u.active AND p.active AND p.code = ANY(%s) ORDER BY u.id FOR UPDATE OF u""",
+                (list(ADMIN_PROFILE_CODES),)).fetchall()]
+            is_active = user_id in admin_ids
+            if is_active and len(admin_ids) <= 1:
+                raise LastAdministratorError(
+                    "No puede desactivarse la última cuenta activa con un perfil que otorga user.manage")
+        else:
+            is_active = connection.execute('SELECT active FROM vinto_master."user" WHERE id=%s FOR UPDATE', (user_id,)).fetchone()[0]
+        if not is_active:
+            return UserStateChange(user_id, normalized, False, False)
+        connection.execute('UPDATE vinto_master."user" SET active=false WHERE id=%s', (user_id,))
+        connection.execute(
+            "UPDATE vinto_auth.session SET revoked_at = clock_timestamp() WHERE user_id = %s AND revoked_at IS NULL", (user_id,))
+    return UserStateChange(user_id, normalized, False, True)
+
+
+def reactivate_user(connection, *, username, actor_username, reason, request_id=None) -> UserStateChange:
+    """Reactiva una cuenta: active=true, SIN tocar credential/user_profile/user_sector y SIN restaurar
+    sesiones previas (`revoked_at` nunca se modifica aquí: el usuario debe iniciar sesión de nuevo para
+    recuperar acceso). Idempotente (no-op si ya estaba activa). No necesita proteger "la última cuenta
+    administrativa": reactivar un perfil con user.manage solo puede AUMENTAR ese conjunto, nunca reducirlo.
+    """
+    normalized = normalize_username(username)
+    clean_reason = _clean_reason(reason)
+    request_id = request_id or f"reactivate_user:{uuid.uuid4()}"
+    with connection.transaction():
+        actor_id = _resolve_admin_actor_id(connection, actor_username)
+        _set_change_context(connection, actor_id=actor_id, request_id=request_id, reason=clean_reason)
+        row = connection.execute(
+            'SELECT u.id, u.active FROM vinto_master."user" u JOIN vinto_auth.credential c ON c.user_id = u.id '
+            'WHERE lower(c.username) = %s FOR UPDATE OF u', (normalized,)).fetchone()
+        if row is None:
+            raise UserNotFoundError(f"El usuario {normalized!r} no existe")
+        user_id, active = row
+        if active:
+            return UserStateChange(user_id, normalized, True, False)
+        connection.execute('UPDATE vinto_master."user" SET active=true WHERE id=%s', (user_id,))
+    return UserStateChange(user_id, normalized, True, True)

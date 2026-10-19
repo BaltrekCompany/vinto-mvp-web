@@ -55,5 +55,13 @@ class UserNotFoundError(AuthError):
     """El usuario no existe."""
 
 
+class InvalidReasonError(AuthError):
+    """El motivo de la operación administrativa está vacío o no es texto."""
+
+
+class LastAdministratorError(AuthError):
+    """La operación dejaría cero cuentas activas con un perfil que otorga user.manage."""
+
+
 class SectorNotFoundError(AuthError):
     """El sector no existe."""
