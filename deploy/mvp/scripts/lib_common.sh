@@ -619,13 +619,27 @@ pg_run_sql_inline() {
 
 # pg_run_sql_file <role> <password> <db> <archivo-sql-local> [NOMBRE=valor ...]
 # Los pares NOMBRE=valor finales se exponen al proceso psql (y por tanto a \getenv dentro del
-# .sql) vía --env-file, nunca vía -e. El contenido del archivo se envía por stdin ("psql -f -"):
-# nunca se usa "docker cp" con la ruta del host como argumento de línea de comandos (ese argumento
-# puede ser reescrito de formas distintas por distintos shells/entornos; leerlo con la
-# redirección "< archivo" de bash, en cambio, no depende de cómo el shell reescriba argumentos).
+# .sql) vía --env-file, nunca vía -e. El contenido del archivo se envía por stdin ("psql -f -").
+#
+# CLOUD-DEP-02B.2-G.8-R1: "$sql_file" puede vivir dentro de $MVP_APP_DIR (750, exclusivo de
+# $MVP_SERVICE_USER) -- p. ej. backend/roles/*.sql del release activo. Una redirección normal
+# "< $sql_file" la abriría el invocador real (ubuntu), que no tiene por qué poder leer árboles
+# privados del MVP directamente (el aislamiento es intencional: DEP55-02) -- eso es justo lo que
+# falló en G.8 ("Permission denied"). Se lee como $MVP_SERVICE_USER (mismo mecanismo que
+# mvp_test/mvp_env_value: "sudo -u $MVP_SERVICE_USER"), únicamente en memoria -- nunca un archivo
+# intermedio en disco fuera del árbol protegido -- y se comprueba el código de salida de ESA
+# lectura de forma explícita y SEPARADA de psql: si falla (archivo inexistente, o ni siquiera
+# $MVP_SERVICE_USER puede leerlo), se aborta aquí, sin invocar psql. Sin esta separación, un
+# "psql -f -" con entrada vacía terminaría con éxito (nada que ejecutar), confundiendo un fallo de
+# lectura con una ejecución satisfactoria.
 pg_run_sql_file() {
   local role="$1" password="$2" db="$3" sql_file="$4"; shift 4
   assert_container_is_ours "$MVP_POSTGRES_CONTAINER"
+  local sql_content
+  if ! sql_content="$(sudo -u "$MVP_SERVICE_USER" cat -- "$sql_file")"; then
+    echo "pg_run_sql_file: no se pudo leer '$sql_file' como $MVP_SERVICE_USER (ver el error de 'sudo'/'cat' arriba). No se invoca psql." >&2
+    return 1
+  fi
   local pgpass_path
   pgpass_path="$(_pg_write_pgpass "$role" "$password" "$db")" || {
     echo "pg_run_sql_file: no se pudo preparar la autenticación (ver mensaje anterior; no se filtró ninguna contraseña)." >&2
@@ -642,8 +656,11 @@ pg_run_sql_file() {
   trap "docker exec '$MVP_POSTGRES_CONTAINER' rm -f '$pgpass_path' >/dev/null 2>&1; rm -f '$envfile' 2>/dev/null" EXIT INT TERM
   # Igual que en pg_run_sql_inline (DEP55-R2-03): en segundo plano + "wait", para que una señal
   # con trap se atienda de inmediato en vez de diferirse hasta que termine el comando en curso.
-  docker exec -i -e PGPASSFILE="$pgpass_path" "${docker_env_args[@]}" "$MVP_POSTGRES_CONTAINER" \
-    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -f - < "$sql_file" &
+  # "printf" del contenido ya leído (nunca una redirección de archivo) alimenta el pipeline: su
+  # propio éxito no depende de ningún acceso a disco, así que no puede enmascarar el fallo de
+  # lectura -- ese ya se comprobó y se abortó arriba, antes de llegar aquí.
+  printf '%s' "$sql_content" | docker exec -i -e PGPASSFILE="$pgpass_path" "${docker_env_args[@]}" "$MVP_POSTGRES_CONTAINER" \
+    psql -h 127.0.0.1 -U "$role" -d "$db" -v ON_ERROR_STOP=1 -f - &
   local dpid=$! status=0
   wait "$dpid" || status=$?
   docker exec "$MVP_POSTGRES_CONTAINER" rm -f "$pgpass_path" >/dev/null 2>&1
