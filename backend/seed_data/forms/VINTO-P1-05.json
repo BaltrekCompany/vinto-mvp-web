@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_5_registro_de_tubetes",
+  "code": "VINTO-P1-05",
+  "legacy_number": 5,
+  "name": "Registro de tubetes",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "numero_de_bobina",
+      "label": "Número de bobina",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "numero_codigo_de_tubete",
+      "label": "Número / código de tubete",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "tipo_de_tubete",
+      "label": "Tipo de tubete",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "cantidad_utilizada",
+      "label": "Cantidad utilizada",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "cantidad_recuperada",
+      "label": "Cantidad recuperada",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "cantidad_devuelta",
+      "label": "Cantidad devuelta",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "estado_del_tubete",
+      "label": "Estado del tubete",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "procedencia",
+      "label": "Procedencia",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "destino",
+      "label": "Destino",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 10
+    }
+  ],
+  "definition_checksum": "29a53c97a3c5893d076ec005cfb1bc0d326886a083d3903a1b8684a91a599d5e"
+}

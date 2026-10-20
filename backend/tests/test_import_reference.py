@@ -242,14 +242,16 @@ class DryRunTests(DatabaseCase):
         self.assertEqual((result.mode, result.state), ("dry-run", "consistent"))
         self.assertIsNotNone(result.batch_id)  # the completed batch is reported, but the database is still compared
         self.assertEqual((result.conflicts, result.pending_creates), ([], 0))
-        self.assertEqual(sum(n["present"] for n in result.counts.values()), 444)
+        # CLOUD-DEP G.12-C4: 444 -> 738 (total de filas de TODAS las entidades del bundle, no solo
+        # import_record; ver el mismo cambio documentado en test_import_records_cover_every_entity_with_unique_keys).
+        self.assertEqual(sum(n["present"] for n in result.counts.values()), 738)
         self.assertEqual(self.tables_snapshot(connection), before)
         self.assertEqual([s for s in spy.statements if s.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))], [])
 
     def test_dry_run_on_an_empty_database_is_pending_not_consistent(self):
         connection = self.open(self.new_database())
         result = reference.dry_run(connection, BUNDLE)
-        self.assertEqual((result.state, result.pending_creates), ("pending", 444))
+        self.assertEqual((result.state, result.pending_creates), ("pending", 738))
 
 
 class ImportedStateTests(DatabaseCase):
@@ -305,13 +307,19 @@ class ImportedStateTests(DatabaseCase):
         batch_id, source, checksum, status, completed = batches[0]
         self.assertEqual((source, checksum, status, completed), (reference.SOURCE, BUNDLE.source_checksum, "completed", True))
         self.assertEqual(self.count(self.connection, "vinto_master.article_version", f"source_batch_id='{batch_id}'"), 93)
-        self.assertEqual(self.count(self.connection, "vinto_config.form_version", f"source_batch_id='{batch_id}'"), 4)
+        # CLOUD-DEP G.12-C4: el número de formularios del bundle ya no es fijo (4); se deriva de BUNDLE,
+        # que es el bundle real cargado desde disco en este módulo de pruebas.
+        self.assertEqual(self.count(self.connection, "vinto_config.form_version", f"source_batch_id='{batch_id}'"), len(BUNDLE.forms))
 
     def test_import_records_cover_every_entity_with_unique_keys(self):
+        # CLOUD-DEP G.12-C4: 444 -> 738 porque BUNDLE ahora incluye los 13 formularios candidatos
+        # habilitados para QA (242 campos más); el resto de entidades (unidades, artículos, turnos...)
+        # no cambió. 738 = 444 + 242 campos nuevos + 13 form + 13 form_version + 26 form_version_machine
+        # (los 13 candidatos solo van a MP1/MP3, igual que los 4 ya publicados).
         total = self.count(self.connection, "vinto_audit.import_record")
-        self.assertEqual(total, 444)
-        self.assertEqual(self.count(self.connection, "vinto_audit.import_record", "status='accepted' AND issues='[]'::jsonb"), 444)
-        self.assertEqual(self.rows("SELECT summary->>'records' FROM vinto_audit.import_batch"), [("444",)])
+        self.assertEqual(total, 738)
+        self.assertEqual(self.count(self.connection, "vinto_audit.import_record", "status='accepted' AND issues='[]'::jsonb"), 738)
+        self.assertEqual(self.rows("SELECT summary->>'records' FROM vinto_audit.import_batch"), [("738",)])
         keys = {r[0] for r in self.rows("SELECT source_key FROM vinto_audit.import_record")}
         self.assertIn("unit:KG", keys)
         self.assertIn("form_version:VINTO-P1-06:1", keys)
@@ -320,15 +328,18 @@ class ImportedStateTests(DatabaseCase):
 
     def test_form_six_is_published_with_the_bundle_checksum(self):
         form = F6
+        # CLOUD-DEP G.12-C4: la lista ya no es fija (4 formularios); se deriva de BUNDLE (el bundle
+        # real), que es exactamente lo mismo que esta consulta debe reflejar sea cual sea su tamaño.
+        # Los 4 originales (P1-03/06/19/20) siguen exactamente iguales dentro de esa lista derivada.
         self.assertEqual(self.rows("SELECT code,legacy_key,legacy_number FROM vinto_config.form ORDER BY code"),
-                         [("VINTO-P1-03", "form_3_registro_de_produccion_de_bobinas", 3), ("VINTO-P1-06", "form_6_registro_de_control_de_fardos", 6),
-                          ("VINTO-P1-19", "form_19_control_de_humedad", 19), ("VINTO-P1-20", "form_20_propiedades_fisicas_de_bobina", 20)])
+                         sorted(((f["code"], f["legacy_key"], f["legacy_number"]) for f in BUNDLE.forms)))
         self.assertEqual(self.rows("""SELECT f.code,v.version_number,v.status,v.published_at IS NOT NULL,v.definition_checksum,v.area,v.name
                                       FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id=v.form_id ORDER BY f.code"""),
                          [(f["code"], 1, "published", True, f["definition_checksum"], f["area"], f["name"]) for f in sorted(BUNDLE.forms, key=lambda f: f["code"])])
+        # CLOUD-DEP G.12-C4: igual que arriba, derivado de BUNDLE en vez de una lista fija de 4
+        # formularios -- los 13 candidatos nuevos también están vinculados solo a MP1/MP3.
         self.assertEqual(self.rows("SELECT f.code,m.code FROM vinto_config.form_version_machine fvm JOIN vinto_master.machine m ON m.id=fvm.machine_id JOIN vinto_config.form_version v ON v.id=fvm.form_version_id JOIN vinto_config.form f ON f.id=v.form_id ORDER BY 1,2"),
-                         [("VINTO-P1-03", "MP1"), ("VINTO-P1-03", "MP3"), ("VINTO-P1-06", "MP1"), ("VINTO-P1-06", "MP3"), ("VINTO-P1-19", "MP1"), ("VINTO-P1-19", "MP3"),
-                          ("VINTO-P1-20", "MP1"), ("VINTO-P1-20", "MP3")])
+                         sorted((f["code"], m) for f in BUNDLE.forms for m in f["machines"]))
 
     def test_form_six_fields_types_required_and_units(self):
         rows = self.rows("""SELECT f.key,f.value_type,f.source,f.required,u.code,f.field_group_id IS NULL,f.display_order
@@ -368,7 +379,7 @@ class ApplyTests(DatabaseCase):
         connection = self.open(self.new_database())
         first = reference.apply(connection, BUNDLE)
         self.assertEqual(first.mode, "applied")
-        self.assertEqual(sum(n["create"] for n in first.counts.values()), 444)
+        self.assertEqual(sum(n["create"] for n in first.counts.values()), 738)  # CLOUD-DEP G.12-C4: 444 -> 738
         after_first = self.tables_snapshot(connection)
         second = reference.apply(connection, BUNDLE)
         self.assertEqual((second.mode, second.batch_id), ("noop", first.batch_id))
@@ -396,8 +407,10 @@ class ApplyTests(DatabaseCase):
         self.assertTrue(all(n["create"] == 0 for n in result.counts.values()))
         self.assertEqual(self.count(connection, "vinto_audit.import_batch", "status='completed'"), 2)
         self.assertEqual(connection.execute("SELECT id,published_at FROM vinto_config.form_version").fetchall(), before)
-        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 30)  # F6 5 + F3 6 + P1-19 7 + P1-20 12
-        self.assertEqual(self.count(connection, "vinto_audit.import_record", "issues='[\"already_present\"]'::jsonb"), 444)
+        # CLOUD-DEP G.12-C4: 30 -> 272 (+242) y 444 -> 738 por los 13 formularios candidatos del bundle
+        # expandido (ver comentario de test_import_records_cover_every_entity_with_unique_keys).
+        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 272)  # F6 5 + F3 6 + P1-19 7 + P1-20 12 + 13 candidatos 242
+        self.assertEqual(self.count(connection, "vinto_audit.import_record", "issues='[\"already_present\"]'::jsonb"), 738)
 
     def test_identical_existing_article_is_not_modified(self):
         connection = self.open(self.new_database())
@@ -498,7 +511,7 @@ class ConcurrencyTests(DatabaseCase):
                 self.assertEqual(self.count(connection, "vinto_audit.import_batch"), 1)
                 self.assertEqual(self.count(connection, "vinto_audit.import_batch", "status='completed'"), 1)
                 self.assertEqual(self.count(connection, "vinto_master.article"), 93)
-                self.assertEqual(self.count(connection, "vinto_audit.import_record"), 444)
+                self.assertEqual(self.count(connection, "vinto_audit.import_record"), 738)  # CLOUD-DEP G.12-C4: 444 -> 738
             drop_database(name)
 
 
@@ -509,7 +522,7 @@ class ConsistentStateTests(DatabaseCase):
         spy = SpyConnection(connection)
         result = reference.apply(spy, BUNDLE)
         self.assertEqual(result.mode, "noop")
-        self.assertEqual(sum(n["present"] for n in result.counts.values()), 444)
+        self.assertEqual(sum(n["present"] for n in result.counts.values()), 738)  # CLOUD-DEP G.12-C4: 444 -> 738
         self.assertEqual(self.tables_snapshot(connection), before)
         self.assertEqual(self.count(connection, "vinto_audit.import_batch"), 1)
         self.assertEqual([s for s in spy.statements if s.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))], [])
@@ -632,9 +645,10 @@ class SourceLockTests(DatabaseCase):
             with connect(name) as connection:
                 self.assertEqual(self.count(connection, "vinto_audit.import_batch"), 1)
                 self.assertEqual(self.count(connection, "vinto_audit.import_batch", "status='completed'"), 1)
-                self.assertEqual(self.count(connection, "vinto_audit.import_record"), 444)
+                # CLOUD-DEP G.12-C4: 444 -> 738, 4 -> len(BUNDLE.forms) (17) por los 13 candidatos nuevos.
+                self.assertEqual(self.count(connection, "vinto_audit.import_record"), 738)
                 self.assertEqual(self.count(connection, "vinto_master.article"), 93)
-                self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), 4)
+                self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), len(BUNDLE.forms))
                 self.assertEqual(self.count(connection, "vinto_config.form_version", "status='draft'"), 0)
                 label = connection.execute("SELECT label FROM vinto_master.unit WHERE code='KG'").fetchone()[0]
                 self.assertIn(label, ("KG", "Kilogramo"))
@@ -648,7 +662,8 @@ class F3ReferenceTests(DatabaseCase):
         connection = self.open(self.new_database())
         first = reference.apply(connection, BUNDLE)
         self.assertEqual(first.counts["article_version_spec"], {"create": 93, "present": 0})
-        self.assertEqual(self.rows_of(connection, "SELECT f.code FROM vinto_config.form f ORDER BY 1"), [("VINTO-P1-03",), ("VINTO-P1-06",), ("VINTO-P1-19",), ("VINTO-P1-20",)])
+        # CLOUD-DEP G.12-C4: derivado de BUNDLE (17 formularios) en vez de una lista fija de 4.
+        self.assertEqual(self.rows_of(connection, "SELECT f.code FROM vinto_config.form f ORDER BY 1"), sorted((f["code"],) for f in BUNDLE.forms))
         self.assertEqual(self.rows_of(connection, """SELECT f.key,f.value_type,f.required,u.code FROM vinto_config.field_definition f
                                                   JOIN vinto_config.form_version v ON v.id=f.form_version_id JOIN vinto_config.form fm ON fm.id=v.form_id
                                                   LEFT JOIN vinto_master.unit u ON u.id=f.unit_id WHERE fm.code='VINTO-P1-03' ORDER BY f.display_order"""),
@@ -702,7 +717,7 @@ class F3ReferenceTests(DatabaseCase):
         self.assertEqual(result.counts["unit"], {"create": 1, "present": 2})
         self.assertEqual(connection.execute("SELECT id,description FROM vinto_master.article_version ORDER BY id").fetchall(), article_versions)
         self.assertEqual(connection.execute("SELECT id,published_at FROM vinto_config.form_version WHERE id = ANY(%s)", ([r[0] for r in f6_version],)).fetchall(), f6_version)
-        self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), 4)
+        self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), len(BUNDLE.forms))  # CLOUD-DEP G.12-C4: 4 -> 17
         self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
 
     def test_a_different_grammage_for_an_existing_spec_is_a_conflict(self):
@@ -753,15 +768,18 @@ class P120ReferenceTests(DatabaseCase):
         fields = connection.execute("SELECT id,form_version_id,key,label,value_type,required,unit_id,display_order FROM vinto_config.field_definition ORDER BY id").fetchall()
         result = reference.apply(connection, BUNDLE)
         self.assertEqual(result.mode, "applied")
-        self.assertEqual(result.counts["form"], {"create": 1, "present": 3})
-        self.assertEqual(result.counts["form_version"], {"create": 1, "present": 3})
+        # CLOUD-DEP G.12-C4: "present" ya no es 3 porque PREVIOUS_FORMS (arriba) es dinámico
+        # (BUNDLE.forms menos P1-20) -- crece junto con BUNDLE, nunca quedó hardcoded a los 4
+        # originales. "create" sigue siendo 1 (solo P1-20 es nuevo en este paso).
+        self.assertEqual(result.counts["form"], {"create": 1, "present": len(PREVIOUS_FORMS)})
+        self.assertEqual(result.counts["form_version"], {"create": 1, "present": len(PREVIOUS_FORMS)})
         self.assertEqual(result.counts["field"]["create"], 12)
         self.assertEqual(sum(n["create"] for n in result.counts.values()), 16)
         self.assertEqual(connection.execute("SELECT id,definition_checksum,published_at,status FROM vinto_config.form_version WHERE id = ANY(%s) ORDER BY id",
                                             ([r[0] for r in published],)).fetchall(), published)
         self.assertEqual(connection.execute("SELECT id,form_version_id,key,label,value_type,required,unit_id,display_order FROM vinto_config.field_definition WHERE id = ANY(%s) ORDER BY id",
                                             ([r[0] for r in fields],)).fetchall(), fields)
-        self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), 4)
+        self.assertEqual(self.count(connection, "vinto_config.form_version", "status='published'"), len(BUNDLE.forms))  # CLOUD-DEP G.12-C4: 4 -> 17
         self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
 
     def test_an_existing_incompatible_p1_20_version_is_a_conflict_and_is_never_overwritten(self):

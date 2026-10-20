@@ -93,7 +93,7 @@ class MultiformCase(unittest.TestCase):
 
 class PolicyTests(MultiformCase):
     def test_the_shipped_policy_enables_only_f6(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))  # no synthetic code and no P1-10 in the real policy
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # no synthetic code and no P1-10 in the real policy
         self.assertEqual(_capture_service.FORM_CODE, F6)
 
     def test_a_published_form_is_not_accepted_unless_the_policy_enables_it(self):

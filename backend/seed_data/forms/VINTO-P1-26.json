@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_26_medicion_de_secos",
+  "code": "VINTO-P1-26",
+  "legacy_number": 26,
+  "name": "Medición de secos",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "punto_de_muestreo",
+      "label": "Punto de muestreo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "masa_humeda",
+      "label": "Masa húmeda",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "masa_seca",
+      "label": "Masa seca",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 4
+    }
+  ],
+  "definition_checksum": "8714c15a5b778333b46a9fa5eb7f9698e1ee7108771a284dd55db239b09d94ed"
+}

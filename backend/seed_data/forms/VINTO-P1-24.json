@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_24_propiedades_fisicas_en_humedo",
+  "code": "VINTO-P1-24",
+  "legacy_number": 24,
+  "name": "Propiedades físicas en húmedo",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "numero_de_bobina",
+      "label": "Número de bobina",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "producto",
+      "label": "Producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "crepado",
+      "label": "Crepado",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "gramaje",
+      "label": "Gramaje",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "resistencia_longitudinal_humeda_centro",
+      "label": "Resistencia longitudinal húmeda centro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "resistencia_longitudinal_humeda_medio",
+      "label": "Resistencia longitudinal húmeda medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "resistencia_longitudinal_humeda_extremo",
+      "label": "Resistencia longitudinal húmeda extremo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "resistencia_transversal_humeda_centro",
+      "label": "Resistencia transversal húmeda centro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "resistencia_transversal_humeda_medio",
+      "label": "Resistencia transversal húmeda medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "resistencia_transversal_humeda_extremo",
+      "label": "Resistencia transversal húmeda extremo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "tiempo_de_curado_condicion",
+      "label": "Tiempo de curado / condición",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 12
+    }
+  ],
+  "definition_checksum": "fe59cb57e2833e3fc729462b84617ad12ccad37c21d47230736f992802dc8124"
+}

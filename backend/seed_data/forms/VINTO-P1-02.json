@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_2_parametros_de_operacion_de_maquina",
+  "code": "VINTO-P1-02",
+  "legacy_number": 2,
+  "name": "Parámetros de operación de máquina",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "producto",
+      "label": "Producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "velocidad_cilindro_yankee",
+      "label": "Velocidad cilindro Yankee",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "corriente_cilindro_yankee",
+      "label": "Corriente cilindro Yankee",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "velocidad_prensa",
+      "label": "Velocidad prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "corriente_prensa",
+      "label": "Corriente prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "velocidad_tela",
+      "label": "Velocidad tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "corriente_tela",
+      "label": "Corriente tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "velocidad_pope",
+      "label": "Velocidad pope",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "corriente_pope",
+      "label": "Corriente pope",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "velocidad_bomba_5",
+      "label": "Velocidad bomba 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "corriente_bomba_5",
+      "label": "Corriente bomba 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "velocidad_bomba_fan",
+      "label": "Velocidad bomba Fan",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "corriente_bomba_fan",
+      "label": "Corriente bomba Fan",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "velocidad_refinador",
+      "label": "Velocidad refinador",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "corriente_refinador",
+      "label": "Corriente refinador",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "velocidad_safem",
+      "label": "Velocidad Safem",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "corriente_safem",
+      "label": "Corriente Safem",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "vacio_safem",
+      "label": "Vacío Safem",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "vacio_fieltro",
+      "label": "Vacío fieltro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "vacio_tela",
+      "label": "Vacío tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 20
+    },
+    {
+      "key": "apertura_gas",
+      "label": "Apertura gas",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 21
+    },
+    {
+      "key": "presion_cilindro_yankee",
+      "label": "Presión cilindro Yankee",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 22
+    },
+    {
+      "key": "apertura_termocompresor",
+      "label": "Apertura termocompresor",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 23
+    },
+    {
+      "key": "temperatura_lado_humedo_campana",
+      "label": "Temperatura lado húmedo campana",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 24
+    },
+    {
+      "key": "temperatura_lado_seco_campana",
+      "label": "Temperatura lado seco campana",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 25
+    },
+    {
+      "key": "gramaje_minimo",
+      "label": "Gramaje mínimo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 26
+    },
+    {
+      "key": "gramaje_medio",
+      "label": "Gramaje medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 27
+    },
+    {
+      "key": "gramaje_maximo",
+      "label": "Gramaje máximo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 28
+    },
+    {
+      "key": "humedad_minima",
+      "label": "Humedad mínima",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 29
+    },
+    {
+      "key": "humedad_media",
+      "label": "Humedad media",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 30
+    },
+    {
+      "key": "humedad_maxima",
+      "label": "Humedad máxima",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 31
+    },
+    {
+      "key": "peso_seco_minimo",
+      "label": "Peso seco mínimo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 32
+    },
+    {
+      "key": "peso_seco_medio",
+      "label": "Peso seco medio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 33
+    },
+    {
+      "key": "peso_seco_maximo",
+      "label": "Peso seco máximo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 34
+    },
+    {
+      "key": "apertura_valvula_de_gramaje",
+      "label": "Apertura válvula de gramaje",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 35
+    },
+    {
+      "key": "relacion_chorro_tela",
+      "label": "Relación chorro/tela",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 36
+    },
+    {
+      "key": "altura_caja_entrada",
+      "label": "Altura caja entrada",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 37
+    },
+    {
+      "key": "apertura_labio",
+      "label": "Apertura labio",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 38
+    },
+    {
+      "key": "dosificacion_release",
+      "label": "Dosificación Release",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 39
+    },
+    {
+      "key": "limpieza_sala_de_control",
+      "label": "Limpieza sala de control",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 40
+    },
+    {
+      "key": "limpieza_pasillo_lado_comando",
+      "label": "Limpieza pasillo lado comando",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 41
+    },
+    {
+      "key": "limpieza_pasillo_lado_transmision",
+      "label": "Limpieza pasillo lado transmisión",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 42
+    },
+    {
+      "key": "limpieza_sotano",
+      "label": "Limpieza sótano",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 43
+    },
+    {
+      "key": "limpieza_escaner",
+      "label": "Limpieza escáner",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 44
+    },
+    {
+      "key": "limpieza_mezzanine",
+      "label": "Limpieza mezzanine",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 45
+    },
+    {
+      "key": "limpieza_enfardadora",
+      "label": "Limpieza enfardadora",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 46
+    },
+    {
+      "key": "limpieza_rectificadora",
+      "label": "Limpieza rectificadora",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 47
+    },
+    {
+      "key": "novedades",
+      "label": "Novedades",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 48
+    }
+  ],
+  "definition_checksum": "7ec6ddc1cd3741f520ac533fdc616e9662f18dbc5062e5582e660174c1930e2f"
+}

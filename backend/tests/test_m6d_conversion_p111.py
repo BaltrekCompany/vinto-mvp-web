@@ -167,7 +167,7 @@ def expected_row(row):
 
 class ConfigurationTests(P111Case):
     async def test_the_shipped_configuration_is_unchanged(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))  # none of the candidate forms is in the production policy
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # none of the candidate forms is in the production policy
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # Conversión is NOT operational in the real configuration
 
     async def test_without_the_test_configuration_p111_is_unreachable(self):

@@ -36,7 +36,16 @@ from app.sectors import scoped_sector_codes
 FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de las lecturas
 # POLÍTICA EXPLÍCITA de formularios de producción habilitados para captura central. Añadir un formulario aquí (p. ej. VINTO-P1-10) es una decisión
 # deliberada de producto, nunca automática; además cada captura exige área production, versión publicada y relación formulario-máquina.
-CENTRAL_FORM_CODES = frozenset({FORM_CODE})
+#
+# CLOUD-DEP G.12-C4: se añaden los 5 formularios candidatos de Bobinas (P1-01/02/04/05/31) EXCLUSIVAMENTE
+# para QA interno -- ya tienen máquinas reales (MP1/MP3) y versión publicada en el bundle (ver
+# backend/seed_data/forms/VINTO-P1-0{1,2,4,5}.json y VINTO-P1-31.json). Deliberadamente NO se añade
+# ningún código de Rebobinado/Conversión (P1-07/10/11/12/13/16/29/30): ningún sector operativo los
+# respalda (sectors.py::DEFAULT_OPERATIONAL_SECTORS sigue siendo solo BOBINAS) y, aunque se añadieran
+# aquí, `published_form_version` seguiría rechazándolos por falta de máquinas reales -- añadirlos sin
+# esas máquinas sería una ampliación de política sin ningún efecto verificable, y el encargo prohíbe
+# inventar máquinas. Ninguno de los 5 códigos nuevos implica liberación/rechazo de Calidad.
+CENTRAL_FORM_CODES = frozenset({FORM_CODE, "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31"})
 PRODUCTION_AREA = "production"
 GROUPS_KEY = "_groups"  # propiedad RESERVADA de `values` para los grupos repetibles; ningún campo de una definición puede llamarse así
 TECHNICAL_MAX_GROUP_ROWS = 1000  # tope TÉCNICO (no funcional) por grupo cuando la definición no declara max_rows: evita cargas absurdas

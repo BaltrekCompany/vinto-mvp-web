@@ -160,7 +160,7 @@ class DefinitionTests(P129Case):
         self.assertEqual(groups, [(RODELAS, True, 1, None), (FORMATOS, True, 1, None)])  # TEST-ONLY hypotheses
 
     async def test_the_shipped_configuration_is_unchanged_and_p129_is_unreachable_without_the_test_configuration(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
         _, assignment = await self.assignment()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", SHIPPED_POLICY):

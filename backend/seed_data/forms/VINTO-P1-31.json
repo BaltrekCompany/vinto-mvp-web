@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_31_consumo_de_quimicos",
+  "code": "VINTO-P1-31",
+  "legacy_number": 31,
+  "name": "Consumo de químicos",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "codigo_de_insumo",
+      "label": "Código de insumo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "seccion",
+      "label": "Sección",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "insumo_quimico",
+      "label": "Insumo químico",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "caudal_mp1_ml_min",
+      "label": "Caudal MP1",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "caudal_mp3_ml_min",
+      "label": "Caudal MP3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "consumo_dia_mp1_kg",
+      "label": "Consumo día MP1",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "consumo_dia_mp3_kg",
+      "label": "Consumo día MP3",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "consumo_total_kg",
+      "label": "Consumo total",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 9
+    }
+  ],
+  "definition_checksum": "25ee18d05f712a6aee67c062f66a7089a4ac1dcde13b40d0446010e960fa9e33"
+}

@@ -40,7 +40,10 @@ QUALITY_AREA = "quality"
 CENTRAL_BOBBIN_FORM_CODES: frozenset = frozenset({"VINTO-P1-19", "VINTO-P1-20"})
 # POLÍTICA: formularios candidatos por Bobina (sin homologar). Conocidos aquí; habilitados SOLO si figuran en ENABLED_… (vacío en producción).
 BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"})
-ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = frozenset()
+# CLOUD-DEP G.12-C4: los 4 candidatos por bobina habilitados EXCLUSIVAMENTE para QA interno sobre
+# MP1/MP3 (ver backend/seed_data/forms/VINTO-P1-{21,24,25,28}.json, ya publicados y vinculados a esas
+# máquinas). Ninguno homologado por VINTO; P1-28 sigue siendo documental y ninguno toca quality_release.
+ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = BOBBIN_CANDIDATE_FORM_CODES
 # Campo manual que declara el número de bobina: debe ser exactamente el código de la Bobina de la ruta (se compara el texto recortado, sin interpretarlo).
 BOBBIN_CODE_FIELDS: dict = {"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina", "VINTO-P1-28": "numero_de_bobina"}
 

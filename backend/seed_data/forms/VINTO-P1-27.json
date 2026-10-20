@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_27_analisis_de_agua_para_caldero",
+  "code": "VINTO-P1-27",
+  "legacy_number": 27,
+  "name": "Análisis de agua para caldero",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "ablandador_ph",
+      "label": "Ablandador pH",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "ablandador_dureza",
+      "label": "Ablandador dureza",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "ablandador_solidos_disueltos",
+      "label": "Ablandador sólidos disueltos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "ablandador_conductividad",
+      "label": "Ablandador conductividad",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "agua_alimentacion_caldero_ph",
+      "label": "Agua alimentación caldero pH",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "agua_alimentacion_caldero_dureza",
+      "label": "Agua alimentación caldero dureza",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "agua_alimentacion_caldero_solidos_disueltos",
+      "label": "Agua alimentación caldero sólidos disueltos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "agua_alimentacion_caldero_conductividad",
+      "label": "Agua alimentación caldero conductividad",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "purga_caldero_ph",
+      "label": "Purga caldero pH",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "purga_caldero_dureza",
+      "label": "Purga caldero dureza",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "purga_caldero_solidos_disueltos",
+      "label": "Purga caldero sólidos disueltos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "purga_caldero_conductividad",
+      "label": "Purga caldero conductividad",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "purga_caldero_cloruros",
+      "label": "Purga caldero cloruros",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "condensado_mp1_ph",
+      "label": "Condensado MP1 pH",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "condensado_mp1_dureza",
+      "label": "Condensado MP1 dureza",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "condensado_mp1_solidos_disueltos",
+      "label": "Condensado MP1 sólidos disueltos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "condensado_mp1_conductividad",
+      "label": "Condensado MP1 conductividad",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "condensado_mp3_ph",
+      "label": "Condensado MP3 pH",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "condensado_mp3_dureza",
+      "label": "Condensado MP3 dureza",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "condensado_mp3_solidos_disueltos",
+      "label": "Condensado MP3 sólidos disueltos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 20
+    },
+    {
+      "key": "condensado_mp3_conductividad",
+      "label": "Condensado MP3 conductividad",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 21
+    },
+    {
+      "key": "calibracion_equipo_multiparametro",
+      "label": "Calibración equipo multiparámetro",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 22
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 23
+    }
+  ],
+  "definition_checksum": "cf4eaf301403f804a079799422b7e2fcce5314d5e0caecf2bef58212377f91ba"
+}

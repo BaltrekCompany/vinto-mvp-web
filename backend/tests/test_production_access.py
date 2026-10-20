@@ -33,6 +33,9 @@ except ModuleNotFoundError:
 SHIPPED_POLICY = _capture_service.CENTRAL_FORM_CODES
 SHIPPED_SECTORS = _sectors.operational_sector_codes()
 F6 = "VINTO-P1-06"
+# CLOUD-DEP G.12-C4: lista derivada de SHIPPED_POLICY, en el mismo orden que devuelve la API
+# (production_access.py: "ORDER BY fvm.machine_id, l.code") -- nunca una lista fija aparte.
+SHIPPED_FORMS = sorted(SHIPPED_POLICY)
 ARTICLE = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
 STATE = {}
 
@@ -91,18 +94,22 @@ class AvailabilityCase(unittest.IsolatedAsyncioTestCase):
 
 class RealConfigurationTests(AvailabilityCase):
     async def test_a_granted_but_non_operational_sector_is_not_exposed(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))
+        # CLOUD-DEP G.12-C4: SHIPPED_POLICY ya no es solo {F6} -- se añadieron 5 candidatos de Bobinas
+        # (P1-01/02/04/05/31) para QA interno sobre MP1/MP3. SHIPPED_FORMS deriva de la propia política
+        # en vez de repetir la lista: sigue probando lo mismo (máquinas/formularios reales de MP1/MP3),
+        # ahora con el conjunto ampliado.
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
         reply = await self.get(who="OPERACION")  # granted BOBINAS + REBOBINADO, but only BOBINAS is operational
         self.assertEqual(reply.status, 200)
-        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}})
+        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
         self.assertNotIn("REBOBINADO", reply.text)
         self.assertEqual(self.codes(await self.get(who="SOLO_REBOBINADO")), {})  # only Rebobinado granted: nothing is operational for this user
 
     async def test_401_and_scope(self):
         self.assertEqual((await call("GET", "/api/production/machines")).status, 401)
         self.assertEqual((await self.get(who="SIN_SECTOR")).json(), {"sectors": []})
-        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}})
+        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
 
     async def test_the_permission_dependency_requires_at_least_one_view_permission(self):
         class Fake:

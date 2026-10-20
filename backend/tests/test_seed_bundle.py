@@ -229,7 +229,9 @@ class QualityP119Tests(unittest.TestCase):
     def test_manifest_counts_cover_the_four_forms(self):
         counts = read("manifest.json")["counts"]
         # F6 5 + F3 6 + P1-19 7 + P1-20 12 campos; P1-20 no añade opciones ni workflows (reutiliza quality-release)
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (4, 30, 5, 2))
+        # CLOUD-DEP G.12-C4: 13 formularios candidatos (242 campos) habilitados para QA sobre MP1/MP3;
+        # ninguno añade opciones ni workflows nuevos (todos reutilizan production-standard/quality-release).
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (17, 272, 5, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 

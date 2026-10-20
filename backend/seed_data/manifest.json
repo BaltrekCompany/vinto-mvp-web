@@ -12,7 +12,20 @@
       "VINTO-P1-06",
       "VINTO-P1-03",
       "VINTO-P1-19",
-      "VINTO-P1-20"
+      "VINTO-P1-20",
+      "VINTO-P1-01",
+      "VINTO-P1-02",
+      "VINTO-P1-04",
+      "VINTO-P1-05",
+      "VINTO-P1-31",
+      "VINTO-P1-18",
+      "VINTO-P1-21",
+      "VINTO-P1-22",
+      "VINTO-P1-24",
+      "VINTO-P1-25",
+      "VINTO-P1-26",
+      "VINTO-P1-27",
+      "VINTO-P1-28"
     ]
   },
   "generated_from": [
@@ -36,6 +49,76 @@
     {
       "path": "lib/vinto/recipes.ts",
       "sha256": "2a2c36458eb7b1e73a93743b3c8381d4cdce19dcb2d39f526cb7ae6ece82528d"
+    },
+    {
+      "path": "lib/vinto/p1-01.ts",
+      "sha256": "b69d2aa5ef9e3724c6e4beed929cf2f4a0e22f96423f5699183af6d20f003674",
+      "scope": "candidate-fields:VINTO-P1-01"
+    },
+    {
+      "path": "lib/vinto/p1-02.ts",
+      "sha256": "fb885a2b25e01f15740fab2dffaff0127f133121824442c82bc63ecb974db2c4",
+      "scope": "candidate-fields:VINTO-P1-02"
+    },
+    {
+      "path": "lib/vinto/p1-04.ts",
+      "sha256": "2e61733e7d2e6658e0057504075b9c108eec70e82bb2a0741ba8e43597341d0c",
+      "scope": "candidate-fields:VINTO-P1-04"
+    },
+    {
+      "path": "lib/vinto/p1-05.ts",
+      "sha256": "b1bf7a7c7ed84eb7ebd43ecc6696c8cda889d8ed29d928bcf1d4d62f84e6a105",
+      "scope": "candidate-fields:VINTO-P1-05"
+    },
+    {
+      "path": "lib/vinto/p1-31.ts",
+      "sha256": "0cd1fcf76efc2ba5f795b49175592fab9d71d89b84e0f8a8fe04c21fc44333f5",
+      "scope": "candidate-fields:VINTO-P1-31"
+    },
+    {
+      "path": "lib/vinto/p1-18.ts",
+      "sha256": "6368b34ee9133faa0ca2ef26d01b7f3ffebdf46abcc42d545fb62d92b3694040",
+      "scope": "candidate-fields:VINTO-P1-18"
+    },
+    {
+      "path": "lib/vinto/p1-21.ts",
+      "sha256": "990a8bfe63aaaedef5583faf9df4b430bab31010115146a0da96ab4971c132a4",
+      "scope": "candidate-fields:VINTO-P1-21"
+    },
+    {
+      "path": "lib/vinto/p1-22.ts",
+      "sha256": "89c445378898ccd34cb4f9766d3400319b5b76589b112da0900ecccee36209b2",
+      "scope": "candidate-fields:VINTO-P1-22"
+    },
+    {
+      "path": "lib/vinto/p1-24.ts",
+      "sha256": "f81277926e610374f8cd686ea191b1628bbf4ed5dbf5f1eb3315f9ef4038e833",
+      "scope": "candidate-fields:VINTO-P1-24"
+    },
+    {
+      "path": "lib/vinto/p1-25.ts",
+      "sha256": "f80ac0f43dc4e386c6af08e7b5d814b72e9ede37fc9f277dca3f8d87be160277",
+      "scope": "candidate-fields:VINTO-P1-25"
+    },
+    {
+      "path": "lib/vinto/p1-26.ts",
+      "sha256": "0d4fd1a6811dec8672e433eb94a63651d8cc1eac7ee2462bbd51f42dd40a3e1b",
+      "scope": "candidate-fields:VINTO-P1-26"
+    },
+    {
+      "path": "lib/vinto/p1-27.ts",
+      "sha256": "96ef5b2009d07d96100656e0d64f46497e0a4e2954d23640c2a07bae427101ba",
+      "scope": "candidate-fields:VINTO-P1-27"
+    },
+    {
+      "path": "lib/vinto/p1-28.ts",
+      "sha256": "267bf23d79dcb11c07199e427f96692f54a528cd41604c5357d02c3e4703d9e8",
+      "scope": "candidate-fields:VINTO-P1-28"
+    },
+    {
+      "path": "lib/vinto/form-definitions.ts",
+      "sha256": "df4fd579915a39c71037e06c43f20183b67c778cd4f95f159cb293fa7ed7a06e",
+      "scope": "candidate-metadata:name,area,legacy_number,workflow (NUNCA los campos)"
     }
   ],
   "files": [
@@ -50,14 +133,39 @@
       "bytes": 31607
     },
     {
+      "path": "forms/VINTO-P1-01.json",
+      "sha256": "72bd6365676eaf2c4e88ed974118f9ce94beefaff854b689d6228b8c67ce22a5",
+      "bytes": 18655
+    },
+    {
+      "path": "forms/VINTO-P1-02.json",
+      "sha256": "9d83d69ea61a543bea1619be0a1c0322c85222783c6068ef154a23f928227ac0",
+      "bytes": 10552
+    },
+    {
       "path": "forms/VINTO-P1-03.json",
       "sha256": "9b756fd914d0d56529e09328eecb1c7e664e22b3c042fc50348b61456998eea4",
       "bytes": 1605
     },
     {
+      "path": "forms/VINTO-P1-04.json",
+      "sha256": "80917e839f4d5acf0f25a4bb0c9b9b54a03e20d98fb5ec9d482943f4d0d072f0",
+      "bytes": 2292
+    },
+    {
+      "path": "forms/VINTO-P1-05.json",
+      "sha256": "3e35cfad0936be06734b5161056c85a51b249eb4240cda928333519b535c562f",
+      "bytes": 2446
+    },
+    {
       "path": "forms/VINTO-P1-06.json",
       "sha256": "c6a6eb97c981b39e68848d28c7a54eb07d2886ee5d69296e0a5d50ee25e7118e",
       "bytes": 2118
+    },
+    {
+      "path": "forms/VINTO-P1-18.json",
+      "sha256": "7e61b1b4213e762bd15dda9bb23d35dac60a493b8e5af700caff1ff1fd2ec7dc",
+      "bytes": 2218
     },
     {
       "path": "forms/VINTO-P1-19.json",
@@ -68,6 +176,46 @@
       "path": "forms/VINTO-P1-20.json",
       "sha256": "11668df163311a79f8a9787b40cb893b41caf182de04d98367d95a06132c84f0",
       "bytes": 3033
+    },
+    {
+      "path": "forms/VINTO-P1-21.json",
+      "sha256": "d282f189f905fb8e4bdc885e14b0a9d848049b0a01e0e332d7e83fdaa54a9f66",
+      "bytes": 1415
+    },
+    {
+      "path": "forms/VINTO-P1-22.json",
+      "sha256": "26ad6470c0898f822c733ab1fca74db630f0dfa977eaac4e9ca18354dd34b50d",
+      "bytes": 1642
+    },
+    {
+      "path": "forms/VINTO-P1-24.json",
+      "sha256": "cdcd93084b371932a079d2e50568d84c7c6fd9e966af5b087102b28b187ffccd",
+      "bytes": 3135
+    },
+    {
+      "path": "forms/VINTO-P1-25.json",
+      "sha256": "fec457b1b2a7dd87a78b06555856704b0235aed6c5fa7821fa60fef25e2c014a",
+      "bytes": 3610
+    },
+    {
+      "path": "forms/VINTO-P1-26.json",
+      "sha256": "9c3068b120951ef74f5f798a663fb4558643d0002f87bf631fc2f8848713b579",
+      "bytes": 1197
+    },
+    {
+      "path": "forms/VINTO-P1-27.json",
+      "sha256": "3f5d13370e8de3211351e4b5d7b0e9abcad9f455073cd8c73db3563e5b204edc",
+      "bytes": 5601
+    },
+    {
+      "path": "forms/VINTO-P1-28.json",
+      "sha256": "fdbad20e51fec50bcd6415b8098b9585112b8685dd6870b5965ec03ea41b2fb6",
+      "bytes": 1879
+    },
+    {
+      "path": "forms/VINTO-P1-31.json",
+      "sha256": "b0b7298ca1e8d88a22781847297016e1792ef23760a2cf93d4e5248305e61453",
+      "bytes": 2221
     },
     {
       "path": "machines.json",
@@ -119,8 +267,8 @@
     "workflows": 2,
     "shifts": 2,
     "shift_schedules": 2,
-    "forms": 4,
-    "form_fields": 30,
+    "forms": 17,
+    "form_fields": 272,
     "form_options": 5
   },
   "authority_rules": {
@@ -210,6 +358,12 @@
       "severity": "warning",
       "message": "workflow_definition.name usa el código de la fuente (no existe nombre real)",
       "count": 2
+    },
+    {
+      "code": "CANDIDATE_FORMS_ENABLED_FOR_QA",
+      "severity": "warning",
+      "message": "CLOUD-DEP G.12-C4: 13 formularios candidatos (Bobinas P1-01/02/04/05/31, Calidad P1-18/21/22/24/25/26/27/28) habilitados exclusivamente para QA interno sobre MP1/MP3. Ninguno homologado por VINTO (contrato, catálogos, rangos ni unidades aprobados). No implica liberación/rechazo de Calidad. No activa Rebobinado ni Conversión.",
+      "count": 13
     }
   ]
 }

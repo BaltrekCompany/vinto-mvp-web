@@ -135,7 +135,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_the_real_seed_has_no_rebobinado(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # REBOBINADO is recognised but NOT operational
         self.assertNotIn(P130_CODE, {r["code"] for r in BUNDLE.forms}) if hasattr(BUNDLE, "forms") else None
         self.assertNotIn("PERICHUN", {r["code"] for r in BUNDLE.machines}) if hasattr(BUNDLE, "machines") else None
