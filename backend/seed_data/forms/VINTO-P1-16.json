@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_16_registro_de_control_de_merma",
+  "code": "VINTO-P1-16",
+  "legacy_number": 16,
+  "name": "Registro de control de merma",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "GAMBINI",
+    "SINCRO_II",
+    "SINCRO_III",
+    "OMET_I",
+    "OMET_II",
+    "8_2",
+    "8_5",
+    "8002",
+    "SERV_4",
+    "WALLY",
+    "PANUELERA"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "numero_correlativo",
+      "label": "Número correlativo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hoja_doble_kg",
+      "label": "Hoja doble kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "servilleta_kg",
+      "label": "Servilleta kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "toalla_kg",
+      "label": "Toalla kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "carton_kg",
+      "label": "Cartón kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "hoja_simple_kg",
+      "label": "Hoja simple kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "plastico_kg",
+      "label": "Plástico kg",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "observacion",
+      "label": "Observación",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 8
+    }
+  ],
+  "definition_checksum": "0c7b45c32cb27bc2b6429a60ecffa6388b6ba7c50c6b6bb0033b214bfbd8696f"
+}

@@ -118,7 +118,9 @@ test("el scope llega a TODOS los fronts: Bobinas, Rebobinado y Conversión (Conv
   assert.match(sector, /useActiveAssignment\(machine\.code, canReadAssignments, onSessionLost, scope\)/);
   assert.equal((sector.match(/useWorkOrders\(canReadOrders, onSessionLost, scope\)/g) ?? []).length, 2);
   assert.match(sector, /useAssignments\(canReadAssignments, onSessionLost, scope\)/);
-  for (const p of ["p110", "p111", "p112", "p113", "p116", "p129"]) assert.match(sector, new RegExp(`candidateHistoryKey\\("${p}", scope, refreshKey\\)`), p);
+  for (const p of ["p110", "p111", "p129"]) assert.match(sector, new RegExp(`candidateHistoryKey\\("${p}", scope, refreshKey\\)`), p);
+  // G.12-C4-FINAL25: P1-12/P1-13/P1-16 pasaron al patrón genérico de fichas candidatas (mismo prefijo "conv-" que "reb-" para Rebobinado).
+  for (const p of ["conv-p112", "conv-p113", "conv-p116"]) assert.match(sector, new RegExp(`candidateHistoryKey\\("${p}", scope, refreshKey\\)`), p);
   assert.match(page, /useResource<CentralCapture\[\]>\(candidateHistoryKey\("f6", scope, 0\)/);
   assert.match(page, /useResource<QualityBobbinInboxItem\[\]>\(qualityInboxKey\(scope\)/);
   assert.match(page, /useResource<QualityHistoryLoad>\(qualityHistoryKey\(scope, /);

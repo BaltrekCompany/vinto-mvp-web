@@ -52,18 +52,19 @@ class ScopeFunctionTests(unittest.TestCase):
             sectors.in_scope("BOBINAS", None)
         with self.assertRaises(TypeError):
             sectors.in_scope("BOBINAS")  # type: ignore[call-arg]
-        self.assertEqual(sectors.scoped_sector_codes(sectors.operational_sector_codes()), ("BOBINAS", "REBOBINADO"))  # broad access must be asked for explicitly
+        self.assertEqual(sectors.scoped_sector_codes(sectors.operational_sector_codes()), ("BOBINAS", "REBOBINADO", "CONVERSION"))  # broad access must be asked for explicitly
         self.assertEqual(sectors.scoped_sector_codes(()), ())
         self.assertEqual(sectors.scoped_sector_codes(frozenset()), ())
         self.assertFalse(sectors.in_scope("BOBINAS", frozenset()))  # no grant never means access
 
     def test_a_grant_to_a_non_operational_sector_is_inert(self):
-        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es operativo por defecto; CONVERSION sigue siendo
-        # el sector reconocido pero NO operativo que este caso necesita.
-        self.assertEqual(sectors.scoped_sector_codes({"CONVERSION"}), ())
-        self.assertEqual(sectors.scoped_sector_codes({"REBOBINADO", "CONVERSION"}), ("REBOBINADO",))
-        self.assertEqual(sectors.scoped_sector_codes({"BOBINAS", "CONVERSION"}), ("BOBINAS",))
-        self.assertFalse(sectors.in_scope("CONVERSION", {"CONVERSION"}))
+        # CLOUD-DEP G.12-C4-FINAL25: los 3 sectores conocidos ya son operativos por defecto -- no queda
+        # ningún código conocido "no operativo" real; "OTRO" (desconocido, nunca en _OPERATIONAL) cubre
+        # el mismo caso (una concesión a un sector que nunca es operativo no amplía nada).
+        self.assertEqual(sectors.scoped_sector_codes({"OTRO"}), ())
+        self.assertEqual(sectors.scoped_sector_codes({"REBOBINADO", "OTRO"}), ("REBOBINADO",))
+        self.assertEqual(sectors.scoped_sector_codes({"BOBINAS", "OTRO"}), ("BOBINAS",))
+        self.assertFalse(sectors.in_scope("OTRO", {"OTRO"}))
 
     def test_the_scope_is_the_intersection_of_grants_and_operational_sectors(self):
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):
@@ -407,14 +408,14 @@ class CrossSectorIsolationTests(SectorAuthorizationCase):
     async def test_a_grant_to_a_sector_that_is_not_enabled_does_nothing(self):
         # CLOUD-DEP G.12-C4-COMPLETE: default configuration is now (BOBINAS, REBOBINADO); CONVERSION
         # (FUTURE_SECTOR) is still recognised but not operational, so a grant to it stays inert.
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
         _, cookie = await self.new_user("JEFATURA", FUTURE_SECTOR)
         before = self.counts()
         self.assertEqual((await call("GET", "/api/work-orders", cookie=cookie)).json(), [])
         reply = await call("POST", "/api/work-orders", json_body={**order_body("MP1"), "machine_code": FUTURE_MACHINE}, cookie=cookie)
         self.assertEqual((reply.status, reply.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
         self.assertEqual(self.counts(), before)
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
     async def test_existing_bobinas_behaviour_is_unchanged_for_granted_users(self):
         order, assignment = await self.assignment("MP1")

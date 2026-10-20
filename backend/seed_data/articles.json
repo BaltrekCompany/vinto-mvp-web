@@ -3,6 +3,968 @@
   "entity": "article",
   "items": [
     {
+      "code": "10326",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE NARANJA 2*10",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10327",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE EXTRA 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10328",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE GOLD 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10329",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE MEGA 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10330",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE MEGA 2*20",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10331",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE MEGA 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10332",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE GOLD 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10333",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA EXTRA HOJA DOBLE 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10334",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA SUPER MEGA 8*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10335",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE ECO AMARILLO 2*20",
+        "unit": "PACK",
+        "material_class": "BLANCOS",
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10336",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE ECO AMARILLO 4*10",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10337",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA SUPER ECO 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10338",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE SUPER MEGA 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10339",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA HOJA DOBLE SUPER MEGA 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10340",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN HOJA DOBLE 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10342",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA MEGA SOFT 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10344",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PINK EDITION 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10345",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN HOJA DOBLE 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10347",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PLUS 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10348",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PLUS 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10349",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA SUPER MEGA 2*24",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10350",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA ECO PLUS 6X8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10351",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA ECO PLUS 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10352",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN VERDE HOJA DOBLE 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10353",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA ULTRA  4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10354",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA ULTRA  6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10355",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA ECO PLUS 5*9",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10356",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN CELESTE 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10357",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN CELESTE 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10358",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PREMIUM  4*12 30 MT",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10359",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PREMIUM 4*12 50 MT",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10360",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "CARMIN VERDE 6*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10403",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "DOTACION BLANCO DH 1*20",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10425",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA HOJA DOBLE MEGA 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10427",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA HOJA DOBLE SUPER ECO 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10428",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA HOJA DOBLE SUPER MEGA 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10430",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA MEGA SOFT 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10432",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA CARMIN GAMBINI 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10433",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA PINK EDITION 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10434",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA PLUS 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10435",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA ECO PLUS 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10436",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA CARMIN VERDE  1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10437",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA ULTRAS 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10438",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA PERLITA PREMIUN 30 MTS 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10503",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PAPEL PELUSITA 12*4",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "10504",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PAPEL PELUSITA 4*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11102",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA PERLA 50*24",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11103",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA INSTITUCIONAL PERLITA 6*500",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11104",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA INSTITUCIONAL PERLA 6*500",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11110",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETAS SEGUNDA",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11202",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA PERLA INSTITUCIONAL 1*12",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11203",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA INSTITUCIONAL PERLITA  12*200",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11204",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA CARMIN 8*500",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11205",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA PERLITA CLASICA 12X300",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11206",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA INSTITUCIONAL PERLITA 6*520",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11307",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO PERLITA",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11308",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO DKFE",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11309",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO NSTM",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11313",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO FEXCO",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11314",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO ECOLOGICO HUARI",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11316",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO VINOFEST 3*333",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11317",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO LA GUAPA  3*333",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11318",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO ECOLOGICO EAT OUT  3*333",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11319",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO BULLA  3*333",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11320",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO THENDSETTER PERLITA 3*330",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11321",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SERVILLETA DECO CRIADERO 3*300",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11402",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PAPEL TOALLA PERLA ABSOR 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11403",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PAPEL TOALLA PERLA MULTIUSOS NARANJA 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11404",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "TOALLA PERLA ABSOR 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11405",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "TOALLA PERLA MULTIUSOS NARANJA 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11406",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "TOALLA PERLA ULTRA ABSORB 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11499",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "SEGUNDA TOALLA PERLA ABSOR 2*8",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11502",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PAÑUELO PERLITA PERSONAL CARE 60*6*10",
+        "unit": "PACK",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "11503",
+      "is_product": true,
+      "is_material": false,
+      "version": {
+        "version_number": 1,
+        "description": "PERLITA PERSONAL CARE 36 X 6 X 10",
+        "unit": "UN",
+        "material_class": null,
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
       "code": "BC-1031",
       "is_product": true,
       "is_material": false,
@@ -3116,6 +4078,19 @@
       "version": {
         "version_number": 1,
         "description": "TB-TUBETE Ø 75 MM FORMATO 2730 MM",
+        "unit": "UN",
+        "material_class": "TUBETE",
+        "nominal_weight_kg": null,
+        "grammage_g_m2": null
+      }
+    },
+    {
+      "code": "TB-4002",
+      "is_product": true,
+      "is_material": true,
+      "version": {
+        "version_number": 1,
+        "description": "TB-TUBETE Ø 75 MM FORMATO 2400 MM",
         "unit": "UN",
         "material_class": "TUBETE",
         "nominal_weight_kg": null,

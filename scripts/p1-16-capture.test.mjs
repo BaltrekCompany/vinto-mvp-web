@@ -258,8 +258,11 @@ test("component and clients never touch business storage or credentials; P1-16 i
     assert.equal(/localStorage|sessionStorage|vinto-p1-records|vinto-ot|vinto-asg|document\.cookie|Authorization/.test(code(file)), false, file);
   }
   assert.equal(/form-definitions|WasteCapture/.test(code("components/vinto/p1-16-capture.tsx")) || /form-definitions/.test(code("lib/vinto/p1-16.ts")), false);
+  // G.12-C4-FINAL25: P1-16 pasó al renderizador genérico (CandidateFormCapture + CONVERSION_CANDIDATES); P116CaptureForm queda sin enlazar (código muerto documentado, no eliminado).
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
-  assert.match(page, /P116CaptureForm/);
+  assert.match(page, /convCapture && front === "Conversión" && isConversionCandidate\(convCapture\.screen\)/);
+  assert.match(page, /candidate=\{CONVERSION_CANDIDATES\[screen\]\}/);
+  assert.equal(/P116CaptureForm/.test(page), false);
   assert.match(page, /front === "Conversión" \? <ConversionCentral/); // the legacy Conversión screens are no longer reachable from the navigation (and are NOT a fallback)
   for (const dir of ["app/p1-16", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
 });

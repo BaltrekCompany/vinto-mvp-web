@@ -16,7 +16,7 @@ except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
     from tests.m6a_fixtures import CONV_MACHINE_NO_FORM
 
-P113_CODE = "VINTO-P1-13"
+P113_CODE = "ZZFIX-P1-13"  # CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-13 ya es real
 P113_DRAFT_CODE = "VINTO-TEST-P113-DRAFT"  # linked to WALLY but NEVER published: it must not be offered or accepted
 P113_MACHINE = CONV_MACHINE_NO_FORM  # WALLY: in M6-A/M6-B it is the machine WITHOUT forms; only with P1-13 installed (E2E_P113=on / this module) does it offer P1-13
 

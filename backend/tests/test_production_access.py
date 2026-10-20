@@ -22,12 +22,12 @@ from app.seed.bundle import load_bundle
 try:
     from m2a_fixtures import install_production_form
     from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, REB_MACHINE, REB_SECTOR, install_p110
-    from m3b_fixtures import P129_CODE, install_p129, install_tubetera
+    from m3b_fixtures import P129_CODE, TUBETERA_MACHINE, install_p129, install_tubetera
     from test_assignments_api import call
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
     from tests.m2b2_fixtures import ENABLED_SECTORS, P110_CODE, REB_MACHINE, REB_SECTOR, install_p110
-    from tests.m3b_fixtures import P129_CODE, install_p129, install_tubetera
+    from tests.m3b_fixtures import P129_CODE, TUBETERA_MACHINE, install_p129, install_tubetera
     from tests.test_assignments_api import call
 
 SHIPPED_POLICY = _capture_service.CENTRAL_FORM_CODES
@@ -100,8 +100,8 @@ class RealConfigurationTests(AvailabilityCase):
         # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_POLICY también suma P1-07/10/30 (Rebobinado), por lo que
         # ya no coincide con lo que se ofrece en MP1/MP3 (esos 3 solo están vinculados a BELOIT/OVER/
         # COPASA/PERICHUN) -- se compara contra el subconjunto real de Bobinas, no contra la política entera.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         reply = await self.get(who="OPERACION")  # granted BOBINAS + the fictitious Rebobinado (ZZFIX), never the REAL REBOBINADO
         self.assertEqual(reply.status, 200)
         self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
@@ -135,9 +135,9 @@ class TestConfigurationTests(AvailabilityCase):
         self.enabled()
         reply = await self.get()
         self.assertEqual(reply.status, 200)
-        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}, REB_SECTOR: {REB_MACHINE: [P110_CODE], "TUBETERA": [P129_CODE]}})
+        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}, REB_SECTOR: {REB_MACHINE: [P110_CODE], TUBETERA_MACHINE: [P129_CODE]}})
         reb = next(s for s in reply.json()["sectors"] if s["code"] == REB_SECTOR)
-        self.assertEqual({m["code"]: m["name"] for m in reb["machines"]}, {REB_MACHINE: "Copasa (prueba)", "TUBETERA": "Tubetera (prueba)"})
+        self.assertEqual({m["code"]: m["name"] for m in reb["machines"]}, {REB_MACHINE: "Copasa (prueba)", TUBETERA_MACHINE: "Tubetera (prueba)"})
         copasa = next(m for m in reb["machines"] if m["code"] == REB_MACHINE)
         self.assertEqual(copasa["forms"][0]["version_number"], 1)
         self.assertNotIn("articles", copasa)  # only when requested
@@ -151,7 +151,7 @@ class TestConfigurationTests(AvailabilityCase):
     async def test_a_form_outside_the_policy_or_not_published_or_inactive_or_not_linked_is_not_listed(self):
         self.enabled()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", frozenset({F6, P110_CODE})):  # P1-29 not enabled by the policy
-            self.assertEqual(self.codes(await self.get())[REB_SECTOR], {REB_MACHINE: [P110_CODE], "TUBETERA": []})
+            self.assertEqual(self.codes(await self.get())[REB_SECTOR], {REB_MACHINE: [P110_CODE], TUBETERA_MACHINE: []})
         install_production_form(self.connection, "VINTO-TEST-X-DRAFT", machine_codes=(REB_MACHINE,), publish=False)
         install_production_form(self.connection, "VINTO-TEST-X-QUALITY", machine_codes=(REB_MACHINE,), area="quality")
         install_production_form(self.connection, "VINTO-TEST-X-MP1", machine_codes=("MP1",))
@@ -181,7 +181,7 @@ class TestConfigurationTests(AvailabilityCase):
         self.assertEqual(reply.status, 200)
         machines = {m["code"]: m for s in reply.json()["sectors"] for m in s["machines"]}
         self.assertEqual([a["code"] for a in machines[REB_MACHINE]["articles"]], [ARTICLE])
-        self.assertEqual([a["code"] for a in machines["TUBETERA"]["articles"]], [ARTICLE])
+        self.assertEqual([a["code"] for a in machines[TUBETERA_MACHINE]["articles"]], [ARTICLE])
         self.assertTrue(all(a["description"] for a in machines[REB_MACHINE]["articles"]))
         self.assertGreater(len(machines["MP1"]["articles"]), 1)
         self.assertEqual(set(machines[REB_MACHINE]), {"code", "name", "forms", "articles"})

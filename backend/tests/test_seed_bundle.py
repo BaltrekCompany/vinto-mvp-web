@@ -69,7 +69,7 @@ class ManifestTests(unittest.TestCase):
 class ReferenceDataTests(unittest.TestCase):
     def test_sector_is_unique_and_named_bobinas(self):
         sectors = read("sectors.json")["items"]
-        self.assertEqual(sorted((s["code"], s["name"]) for s in sectors), [("BOBINAS", "Bobinas"), ("REBOBINADO", "Rebobinado")])
+        self.assertEqual(sorted((s["code"], s["name"]) for s in sectors), [("BOBINAS", "Bobinas"), ("CONVERSION", "Conversión"), ("REBOBINADO", "Rebobinado")])
 
     def test_mp1_and_mp3_belong_to_the_sector(self):
         machines = read("machines.json")["items"]
@@ -123,17 +123,18 @@ class ReferenceDataTests(unittest.TestCase):
         # CLOUD-DEP G.12-C4-COMPLETE: DIA/NOCHE are shared shift codes with per-sector hours; REBOBINADO's
         # own schedule rows must not be confused with BOBINAS', so the sector is part of the key.
         shifts = read("shifts.json")
-        self.assertEqual({s["code"] for s in shifts["shifts"]}, {"DIA", "NOCHE"})
+        self.assertEqual({s["code"] for s in shifts["shifts"]}, {"DIA", "NOCHE", "MANANA", "TARDE"})
         times = {(s["shift"], s["sector"]): (s["starts_at"], s["ends_at"]) for s in shifts["schedules"]}
         self.assertEqual(times, {
             ("DIA", "BOBINAS"): ("07:00", "19:00"), ("NOCHE", "BOBINAS"): ("19:00", "07:00"),
             ("DIA", "REBOBINADO"): ("06:00", "18:00"), ("NOCHE", "REBOBINADO"): ("18:00", "06:00"),
+            ("MANANA", "CONVERSION"): ("06:00", "14:00"), ("TARDE", "CONVERSION"): ("14:00", "22:00"), ("NOCHE", "CONVERSION"): ("22:00", "06:00"),
         })
         for schedule in shifts["schedules"]:
             self.assertEqual(schedule["timezone"], "America/La_Paz")
             self.assertEqual(schedule["valid_from"], "2026-01-01")
             self.assertIsNone(schedule["valid_to"])
-            self.assertIn(schedule["sector"], ("BOBINAS", "REBOBINADO"))
+            self.assertIn(schedule["sector"], ("BOBINAS", "REBOBINADO", "CONVERSION"))
         self.assertIn("provisional", shifts["note"])
 
 
@@ -238,9 +239,10 @@ class QualityP119Tests(unittest.TestCase):
     def test_manifest_counts_cover_the_four_forms(self):
         counts = read("manifest.json")["counts"]
         # F6 5 + F3 6 + P1-19 7 + P1-20 12 campos; P1-20 no añade opciones ni workflows (reutiliza quality-release)
-        # CLOUD-DEP G.12-C4: 13 formularios candidatos (242 campos) habilitados para QA sobre MP1/MP3;
-        # ninguno añade opciones ni workflows nuevos (todos reutilizan production-standard/quality-release).
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (20, 322, 5, 2))
+        # CLOUD-DEP G.12-C4-FINAL25: 25 formularios en total (17 candidatos previos + P1-11/12/13/16/29);
+        # ninguno añade workflows nuevos (todos reutilizan production-standard/quality-release); P1-11
+        # añade 2 opciones nuevas (posicion).
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (25, 391, 7, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 
@@ -293,7 +295,7 @@ class QualityP120Tests(unittest.TestCase):
         form = read("forms/VINTO-P1-20.json")
         self.assertIsNone(next(f for f in form["fields"] if f["key"] == "gramaje")["unit"])
         units = {u["code"] for u in read("units.json")["items"]}
-        self.assertEqual(len(units), 3)
+        self.assertEqual(len(units), 4)  # G.12-C4-FINAL25: PACK se añadió de forma aditiva para el catálogo de Conversión
         self.assertTrue({f["unit"] for f in form["fields"]} - {None} <= units)
         self.assertIn("P1_20_PROVISIONAL_CONTRACT", [w["code"] for w in read("manifest.json")["warnings"]])
 

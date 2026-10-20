@@ -54,14 +54,15 @@ PINNED_MIGRATIONS = [
 # ---- 1. configuración -------------------------------------------------------------------------------------------------------
 
 class SectorConfigTests(unittest.TestCase):
-    def test_bobinas_and_rebobinado_are_operational_by_default_conversion_is_not(self):
-        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO se habilitó para el piloto de QA (sigue siendo un cambio
-        # de código revisado, nunca una variable de entorno); CONVERSION sigue reconocido pero NO operativo.
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
-        self.assertEqual(sectors.DEFAULT_OPERATIONAL_SECTORS, ("BOBINAS", "REBOBINADO"))
+    def test_bobinas_rebobinado_and_conversion_are_operational_by_default(self):
+        # CLOUD-DEP G.12-C4-COMPLETE sumó REBOBINADO; G.12-C4-FINAL25 sumó CONVERSION (ambos cambios de
+        # código revisados, nunca una variable de entorno): los 3 sectores conocidos ya son operativos.
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
+        self.assertEqual(sectors.DEFAULT_OPERATIONAL_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         self.assertTrue(sectors.is_operational_sector("BOBINAS"))
         self.assertTrue(sectors.is_operational_sector("REBOBINADO"))
-        for code in ("CONVERSION", "OTRO", "bobinas", " BOBINAS", "", None, 1):
+        self.assertTrue(sectors.is_operational_sector("CONVERSION"))
+        for code in ("OTRO", "bobinas", " BOBINAS", "", None, 1):
             self.assertFalse(sectors.is_operational_sector(code), repr(code))
 
     def test_the_configuration_is_immutable_and_returns_text_codes(self):
@@ -71,14 +72,16 @@ class SectorConfigTests(unittest.TestCase):
             value[0] = "REBOBINADO"  # type: ignore[index]
         self.assertTrue(all(isinstance(code, str) for code in value))
 
-    def test_the_known_sectors_are_a_closed_list_that_includes_the_future_ones(self):
+    def test_the_known_sectors_are_a_closed_list(self):
+        # CLOUD-DEP G.12-C4-FINAL25: los 3 sectores conocidos ya son operativos (no queda ningún
+        # "reconocido pero no habilitado" real); esta prueba solo cubre que la lista es cerrada.
         self.assertEqual(sectors.KNOWN_SECTOR_CODES, frozenset({"BOBINAS", "REBOBINADO", "CONVERSION"}))
-        self.assertLess(set(sectors.operational_sector_codes()), sectors.KNOWN_SECTOR_CODES)  # recognized != enabled
+        self.assertEqual(set(sectors.operational_sector_codes()), sectors.KNOWN_SECTOR_CODES)
 
-    def test_a_valid_future_configuration_is_accepted_but_not_applied(self):
+    def test_a_valid_different_configuration_is_accepted_but_not_applied(self):
         self.assertEqual(sectors.validate_operational_sectors(("BOBINAS", "CONVERSION")), ("BOBINAS", "CONVERSION"))
-        self.assertEqual(sectors.validate_operational_sectors(["BOBINAS", "REBOBINADO", "CONVERSION"]), ("BOBINAS", "REBOBINADO", "CONVERSION"))
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))  # validar no habilita nada
+        self.assertEqual(sectors.validate_operational_sectors(["BOBINAS", "REBOBINADO"]), ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))  # validar no cambia nada
 
     def test_invalid_configurations_are_rejected(self):
         invalid = {
@@ -143,9 +146,12 @@ class StaticScopeTests(unittest.TestCase):
 
 # ---- 3. escenario de extremo a extremo con un sector futuro SINTÉTICO (solo en la plantilla efímera) -------------------------
 
-# CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es operativo para el piloto de QA; CONVERSION sigue siendo
-# el sector "futuro" (reconocido pero no operativo) que este escenario necesita.
-FUTURE_SECTOR, FUTURE_MACHINE = "CONVERSION", "TESTREB1"
+# CLOUD-DEP G.12-C4-FINAL25: los 3 sectores conocidos (BOBINAS/REBOBINADO/CONVERSION) ya son operativos
+# por defecto -- ya no queda ningún sector real "reconocido pero no operativo" que usar aquí. FUTURE_SECTOR
+# es ahora un código puramente SINTÉTICO (nunca pasa por KNOWN_SECTOR_CODES/validate_operational_sectors:
+# este módulo lo inserta a mano en vinto_master.sector y solo lo usa vía patch.object directo sobre
+# `_OPERATIONAL`, que no valida contra esa lista cerrada).
+FUTURE_SECTOR, FUTURE_MACHINE = "ZZFIX_FUTURE", "TESTREB1"
 STATE = {}
 
 
@@ -194,12 +200,15 @@ class SectorGateTests(f3.BobbinApiCase):
 
     async def test_the_future_sector_exists_in_the_data_but_is_not_operational(self):
         # Hay datos (sector, máquina, turnos, relación y formularios) y aun así NO se puede operar: la autoridad es la configuración, no los datos.
+        # CLOUD-DEP G.12-C4-FINAL25: CONVERSION (FUTURE_SECTOR) ya es operativo por defecto -- se
+        # deshabilita explícitamente dentro de este bloque para simular el escenario "reconocido pero no operativo".
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_master.machine m JOIN vinto_master.sector s ON s.id=m.sector_id WHERE m.code=%s AND s.code=%s",
                                      (FUTURE_MACHINE, FUTURE_SECTOR)), 1)
         count = lambda: self.scalar("SELECT count(*) FROM vinto_txn.work_order wo JOIN vinto_master.machine m ON m.id=wo.machine_id WHERE m.code=%s", (FUTURE_MACHINE,))
         before = count()  # la base se comparte entre las pruebas de la clase: se compara contra el valor previo, no contra cero
-        reply = await call("POST", "/api/work-orders", json_body={**order_body("MP1"), "machine_code": FUTURE_MACHINE}, cookie=await self.cookie("JEFATURA"))
-        self.assertEqual((reply.status, reply.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
+        with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):
+            reply = await call("POST", "/api/work-orders", json_body={**order_body("MP1"), "machine_code": FUTURE_MACHINE}, cookie=await self.cookie("JEFATURA"))
+            self.assertEqual((reply.status, reply.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
         self.assertEqual(count(), before)
 
     async def test_same_operations_work_when_the_sector_is_enabled_and_are_blocked_when_it_is_not(self):
@@ -245,53 +254,58 @@ class SectorGateTests(f3.BobbinApiCase):
             for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
                 self.assertEqual(await self.me_permissions(profile), expected, profile)
 
-        # ---------- FASE 2: configuración por defecto. Los MISMOS datos y operaciones deben quedar bloqueados o invisibles. ----------
-        before = self.counts()
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
-        listed = lambda reply, key=None: [(i[key] if key else i["id"]) for i in reply.json()]
-        self.assertNotIn(order["id"], listed(await call("GET", "/api/work-orders", cookie=jefatura)))
-        self.assertNotIn(assignment["id"], listed(await call("GET", "/api/assignments", cookie=supervision)))
-        self.assertNotIn(f6.json()["capture"]["id"], listed(await call("GET", "/api/captures", cookie=operacion)))
-        self.assertNotIn(bobbin_id, [i["bobbin"]["id"] for i in (await call("GET", "/api/quality/bobbins", cookie=calidad)).json()])
-        for status in ("released", "rejected"):
-            self.assertNotIn(bobbin_id, [i["bobbin"]["id"] for i in (await call("GET", f"/api/quality/bobbins?status={status}", cookie=calidad)).json()])
-        missing = {
-            "work order": ("GET", f"/api/work-orders/{order['id']}", jefatura, None),
-            "F6 capture": ("GET", f"/api/captures/{f6.json()['capture']['id']}", operacion, None),
-            "bobbin": ("GET", f"/api/bobbins/{bobbin_id}", operacion, None),
-            "quality history": ("GET", f"/api/quality/bobbins/{bobbin_id}/captures", calidad, None),
-            "quality capture": ("GET", f"/api/quality/captures/{quality_id}", calidad, None),
-            "finish assignment": ("POST", f"/api/assignments/{assignment['id']}/finish", supervision, None),
-            "new F6 capture": ("POST", "/api/captures", operacion, {**f6_body, "capture_id": str(uuid4())}),
-            "new F3 bobbin": ("POST", "/api/bobbins", operacion, {**f3_body, "capture_id": str(uuid4())}),
-            "new quality capture": ("POST", f"/api/quality/bobbins/{bobbin_id}/captures", calidad, quality_body(bobbin_id)),
-        }
-        for name, (method, path, cookie, body) in missing.items():
-            reply = await call(method, path, json_body=body, cookie=cookie)
-            self.assertEqual(reply.status, 404, f"{name}: {reply.status} {reply.body[:120]!r}")
-        # Reintento EXACTO de una captura que se aceptó cuando el sector estaba habilitado: nunca debe volver a dar éxito (200/201).
-        # Hoy F6 y Calidad responden 404 y F3 responde 409 CAPTURE_IDEMPOTENCY_CONFLICT (su comprobación de idempotencia precede al filtro de sector).
-        # Esa diferencia es PREEXISTENTE y se conserva en M1-A (contratos intactos); unificarla en 404 queda para M1-B.
-        replays = {
-            "F6": ("/api/captures", operacion, f6_body, {404}),
-            "F3": ("/api/bobbins", operacion, f3_body, {404, 409}),
-            "quality": (f"/api/quality/bobbins/{bobbin_id}/captures", calidad, q_body, {404}),
-        }
-        for name, (path, cookie, body, allowed) in replays.items():
-            reply = await call("POST", path, json_body=body, cookie=cookie)
-            self.assertIn(reply.status, allowed, f"replay {name}: {reply.status} {reply.body[:120]!r}")
-            self.assertNotIn(reply.status, (200, 201), name)
-        activate_again = await call("POST", "/api/assignments/activate", cookie=supervision,
-                                    json_body={"work_order_id": order["id"], "baseline_line_id": order["baseline"]["lines"][0]["id"]})
-        self.assertEqual(activate_again.status, 404, activate_again.body[:120])
-        active = await call("GET", f"/api/assignments/active?machine_code={FUTURE_MACHINE}", cookie=supervision)
-        self.assertEqual((active.status, active.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
-        again = await call("POST", "/api/work-orders", json_body=future_order, cookie=jefatura)
-        self.assertEqual((again.status, again.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
-        self.assertEqual(self.counts(), before, "las operaciones bloqueadas no escriben nada")
-        # Los permisos son los mismos con el sector habilitado y sin habilitar.
-        for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
-            self.assertEqual(await self.me_permissions(profile), expected, profile)
+        # ---------- FASE 2: FUTURE_SECTOR (CONVERSION) deshabilitado. Los MISMOS datos y operaciones deben quedar bloqueados o invisibles. ----------
+        # CLOUD-DEP G.12-C4-FINAL25: los 3 sectores conocidos (BOBINAS/REBOBINADO/CONVERSION) ya son
+        # operativos por defecto, así que ya no hay ningún sector "reconocido pero no operativo" real
+        # para ejercitar esta fase -- se simula aquí, deshabilitando explícitamente FUTURE_SECTOR
+        # (CONVERSION) dentro de este bloque, sin tocar la configuración real fuera de él.
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
+        with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):
+            before = self.counts()
+            listed = lambda reply, key=None: [(i[key] if key else i["id"]) for i in reply.json()]
+            self.assertNotIn(order["id"], listed(await call("GET", "/api/work-orders", cookie=jefatura)))
+            self.assertNotIn(assignment["id"], listed(await call("GET", "/api/assignments", cookie=supervision)))
+            self.assertNotIn(f6.json()["capture"]["id"], listed(await call("GET", "/api/captures", cookie=operacion)))
+            self.assertNotIn(bobbin_id, [i["bobbin"]["id"] for i in (await call("GET", "/api/quality/bobbins", cookie=calidad)).json()])
+            for status in ("released", "rejected"):
+                self.assertNotIn(bobbin_id, [i["bobbin"]["id"] for i in (await call("GET", f"/api/quality/bobbins?status={status}", cookie=calidad)).json()])
+            missing = {
+                "work order": ("GET", f"/api/work-orders/{order['id']}", jefatura, None),
+                "F6 capture": ("GET", f"/api/captures/{f6.json()['capture']['id']}", operacion, None),
+                "bobbin": ("GET", f"/api/bobbins/{bobbin_id}", operacion, None),
+                "quality history": ("GET", f"/api/quality/bobbins/{bobbin_id}/captures", calidad, None),
+                "quality capture": ("GET", f"/api/quality/captures/{quality_id}", calidad, None),
+                "finish assignment": ("POST", f"/api/assignments/{assignment['id']}/finish", supervision, None),
+                "new F6 capture": ("POST", "/api/captures", operacion, {**f6_body, "capture_id": str(uuid4())}),
+                "new F3 bobbin": ("POST", "/api/bobbins", operacion, {**f3_body, "capture_id": str(uuid4())}),
+                "new quality capture": ("POST", f"/api/quality/bobbins/{bobbin_id}/captures", calidad, quality_body(bobbin_id)),
+            }
+            for name, (method, path, cookie, body) in missing.items():
+                reply = await call(method, path, json_body=body, cookie=cookie)
+                self.assertEqual(reply.status, 404, f"{name}: {reply.status} {reply.body[:120]!r}")
+            # Reintento EXACTO de una captura que se aceptó cuando el sector estaba habilitado: nunca debe volver a dar éxito (200/201).
+            # Hoy F6 y Calidad responden 404 y F3 responde 409 CAPTURE_IDEMPOTENCY_CONFLICT (su comprobación de idempotencia precede al filtro de sector).
+            # Esa diferencia es PREEXISTENTE y se conserva en M1-A (contratos intactos); unificarla en 404 queda para M1-B.
+            replays = {
+                "F6": ("/api/captures", operacion, f6_body, {404}),
+                "F3": ("/api/bobbins", operacion, f3_body, {404, 409}),
+                "quality": (f"/api/quality/bobbins/{bobbin_id}/captures", calidad, q_body, {404}),
+            }
+            for name, (path, cookie, body, allowed) in replays.items():
+                reply = await call("POST", path, json_body=body, cookie=cookie)
+                self.assertIn(reply.status, allowed, f"replay {name}: {reply.status} {reply.body[:120]!r}")
+                self.assertNotIn(reply.status, (200, 201), name)
+            activate_again = await call("POST", "/api/assignments/activate", cookie=supervision,
+                                        json_body={"work_order_id": order["id"], "baseline_line_id": order["baseline"]["lines"][0]["id"]})
+            self.assertEqual(activate_again.status, 404, activate_again.body[:120])
+            active = await call("GET", f"/api/assignments/active?machine_code={FUTURE_MACHINE}", cookie=supervision)
+            self.assertEqual((active.status, active.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
+            again = await call("POST", "/api/work-orders", json_body=future_order, cookie=jefatura)
+            self.assertEqual((again.status, again.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
+            self.assertEqual(self.counts(), before, "las operaciones bloqueadas no escriben nada")
+            # Los permisos son los mismos con el sector habilitado y sin habilitar.
+            for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
+                self.assertEqual(await self.me_permissions(profile), expected, profile)
 
     async def test_bobinas_keeps_working_with_a_non_operational_sector_present(self):
         # La presencia de datos de otro sector no afecta a Bobinas: flujo completo MP1 → F6 → F3 → Calidad con el sector futuro existiendo pero deshabilitado.

@@ -961,6 +961,402 @@
     {
       "article_code": "RP-11902",
       "machine_code": "PERICHUN"
+    },
+    {
+      "article_code": "10326",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10327",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10327",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10328",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10329",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10330",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10331",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10332",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10333",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10333",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10334",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10335",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10336",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10337",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10338",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10338",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10339",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10340",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10342",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10344",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10345",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10345",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10347",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10348",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10349",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10350",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10351",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10352",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10353",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10354",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10355",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10356",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10357",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10358",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10359",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10360",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10403",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10425",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10427",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10427",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10428",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10428",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10430",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10430",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10432",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10433",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10434",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10435",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10436",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10437",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10438",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10503",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10504",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11102",
+      "machine_code": "SERV_4"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11104",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11104",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11202",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11202",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11205",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11205",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11206",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11307",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11308",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11309",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11313",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11314",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11316",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11317",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11318",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11319",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11320",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11321",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11402",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11403",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11404",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11405",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11406",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11499",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11502",
+      "machine_code": "PANUELERA"
+    },
+    {
+      "article_code": "11503",
+      "machine_code": "PANUELERA"
+    },
+    {
+      "article_code": "TB-4002",
+      "machine_code": "TUBETERA"
     }
   ]
 }

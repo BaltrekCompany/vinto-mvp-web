@@ -9,6 +9,10 @@
     {
       "code": "REBOBINADO",
       "name": "Rebobinado"
+    },
+    {
+      "code": "CONVERSION",
+      "name": "Conversión"
     }
   ]
 }

@@ -123,8 +123,8 @@ class P110Case(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationTests(P110Case):
     async def test_the_shipped_configuration_is_unchanged(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # P1-10 is NOT in the production policy
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))  # CLOUD-DEP G.12-C4-COMPLETE: Rebobinado is now operational for real
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # P1-10 is NOT in the production policy
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))  # CLOUD-DEP G.12-C4-COMPLETE: Rebobinado is now operational for real
 
     async def test_without_the_test_configuration_p110_is_unreachable(self):
         order, assignment = await self.assignment()

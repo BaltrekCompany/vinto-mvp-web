@@ -29,7 +29,7 @@ SOURCE = "vinto-reference-bobinas"
 REASON = f"reference import: {SOURCE}"
 ENTITY_ORDER = (
     "unit", "material_class", "sector", "machine", "profile", "article", "article_version", "article_version_spec", "article_machine",
-    "shift", "shift_schedule", "workflow", "form", "form_version", "form_version_machine", "field", "option",
+    "shift", "shift_schedule", "workflow", "form", "form_version", "form_version_machine", "field_group", "field", "option",
 )
 
 
@@ -304,27 +304,43 @@ class _Run:
                                         (version_id, self.ids[("machine", machine)]))
             self.actions.append(Action("form_version_machine", f"form_version_machine:{code}:{number}:{machine}", "create",
                                        "vinto_config", "form_version_machine", None, {"form": code, "version_number": number, "machine": machine}))
-        for f in form["fields"]:
-            field_id = None
+        for g in form["groups"]:
+            group_id = None
             if self.write:
-                field_id = self.insert(
-                    """INSERT INTO vinto_config.field_definition
-                       (form_version_id,key,label,value_type,source,required,unit_id,display_order)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (version_id, f["key"], f["label"], f["value_type"], f["source"], f["required"],
-                     None if f["unit"] is None else self.ids[("unit", f["unit"])], f["display_order"]))
-            self.actions.append(Action("field", f"field:{code}:{number}:{f['key']}", "create", "vinto_config", "field_definition",
-                                       field_id, {k: v for k, v in f.items() if k != "options"}))
-            for o in f.get("options", []):
-                if self.write:
-                    self.connection.execute(
-                        """INSERT INTO vinto_config.field_option (form_version_id,field_definition_id,option_key,label,display_order)
-                           VALUES (%s,%s,%s,%s,%s)""", (version_id, field_id, o["option_key"], o["label"], o["display_order"]))
-                self.actions.append(Action("option", f"option:{code}:{number}:{f['key']}:{o['option_key']}", "create", "vinto_config",
-                                           "field_option", None, {"field": f["key"], **o}))
+                group_id = self.insert(
+                    """INSERT INTO vinto_config.field_group (form_version_id,code,label,display_order,repeatable,min_rows,max_rows)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (version_id, g["code"], g["label"], g["display_order"], g["repeatable"], g["min_rows"], g["max_rows"]))
+            self.actions.append(Action("field_group", f"field_group:{code}:{number}:{g['code']}", "create", "vinto_config", "field_group",
+                                       group_id, {k: v for k, v in g.items() if k != "fields"}))
+            for f in g["fields"]:
+                self._insert_field(version_id, code, number, f, group_id, scope=g["code"])
+        for f in form["fields"]:
+            self._insert_field(version_id, code, number, f, None, scope=None)
         if self.write:  # publish last: draft children can only be inserted while the version is a draft
             self.connection.execute(
                 "UPDATE vinto_config.form_version SET status='published',published_at=clock_timestamp() WHERE id=%s", (version_id,))
+
+    def _insert_field(self, version_id, code, number, f, field_group_id, *, scope):
+        """Insert one field_definition (+ options), ungrouped (field_group_id=None) or belonging to `scope` (a group code)."""
+        field_id = None
+        if self.write:
+            field_id = self.insert(
+                """INSERT INTO vinto_config.field_definition
+                   (form_version_id,field_group_id,key,label,value_type,source,required,unit_id,display_order)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (version_id, field_group_id, f["key"], f["label"], f["value_type"], f["source"], f["required"],
+                 None if f["unit"] is None else self.ids[("unit", f["unit"])], f["display_order"]))
+        key = f"field:{code}:{number}:{scope + '.' if scope else ''}{f['key']}"
+        self.actions.append(Action("field", key, "create", "vinto_config", "field_definition",
+                                   field_id, {k: v for k, v in f.items() if k != "options"}))
+        for o in f.get("options", []):
+            if self.write:
+                self.connection.execute(
+                    """INSERT INTO vinto_config.field_option (form_version_id,field_definition_id,option_key,label,display_order)
+                       VALUES (%s,%s,%s,%s,%s)""", (version_id, field_id, o["option_key"], o["label"], o["display_order"]))
+            self.actions.append(Action("option", f"option:{code}:{number}:{scope + '.' if scope else ''}{f['key']}:{o['option_key']}", "create",
+                                       "vinto_config", "field_option", None, {"field": f["key"], **o}))
 
     def compare_children(self, form, version_id):
         code, number = form["code"], form["version_number"]
@@ -339,29 +355,58 @@ class _Run:
                 self.actions.append(Action("form_version_machine", f"form_version_machine:{code}:{number}:{machine}", "present",
                                            "vinto_config", "form_version_machine", None,
                                            {"form": code, "version_number": number, "machine": machine}))
-        db_fields = {r["key"]: r for r in self.query(
+        db_groups = {r["code"]: r for r in self.query(
+            """SELECT id,code,label,display_order,repeatable,min_rows,max_rows FROM vinto_config.field_group
+               WHERE form_version_id=%s""", (version_id,))}
+        if set(db_groups) != {g["code"] for g in form["groups"]}:
+            self.conflicts.append(Conflict("field_group", f"field_group:{code}:{number}",
+                                           f"bd={sorted(db_groups)} bundle={sorted(g['code'] for g in form['groups'])}"))
+            return
+        group_ids = {}
+        conflicts_before_groups = len(self.conflicts)
+        for g in form["groups"]:
+            row = db_groups[g["code"]]
+            desired = {k: g[k] for k in ("label", "display_order", "repeatable", "min_rows", "max_rows")}
+            group_ids[g["code"]] = self.resolve("field_group", f"field_group:{code}:{number}:{g['code']}", "vinto_config", "field_group",
+                                                {k: v for k, v in g.items() if k != "fields"}, row, desired)
+        if len(self.conflicts) > conflicts_before_groups:
+            return
+
+        db_fields = self.query(
             """SELECT f.id,f.key,f.label,f.value_type,f.source,f.required,u.code AS unit,f.display_order,f.field_group_id
                FROM vinto_config.field_definition f LEFT JOIN vinto_master.unit u ON u.id=f.unit_id
-               WHERE f.form_version_id=%s""", (version_id,))}
-        if set(db_fields) != {f["key"] for f in form["fields"]}:
-            self.conflicts.append(Conflict("field", f"field:{code}:{number}",
-                                           f"campos bd={sorted(db_fields)} bundle={sorted(f['key'] for f in form['fields'])}"))
-            return
-        for f in form["fields"]:
-            row = db_fields[f["key"]]
-            desired = {k: f[k] for k in ("label", "value_type", "source", "required", "unit", "display_order")}
-            desired["field_group_id"] = None
-            self.resolve("field", f"field:{code}:{number}:{f['key']}", "vinto_config", "field_definition",
-                         {k: v for k, v in f.items() if k != "options"}, row, desired)
-            db_options = self.query("SELECT option_key,label,display_order FROM vinto_config.field_option WHERE field_definition_id=%s ORDER BY display_order",
-                                    (row["id"],))
-            wanted = [{"option_key": o["option_key"], "label": o["label"], "display_order": o["display_order"]} for o in f.get("options", [])]
-            if db_options != wanted:
-                self.conflicts.append(Conflict("option", f"option:{code}:{number}:{f['key']}", f"bd={db_options!r} bundle={wanted!r}"))
-                continue
-            for o in f.get("options", []):
-                self.actions.append(Action("option", f"option:{code}:{number}:{f['key']}:{o['option_key']}", "present", "vinto_config",
-                                           "field_option", None, {"field": f["key"], **o}))
+               WHERE f.form_version_id=%s""", (version_id,))
+        db_by_scope: dict = {}
+        for row in db_fields:
+            db_by_scope.setdefault(row["field_group_id"], {})[row["key"]] = row
+
+        def compare_scope(fields, scope_group_id, scope_label):
+            db_scope = db_by_scope.get(scope_group_id, {})
+            if set(db_scope) != {f["key"] for f in fields}:
+                self.conflicts.append(Conflict("field", f"field:{code}:{number}:{scope_label}" if scope_label else f"field:{code}:{number}",
+                                               f"campos bd={sorted(db_scope)} bundle={sorted(f['key'] for f in fields)}"))
+                return
+            for f in fields:
+                row = db_scope[f["key"]]
+                desired = {k: f[k] for k in ("label", "value_type", "source", "required", "unit", "display_order")}
+                desired["field_group_id"] = scope_group_id
+                prefix = f"{scope_label}." if scope_label else ""
+                self.resolve("field", f"field:{code}:{number}:{prefix}{f['key']}", "vinto_config", "field_definition",
+                             {k: v for k, v in f.items() if k != "options"}, row, desired)
+                db_options = self.query(
+                    "SELECT option_key,label,display_order FROM vinto_config.field_option WHERE field_definition_id=%s ORDER BY display_order",
+                    (row["id"],))
+                wanted = [{"option_key": o["option_key"], "label": o["label"], "display_order": o["display_order"]} for o in f.get("options", [])]
+                if db_options != wanted:
+                    self.conflicts.append(Conflict("option", f"option:{code}:{number}:{prefix}{f['key']}", f"bd={db_options!r} bundle={wanted!r}"))
+                    continue
+                for o in f.get("options", []):
+                    self.actions.append(Action("option", f"option:{code}:{number}:{prefix}{f['key']}:{o['option_key']}", "present", "vinto_config",
+                                               "field_option", None, {"field": f["key"], **o}))
+
+        compare_scope(form["fields"], None, None)
+        for g in form["groups"]:
+            compare_scope(g["fields"], group_ids[g["code"]], g["code"])
 
 
 def _counts(actions):

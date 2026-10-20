@@ -27,8 +27,12 @@ except ModuleNotFoundError:
 quality_service = internal(_quality_service)
 
 BUNDLE = load_bundle()
-NO_GRAMMAGE = next(a["code"] for a in BUNDLE.articles if a["version"]["grammage_g_m2"] is None)
-NO_GRAMMAGE_MACHINE = next(r["machine_code"] for r in BUNDLE.article_machines if r["article_code"] == NO_GRAMMAGE)
+# G.12-C4-FINAL25: restringido a MP1/MP3 -- este módulo reutiliza la infraestructura F3 (solo Bobinas);
+# un artículo de Conversión/Rebobinado sin gramaje haría fallar la OT por sector no concedido.
+_BOBINAS_MACHINES = {"MP1", "MP3"}
+_BOBINAS_ARTICLES_NO_GRAMMAGE = {r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] in _BOBINAS_MACHINES}
+NO_GRAMMAGE = next(a["code"] for a in BUNDLE.articles if a["version"]["grammage_g_m2"] is None and a["code"] in _BOBINAS_ARTICLES_NO_GRAMMAGE)
+NO_GRAMMAGE_MACHINE = next(r["machine_code"] for r in BUNDLE.article_machines if r["article_code"] == NO_GRAMMAGE and r["machine_code"] in _BOBINAS_MACHINES)
 F6_VALUES = {"cantidad_fardos": 1, "punto_merma": "recorte_maquina", "tipo_producto": "hoja_doble", "peso_kg": "1"}
 
 

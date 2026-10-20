@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
-import { P110History, P111History, P112History, P113History, P116History, P129History } from "@/components/vinto/central-form-history";
+import { P110History, P111History, P129History } from "@/components/vinto/central-form-history";
 import { CandidateHistory } from "@/components/vinto/candidate-history";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { ContextBanner, type ExecState } from "@/components/vinto/context-banner";
@@ -13,13 +13,11 @@ import { Panel } from "@/components/vinto/panels";
 import { CONVERSION_DISABLED_MESSAGE, CONVERSION_DISABLED_TITLE, DISABLED_MESSAGE, DISABLED_TITLE, articlesOf, offeredForms, screenFor, sectorView, type FormScreen, type SectorAvailability } from "@/lib/vinto/availability";
 import { listCapturesOf } from "@/lib/vinto/captures-api";
 import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActive, failureMessage, type CaptureContext } from "@/lib/vinto/orders";
+import { CONVERSION_CANDIDATES, CONVERSION_CANDIDATE_SCREENS } from "@/lib/vinto/conversion-candidates";
 import { REBOBINADO_CANDIDATES, REBOBINADO_CANDIDATE_SCREENS } from "@/lib/vinto/rebobinado-candidates";
 import { candidateHistoryKey } from "@/lib/vinto/resource-view";
 import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_11_CODE, parseP111List } from "@/lib/vinto/p1-11";
-import { P1_12_CODE, parseP112List } from "@/lib/vinto/p1-12";
-import { P1_13_CODE, parseP113List } from "@/lib/vinto/p1-13";
-import { P1_16_CODE, parseP116List } from "@/lib/vinto/p1-16";
 import { P1_29_CODE, parseP129List } from "@/lib/vinto/p1-29";
 import { useActiveAssignment, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
 
@@ -110,16 +108,17 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
     // Un historial por formulario que el backend publica en ESTE sector: los demás no se consultan (el recurso queda deshabilitado).
     const p110 = useResource(candidateHistoryKey("p110", scope, refreshKey), canCapture && offered.has(P1_10_CODE), signal => listCapturesOf(parseP110List, signal, 50, P1_10_CODE), onSessionLost);
     const p111 = useResource(candidateHistoryKey("p111", scope, refreshKey), canCapture && offered.has(P1_11_CODE), signal => listCapturesOf(parseP111List, signal, 50, P1_11_CODE), onSessionLost);
-    const p112 = useResource(candidateHistoryKey("p112", scope, refreshKey), canCapture && offered.has(P1_12_CODE), signal => listCapturesOf(parseP112List, signal, 50, P1_12_CODE), onSessionLost);
-    const p113 = useResource(candidateHistoryKey("p113", scope, refreshKey), canCapture && offered.has(P1_13_CODE), signal => listCapturesOf(parseP113List, signal, 50, P1_13_CODE), onSessionLost);
-    const p116 = useResource(candidateHistoryKey("p116", scope, refreshKey), canCapture && offered.has(P1_16_CODE), signal => listCapturesOf(parseP116List, signal, 50, P1_16_CODE), onSessionLost);
     const p129 = useResource(candidateHistoryKey("p129", scope, refreshKey), canCapture && offered.has(P1_29_CODE), signal => listCapturesOf(parseP129List, signal, 50, P1_29_CODE), onSessionLost);
     // DEV-R2: historiales de las fichas candidatas de Rebobinado (P1-30 / P1-07); clave con la sesión (sin `scope` no se consultan).
+    // G.12-C4-FINAL25: historiales de las fichas candidatas de Conversión (P1-12 / P1-13 / P1-16), mismo patrón genérico.
     const candidateHistory = {
         p130: useResource(candidateHistoryKey("reb-p130", scope, refreshKey), canCapture && offered.has(REBOBINADO_CANDIDATES.p130.code), signal => REBOBINADO_CANDIDATES.p130.api.list(signal), onSessionLost),
         p107: useResource(candidateHistoryKey("reb-p107", scope, refreshKey), canCapture && offered.has(REBOBINADO_CANDIDATES.p107.code), signal => REBOBINADO_CANDIDATES.p107.api.list(signal), onSessionLost),
+        p112: useResource(candidateHistoryKey("conv-p112", scope, refreshKey), canCapture && offered.has(CONVERSION_CANDIDATES.p112.code), signal => CONVERSION_CANDIDATES.p112.api.list(signal), onSessionLost),
+        p113: useResource(candidateHistoryKey("conv-p113", scope, refreshKey), canCapture && offered.has(CONVERSION_CANDIDATES.p113.code), signal => CONVERSION_CANDIDATES.p113.api.list(signal), onSessionLost),
+        p116: useResource(candidateHistoryKey("conv-p116", scope, refreshKey), canCapture && offered.has(CONVERSION_CANDIDATES.p116.code), signal => CONVERSION_CANDIDATES.p116.api.list(signal), onSessionLost),
     };
-    const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p112.refresh(); p113.refresh(); p116.refresh(); p129.refresh(); };
+    const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); candidateHistory.p112.refresh(); candidateHistory.p113.refresh(); candidateHistory.p116.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p129.refresh(); };
     if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;
     const orders = workOrders.view.data.filter(o => machines.has(o.machine.code)), asg = assignments.view.data.filter(a => machines.has(a.machine.code));
     return <div className="space-y-5" {...tag(code, "seguimiento")}>
@@ -135,10 +134,8 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
         </Panel>
         {canCapture && offered.has(P1_10_CODE) && <P110History resource={p110.view} refresh={p110.refresh}/>}
         {canCapture && offered.has(P1_11_CODE) && <P111History resource={p111.view} refresh={p111.refresh}/>}
-        {canCapture && offered.has(P1_12_CODE) && <P112History resource={p112.view} refresh={p112.refresh}/>}
-        {canCapture && offered.has(P1_13_CODE) && <P113History resource={p113.view} refresh={p113.refresh}/>}
-        {canCapture && offered.has(P1_16_CODE) && <P116History resource={p116.view} refresh={p116.refresh}/>}
         {canCapture && offered.has(P1_29_CODE) && <P129History resource={p129.view} refresh={p129.refresh}/>}
         {canCapture && REBOBINADO_CANDIDATE_SCREENS.filter(screen => offered.has(REBOBINADO_CANDIDATES[screen].code)).map(screen => <CandidateHistory key={screen} candidate={REBOBINADO_CANDIDATES[screen]} resource={candidateHistory[screen].view} refresh={candidateHistory[screen].refresh}/>)}
+        {canCapture && CONVERSION_CANDIDATE_SCREENS.filter(screen => offered.has(CONVERSION_CANDIDATES[screen].code)).map(screen => <CandidateHistory key={screen} candidate={CONVERSION_CANDIDATES[screen]} resource={candidateHistory[screen].view} refresh={candidateHistory[screen].refresh}/>)}
     </div>;
 }

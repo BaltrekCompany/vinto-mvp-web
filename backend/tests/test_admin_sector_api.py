@@ -12,6 +12,8 @@ from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
 
 from app import sectors
+from app.admin import schemas as admin_schemas
+from app.admin import service as admin_service
 from app.auth import permissions
 from app.config import settings
 from app.main import app
@@ -66,6 +68,19 @@ async def raw(method, path, body=b"", headers=(), cookie=None):
 class AdminCase(sa.SectorAuthorizationCase):
     BUSINESS = ("vinto_txn.work_order", "vinto_txn.assignment", "vinto_txn.capture", "vinto_txn.capture_detail", "vinto_txn.bobbin", "vinto_txn.quality_release",
                 "vinto_master.article", "vinto_master.machine", "vinto_master.sector", "vinto_config.shift_schedule", "vinto_master.user_profile", "vinto_master.profile")
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # CLOUD-DEP G.12-C4-FINAL25: FUTURE_SECTOR (ZZFIX_FUTURE, con fila real en esta base desde
+        # setUpModule) y ZZFIX_RECOGNIZED (sin fila, para "reconocido pero ausente") necesitan pasar la
+        # validación Pydantic de sector_code y el filtro del catálogo -- ambos importan
+        # KNOWN_SECTOR_CODES por nombre (copias congeladas, independientes de app.sectors), así que se
+        # parchean aquí, no en app.sectors.
+        extra = sectors.KNOWN_SECTOR_CODES | {FUTURE_SECTOR, "ZZFIX_RECOGNIZED"}
+        for target in (admin_schemas, admin_service):
+            patcher = patch.object(target, "KNOWN_SECTOR_CODES", extra)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def business(self):
         return {t: self.scalar(f"SELECT count(*) FROM {t}") for t in self.BUSINESS}
@@ -239,14 +254,18 @@ class SectorCatalogTests(AdminCase):
         return reply.json()
 
     async def test_catalogue_comes_from_the_database_with_active_and_operational_flags(self):
+        # CLOUD-DEP G.12-C4-FINAL25: BOBINAS/REBOBINADO/CONVERSION ya son todos reales, con fila propia
+        # y operativos por defecto; FUTURE_SECTOR (ZZFIX_FUTURE, "reconocido" solo en asyncSetUp de esta
+        # clase) sigue siendo el sector sintético activo-pero-no-operativo para esta prueba.
         reply = await call("GET", "/api/admin/sectors", cookie=await self.admin_cookie())
         self.assertEqual(reply.status, 200)
         self.assertTrue(any(k.decode().lower() == "cache-control" and v == b"no-store" for k, v in reply.headers))
         body = reply.json()
-        self.assertEqual([s["code"] for s in body], ["BOBINAS", FUTURE_SECTOR], "sorted by code; only sectors that exist in the database")
+        self.assertEqual([s["code"] for s in body], ["BOBINAS", "CONVERSION", "REBOBINADO", FUTURE_SECTOR], "sorted by code; only sectors that exist in the database")
         for sector in body:
             self.assertEqual(set(sector), {"code", "name", "active", "operational"})
-        self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in body}, {"BOBINAS": (True, True), FUTURE_SECTOR: (True, False)})
+        self.assertEqual({s["code"]: (s["active"], s["operational"]) for s in body},
+                         {"BOBINAS": (True, True), "CONVERSION": (True, True), "REBOBINADO": (True, True), FUTURE_SECTOR: (True, False)})
         self.assertNotRegex(reply.text.lower(), r"password|hash|token|session|secret|argon")
         self.assertEqual(await self.catalogue(), body, "the order is stable")
         for profile in ("DATA_BALTREK",):
@@ -333,7 +352,10 @@ class GrantRevokeTests(AdminCase):
         before = (self.sector_audit_total(), self.business())
         reply = await self.post(uuid4(), "grant", "BOBINAS", admin)
         self.assertEqual((reply.status, reply.json()), (404, {"detail": "Usuario no encontrado", "code": "USER_NOT_FOUND"}))
-        reply = await self.post(target.user_id, "grant", "CONVERSION", admin)  # recognized by the product but absent from this database
+        # CLOUD-DEP G.12-C4-FINAL25: BOBINAS/REBOBINADO/CONVERSION ya son todos reales y tienen fila en
+        # esta base; "ZZFIX_RECOGNIZED" (reconocido solo dentro de asyncSetUp de esta clase, ver arriba)
+        # sigue sin fila -- cubre "reconocido por el producto pero ausente en esta base".
+        reply = await self.post(target.user_id, "grant", "ZZFIX_RECOGNIZED", admin)
         self.assertEqual((reply.status, reply.json()), (404, {"detail": "Sector no encontrado", "code": "SECTOR_NOT_FOUND"}))
         for bad in ("INVENTADO", "bobinas", " BOBINAS", "BOBINAS ", "", "B" * 40, "BOBINAS; DROP TABLE x", None, 5, ["BOBINAS"]):
             reply = await call("POST", f"/api/admin/users/{target.user_id}/sectors/grant", json_body={"sector_code": bad}, cookie=admin)
@@ -368,7 +390,7 @@ class GrantRevokeTests(AdminCase):
         admin = await self.admin_cookie()
         body = (await self.post(target.user_id, "grant", FUTURE_SECTOR, admin)).json()
         self.assertEqual((body["changed"], body["sector"]["active"], body["sector"]["operational"]), (True, True, False))
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS",))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
         before = self.business()
         reply = await call("POST", "/api/work-orders", json_body={**order_body("MP1"), "machine_code": FUTURE_MACHINE}, cookie=cookie)
         self.assertEqual((reply.status, reply.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))

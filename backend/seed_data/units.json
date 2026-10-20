@@ -11,6 +11,10 @@
       "label": "MM"
     },
     {
+      "code": "PACK",
+      "label": "Pack"
+    },
+    {
       "code": "UN",
       "label": "UN"
     }

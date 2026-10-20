@@ -138,8 +138,8 @@ class ConfigurationTests(Base):
         # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO y P1-07/10/30 ya son reales y operativos (SHIPPED_POLICY/
         # SHIPPED_SECTORS ya no son solo Bobinas); lo que importa aquí es que los códigos SINTÉTICOS de
         # esta fixture (ZZFIX-P1-30/ZZFIX-P1-07, ZZFIX_PERICHUN) nunca aparezcan en el bundle real.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         self.assertNotIn(P130_CODE, {r["code"] for r in BUNDLE.forms})
         self.assertNotIn(P107_CODE, {r["code"] for r in BUNDLE.forms})
         self.assertNotIn("ZZFIX_PERICHUN", {r["code"] for r in BUNDLE.machines})

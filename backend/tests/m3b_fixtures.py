@@ -17,8 +17,11 @@ except ModuleNotFoundError:
     from tests.m2b2_fixtures import REB_SECTOR, install_rebobinado_fixture
     from tests.m3a_fixtures import install_grouped_form
 
-P129_CODE = "VINTO-P1-29"
-TUBETERA_MACHINE = "TUBETERA"  # FICTITIOUS test machine. The legacy frontend definition says "tubertera"; the candidate catalog says TUBETERA (unresolved discrepancy)
+# CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-29 y TUBETERA ya son códigos REALES (formulario y máquina
+# genuinamente publicados en backend/seed_data); esta fixture usa códigos sintéticos ZZFIX* para no
+# chocar con ellos.
+P129_CODE = "ZZFIX-P1-29"
+TUBETERA_MACHINE = "ZZFIX_TUBETERA"  # FICTITIOUS test machine. The legacy frontend definition says "tubertera"; the candidate catalog says TUBETERA (unresolved discrepancy)
 
 # key, label, value_type, required, options  (declared types are the legacy ones)
 P129_SIMPLE_FIELDS = (

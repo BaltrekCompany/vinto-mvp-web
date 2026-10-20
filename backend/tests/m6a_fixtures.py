@@ -15,11 +15,14 @@ try:
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
 
-P116_CODE = "VINTO-P1-16"
-CONV_SECTOR = "CONVERSION"
-CONV_MACHINE = "GAMBINI"  # representative machine WITH the candidate form
-CONV_MACHINE_NO_FORM = "WALLY"  # second machine WITHOUT the form relation (negative scope tests)
-ENABLED_CONVERSION_SECTORS = ("BOBINAS", "CONVERSION")  # test-only operational scope
+# CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-16/CONVERSION/GAMBINI/WALLY son ahora códigos REALES (formulario,
+# sector y máquinas genuinamente publicados en backend/seed_data); esta fixture usa códigos sintéticos
+# ZZFIX* para no chocar con ellos (UNIQUE(form.code) / UNIQUE(sector.code) / UNIQUE(machine.code)).
+P116_CODE = "ZZFIX-P1-16"
+CONV_SECTOR = "ZZFIX_CONVERSION"
+CONV_MACHINE = "ZZFIX_GAMBINI"  # representative machine WITH the candidate form
+CONV_MACHINE_NO_FORM = "ZZFIX_WALLY"  # second machine WITHOUT the form relation (negative scope tests)
+ENABLED_CONVERSION_SECTORS = ("BOBINAS", CONV_SECTOR)  # test-only operational scope
 
 # Hypothesis shifts (as used by the legacy frontend ctx()); fictitious codes so they never collide with other fixtures.
 CONV_SHIFTS = (

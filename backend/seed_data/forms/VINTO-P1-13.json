@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_13_produccion_diaria_de_servilletas_y_especiales",
+  "code": "VINTO-P1-13",
+  "legacy_number": 13,
+  "name": "Producción diaria de servilletas y especiales",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "OMET_I",
+    "OMET_II",
+    "8_2",
+    "8_5",
+    "8002",
+    "SERV_4",
+    "WALLY",
+    "PANUELERA"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "saldo_inicial",
+      "label": "Saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "numero_bobina_consumida",
+      "label": "Número bobina consumida",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "peso_bobina_consumida",
+      "label": "Peso bobina consumida",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "formato_bobina_consumida",
+      "label": "Formato bobina consumida",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "observacion",
+      "label": "Observación",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "codigo_producto",
+      "label": "Código producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "producto",
+      "label": "Producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "formato_producto",
+      "label": "Formato producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "cantidad_producida",
+      "label": "Cantidad producida",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "empaque_saldo_inicial",
+      "label": "Empaque saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "empaque_solicitado",
+      "label": "Empaque solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "empaque_utilizado",
+      "label": "Empaque utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "insumo_codigo",
+      "label": "Insumo código",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "insumo_nombre",
+      "label": "Insumo nombre",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "insumo_saldo_inicial",
+      "label": "Insumo saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "insumo_solicitado",
+      "label": "Insumo solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "insumo_utilizado",
+      "label": "Insumo utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 18
+    }
+  ],
+  "definition_checksum": "f72044d5cb8bb81114caba1f4703fad46b9d73e710a1487626b80d1502ebe1a1"
+}

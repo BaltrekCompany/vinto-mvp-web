@@ -10,6 +10,14 @@
     {
       "code": "NOCHE",
       "name": "Noche"
+    },
+    {
+      "code": "MANANA",
+      "name": "Mañana"
+    },
+    {
+      "code": "TARDE",
+      "name": "Tarde"
     }
   ],
   "schedules": [
@@ -44,6 +52,33 @@
       "shift": "NOCHE",
       "sector": "REBOBINADO",
       "starts_at": "18:00",
+      "ends_at": "06:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    },
+    {
+      "shift": "MANANA",
+      "sector": "CONVERSION",
+      "starts_at": "06:00",
+      "ends_at": "14:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    },
+    {
+      "shift": "TARDE",
+      "sector": "CONVERSION",
+      "starts_at": "14:00",
+      "ends_at": "22:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    },
+    {
+      "shift": "NOCHE",
+      "sector": "CONVERSION",
+      "starts_at": "22:00",
       "ends_at": "06:00",
       "timezone": "America/La_Paz",
       "valid_from": "2026-01-01",

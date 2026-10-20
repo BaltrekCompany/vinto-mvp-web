@@ -1,21 +1,21 @@
 // Captura CENTRAL CANDIDATA de VINTO-P1-13 «Producción diaria de servilletas y especiales» (Conversión), M6-C: valores, borrador, validación ESTRUCTURAL, payload e intento pendiente. Reutiliza el núcleo
 // común (capture-core.ts) y los validadores del pallet de P1-12 (p1-12.ts), y aporta su propio parser estricto de `values` con el código esperado «VINTO-P1-13».
 //
-// HIPÓTESIS DE PRUEBA, NO una definición aprobada: los ocho campos son una interpretación de `NapkinSheet` (la pantalla legacy de app/page.tsx): una bobina DECLARADA con sus tres saldos, más UN pallet
-// (jabas, hora de inicio y fin) y observaciones. La definición legacy de P1-13 es otra (31 campos) y NO se implementa aquí.
+// CLOUD-DEP G.12-C4-FINAL25: el contrato REAL usado por el backend (seed_data, política, UI) es `P113_FIELDS` + `defineCandidateForm`, más abajo en este archivo -- los 18 campos MANUALES
+// exactos de la definición legacy (form_13_produccion_diaria_de_servilletas_y_especiales, 31 campos: 8 automáticos, 18 manuales, 5 calculados). Todo lo de ARRIBA de esta nota (P113 hipótesis:
+// bobina declarada + saldos + pallet, interpretación de `NapkinSheet`) es la HIPÓTESIS DE PRUEBA original y ya NO se usa desde app/page.tsx: queda como código muerto, sin eliminar.
 //
-// QUÉ NO HACE (decisiones pendientes de VINTO, docs/M6-C-conversion-p113.md): los saldos y el número de bobina son DECLARACIONES de prueba: no se calcula ni se guarda consumo, balance, merma ni saldo
-// disponible, no hay movimiento de inventario, ajuste de existencias ni relación con bobinas reales (F3, Rebobinado, P1-11, genealogía), y el número de bobina es texto libre que no se consulta. Tampoco se exige
-// que el saldo final sea menor que el inicial, ni hay mínimos, máximos, precisión o redondeos; las unidades «kg» son etiquetas de la hipótesis legacy. Sin receta, insumos, número de pallet ni pesos.
+// QUÉ NO HACE el contrato real (decisiones pendientes de VINTO, docs/M6-C-conversion-p113.md): no calcula merma_bobina/saldo_final/merma_empaque/insumo_saldo_final (calculados, sin fórmula
+// aprobada). Solo exige lo estructural que la propia definición declara.
 //
-// Todo es PURO (sin red, sin DOM). P1-13 NO está habilitado en la política de captura central del backend ni Conversión es un sector operativo: este cliente solo funciona contra un backend de prueba
-// que lo habilite explícitamente.
+// Todo es PURO (sin red, sin DOM).
 
 import {
     DECIMAL, MAX_DECIMAL_CHARS, freezeAttempt, isRec, newCaptureId, parseCaptureListOf, parseCaptureOf, parseSubmissionOf, reconcileOf, submitAttemptOf,
     type CaptureOf, type PendingAttemptOf, type SubmissionOf, type SubmitDepsOf, type SubmitOutcomeOf,
 } from "./capture-core.ts";
 import { EMPTY_P112_DRAFT, normalizeP112Draft, parsePalletValues, type P112Values } from "./p1-12.ts";
+import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_13_CODE = "VINTO-P1-13";
 export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no una regla funcional
@@ -110,3 +110,36 @@ export type P113SubmitOutcome = SubmitOutcomeOf<P113Capture>;
 
 export const submitP113Attempt = (attempt: P113Attempt, deps: P113SubmitDeps): Promise<P113SubmitOutcome> => submitAttemptOf(attempt, deps);
 export const reconcileP113 = (captureId: string, deps: P113SubmitDeps): Promise<P113SubmitOutcome> => reconcileOf(captureId, deps);
+
+// ---- CLOUD-DEP G.12-C4-FINAL25: contrato REAL (18 campos manuales de la definición legacy, en su orden) -----------------------------------
+// Fuente única: form-definitions.ts / form_13_produccion_diaria_de_servilletas_y_especiales. Automáticos excluidos (operador, firma, fecha,
+// hora, turno, grupo, maquina, encargado_de_turno); calculados excluidos (merma_bobina, saldo_final, merma_empaque, insumo_saldo_final): sin
+// fórmula aprobada. `observacion` (singular) y `observaciones` (plural) son DOS claves distintas de la definición legacy, ambas opcionales --
+// no se fusionan ni se corrige la aparente duplicación: así está declarada la fuente.
+export const P113_FIELDS: readonly FieldSpec[] = [
+    { key: "saldo_inicial", label: "Saldo inicial", kind: "text", required: true },
+    { key: "numero_bobina_consumida", label: "Número bobina consumida", kind: "text", required: true },
+    { key: "peso_bobina_consumida", label: "Peso bobina consumida", kind: "text", required: true, suffix: "kg" },
+    { key: "formato_bobina_consumida", label: "Formato bobina consumida", kind: "text", required: true },
+    { key: "observacion", label: "Observación", kind: "textarea", required: false },
+    { key: "codigo_producto", label: "Código producto", kind: "text", required: true },
+    { key: "producto", label: "Producto", kind: "text", required: true },
+    { key: "formato_producto", label: "Formato producto", kind: "text", required: true },
+    { key: "cantidad_producida", label: "Cantidad producida", kind: "text", required: true },
+    { key: "empaque_saldo_inicial", label: "Empaque saldo inicial", kind: "text", required: true },
+    { key: "empaque_solicitado", label: "Empaque solicitado", kind: "text", required: true },
+    { key: "empaque_utilizado", label: "Empaque utilizado", kind: "text", required: true },
+    { key: "insumo_codigo", label: "Insumo código", kind: "text", required: true },
+    { key: "insumo_nombre", label: "Insumo nombre", kind: "text", required: true },
+    { key: "insumo_saldo_inicial", label: "Insumo saldo inicial", kind: "text", required: true },
+    { key: "insumo_solicitado", label: "Insumo solicitado", kind: "text", required: true },
+    { key: "insumo_utilizado", label: "Insumo utilizado", kind: "text", required: true },
+    { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
+];
+export const P113 = defineCandidateForm(P1_13_CODE, P113_FIELDS);
+
+export const P113_AUTOMATIC = ["Operador", "Firma", "Fecha", "Hora", "Turno", "Grupo", "Máquina", "Encargado de turno"] as const;
+export const P113_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Mermas y saldos finales", pending: "4 campos calculados de la definición legacy (merma de bobina, saldo final, merma de empaque, saldo final de insumo): sin fórmula aprobada, no se calculan ni se aceptan del cliente." },
+    { label: "observacion / observaciones", pending: "La definición legacy declara DOS campos de observación distintos (singular y plural), ambos opcionales: no se fusionan ni se corrige la aparente duplicación." },
+];

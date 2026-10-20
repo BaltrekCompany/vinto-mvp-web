@@ -22,13 +22,14 @@ class ReportOnApprovedBundleTests(unittest.TestCase):
         self.assertEqual(report["pendiente_de_aprobacion"]["sectores"], [])
         self.assertEqual(report["pendiente_de_aprobacion"]["maquinas"], [])
         self.assertEqual(report["conflictos"]["relaciones_con_articulo_inexistente"], [])
-        self.assertEqual(report["faltantes"]["formularios_rebobinado_ausentes"], ["VINTO-P1-10", "VINTO-P1-29"])  # ningún bundle contiene P1-10 / P1-29 todavía
+        # CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-10 y VINTO-P1-29 ya están en el bundle real.
+        self.assertEqual(report["faltantes"]["formularios_rebobinado_ausentes"], [])
 
     def test_cli_prints_json_and_reports_invalid_bundles_without_traceback(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(candidate_report.main([str(BUNDLE_DIR)]), 0)
-        self.assertEqual(json.loads(out.getvalue())["conteos"]["machines"], 2)
+        self.assertEqual(json.loads(out.getvalue())["conteos"]["machines"], 18)
         damaged = Path(tempfile.mkdtemp(prefix="seed-report-"))
         self.addCleanup(shutil.rmtree, damaged, ignore_errors=True)
         shutil.copytree(BUNDLE_DIR, damaged, dirs_exist_ok=True)
@@ -59,6 +60,7 @@ class ApprovedArticleChangeTests(unittest.TestCase):
         import hashlib
         manifest["counts"]["articles_also_material"] = sum(1 for item in document["items"] if item["is_product"] and item["is_material"])  # el bundle valida sus conteos
         manifest["counts"]["articles_with_nominal_weight"] = sum(1 for item in document["items"] if item["version"]["nominal_weight_kg"] is not None)
+        manifest["counts"]["articles_with_grammage"] = sum(1 for item in document["items"] if item["version"].get("grammage_g_m2") is not None)
         for entry in manifest["files"]:
             if entry["path"] == "articles.json":
                 entry["sha256"], entry["bytes"] = hashlib.sha256(text.encode("utf-8")).hexdigest(), len(text.encode("utf-8"))

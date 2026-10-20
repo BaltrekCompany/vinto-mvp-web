@@ -35,7 +35,7 @@ def with_schedules(schedules, extra_shifts=()):
     return variant(schedules=tuple(schedules), shifts=tuple(shifts))
 
 
-def with_future_sector(code="CONVERSION", name="Conversión", machines=(("GAMBINI", "Gambini"),), schedules=(), shifts=(), articles=(), relations=(), units=()):
+def with_future_sector(code="ZZFIX_FUTURE", name="Futuro (prueba)", machines=(("ZZFIX_FUTURE_M", "Futura (prueba)"),), schedules=(), shifts=(), articles=(), relations=(), units=()):
     return variant(
         sectors=BUNDLE.sectors + ({"code": code, "name": name},),
         machines=BUNDLE.machines + tuple({"code": c, "name": n, "sector": code} for c, n in machines),
@@ -50,7 +50,7 @@ def new_article(code, unit="KG"):
     return template
 
 
-THREE_SHIFTS = (sch("MANANA", "CONVERSION", "06:00", "14:00"), sch("TARDE", "CONVERSION", "14:00", "22:00"), sch("NOCHE", "CONVERSION", "22:00", "06:00"))
+THREE_SHIFTS = (sch("MANANA", "ZZFIX_FUTURE", "06:00", "14:00"), sch("TARDE", "ZZFIX_FUTURE", "14:00", "22:00"), sch("NOCHE", "ZZFIX_FUTURE", "22:00", "06:00"))
 THREE_SHIFT_CODES = ({"code": "MANANA", "name": "Mañana"}, {"code": "TARDE", "name": "Tarde"}, {"code": "NOCHE", "name": "Noche"})
 
 
@@ -67,25 +67,27 @@ class ApprovedBundleTests(unittest.TestCase):
         # exactamente iguales (comprobado abajo); el checksum cambia porque el bundle entero (no solo
         # Bobinas) sí creció. Esta prueba sigue siendo el guardián: cualquier cambio FUTURO no
         # revisado volverá a hacerla fallar, exactamente como debe.
-        self.assertEqual(BUNDLE.source_checksum, "87401e2e42adc64711432bbdff999a6de754ba23921aa6da906dbcbc3296bc8d")
+        self.assertEqual(BUNDLE.source_checksum, "8dda06a77451570f350054e22351c94ef2c3ccfbac4109e0f9a0abb76857420c")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
-        self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "REBOBINADO"])
+        self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])
         self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "BOBINAS"), ["MP1", "MP3"])
-        self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "REBOBINADO"), ["BELOIT", "COPASA", "OVER", "PERICHUN"])
-        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (240, 240))
+        self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "REBOBINADO"), ["BELOIT", "COPASA", "OVER", "PERICHUN", "TUBETERA"])
+        self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "CONVERSION"),
+                         ["8002", "8_2", "8_5", "GAMBINI", "OMET_I", "OMET_II", "PANUELERA", "SERV_4", "SINCRO_II", "SINCRO_III", "WALLY"])
+        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (315, 339))
 
     def test_a_sector_without_schedules_is_allowed_because_it_stays_blocked_by_the_missing_shift(self):
-        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO/COPASA ya son reales; CONVERSION/GAMBINI siguen siendo
-        # el sector/máquina "futuros" sintéticos que esta prueba necesita.
+        # CLOUD-DEP G.12-C4-FINAL25: BOBINAS/REBOBINADO/CONVERSION ya son todos reales; with_future_sector
+        # usa un sector/máquina puramente SINTÉTICOS (ZZFIX_FUTURE/ZZFIX_FUTURE_M) que esta prueba necesita.
         validate(with_future_sector())
 
     def test_a_complete_future_sector_validates_and_reuses_a_shift_code_with_other_hours(self):
-        pen = [new_article("ZZ-0001", "PACK"), new_article("ZZ-0002", "PACK")]
-        bundle = with_future_sector(machines=(("GAMBINI", "Gambini"), ("SINCRO_II", "Sincro II")), shifts=THREE_SHIFT_CODES, schedules=THREE_SHIFTS, articles=pen,
-                                    relations=({"article_code": "ZZ-0001", "machine_code": "GAMBINI"}, {"article_code": "ZZ-0002", "machine_code": "SINCRO_II"}),
-                                    units=({"code": "PACK", "label": "Pack"},))
-        validate(bundle)  # NOCHE existe en BOBINAS (19–07) y en CONVERSION (22–06): son horarios distintos por sector
+        pen = [new_article("ZZ-0001", "ZZFIX_UNIT"), new_article("ZZ-0002", "ZZFIX_UNIT")]
+        bundle = with_future_sector(machines=(("ZZFIX_FUTURE_M", "Futura (prueba)"), ("ZZFIX_FUTURE_M2", "Futura 2 (prueba)")), shifts=THREE_SHIFT_CODES, schedules=THREE_SHIFTS, articles=pen,
+                                    relations=({"article_code": "ZZ-0001", "machine_code": "ZZFIX_FUTURE_M"}, {"article_code": "ZZ-0002", "machine_code": "ZZFIX_FUTURE_M2"}),
+                                    units=({"code": "ZZFIX_UNIT", "label": "Unidad sintética"},))
+        validate(bundle)  # NOCHE existe en BOBINAS (19–07) y en ZZFIX_FUTURE (22–06): son horarios distintos por sector
         self.assertEqual(len(bundle.schedules), len(BUNDLE.schedules) + 3)
 
 
@@ -128,16 +130,15 @@ class CodeAndReferenceTests(unittest.TestCase):
             validate(variant(machines=(BUNDLE.machines[0], {**BUNDLE.machines[1], "name": "  "})))
 
     def test_a_machine_without_a_valid_sector_is_rejected(self):
-        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es un sector real; CONVERSION sigue sin existir en
-        # el bundle aprobado.
-        for sector in ("CONVERSION", "", None):
+        # CLOUD-DEP G.12-C4-FINAL25: BOBINAS/REBOBINADO/CONVERSION ya son todos sectores reales.
+        for sector in ("ZZFIX_FUTURE", "", None):
             with self.assertRaisesRegex(BundleError, "sector inexistente"):
                 validate(variant(machines=(BUNDLE.machines[0], {**BUNDLE.machines[1], "sector": sector})))
 
     def test_inconsistent_article_machine_relations_are_rejected(self):
-        # CLOUD-DEP G.12-C4-COMPLETE: COPASA ya es una máquina real; GAMBINI (Conversión) sigue sin existir.
+        # CLOUD-DEP G.12-C4-FINAL25: COPASA/GAMBINI ya son máquinas reales.
         with self.assertRaisesRegex(BundleError, "máquina inexistente"):
-            validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": BUNDLE.articles[0]["code"], "machine_code": "GAMBINI"},)))
+            validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": BUNDLE.articles[0]["code"], "machine_code": "ZZFIX_FUTURE_M"},)))
         with self.assertRaisesRegex(BundleError, "artículo inexistente"):
             validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": "NO-EXISTE", "machine_code": "MP1"},)))
         with self.assertRaisesRegex(BundleError, "relaciones duplicadas"):
@@ -147,8 +148,9 @@ class CodeAndReferenceTests(unittest.TestCase):
             validate(variant(article_machines=tuple(r for r in BUNDLE.article_machines if r["article_code"] != orphan)))
 
     def test_undefined_units_are_rejected(self):
-        with self.assertRaisesRegex(BundleError, "unidad inexistente PACK"):
-            validate(variant(articles=(new_article("ZZ-0003", "PACK"),) + BUNDLE.articles[1:]))
+        # CLOUD-DEP G.12-C4-FINAL25: PACK ya es una unidad real (Conversión); se usa un código sintético.
+        with self.assertRaisesRegex(BundleError, "unidad inexistente ZZFIX_UNIT"):
+            validate(variant(articles=(new_article("ZZ-0003", "ZZFIX_UNIT"),) + BUNDLE.articles[1:]))
         with self.assertRaisesRegex(BundleError, "unidad inexistente"):
             validate(variant(units=tuple(u for u in BUNDLE.units if u["code"] != "KG")))
 
@@ -165,13 +167,13 @@ class ScheduleTests(unittest.TestCase):
             validate(with_schedules((sch("DIA", "BOBINAS", "00:00", "23:59"), sch("NOCHE", "BOBINAS", "23:59", "00:00"), sch("DIA2", "BOBINAS", "00:00", "23:59")), ({"code": "DIA2", "name": "Dos"},)))
 
     def test_midnight_crossing_shifts_are_valid_when_they_tile_the_day(self):
-        validate(with_future_sector(machines=(("GAMBINI", "Gambini"),), shifts=THREE_SHIFT_CODES, schedules=THREE_SHIFTS))  # 22:00–06:00 cruza la medianoche
+        validate(with_future_sector(machines=(("ZZFIX_FUTURE_M", "Futura (prueba)"),), shifts=THREE_SHIFT_CODES, schedules=THREE_SHIFTS))  # 22:00–06:00 cruza la medianoche
         with self.assertRaisesRegex(BundleError, r"turnos solapados 06:00–07:00"):  # la noche llega a las 07:00 pero la mañana empieza a las 06:00
-            validate(with_future_sector(machines=(("GAMBINI", "Gambini"),), shifts=THREE_SHIFT_CODES,
-                                        schedules=(THREE_SHIFTS[0], THREE_SHIFTS[1], sch("NOCHE", "CONVERSION", "22:00", "07:00"))))
+            validate(with_future_sector(machines=(("ZZFIX_FUTURE_M", "Futura (prueba)"),), shifts=THREE_SHIFT_CODES,
+                                        schedules=(THREE_SHIFTS[0], THREE_SHIFTS[1], sch("NOCHE", "ZZFIX_FUTURE", "22:00", "07:00"))))
         with self.assertRaisesRegex(BundleError, r"minutos sin turno \(hueco\) 05:00–06:00"):
-            validate(with_future_sector(machines=(("GAMBINI", "Gambini"),), shifts=THREE_SHIFT_CODES,
-                                        schedules=(THREE_SHIFTS[0], THREE_SHIFTS[1], sch("NOCHE", "CONVERSION", "22:00", "05:00"))))
+            validate(with_future_sector(machines=(("ZZFIX_FUTURE_M", "Futura (prueba)"),), shifts=THREE_SHIFT_CODES,
+                                        schedules=(THREE_SHIFTS[0], THREE_SHIFTS[1], sch("NOCHE", "ZZFIX_FUTURE", "22:00", "05:00"))))
 
     def test_the_operating_date_of_a_night_shift_is_the_day_it_starts(self):
         rows = [ScheduleRow((s["shift"],), s["shift"], s["shift"], s["shift"], datetime.strptime(s["starts_at"], "%H:%M").time(), datetime.strptime(s["ends_at"], "%H:%M").time(),

@@ -126,8 +126,8 @@ class ConfigurationAndAvailabilityTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_the_forms_are_unreachable_without_the_test_policy(self):
         # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES real ya incluye los candidatos de Bobinas habilitados
         # (P1-01,02,04,05,06,31); lo que importa es que P105_CODE/P131_CODE (fixtures sintéticas) NO estén.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         _, assignment = await self.assignment()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", SHIPPED_POLICY):
             for code in (P105_CODE, P131_CODE):
@@ -135,7 +135,7 @@ class ConfigurationAndAvailabilityTests(Base):
                 self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"), code)
                 self.assertEqual((await self.get(f"/api/captures?form_code={code}")).status, 422, code)
             machines = {m["code"]: [f["code"] for f in m["forms"]] for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
-            self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY), "MP3": sorted(SHIPPED_POLICY)})
+            self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"})), "MP3": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_POLICY entero ya no aplica solo a MP1/MP3 (P1-07/10/11/12/13/16/29/30 son de otros sectores)
             for codes in machines.values():
                 self.assertNotIn(P105_CODE, codes)
                 self.assertNotIn(P131_CODE, codes)

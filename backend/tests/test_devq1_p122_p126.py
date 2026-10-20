@@ -116,8 +116,8 @@ class ConfigurationAndAvailabilityTests(Base):
         self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))
         # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_PRODUCTION_POLICY también incluye P1-07/10/30 (Rebobinado),
         # pero esos 3 solo están vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 nunca los ofrecen.
-        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         with patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", SHIPPED_MACHINE_POLICY):
             for code in (P122_CODE, P126_CODE):
                 reply = await self.post(self.body(code))
