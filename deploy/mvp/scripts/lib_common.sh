@@ -27,6 +27,72 @@ TVC_APP_DIR="/opt/vinto-web"
 TVC_ETL_DIR="/opt/vinto-etl"
 TVC_PGDATA_DIR="/home/ubuntu/vinto/pgdata"
 
+# --- Bloqueo exclusivo entre "deploy.sh activate" y "rollback.sh version" (CLOUD-DEP-02B.2-
+# G.12-B4-P3-H2) ------------------------------------------------------------------------------
+#
+# Ambas operaciones conmutan $MVP_APP_DIR/current usando el MISMO nombre de archivo temporal
+# literal ($MVP_APP_DIR/current.tmp): dos invocaciones concurrentes (dos operadores, o un
+# operador que reintenta sin esperar a que la primera termine) podrían pisarse esa conmutación
+# entre sí sin que ninguna de las dos lo detecte -- la causa raíz identificada en esta ronda.
+#
+# Diseño:
+#   - El candado es un archivo regular ($MVP_ACTIVATE_LOCK_FILE), tomado con "flock" y nunca un
+#     PID file: el kernel libera un "flock" automáticamente al cerrarse su descriptor, lo que
+#     ocurre SIEMPRE que el proceso termina -- incluso por SIGKILL o una caída -- sin necesitar
+#     ninguna limpieza a nivel de script.
+#   - Vive en $SCRIPT_DIR (el directorio de los propios scripts, p. ej.
+#     /home/ubuntu/vinto-mvp-ops/scripts/ en el VPS real; ya definido por deploy.sh/rollback.sh
+#     ANTES de este "source"), nunca dentro de $MVP_APP_DIR: lo que se serializa son invocaciones
+#     del OPERADOR (siempre "ubuntu" en el VPS real), nunca de $MVP_SERVICE_USER -- un usuario de
+#     servicio "nologin" que jamás invoca estos scripts. Ese directorio ya es de la exclusiva
+#     propiedad del operador, así que adquirir este candado no exige sudo, ni tocar PostgreSQL ni
+#     systemd, ni modificar usuarios/grupos/sudoers, ni ampliar ningún permiso existente.
+#   - No bloqueante ("flock -n"): si el candado ya está tomado, la segunda invocación falla de
+#     inmediato con un mensaje explícito, en vez de esperar indefinidamente a que termine la
+#     primera -- nunca deja a un operador sin saber si su comando sigue en curso o "colgado".
+MVP_ACTIVATE_LOCK_FILE="$SCRIPT_DIR/.activate.lock"
+MVP_ACTIVATE_LOCK_FD=""
+
+# acquire_activate_lock: adquiere el candado exclusivo o aborta con un mensaje claro, SIN tocar
+# 'current'. Debe llamarse ANTES de cualquier lectura/escritura sobre 'current' -- lo más cerca
+# posible del principio de la fase/subcomando (justo tras require_confirm y la validación del
+# SHA), para que la ventana protegida sea lo más amplia posible.
+acquire_activate_lock() {
+  if [ -L "$MVP_ACTIVATE_LOCK_FILE" ]; then
+    echo "FALLA: $MVP_ACTIVATE_LOCK_FILE es un enlace simbólico; se rechaza por seguridad (podría apuntar a cualquier otro archivo). Eliminarlo a mano -- nunca seguirlo -- y reintentar." >&2
+    exit 1
+  fi
+  exec {MVP_ACTIVATE_LOCK_FD}>"$MVP_ACTIVATE_LOCK_FILE"
+  chmod 600 "$MVP_ACTIVATE_LOCK_FILE" 2>/dev/null || true
+  if ! flock -n "$MVP_ACTIVATE_LOCK_FD"; then
+    echo "FALLA: otra activación o reversión ya está en curso (candado '$MVP_ACTIVATE_LOCK_FILE' ocupado). 'current' no se modificó. Esperar a que termine la operación en curso antes de reintentar -- nunca se espera indefinidamente aquí." >&2
+    exit 1
+  fi
+}
+
+# run_with_lock_fd_closed <comando...>: ejecuta <comando> con el descriptor del candado YA
+# CERRADO dentro de ESA invocación, para que ningún proceso hijo que <comando> genere (p. ej.
+# "systemctl restart", que systemd podría dejar corriendo más allá de que el propio "systemctl"
+# ya haya terminado) pueda retener accidentalmente el descriptor abierto y, con él, el candado --
+# confirmado empíricamente en esta ronda: "exec {fd}>archivo" en bash NO activa close-on-exec por
+# defecto, así que un hijo lo hereda salvo que se cierre explícitamente antes de generarlo. Bash
+# restaura el descriptor para el resto del script en cuanto <comando> termina (mismo mecanismo
+# que cualquier redirección aplicada a una función o builtin): el candado sigue sostenido por
+# ESTE script durante toda la fase, solo se oculta temporalmente a cada hijo individual.
+# Usa "eval" porque bash no permite una variable como número de descriptor LITERAL en la sintaxis
+# "N>&-" -- "eval" expande "$MVP_ACTIVATE_LOCK_FD" a su valor numérico antes de interpretarlo como
+# redirección. "printf %q" cita cada argumento de <comando> para que valores con espacios o
+# caracteres especiales sobrevivan intactos el paso por "eval".
+run_with_lock_fd_closed() {
+  if [ -z "${MVP_ACTIVATE_LOCK_FD:-}" ]; then
+    "$@"
+    return
+  fi
+  local quoted
+  quoted="$(printf '%q ' "$@")"
+  eval "$quoted $MVP_ACTIVATE_LOCK_FD>&-"
+}
+
 # Comprueba /health, /api/health y la raíz del frontend. Usada por deploy.sh (fase "healthcheck" y
 # dentro de "activate") Y por rollback.sh ("version", CLOUD-DEP-02A.2-R2-2: "comprobar salud tras
 # reiniciar, nunca afirmar éxito sin comprobarlo"). Un único lugar evita que las dos copias diverjan.

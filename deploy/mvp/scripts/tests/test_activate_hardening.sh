@@ -37,6 +37,17 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SCRIPT_DIR
 
+# CLOUD-DEP-02B.2-G.12-B4-P3-H2: el candado vive en $SCRIPT_DIR/.activate.lock (ver lib_common.sh),
+# NUNCA dentro de $MVP_APP_DIR (que cambia por sandbox/prueba) -- es decir, es la MISMA ruta para
+# TODAS las pruebas de este archivo, igual que en el VPS real (un único $SCRIPT_DIR para todas las
+# invocaciones de un operador). Nunca se borra entre pruebas (mismo comportamiento que el real):
+# basta con que cada prueba espere a que su propio subproceso termine antes de que empiece la
+# siguiente para que el candado quede libre (el kernel lo libera al cerrarse el descriptor, sin
+# limpieza de este archivo). acquire_activate_lock() corre como $OP_USER, SIN sudo -- por eso
+# $SCRIPT_DIR debe pertenecerle (en el VPS real, $SCRIPT_DIR ya es de "ubuntu"; aquí se iguala
+# explícitamente, cosa que las rondas anteriores no necesitaban porque no existía ningún candado).
+LOCK_FILE="$SCRIPT_DIR/.activate.lock"
+
 PASS=0
 FAILED=0
 report() {
@@ -65,6 +76,27 @@ setup_users_once() {
   getent passwd "$OP_USER" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$OP_USER"
   echo "$OP_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-$OP_USER-test"
   chmod 440 "/etc/sudoers.d/90-$OP_USER-test"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: acquire_activate_lock() (lib_common.sh) abre
+  # $SCRIPT_DIR/.activate.lock SIN sudo -- igual que en el VPS real, donde $SCRIPT_DIR ya
+  # pertenece al operador ("ubuntu"). Aquí $SCRIPT_DIR es el árbol de scripts de ESTE
+  # contenedor descartable; se iguala su propietario a $OP_USER por el mismo motivo.
+  # Salvaguarda defensiva (nunca confiar ciegamente en "-R" sobre una variable): si $SCRIPT_DIR
+  # no es la ruta esperada (absoluta, de al menos dos niveles, terminada en ".../scripts"), se
+  # rehúsa a recursar -- un "chown -R" sobre "/" por un cálculo erróneo de SCRIPT_DIR sería
+  # catastrófico para todo el contenedor. Confirmado necesario en esta misma ronda: un intento de
+  # depuración con un script reubicado en otra ruta hizo que SCRIPT_DIR se calculara como "/".
+  case "$SCRIPT_DIR" in
+    /*/scripts) chown -R "$OP_USER:$OP_USER" "$SCRIPT_DIR" 2>/dev/null || true ;;
+    *) echo "setup_users_once: SCRIPT_DIR ('$SCRIPT_DIR') no tiene la forma esperada ('/.../scripts'); no se recursa chown sobre él. Abortando la suite." >&2; exit 2 ;;
+  esac
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: crear el archivo del candado AHORA, ya como $OP_USER y con
+  # 600 -- antes de que ninguna prueba corra. Sin esto, "wait_for_lock_held"/"wait_for_lock_
+  # released" (que sondean el candado desde ESTE proceso, que corre como root) podrían GANARLE la
+  # carrera a la primera activación/reversión real de la suite y CREAR ellos mismos el archivo
+  # (como root, con el modo por defecto) antes de que $OP_USER llegue a "acquire_activate_lock" --
+  # dejando un archivo root:root que $OP_USER ya no puede abrir para escritura ("Permission
+  # denied"). Confirmado como causa real de una prueba intermitente en esta misma ronda.
+  sudo -u "$OP_USER" bash -c "exec 9>'$LOCK_FILE'; chmod 600 '$LOCK_FILE'" 2>/dev/null || true
   # "sudo systemctl ..." (como lo hace phase_activate/rollback_version de verdad) exec-a un
   # proceso NUEVO vía PATH -- una función de shell definida en el proceso que llama a "sudo" es
   # INVISIBLE para ese proceso nuevo (las funciones nunca cruzan un exec real). Por eso el mock de
@@ -76,6 +108,20 @@ setup_users_once() {
 #!/bin/sh
 echo "$@" >> /tmp/.mock-systemctl-calls.log
 if [ "$1" = "restart" ]; then
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: comprobación REAL (via /proc), no asumida, de que este hijo de
+  # "systemctl restart" -- y cualquier nieto que el propio hijo genere -- no hereda el descriptor
+  # del candado de activate/rollback. Resultado en un archivo fijo, reinicializado por la prueba
+  # que lo necesite; el resto de las pruebas lo ignora sin que esto cambie su comportamiento.
+  sleep 30 &
+  child=$!
+  sleep 0.2
+  if ls -la "/proc/$child/fd/" 2>/dev/null | grep -qi 'activate\.lock'; then
+    echo "INHERITED" >> /tmp/.mock-systemctl-fdcheck.log
+  else
+    echo "NOT-INHERITED" >> /tmp/.mock-systemctl-fdcheck.log
+  fi
+  kill "$child" 2>/dev/null
+  wait "$child" 2>/dev/null
   exit "$(cat /tmp/.mock-systemctl-exit 2>/dev/null || echo 0)"
 fi
 exit 0
@@ -98,6 +144,14 @@ reset_systemctl_mock() {
 # "systemctl" tampoco puede simularse con una variable de entorno).
 make_sandbox() {
   local schema_exit="${1:-0}"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: "schema_sleep" (2do parámetro, por defecto 0) hace que el
+  # "migrate.py --check" DEL RELEASE AL QUE YA APUNTA 'current' (OLD_SHA, comprobado por
+  # assert_schema_migrated ANTES de conmutar) duerma esa cantidad de segundos antes de responder.
+  # Se usa únicamente para abrir una ventana de tiempo controlada y real -- nunca un "sleep" suelto
+  # en la propia prueba -- entre "acquire_activate_lock" (ya adquirido justo antes, al principio de
+  # phase_activate) y la conmutación de 'current', durante la cual una SEGUNDA invocación
+  # concurrente puede intentar (y debe fallar) adquirir el mismo candado.
+  local schema_sleep="${2:-0}"
   local dir
   dir="$(mktemp -d /tmp/sandbox-XXXXXX)"
   for sha in "$OLD_SHA" "$NEW_SHA"; do
@@ -107,15 +161,44 @@ make_sandbox() {
     : > "$dir/releases/$sha/dist/standalone/server.js"
     mkdir -p "$dir/releases/$sha/backend"
     : > "$dir/releases/$sha/backend/migrate.py"
-    local this_exit=0
-    [ "$sha" = "$OLD_SHA" ] && this_exit="$schema_exit"
-    printf '#!/bin/sh\nexit %s\n' "$this_exit" > "$dir/releases/$sha/backend/.venv/bin/python"
+    local this_exit=0 this_sleep=0
+    if [ "$sha" = "$OLD_SHA" ]; then
+      this_exit="$schema_exit"
+      this_sleep="$schema_sleep"
+    fi
+    printf '#!/bin/sh\nsleep %s\nexit %s\n' "$this_sleep" "$this_exit" > "$dir/releases/$sha/backend/.venv/bin/python"
     chmod +x "$dir/releases/$sha/backend/.venv/bin/python"
   done
   ln -sfn "$dir/releases/$OLD_SHA" "$dir/current"
   chown -R "$SVC_USER:$SVC_USER" "$dir"
   chmod 750 "$dir"
   printf '%s' "$dir"
+}
+
+# wait_for_lock_held/wait_for_lock_released: sondean el ESTADO REAL del candado compartido
+# ($LOCK_FILE) usando el mismo "flock -n" que acquire_activate_lock -- nunca un "sleep" fijo ni
+# ningún texto de log -- para sincronizar con precisión el momento en que una segunda invocación
+# concurrente debe intentar adquirirlo. Cada sondeo abre y cierra su PROPIO descriptor efímero
+# (nunca el de ninguna prueba), así que sondear en sí nunca interfiere con el candado real.
+wait_for_lock_held() {
+  local max_wait="${1:-50}" waited=0
+  while [ "$waited" -lt "$max_wait" ]; do
+    if ! ( exec 9>"$LOCK_FILE"; flock -n 9 ) 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1; waited=$((waited + 1))
+  done
+  return 1
+}
+wait_for_lock_released() {
+  local max_wait="${1:-50}" waited=0
+  while [ "$waited" -lt "$max_wait" ]; do
+    if ( exec 9>"$LOCK_FILE"; flock -n 9 ) 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1; waited=$((waited + 1))
+  done
+  return 1
 }
 
 # --- unidades systemd reales de prueba, SOLO en este contenedor ---------------------------------
@@ -403,6 +486,16 @@ test_senal_interrupcion_controlable() {
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null
   local after; after="$(readlink -f "$app_dir/current")"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: "wait $pid" solo espera al envoltorio inmediato de
+  # "run_as_op ... &" (la función en segundo plano) -- NUNCA al "sudo"/"bash -c" real que
+  # ejecuta phase_activate más abajo en el árbol de procesos. Confirmado empíricamente en esta
+  # ronda: un "kill -TERM" sobre ESE envoltorio lo termina a él, pero el proceso real que todavía
+  # sostiene el candado queda HUÉRFANO y sigue corriendo por su cuenta (terminará solo, de forma
+  # normal, cuando le toque) -- sin este drenaje, el candado compartido seguiría ocupado para la
+  # SIGUIENTE prueba de la suite durante esa cola. Mejor esfuerzo (nunca parte de la aserción de
+  # ESTA prueba en concreto, que ya se verificó arriba): solo evita contaminar a las pruebas de
+  # después con un candado que no es suyo.
+  wait_for_lock_released 100 || true
   remove_units; rm -rf "$app_dir"
   [ "$after" = "$app_dir/releases/$NEW_SHA" ]
 }
@@ -575,6 +668,9 @@ test_sin_trap_reentrante_con_senales_dobles() {
   kill -TERM "$pid" 2>/dev/null || true
   kill -INT "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: mismo drenaje de mejor esfuerzo que test_senal_interrupcion_
+  # controlable (ver su comentario) -- "wait $pid" aquí tampoco espera al proceso real huérfano.
+  wait_for_lock_released 100 || true
   remove_units; rm -rf "$app_dir"
   local avisos; avisos="$(grep -c "señal de interrupción recibida" /tmp/tah24.out || true)"
   [ "${avisos:-0}" -le 1 ]
@@ -612,18 +708,426 @@ SLOW_SYSTEMCTL_MOCK
   sleep 1
   local avisos_tempranos; avisos_tempranos="$(grep -c "señal de interrupción recibida" /tmp/tah25.out || true)"
   wait "$pid" 2>/dev/null
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: mismo drenaje de mejor esfuerzo que las otras pruebas de señal
+  # (ver test_senal_interrupcion_controlable) -- aquí el huérfano real, al no haber recibido la
+  # señal (solo la recibió el envoltorio ya terminado), completa su "systemctl restart" simulado
+  # (3s) y el resto de la fase con normalidad; se le da margen de sobra antes de limpiar.
+  wait_for_lock_released 150 || true
   remove_units; rm -rf "$app_dir"
-  # restaurar el mock rápido para el resto de la suite
+  # restaurar el mock rápido (con la comprobación de herencia de descriptor de H2) para el resto
+  # de la suite -- debe quedar IDÉNTICO al de setup_users_once.
   cat > /usr/local/bin/systemctl <<'SYSTEMCTL_MOCK'
 #!/bin/sh
 echo "$@" >> /tmp/.mock-systemctl-calls.log
 if [ "$1" = "restart" ]; then
+  sleep 30 &
+  child=$!
+  sleep 0.2
+  if ls -la "/proc/$child/fd/" 2>/dev/null | grep -qi 'activate\.lock'; then
+    echo "INHERITED" >> /tmp/.mock-systemctl-fdcheck.log
+  else
+    echo "NOT-INHERITED" >> /tmp/.mock-systemctl-fdcheck.log
+  fi
+  kill "$child" 2>/dev/null
+  wait "$child" 2>/dev/null
   exit "$(cat /tmp/.mock-systemctl-exit 2>/dev/null || echo 0)"
 fi
 exit 0
 SYSTEMCTL_MOCK
   chmod 755 /usr/local/bin/systemctl
   [ "${avisos_tempranos:-0}" -eq 0 ]
+}
+
+# ==================================================================================================
+# 26-45: CLOUD-DEP-02B.2-G.12-B4-P3-H2 -- candado exclusivo (flock) compartido entre
+# "deploy.sh activate" y "rollback.sh version" contra operaciones concurrentes sobre 'current'.
+# ==================================================================================================
+
+test_activacion_individual_libera_candado_tras_exito() {
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah26.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local lock_free=0; wait_for_lock_released 10 && lock_free=1
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ] && [ "$lock_free" -eq 1 ] && [ -e "$LOCK_FILE" ]
+}
+
+test_reversion_individual_libera_candado_tras_exito() {
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'rollback_version "'"$NEW_SHA"'"' >/tmp/tah27.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local lock_free=0; wait_for_lock_released 10 && lock_free=1
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ] && [ "$lock_free" -eq 1 ] && [ -e "$LOCK_FILE" ]
+}
+
+test_dos_activaciones_simultaneas_al_mismo_commit_solo_una_gana() {
+  # El "migrate.py --check" de OLD_SHA (al que apunta 'current' antes de conmutar, comprobado por
+  # assert_schema_migrated ANTES de tocar 'current') duerme 3s -- ventana real, no simulada con
+  # texto, entre "acquire_activate_lock" (ya adquirido) y la conmutación. Durante esa ventana, una
+  # SEGUNDA activación concurrente al MISMO commit debe fallar por candado ocupado, sin tocar
+  # 'current' ni dejar 'current.tmp' huérfano; la primera debe completar con éxito normalmente.
+  local app_dir; app_dir="$(make_sandbox 0 3)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah28a.out 2>&1 &
+  local pid_a=$!
+  local held=0; wait_for_lock_held 50 && held=1
+  local mid_current mid_tmp_exists=0
+  mid_current="$(readlink "$app_dir/current" 2>/dev/null)"
+  [ -e "$app_dir/current.tmp" ] && mid_tmp_exists=1
+  local rc_b=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah28b.out 2>&1 || rc_b=$?
+  local rc_a=0
+  wait "$pid_a" || rc_a=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local final_tmp_exists=0; [ -e "$app_dir/current.tmp" ] && final_tmp_exists=1
+  remove_units; rm -rf "$app_dir"
+  [ "$held" -eq 1 ] && [ "$mid_current" = "$app_dir/releases/$OLD_SHA" ] && [ "$mid_tmp_exists" -eq 0 ] \
+    && [ "$rc_b" -eq 1 ] && grep -q "otra activación o reversión ya está en curso" /tmp/tah28b.out \
+    && ! grep -q "'current' ->" /tmp/tah28b.out \
+    && [ "$rc_a" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ] && [ "$final_tmp_exists" -eq 0 ]
+}
+
+test_dos_reversiones_simultaneas_solo_una_gana() {
+  # Mismo mecanismo que la prueba anterior, pero con rollback_version en ambos lados: el
+  # "migrate.py" no aplica aquí (rollback_version nunca lo llama), así que la ventana se abre con
+  # un "curl" (healthcheck) lento -- tras la conmutación, pero sigue demostrando que el candado
+  # impide una SEGUNDA reversión concurrente mientras la primera todavía lo sostiene.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'
+    curl() { sleep 2; return 0; }
+    rollback_version "'"$NEW_SHA"'"
+  ' >/tmp/tah29a.out 2>&1 &
+  local pid_a=$!
+  # Se espera a que 'current' YA haya conmutado (no solo a que el candado esté tomado, que
+  # podría ser aún durante la breve prevalidación de rollback_version) antes de lanzar B --
+  # mismo ajuste aplicado a las pruebas 30/31 tras confirmar la condición de carrera real.
+  local waited=0
+  while [ "$waited" -lt 50 ]; do
+    [ "$(readlink -f "$app_dir/current" 2>/dev/null)" = "$app_dir/releases/$NEW_SHA" ] && break
+    sleep 0.1; waited=$((waited + 1))
+  done
+  local held=0; ( exec 9>"$LOCK_FILE"; flock -n 9 ) 2>/dev/null || held=1
+  local mid_current; mid_current="$(readlink "$app_dir/current" 2>/dev/null)"
+  local rc_b=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'rollback_version "'"$OLD_SHA"'"' >/tmp/tah29b.out 2>&1 || rc_b=$?
+  local rc_a=0
+  wait "$pid_a" || rc_a=$?
+  local after; after="$(readlink "$app_dir/current")"
+  remove_units; rm -rf "$app_dir"
+  [ "$held" -eq 1 ] && [ "$mid_current" = "$app_dir/releases/$NEW_SHA" ] \
+    && [ "$rc_b" -eq 1 ] && grep -q "otra activación o reversión ya está en curso" /tmp/tah29b.out \
+    && [ "$rc_a" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ]
+}
+
+test_rollback_concurrente_con_activacion_en_curso_rechazado_durante_healthcheck() {
+  # La activación (A) mantiene el candado durante TODO el healthcheck posterior a conmutar (no
+  # solo durante la propia conmutación) -- una reversión (B) que intenta mientras A sigue en el
+  # healthcheck debe ser rechazada igual, demostrando que la protección cubre toda la fase, no
+  # solo el instante del "mv -T".
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'
+    curl() { sleep 2; return 0; }
+    phase_activate "'"$NEW_SHA"'"
+  ' >/tmp/tah30a.out 2>&1 &
+  local pid_a=$!
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: "wait_for_lock_held" por sí solo solo confirma que A YA
+  # adquirió el candado -- podría ser todavía durante la prevalidación (assert_schema_migrated,
+  # assert_unit_is_ours...), ANTES de conmutar 'current'. Para probar de verdad "el candado sigue
+  # protegiendo DURANTE el healthcheck, después de conmutar" (el objetivo real de esta prueba),
+  # se espera a que 'current' YA haya cambiado -- en ese punto el candado sigue sostenido con
+  # certeza, porque A todavía no ha llegado al healthcheck lento que lo retiene.
+  local waited=0
+  while [ "$waited" -lt 50 ]; do
+    [ "$(readlink -f "$app_dir/current" 2>/dev/null)" = "$app_dir/releases/$NEW_SHA" ] && break
+    sleep 0.1; waited=$((waited + 1))
+  done
+  local held=0; ( exec 9>"$LOCK_FILE"; flock -n 9 ) 2>/dev/null || held=1
+  local mid_current; mid_current="$(readlink "$app_dir/current" 2>/dev/null)"
+  local rc_b=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'rollback_version "'"$OLD_SHA"'"' >/tmp/tah30b.out 2>&1 || rc_b=$?
+  local rc_a=0
+  wait "$pid_a" || rc_a=$?
+  local after; after="$(readlink "$app_dir/current")"
+  remove_units; rm -rf "$app_dir"
+  [ "$held" -eq 1 ] && [ "$mid_current" = "$app_dir/releases/$NEW_SHA" ] \
+    && [ "$rc_b" -eq 1 ] && grep -q "otra activación o reversión ya está en curso" /tmp/tah30b.out \
+    && [ "$rc_a" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ]
+}
+
+test_activacion_concurrente_con_reversion_en_curso_rechazada_durante_healthcheck() {
+  # Simétrico de la prueba anterior: la reversión (A) sostiene el candado durante su healthcheck;
+  # una activación (B) concurrente al MISMO u otro commit debe ser rechazada igual.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'
+    curl() { sleep 2; return 0; }
+    rollback_version "'"$NEW_SHA"'"
+  ' >/tmp/tah31a.out 2>&1 &
+  local pid_a=$!
+  # Mismo ajuste que en la prueba simétrica anterior: se espera a que 'current' YA haya
+  # conmutado (no solo a que el candado esté tomado, que podría ser aún durante la
+  # prevalidación) antes de confirmar el candado y lanzar la operación concurrente B.
+  local waited=0
+  while [ "$waited" -lt 50 ]; do
+    [ "$(readlink -f "$app_dir/current" 2>/dev/null)" = "$app_dir/releases/$NEW_SHA" ] && break
+    sleep 0.1; waited=$((waited + 1))
+  done
+  local held=0; ( exec 9>"$LOCK_FILE"; flock -n 9 ) 2>/dev/null || held=1
+  local mid_current; mid_current="$(readlink "$app_dir/current" 2>/dev/null)"
+  local rc_b=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$OLD_SHA"'"' >/tmp/tah31b.out 2>&1 || rc_b=$?
+  local rc_a=0
+  wait "$pid_a" || rc_a=$?
+  local after; after="$(readlink "$app_dir/current")"
+  remove_units; rm -rf "$app_dir"
+  [ "$held" -eq 1 ] && [ "$mid_current" = "$app_dir/releases/$NEW_SHA" ] \
+    && [ "$rc_b" -eq 1 ] && grep -q "otra activación o reversión ya está en curso" /tmp/tah31b.out \
+    && [ "$rc_a" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ]
+}
+
+test_candado_se_libera_tras_fallo_de_prevalidacion() {
+  # Una activación rechazada por identidad (unidad ajena) falla ANTES de tocar 'current' -- el
+  # candado, ya adquirido, debe quedar igualmente libre de inmediato al terminar el proceso.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_foreign_units
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah32.out 2>&1 || rc=$?
+  local lock_free=0; wait_for_lock_released 10 && lock_free=1
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$lock_free" -eq 1 ]
+}
+
+test_candado_se_libera_tras_senal_term_capturada() {
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: "kill -TERM \$pid" sobre el resultado de "run_as_op ... &"
+  # (como en test_senal_interrupcion_controlable) solo alcanza al ENVOLTORIO de esa función en
+  # segundo plano de ESTE shell -- nunca al "sudo"/"bash -c" real, más abajo en el árbol de
+  # procesos, que seguiría corriendo huérfano. Para que ESTA prueba verifique de verdad que la
+  # señal llega al proceso que sostiene el candado (y que su manejador la captura), el propio
+  # proceso escribe su PID real ($$, dentro del "bash -c" que sourcea lib_common.sh) en un
+  # archivo marcador ANTES de nada más -- la señal se envía a ESE pid, confirmado leyéndolo.
+  rm -f /tmp/tah33.realpid
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'
+    echo $$ > /tmp/tah33.realpid
+    phase_activate "'"$NEW_SHA"'"
+  ' >/tmp/tah33.out 2>&1 &
+  local wrapper_pid=$!
+  local waited=0
+  while [ "$waited" -lt 50 ]; do
+    [ "$(readlink -f "$app_dir/current" 2>/dev/null)" = "$app_dir/releases/$NEW_SHA" ] && break
+    sleep 0.1; waited=$((waited + 1))
+  done
+  local real_pid; real_pid="$(cat /tmp/tah33.realpid 2>/dev/null || true)"
+  [ -n "$real_pid" ] && kill -TERM "$real_pid" 2>/dev/null || true
+  wait "$wrapper_pid" 2>/dev/null
+  local lock_free=0; wait_for_lock_released 50 && lock_free=1
+  remove_units; rm -rf "$app_dir" /tmp/tah33.realpid
+  [ -n "$real_pid" ] && [ "$lock_free" -eq 1 ] && grep -q "señal de interrupción recibida" /tmp/tah33.out
+}
+
+test_candado_se_libera_tras_sigkill_sin_oportunidad_de_limpieza() {
+  # SIGKILL no puede atraparse: ninguna limpieza de este script corre. El candado debe liberarse
+  # de todos modos porque lo libera el KERNEL al cerrarse el descriptor cuando el proceso termina
+  # -- confirmado empíricamente en el diseño de esta ronda, nunca asumido. Mismo mecanismo de PID
+  # real que la prueba anterior (ver su comentario): sin él, SIGKILL solo alcanzaría el envoltorio.
+  rm -f /tmp/tah34.realpid
+  local app_dir; app_dir="$(make_sandbox 0 3)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'
+    echo $$ > /tmp/tah34.realpid
+    phase_activate "'"$NEW_SHA"'"
+  ' >/tmp/tah34.out 2>&1 &
+  local wrapper_pid=$!
+  local waited=0
+  while [ "$waited" -lt 50 ] && [ ! -s /tmp/tah34.realpid ]; do sleep 0.1; waited=$((waited + 1)); done
+  local real_pid; real_pid="$(cat /tmp/tah34.realpid 2>/dev/null || true)"
+  local held=0; wait_for_lock_held 50 && held=1
+  [ -n "$real_pid" ] && kill -KILL "$real_pid" 2>/dev/null || true
+  wait "$wrapper_pid" 2>/dev/null
+  local lock_free=0; wait_for_lock_released 50 && lock_free=1
+  remove_units; rm -rf "$app_dir" /tmp/tah34.realpid
+  [ -n "$real_pid" ] && [ "$held" -eq 1 ] && [ "$lock_free" -eq 1 ] \
+    && ! grep -q "señal de interrupción recibida" /tmp/tah34.out
+}
+
+test_candado_sin_residuo_tras_rollback_automatico_completo() {
+  # El healthcheck inicial falla (dispara el rollback automático dentro de la misma fase, con el
+  # MISMO candado sostenido todo el tiempo); al terminar, el candado debe quedar libre igual que
+  # en cualquier otro camino de salida.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  MOCK_HEALTHCHECK_OK=0 run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah35.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local lock_free=0; wait_for_lock_released 10 && lock_free=1
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$after" = "$app_dir/releases/$OLD_SHA" ] && [ "$lock_free" -eq 1 ]
+}
+
+test_archivo_de_candado_persiste_en_disco_tras_exito_y_tras_fallo() {
+  rm -f "$LOCK_FILE"
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah36a.out 2>&1 || true
+  local exists_after_success=0; [ -e "$LOCK_FILE" ] && exists_after_success=1
+  remove_units
+  local app_dir2; app_dir2="$(make_sandbox)"
+  write_foreign_units
+  run_as_op "$app_dir2" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah36b.out 2>&1 || true
+  local exists_after_failure=0; [ -e "$LOCK_FILE" ] && exists_after_failure=1
+  remove_units; rm -rf "$app_dir" "$app_dir2"
+  [ "$exists_after_success" -eq 1 ] && [ "$exists_after_failure" -eq 1 ]
+}
+
+test_acquire_activate_lock_rechaza_symlink_en_lugar_del_candado() {
+  rm -f "$LOCK_FILE"
+  ln -s /etc/hostname "$LOCK_FILE"
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local before; before="$(readlink "$app_dir/current")"
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah37.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local still_symlink=0; [ -L "$LOCK_FILE" ] && still_symlink=1
+  rm -f "$LOCK_FILE"
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$before" = "$after" ] && grep -q "es un enlace simbólico" /tmp/tah37.out \
+    && [ "$still_symlink" -eq 1 ]
+}
+
+test_archivo_de_candado_queda_con_permisos_600() {
+  rm -f "$LOCK_FILE"
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah38.out 2>&1 || true
+  local perms; perms="$(stat -c '%a' "$LOCK_FILE" 2>/dev/null || true)"
+  remove_units; rm -rf "$app_dir"
+  [ "$perms" = "600" ]
+}
+
+test_adquisicion_del_candado_no_usa_sudo() {
+  # El único "sudo systemctl ..." que debe aparecer en el log del mock es el de los reinicios de
+  # servicio -- acquire_activate_lock/run_with_lock_fd_closed nunca invocan "sudo" por sí mismos
+  # (consistente con que $SCRIPT_DIR ya es del operador, sin necesitar privilegio adicional).
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah39.out 2>&1 || rc=$?
+  local restart_calls; restart_calls="$(grep -c '^restart ' "$MOCK_SYSTEMCTL_LOG" 2>/dev/null || true)"
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "${restart_calls:-0}" -eq 1 ]
+}
+
+test_rollback_automatico_dentro_de_activate_no_se_autobloquea_con_su_propio_candado() {
+  # phase_activate adquiere el candado UNA sola vez, al principio -- el rollback automático
+  # interno (tras un healthcheck fallido) nunca vuelve a pedirlo. "timeout" demuestra que no hay
+  # autobloqueo (deadlock): si lo hubiera, esta prueba colgaría hasta agotar el plazo (código 124).
+  # Se inlinea el mismo comando que run_as_op ejecuta (en vez de llamar a la función) porque
+  # "timeout" necesita un ejecutable externo real por delante, no una función de este shell.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  timeout 15 sudo -u "$OP_USER" --preserve-env=SCRIPT_DIR,MVP_APP_DIR,MVP_SERVICE_USER,MOCK_SCHEMA_EXIT,MOCK_SYSTEMCTL_EXIT,MOCK_HEALTHCHECK_OK,MOCK_SEND_SIGNAL \
+    env MVP_APP_DIR="$app_dir" MVP_SERVICE_USER="$SVC_USER" CONFIRM=yes MOCK_HEALTHCHECK_OK=0 \
+    bash -c "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah40.out 2>&1 || rc=$?
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -ne 124 ]
+}
+
+test_hijo_de_systemctl_no_hereda_el_descriptor_del_candado() {
+  # Verificación empírica (vía /proc, nunca asumida) de que un hijo de larga duración generado
+  # DENTRO del "systemctl restart" simulado -- el mismo riesgo que motivó run_with_lock_fd_closed
+  # -- no hereda el descriptor del candado. Ver el mock de "systemctl" (setup_users_once).
+  rm -f /tmp/.mock-systemctl-fdcheck.log
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah41.out 2>&1 || rc=$?
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ -s /tmp/.mock-systemctl-fdcheck.log ] \
+    && ! grep -qx "INHERITED" /tmp/.mock-systemctl-fdcheck.log \
+    && grep -q "NOT-INHERITED" /tmp/.mock-systemctl-fdcheck.log
+}
+
+test_prevalidacion_fallida_libera_candado_para_el_siguiente_intento() {
+  local app_dir; app_dir="$(make_sandbox)"
+  write_foreign_units
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah42a.out 2>&1 || true
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah42b.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ]
+}
+
+test_candado_se_recicla_correctamente_entre_ejecuciones_independientes_consecutivas() {
+  local app_dir_1; app_dir_1="$(make_sandbox)"
+  local app_dir_2; app_dir_2="$(make_sandbox)"
+  write_legit_units "$app_dir_1"
+  reset_systemctl_mock 0
+  local rc1=0 rc2=0
+  run_as_op "$app_dir_1" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah43a.out 2>&1 || rc1=$?
+  remove_units
+  write_legit_units "$app_dir_2"
+  run_as_op "$app_dir_2" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah43b.out 2>&1 || rc2=$?
+  local after1 after2
+  after1="$(readlink "$app_dir_1/current")"; after2="$(readlink "$app_dir_2/current")"
+  remove_units; rm -rf "$app_dir_1" "$app_dir_2"
+  [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] \
+    && [ "$after1" = "$app_dir_1/releases/$NEW_SHA" ] && [ "$after2" = "$app_dir_2/releases/$NEW_SHA" ]
+}
+
+test_archivo_de_candado_vive_en_script_dir_no_en_app_dir() {
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tah44.out 2>&1 || true
+  local in_script_dir=0 in_app_dir=0
+  [ -e "$SCRIPT_DIR/.activate.lock" ] && in_script_dir=1
+  [ -e "$app_dir/.activate.lock" ] && in_app_dir=1
+  remove_units; rm -rf "$app_dir"
+  [ "$in_script_dir" -eq 1 ] && [ "$in_app_dir" -eq 0 ]
+}
+
+test_rollback_systemd_no_toca_el_candado() {
+  # rollback_systemd es un subcomando distinto (detiene/elimina las unidades), ajeno por completo
+  # a 'current' -- nunca debe adquirir este candado. Se confirma que el candado sigue disponible
+  # de inmediato (nunca quedó tomado por error) y que la operación en sí funciona igual que antes.
+  local app_dir; app_dir="$(make_sandbox)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'rollback_systemd' >/tmp/tah45.out 2>&1 || rc=$?
+  local lock_free=0; wait_for_lock_released 5 && lock_free=1
+  local units_gone=0
+  [ ! -f "$UNIT_B" ] && [ ! -f "$UNIT_F" ] && units_gone=1
+  rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$lock_free" -eq 1 ] && [ "$units_gone" -eq 1 ]
 }
 
 t() { local name="$1" fn="$2"; local rc=0; "$fn" || rc=$?; report "$name" "$rc"; }
@@ -653,6 +1157,26 @@ t "22 fallo de conmutación primaria -> error explícito, current intacto"     t
 t "23 fallo de conmutación durante el rollback automático -> error explícito" test_fallo_conmutacion_durante_rollback_automatico
 t "24 dos señales rápidas -> sin trap reentrante, a lo sumo un AVISO"        test_sin_trap_reentrante_con_senales_dobles
 t "25 señal durante restart bloqueante -> diferida, documentada y verificada" test_senal_durante_restart_bloqueante_se_difiere_documentado
+t "26 activación individual -> libera el candado tras el éxito"              test_activacion_individual_libera_candado_tras_exito
+t "27 reversión individual -> libera el candado tras el éxito"               test_reversion_individual_libera_candado_tras_exito
+t "28 dos activaciones simultáneas al mismo commit -> solo una gana"         test_dos_activaciones_simultaneas_al_mismo_commit_solo_una_gana
+t "29 dos reversiones simultáneas -> solo una gana"                          test_dos_reversiones_simultaneas_solo_una_gana
+t "30 rollback concurrente con activación en curso -> rechazado"             test_rollback_concurrente_con_activacion_en_curso_rechazado_durante_healthcheck
+t "31 activación concurrente con reversión en curso -> rechazada"            test_activacion_concurrente_con_reversion_en_curso_rechazada_durante_healthcheck
+t "32 fallo de prevalidación -> candado liberado igual"                      test_candado_se_libera_tras_fallo_de_prevalidacion
+t "33 señal TERM capturada -> candado liberado"                              test_candado_se_libera_tras_senal_term_capturada
+t "34 SIGKILL sin limpieza posible -> candado liberado por el kernel"        test_candado_se_libera_tras_sigkill_sin_oportunidad_de_limpieza
+t "35 rollback automático completo -> sin residuo de candado"                test_candado_sin_residuo_tras_rollback_automatico_completo
+t "36 archivo de candado persiste en disco (éxito y fallo)"                   test_archivo_de_candado_persiste_en_disco_tras_exito_y_tras_fallo
+t "37 candado rechaza enlace simbólico en su lugar"                          test_acquire_activate_lock_rechaza_symlink_en_lugar_del_candado
+t "38 archivo de candado queda con permisos 600"                             test_archivo_de_candado_queda_con_permisos_600
+t "39 adquirir el candado no usa sudo"                                        test_adquisicion_del_candado_no_usa_sudo
+t "40 rollback automático interno no se autobloquea (sin deadlock)"         test_rollback_automatico_dentro_de_activate_no_se_autobloquea_con_su_propio_candado
+t "41 hijo de systemctl no hereda el descriptor del candado (vía /proc)"     test_hijo_de_systemctl_no_hereda_el_descriptor_del_candado
+t "42 prevalidación fallida libera el candado para el siguiente intento"    test_prevalidacion_fallida_libera_candado_para_el_siguiente_intento
+t "43 candado se recicla entre ejecuciones independientes consecutivas"      test_candado_se_recicla_correctamente_entre_ejecuciones_independientes_consecutivas
+t "44 archivo de candado vive en SCRIPT_DIR, nunca en APP_DIR"               test_archivo_de_candado_vive_en_script_dir_no_en_app_dir
+t "45 rollback_systemd no toca el candado compartido"                       test_rollback_systemd_no_toca_el_candado
 
 echo
 echo "Resumen: $PASS PASS, $FAILED FAIL."

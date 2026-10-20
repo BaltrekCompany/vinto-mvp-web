@@ -626,6 +626,11 @@ phase_activate() {
   assert_can_read_mvp_private_paths
   local commit="${1:?Uso: deploy.sh activate <commit-sha>}"
   require_full_sha "$commit"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: candado exclusivo compartido con "rollback.sh version" lo más
+  # cerca posible del principio de la fase, ANTES de cualquier lectura/escritura sobre 'current'
+  # -- impide que una activación y una reversión concurrentes (o dos activaciones concurrentes)
+  # se pisen la conmutación de 'current' entre sí. Ver lib_common.sh para el diseño completo.
+  acquire_activate_lock
   local release_dir="$APP_DIR/releases/$commit"
   if ! mvp_test -x "$release_dir/backend/.venv/bin/uvicorn"; then
     echo "FALLA: $release_dir no tiene un venv con uvicorn instalado. Ejecutar 'python-venv $commit' primero." >&2
@@ -690,7 +695,7 @@ phase_activate() {
     trap '' INT TERM
     echo "" >&2
     echo "AVISO: señal de interrupción recibida durante la activación (tras conmutar 'current'). Intentando reiniciar los servicios contra el 'current' actual como medida de contención (mejor esfuerzo; esto NO protege contra pérdida de energía ni SIGKILL, ni contra una señal que llegue mientras este propio script está bloqueado dentro de 'systemctl restart'/'sleep'/el healthcheck — ver comentario de diseño arriba)." >&2
-    sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service 2>&1 || true
+    run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service 2>&1 || true
     echo "FALLA: activación interrumpida. Revisar manualmente el estado de 'current' y de los servicios antes de cualquier otra operación." >&2
     exit 130
   }
@@ -700,12 +705,12 @@ phase_activate() {
   # el script como si hubiera tenido éxito, pero el mensaje habría sido el genérico de "set -e"
   # (sin explicar qué pasó ni que 'current' en sí no debería haber cambiado). Los "if ! cmd" de
   # abajo están exentos de "set -e" (están dentro de una condición) y dan un mensaje honesto.
-  if ! sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"; then
+  if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"; then
     trap - INT TERM
     echo "FALLA: no se pudo preparar la conmutación de 'current' (ln -sfn). 'current' NO se tocó." >&2
     exit 1
   fi
-  if ! sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
+  if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
     trap - INT TERM
     echo "FALLA: no se pudo completar la conmutación de 'current' (mv -T). Revisar manualmente: puede haber quedado 'current.tmp' sin aplicar; 'current' en sí no debería haber cambiado." >&2
     exit 1
@@ -724,7 +729,7 @@ phase_activate() {
   # explícita, sin cambiar el camino de recuperación: el healthcheck de abajo sigue siendo quien
   # decide si hace falta revertir, tanto si el restart "tuvo éxito" como si no.
   local restart_rc=0
-  sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || restart_rc=$?
+  run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || restart_rc=$?
   if [ "$restart_rc" -ne 0 ]; then
     echo "AVISO: 'systemctl restart' devolvió el código $restart_rc tras conmutar a $commit; continuando hacia el healthcheck, que decidirá si hace falta revertir." >&2
   fi
@@ -734,7 +739,7 @@ phase_activate() {
   # entre invocaciones concurrentes o consecutivas; se borra en todos los caminos de salida.
   local hc_log
   hc_log="$(mktemp)"
-  if mvp_healthcheck >"$hc_log" 2>&1; then
+  if run_with_lock_fd_closed mvp_healthcheck >"$hc_log" 2>&1; then
     cat "$hc_log"
     rm -f "$hc_log"
     echo "Healthcheck OK tras activar $commit."
@@ -750,14 +755,14 @@ phase_activate() {
     # symlink, antes "set -e" terminaba el script en silencio, sin un mensaje que diga que ni
     # siquiera se puede garantizar un estado consistente. Ahora se detecta explícitamente y se
     # sale con un error claro, en vez de dejar que un fallo aquí quede oculto.
-    if ! sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp" \
-        || ! sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
+    if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp" \
+        || ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
       trap - INT TERM
       echo "FALLA: no se pudo revertir 'current' a $previous_target (la propia conmutación de la reversión falló). No se puede garantizar un estado consistente: intervención manual requerida de inmediato." >&2
       exit 1
     fi
     local revert_restart_rc=0
-    sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || revert_restart_rc=$?
+    run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || revert_restart_rc=$?
     if [ "$revert_restart_rc" -ne 0 ]; then
       echo "AVISO: 'systemctl restart' devolvió el código $revert_restart_rc al revertir a $previous_target; continuando hacia el healthcheck de la reversión." >&2
     fi
@@ -765,7 +770,7 @@ phase_activate() {
     sleep 2
     local revert_hc_log
     revert_hc_log="$(mktemp)"
-    if mvp_healthcheck >"$revert_hc_log" 2>&1; then
+    if run_with_lock_fd_closed mvp_healthcheck >"$revert_hc_log" 2>&1; then
       rm -f "$revert_hc_log"
       echo "'current' revertido a $previous_target; healthcheck de la versión anterior OK tras reiniciar. $commit queda sin activar; investigar antes de reintentar." >&2
     else
