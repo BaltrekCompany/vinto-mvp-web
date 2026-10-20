@@ -5,14 +5,19 @@ captura o Bobina de un sector que NO es operativo se comporta como inexistente (
 `operational_sector_codes()` en SQL y por `is_operational_sector()` en Python. Ningún otro módulo debe repetir la lista.
 
 Reglas de seguridad de esta configuración:
-- Hoy SOLO BOBINAS es operativo. REBOBINADO y CONVERSION están RECONOCIDOS (para poder reservar su código y validar) pero NO habilitados.
+- BOBINAS y, desde CLOUD-DEP G.12-C4-COMPLETE, REBOBINADO son operativos para el piloto de QA. CONVERSION está RECONOCIDO (para poder reservar su
+  código y validar) pero NO habilitado: sus 3 candidatos de captura (P1-12/13/16) son hipótesis de prueba con un contrato distinto al de la
+  definición legacy aprobada, no una homologación -- activar CONVERSION sin formularios reales que respalden ese contrato no tendría efecto
+  verificable y expondría datos bajo un código de formulario que no representa lo que dice representar.
 - La lista se valida al importar el módulo (`validate_operational_sectors`): una edición incorrecta impide arrancar el backend en lugar de abrir un
   sector por accidente. No hay variable de entorno ni interruptor en tiempo de ejecución: habilitar un sector exige un cambio de código revisado.
 - Habilitar un sector NO concede permisos. Los permisos siguen siendo por PERFIL (app/auth/permissions.py), sin relación con sectores ni máquinas;
   este módulo no importa nada de `app.auth` y `app.auth` no importa este módulo. Lo que sí cambia al habilitar un sector es el alcance de DATOS:
   todas las máquinas del sector pasan a ser operables por los perfiles que ya tienen el permiso correspondiente (ver backend/README.md).
 - Habilitar un sector requiere antes, y fuera de este módulo, datos aprobados: sector, máquinas, turnos con vigencia, relaciones artículo-máquina y
-  formularios publicados para esas máquinas. Este módulo no inventa ninguno de ellos.
+  formularios publicados para esas máquinas. Este módulo no inventa ninguno de ellos. Para REBOBINADO esos datos son CANDIDATOS técnicos derivados
+  de PRODUCTS_BY_MACHINE legacy (docs/M4-B1-homologacion-rebobinado.md), sin homologación formal de VINTO, pero autorizados explícitamente para
+  este piloto de QA con datos sintéticos (CLOUD-DEP G.12-C4-COMPLETE sección A): la falta de homologación histórica no bloquea un piloto autorizado.
 """
 
 from collections.abc import Iterable
@@ -24,8 +29,8 @@ SECTOR_CONVERSION = "CONVERSION"
 # Lista CERRADA de códigos de sector que el producto reconoce. Un código fuera de esta lista nunca puede ser operativo.
 KNOWN_SECTOR_CODES = frozenset({SECTOR_BOBINAS, SECTOR_REBOBINADO, SECTOR_CONVERSION})
 
-# Sectores operativos por defecto. M1-A mantiene BOBINAS como único sector habilitado.
-DEFAULT_OPERATIONAL_SECTORS = (SECTOR_BOBINAS,)
+# Sectores operativos por defecto. CLOUD-DEP G.12-C4-COMPLETE suma REBOBINADO (piloto de QA, datos candidatos).
+DEFAULT_OPERATIONAL_SECTORS = (SECTOR_BOBINAS, SECTOR_REBOBINADO)
 
 
 class SectorConfigError(ValueError):

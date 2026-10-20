@@ -57,14 +57,28 @@ THREE_SHIFT_CODES = ({"code": "MANANA", "name": "Mañana"}, {"code": "TARDE", "n
 class ApprovedBundleTests(unittest.TestCase):
     def test_the_approved_bundle_still_validates_and_keeps_its_identity(self):
         validate(BUNDLE)
-        self.assertEqual(BUNDLE.source_checksum, "fe414660207434a6f7fd5aab0c415c0212efa78e843a79d90a369f32c91d2a13")
-        self.assertEqual([(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules],
-                         [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
-        self.assertEqual(([s["code"] for s in BUNDLE.sectors], [m["code"] for m in BUNDLE.machines]), (["BOBINAS"], ["MP1", "MP3"]))
-        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (93, 93))
+        # CLOUD-DEP G.12-C4: checksum regenerado ÚNICAMENTE mediante el procedimiento oficial
+        # (compute_source_checksum, vía load_bundle().source_checksum -- nunca escrito a mano ni
+        # calculado por otro medio), DESPUÉS de validar el contenido.
+        # CLOUD-DEP G.12-C4-COMPLETE: se repite el mismo procedimiento tras incorporar el sector
+        # REBOBINADO (BELOIT/COPASA/OVER/PERICHUN, sus 147 artículos/relaciones derivados de
+        # PRODUCTS_BY_MACHINE y sus 2 horarios) y los 3 formularios candidatos VINTO-P1-07/10/30: los
+        # datos de Bobinas (sectores/máquinas/artículos/relaciones/horarios de BOBINAS) permanecen
+        # exactamente iguales (comprobado abajo); el checksum cambia porque el bundle entero (no solo
+        # Bobinas) sí creció. Esta prueba sigue siendo el guardián: cualquier cambio FUTURO no
+        # revisado volverá a hacerla fallar, exactamente como debe.
+        self.assertEqual(BUNDLE.source_checksum, "87401e2e42adc64711432bbdff999a6de754ba23921aa6da906dbcbc3296bc8d")
+        bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
+        self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
+        self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "REBOBINADO"])
+        self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "BOBINAS"), ["MP1", "MP3"])
+        self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "REBOBINADO"), ["BELOIT", "COPASA", "OVER", "PERICHUN"])
+        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (240, 240))
 
     def test_a_sector_without_schedules_is_allowed_because_it_stays_blocked_by_the_missing_shift(self):
-        validate(with_future_sector("REBOBINADO", "Rebobinado", machines=(("COPASA", "Copasa"),)))
+        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO/COPASA ya son reales; CONVERSION/GAMBINI siguen siendo
+        # el sector/máquina "futuros" sintéticos que esta prueba necesita.
+        validate(with_future_sector())
 
     def test_a_complete_future_sector_validates_and_reuses_a_shift_code_with_other_hours(self):
         pen = [new_article("ZZ-0001", "PACK"), new_article("ZZ-0002", "PACK")]
@@ -72,7 +86,7 @@ class ApprovedBundleTests(unittest.TestCase):
                                     relations=({"article_code": "ZZ-0001", "machine_code": "GAMBINI"}, {"article_code": "ZZ-0002", "machine_code": "SINCRO_II"}),
                                     units=({"code": "PACK", "label": "Pack"},))
         validate(bundle)  # NOCHE existe en BOBINAS (19–07) y en CONVERSION (22–06): son horarios distintos por sector
-        self.assertEqual(len(bundle.schedules), 5)
+        self.assertEqual(len(bundle.schedules), len(BUNDLE.schedules) + 3)
 
 
 class CodeAndReferenceTests(unittest.TestCase):
@@ -114,13 +128,16 @@ class CodeAndReferenceTests(unittest.TestCase):
             validate(variant(machines=(BUNDLE.machines[0], {**BUNDLE.machines[1], "name": "  "})))
 
     def test_a_machine_without_a_valid_sector_is_rejected(self):
-        for sector in ("REBOBINADO", "", None):
+        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es un sector real; CONVERSION sigue sin existir en
+        # el bundle aprobado.
+        for sector in ("CONVERSION", "", None):
             with self.assertRaisesRegex(BundleError, "sector inexistente"):
                 validate(variant(machines=(BUNDLE.machines[0], {**BUNDLE.machines[1], "sector": sector})))
 
     def test_inconsistent_article_machine_relations_are_rejected(self):
+        # CLOUD-DEP G.12-C4-COMPLETE: COPASA ya es una máquina real; GAMBINI (Conversión) sigue sin existir.
         with self.assertRaisesRegex(BundleError, "máquina inexistente"):
-            validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": BUNDLE.articles[0]["code"], "machine_code": "COPASA"},)))
+            validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": BUNDLE.articles[0]["code"], "machine_code": "GAMBINI"},)))
         with self.assertRaisesRegex(BundleError, "artículo inexistente"):
             validate(variant(article_machines=BUNDLE.article_machines + ({"article_code": "NO-EXISTE", "machine_code": "MP1"},)))
         with self.assertRaisesRegex(BundleError, "relaciones duplicadas"):

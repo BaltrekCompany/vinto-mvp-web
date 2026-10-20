@@ -11,6 +11,26 @@
       "code": "MP3",
       "name": "MP3",
       "sector": "BOBINAS"
+    },
+    {
+      "code": "BELOIT",
+      "name": "Beloit",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "OVER",
+      "name": "Over",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "COPASA",
+      "name": "Copasa",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "PERICHUN",
+      "name": "Perichun",
+      "sector": "REBOBINADO"
     }
   ]
 }

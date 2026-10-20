@@ -5,6 +5,10 @@
     {
       "code": "BOBINAS",
       "name": "Bobinas"
+    },
+    {
+      "code": "REBOBINADO",
+      "name": "Rebobinado"
     }
   ]
 }

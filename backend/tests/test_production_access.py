@@ -21,21 +21,22 @@ from app.seed.bundle import load_bundle
 
 try:
     from m2a_fixtures import install_production_form
-    from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, install_p110
+    from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, REB_MACHINE, REB_SECTOR, install_p110
     from m3b_fixtures import P129_CODE, install_p129, install_tubetera
     from test_assignments_api import call
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
-    from tests.m2b2_fixtures import ENABLED_SECTORS, P110_CODE, install_p110
+    from tests.m2b2_fixtures import ENABLED_SECTORS, P110_CODE, REB_MACHINE, REB_SECTOR, install_p110
     from tests.m3b_fixtures import P129_CODE, install_p129, install_tubetera
     from tests.test_assignments_api import call
 
 SHIPPED_POLICY = _capture_service.CENTRAL_FORM_CODES
 SHIPPED_SECTORS = _sectors.operational_sector_codes()
 F6 = "VINTO-P1-06"
-# CLOUD-DEP G.12-C4: lista derivada de SHIPPED_POLICY, en el mismo orden que devuelve la API
-# (production_access.py: "ORDER BY fvm.machine_id, l.code") -- nunca una lista fija aparte.
-SHIPPED_FORMS = sorted(SHIPPED_POLICY)
+# CLOUD-DEP G.12-C4-COMPLETE: P1-07/10/30 (Rebobinado) también están en SHIPPED_POLICY, pero solo están
+# vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 (Bobinas) nunca los ofrecen. SHIPPED_FORMS debe
+# quedarse en el subconjunto que SÍ aplica a MP1/MP3, no en la política entera.
+SHIPPED_FORMS = sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
 ARTICLE = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
 STATE = {}
 
@@ -61,7 +62,7 @@ class AvailabilityCase(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         cls.users, cls.cookies = {}, {}
         for name, profile, sectors in (("OPERACION", "OPERACION", ENABLED_SECTORS), ("JEFATURA", "JEFATURA", ENABLED_SECTORS), ("SOLO_BOBINAS", "OPERACION", ("BOBINAS",)),
-                                       ("SOLO_REBOBINADO", "OPERACION", ("REBOBINADO",)), ("SIN_SECTOR", "OPERACION", ()), ("DATA", "DATA_BALTREK", ENABLED_SECTORS)):
+                                       ("SOLO_REBOBINADO", "OPERACION", (REB_SECTOR,)), ("SIN_SECTOR", "OPERACION", ()), ("DATA", "DATA_BALTREK", ENABLED_SECTORS)):
             password = "pw-" + secrets.token_urlsafe(18)
             cls.users[name] = (create_user(cls.connection, username=f"m4a.{name.lower()}", display_name=name.title(), profile_code=profile, password=password, sectors=sectors), password)
 
@@ -95,16 +96,18 @@ class AvailabilityCase(unittest.IsolatedAsyncioTestCase):
 class RealConfigurationTests(AvailabilityCase):
     async def test_a_granted_but_non_operational_sector_is_not_exposed(self):
         # CLOUD-DEP G.12-C4: SHIPPED_POLICY ya no es solo {F6} -- se añadieron 5 candidatos de Bobinas
-        # (P1-01/02/04/05/31) para QA interno sobre MP1/MP3. SHIPPED_FORMS deriva de la propia política
-        # en vez de repetir la lista: sigue probando lo mismo (máquinas/formularios reales de MP1/MP3),
-        # ahora con el conjunto ampliado.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
-        reply = await self.get(who="OPERACION")  # granted BOBINAS + REBOBINADO, but only BOBINAS is operational
+        # (P1-01/02/04/05/31) para QA interno sobre MP1/MP3.
+        # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_POLICY también suma P1-07/10/30 (Rebobinado), por lo que
+        # ya no coincide con lo que se ofrece en MP1/MP3 (esos 3 solo están vinculados a BELOIT/OVER/
+        # COPASA/PERICHUN) -- se compara contra el subconjunto real de Bobinas, no contra la política entera.
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
+        reply = await self.get(who="OPERACION")  # granted BOBINAS + the fictitious Rebobinado (ZZFIX), never the REAL REBOBINADO
         self.assertEqual(reply.status, 200)
         self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
-        self.assertNotIn("REBOBINADO", reply.text)
-        self.assertEqual(self.codes(await self.get(who="SOLO_REBOBINADO")), {})  # only Rebobinado granted: nothing is operational for this user
+        self.assertNotIn(REB_SECTOR, reply.text)  # the real REBOBINADO is operational, but never granted to this user
+        self.assertNotIn('"REBOBINADO"', reply.text)
+        self.assertEqual(self.codes(await self.get(who="SOLO_REBOBINADO")), {})  # only the fictitious Rebobinado granted: nothing real is operational for this user
 
     async def test_401_and_scope(self):
         self.assertEqual((await call("GET", "/api/production/machines")).status, 401)
@@ -132,32 +135,32 @@ class TestConfigurationTests(AvailabilityCase):
         self.enabled()
         reply = await self.get()
         self.assertEqual(reply.status, 200)
-        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}, "REBOBINADO": {"COPASA": [P110_CODE], "TUBETERA": [P129_CODE]}})
-        reb = next(s for s in reply.json()["sectors"] if s["code"] == "REBOBINADO")
-        self.assertEqual({m["code"]: m["name"] for m in reb["machines"]}, {"COPASA": "Copasa (prueba)", "TUBETERA": "Tubetera (prueba)"})
-        copasa = next(m for m in reb["machines"] if m["code"] == "COPASA")
+        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": [F6], "MP3": [F6]}, REB_SECTOR: {REB_MACHINE: [P110_CODE], "TUBETERA": [P129_CODE]}})
+        reb = next(s for s in reply.json()["sectors"] if s["code"] == REB_SECTOR)
+        self.assertEqual({m["code"]: m["name"] for m in reb["machines"]}, {REB_MACHINE: "Copasa (prueba)", "TUBETERA": "Tubetera (prueba)"})
+        copasa = next(m for m in reb["machines"] if m["code"] == REB_MACHINE)
         self.assertEqual(copasa["forms"][0]["version_number"], 1)
         self.assertNotIn("articles", copasa)  # only when requested
 
     async def test_only_granted_users_see_rebobinado_even_when_it_is_operational(self):
         self.enabled()
         self.assertEqual(set(self.codes(await self.get(who="SOLO_BOBINAS"))), {"BOBINAS"})
-        self.assertEqual(set(self.codes(await self.get(who="SOLO_REBOBINADO"))), {"REBOBINADO"})
+        self.assertEqual(set(self.codes(await self.get(who="SOLO_REBOBINADO"))), {REB_SECTOR})
         self.assertEqual(self.codes(await self.get(who="SIN_SECTOR")), {})
 
     async def test_a_form_outside_the_policy_or_not_published_or_inactive_or_not_linked_is_not_listed(self):
         self.enabled()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", frozenset({F6, P110_CODE})):  # P1-29 not enabled by the policy
-            self.assertEqual(self.codes(await self.get())["REBOBINADO"], {"COPASA": [P110_CODE], "TUBETERA": []})
-        install_production_form(self.connection, "VINTO-TEST-X-DRAFT", machine_codes=("COPASA",), publish=False)
-        install_production_form(self.connection, "VINTO-TEST-X-QUALITY", machine_codes=("COPASA",), area="quality")
+            self.assertEqual(self.codes(await self.get())[REB_SECTOR], {REB_MACHINE: [P110_CODE], "TUBETERA": []})
+        install_production_form(self.connection, "VINTO-TEST-X-DRAFT", machine_codes=(REB_MACHINE,), publish=False)
+        install_production_form(self.connection, "VINTO-TEST-X-QUALITY", machine_codes=(REB_MACHINE,), area="quality")
         install_production_form(self.connection, "VINTO-TEST-X-MP1", machine_codes=("MP1",))
-        install_production_form(self.connection, "VINTO-TEST-X-OFF", machine_codes=("COPASA",))
+        install_production_form(self.connection, "VINTO-TEST-X-OFF", machine_codes=(REB_MACHINE,))
         self.connection.execute("UPDATE vinto_config.form SET active = false WHERE code = 'VINTO-TEST-X-OFF'")
         everything = frozenset({F6, P110_CODE, P129_CODE, "VINTO-TEST-X-DRAFT", "VINTO-TEST-X-QUALITY", "VINTO-TEST-X-MP1", "VINTO-TEST-X-OFF"})
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", everything):
             listed = self.codes(await self.get())
-            self.assertEqual(listed["REBOBINADO"]["COPASA"], [P110_CODE])  # draft, quality-area and inactive forms are not offered
+            self.assertEqual(listed[REB_SECTOR][REB_MACHINE], [P110_CODE])  # draft, quality-area and inactive forms are not offered
             self.assertEqual(listed["BOBINAS"]["MP1"], sorted([F6, "VINTO-TEST-X-MP1"]))  # linked to MP1 only there
             self.assertEqual(listed["BOBINAS"]["MP3"], [F6])
 
@@ -170,18 +173,18 @@ class TestConfigurationTests(AvailabilityCase):
         self.connection.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s, 'x', 'X', 'text', 'manual', false, 1)", (v2,))
         self.connection.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (v2,))
         # version 2 is the highest published and is NOT linked to COPASA: the engine would answer FORM_NOT_AVAILABLE, so it is not offered
-        self.assertEqual(self.codes(await self.get())["REBOBINADO"]["COPASA"], [])
+        self.assertEqual(self.codes(await self.get())[REB_SECTOR][REB_MACHINE], [])
 
     async def test_articles_are_listed_only_on_request_and_only_those_linked_to_the_machine(self):
         self.enabled()
         reply = await self.get("/api/production/machines?articles=true", "JEFATURA")
         self.assertEqual(reply.status, 200)
         machines = {m["code"]: m for s in reply.json()["sectors"] for m in s["machines"]}
-        self.assertEqual([a["code"] for a in machines["COPASA"]["articles"]], [ARTICLE])
+        self.assertEqual([a["code"] for a in machines[REB_MACHINE]["articles"]], [ARTICLE])
         self.assertEqual([a["code"] for a in machines["TUBETERA"]["articles"]], [ARTICLE])
-        self.assertTrue(all(a["description"] for a in machines["COPASA"]["articles"]))
+        self.assertTrue(all(a["description"] for a in machines[REB_MACHINE]["articles"]))
         self.assertGreater(len(machines["MP1"]["articles"]), 1)
-        self.assertEqual(set(machines["COPASA"]), {"code", "name", "forms", "articles"})
+        self.assertEqual(set(machines[REB_MACHINE]), {"code", "name", "forms", "articles"})
 
     async def test_it_is_read_only(self):
         self.enabled()

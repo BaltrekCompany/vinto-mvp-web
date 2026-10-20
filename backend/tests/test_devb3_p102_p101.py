@@ -132,7 +132,9 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationAndAvailabilityTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_the_forms_are_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))
+        # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES real ya incluye los candidatos de Bobinas habilitados;
+        # lo que importa es que los códigos de fixture sintéticos (P101_CODE/P102_CODE) NO estén.
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
         for code, (_, _, own, _) in FORMS.items():
             _, assignment = await self.assignment(own)
@@ -141,7 +143,9 @@ class ConfigurationAndAvailabilityTests(Base):
                 self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"), code)
                 self.assertEqual((await self.get(f"/api/captures?form_code={code}")).status, 422)
                 machines = {m["code"]: [f["code"] for f in m["forms"]] for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
-                self.assertEqual(machines, {"MP1": [F6], "MP3": [F6]})
+                self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY), "MP3": sorted(SHIPPED_POLICY)})
+                for codes in machines.values():
+                    self.assertNotIn(code, codes)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)
 
     async def test_the_backend_publishes_p102_only_on_mp1_and_p101_only_on_mp3(self):

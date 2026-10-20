@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_7_registro_de_productos_rebobinados",
+  "code": "VINTO-P1-07",
+  "legacy_number": 7,
+  "name": "Registro de producción de bobinas refiladas",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "BELOIT",
+    "OVER",
+    "COPASA"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "etiqueta_numero_de_bobina",
+      "label": "Etiqueta / número de bobina",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "peso",
+      "label": "Peso",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "destino",
+      "label": "Destino",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "producto_refilado",
+      "label": "Producto refilado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "auxiliar",
+      "label": "Auxiliar",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "velocidad_minima",
+      "label": "Velocidad mínima",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "tension",
+      "label": "Tensión",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "velocidad",
+      "label": "Velocidad",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "metraje",
+      "label": "Metraje",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "diametro",
+      "label": "Diámetro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "formato_1",
+      "label": "Formato 1",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "formato_2",
+      "label": "Formato 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "formato_3",
+      "label": "Formato 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "tubete",
+      "label": "Tubete",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "peso_cria_1",
+      "label": "Peso cría 1",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "peso_cria_2",
+      "label": "Peso cría 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "peso_cria_3",
+      "label": "Peso cría 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "peso_cria_4",
+      "label": "Peso cría 4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "peso_cria_5",
+      "label": "Peso cría 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "peso_cria_6",
+      "label": "Peso cría 6",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 20
+    },
+    {
+      "key": "peso_cria_7",
+      "label": "Peso cría 7",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 21
+    },
+    {
+      "key": "peso_cria_8",
+      "label": "Peso cría 8",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 22
+    },
+    {
+      "key": "peso_cria_9",
+      "label": "Peso cría 9",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 23
+    },
+    {
+      "key": "peso_cria_10",
+      "label": "Peso cría 10",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 24
+    },
+    {
+      "key": "peso_cria_11",
+      "label": "Peso cría 11",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 25
+    },
+    {
+      "key": "peso_cria_13",
+      "label": "Peso cría 13",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 26
+    },
+    {
+      "key": "peso_cria_14",
+      "label": "Peso cría 14",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 27
+    },
+    {
+      "key": "peso_cria_15",
+      "label": "Peso cría 15",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 28
+    },
+    {
+      "key": "peso_cria_16",
+      "label": "Peso cría 16",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 29
+    },
+    {
+      "key": "peso_cria_17",
+      "label": "Peso cría 17",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 30
+    },
+    {
+      "key": "peso_cria_18",
+      "label": "Peso cría 18",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 31
+    },
+    {
+      "key": "peso_cria_19",
+      "label": "Peso cría 19",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 32
+    },
+    {
+      "key": "peso_cria_20",
+      "label": "Peso cría 20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 33
+    },
+    {
+      "key": "peso_cria_21",
+      "label": "Peso cría 21",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 34
+    },
+    {
+      "key": "peso_cria_22",
+      "label": "Peso cría 22",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 35
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 36
+    }
+  ],
+  "definition_checksum": "1b99cd62f99ee5e50440bac76bd8d1f6502936422bd2ca19f02633d32a6008e5"
+}

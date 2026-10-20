@@ -201,6 +201,61 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         status = self.connection.execute("SELECT status, decided_by FROM vinto_txn.quality_release WHERE bobbin_id=%s", (bobbin_id,)).fetchone()
         self.assertEqual(status, ("pending", None))
 
+    async def test_p1_21_declared_bobbin_number_must_match_the_selected_bobbin(self):
+        # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-21 -> "numero_de_bobina":
+        # el valor declarado DEBE coincidir con el código real de la bobina seleccionada en la URL.
+        bobbin_id, bobbin_code = await self.capture_f3("MP3")
+        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "posicion_de_perfil": "borde", "gramaje": "80.0", "peso_seco": "1.7"}
+        body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-21", "device_key": str(uuid4()), "values": wrong_values}
+        reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(reply.status, 422, reply.text)
+        self.assertEqual(reply.json()["code"], "CAPTURE_VALIDATION")
+        count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id=%s", (bobbin_id,)).fetchone()[0]
+        self.assertEqual(count, 0, "un numero_de_bobina que no coincide no debe persistir nada")
+
+    async def test_p1_28_declared_bobbin_number_must_match_the_selected_bobbin(self):
+        # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-28 -> "numero_de_bobina":
+        # el valor declarado DEBE coincidir con el código real de la bobina seleccionada en la URL.
+        bobbin_id, bobbin_code = await self.capture_f3("MP3")
+        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "producto": "producto ficticio", "detalle_motivo_de_rechazo": "motivo ficticio",
+                         "accion_correctiva": "accion ficticia", "peso_rechazado": "1.0", "estado_disposicion_final": "rechazado"}
+        body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-28", "device_key": str(uuid4()), "values": wrong_values}
+        reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(reply.status, 422, reply.text)
+        self.assertEqual(reply.json()["code"], "CAPTURE_VALIDATION")
+        count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id=%s", (bobbin_id,)).fetchone()[0]
+        self.assertEqual(count, 0, "un numero_de_bobina que no coincide no debe persistir nada")
+
+    async def test_p1_24_declared_bobbin_number_must_match_the_selected_bobbin(self):
+        # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-24 -> "numero_de_bobina":
+        # el valor declarado DEBE coincidir con el código real de la bobina seleccionada en la URL.
+        bobbin_id, bobbin_code = await self.capture_f3("MP3")
+        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "producto": "producto ficticio", "crepado": "18.5", "gramaje": "21.30",
+                        "resistencia_longitudinal_humeda_centro": "120.5", "resistencia_longitudinal_humeda_medio": "118", "resistencia_longitudinal_humeda_extremo": "119.25",
+                        "resistencia_transversal_humeda_centro": "60.1", "resistencia_transversal_humeda_medio": "59", "resistencia_transversal_humeda_extremo": "61.75",
+                        "tiempo_de_curado_condicion": "30"}
+        body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-24", "device_key": str(uuid4()), "values": wrong_values}
+        reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(reply.status, 422, reply.text)
+        self.assertEqual(reply.json()["code"], "CAPTURE_VALIDATION")
+        count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id=%s", (bobbin_id,)).fetchone()[0]
+        self.assertEqual(count, 0, "un numero_de_bobina que no coincide no debe persistir nada")
+
+    async def test_p1_25_declared_bobbin_number_must_match_the_selected_bobbin(self):
+        # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-25 -> "numero_de_bobina":
+        # el valor declarado DEBE coincidir con el código real de la bobina seleccionada en la URL.
+        bobbin_id, bobbin_code = await self.capture_f3("MP3")
+        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "producto": "producto ficticio", "crepado": "17", "gramaje_laboratorio_g_m2": "20.5",
+                        "curado_min": "30 min", "resistencia_longitudinal_centro_kgf": "1.20", "resistencia_longitudinal_medio_kgf": "1.15", "resistencia_longitudinal_extremo_kgf": "1.18",
+                        "elongacion_media_longitudinal": "22.4", "resistencia_longitudinal_humeda_centro_kgf": "0.45", "resistencia_longitudinal_humeda_medio_kgf": "0.41",
+                        "resistencia_longitudinal_humeda_extremo_kgf": "0.43", "elongacion_media_transversal": "9.9"}
+        body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-25", "device_key": str(uuid4()), "values": wrong_values}
+        reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(reply.status, 422, reply.text)
+        self.assertEqual(reply.json()["code"], "CAPTURE_VALIDATION")
+        count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id=%s", (bobbin_id,)).fetchone()[0]
+        self.assertEqual(count, 0, "un numero_de_bobina que no coincide no debe persistir nada")
+
     async def test_p1_21_identical_retry_is_idempotent(self):
         bobbin_id, bobbin_code = await self.capture_f3("MP3")
         capture_id = str(uuid4())

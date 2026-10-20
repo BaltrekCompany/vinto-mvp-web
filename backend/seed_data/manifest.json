@@ -25,7 +25,10 @@
       "VINTO-P1-25",
       "VINTO-P1-26",
       "VINTO-P1-27",
-      "VINTO-P1-28"
+      "VINTO-P1-28",
+      "VINTO-P1-07",
+      "VINTO-P1-30",
+      "VINTO-P1-10"
     ]
   },
   "generated_from": [
@@ -119,18 +122,33 @@
       "path": "lib/vinto/form-definitions.ts",
       "sha256": "df4fd579915a39c71037e06c43f20183b67c778cd4f95f159cb293fa7ed7a06e",
       "scope": "candidate-metadata:name,area,legacy_number,workflow (NUNCA los campos)"
+    },
+    {
+      "path": "lib/vinto/p1-07.ts",
+      "sha256": "1045d597ef6f37138770be1a5866af9b740b6eb4ff36437b3ddf8cfa60cc80a2",
+      "scope": "candidate-fields:VINTO-P1-07"
+    },
+    {
+      "path": "lib/vinto/p1-30.ts",
+      "sha256": "04e9976fa7b7ff58592f1301ad5941e824626680e6ea4b6c79f2dadb0ca80a54",
+      "scope": "candidate-fields:VINTO-P1-30"
+    },
+    {
+      "path": "lib/vinto/p1-10.ts",
+      "sha256": "9beb423fd0780f464122f7b95f71e5188c90cbdf72295132090c75fe652ab09d",
+      "scope": "candidate-fields:VINTO-P1-10 (campos a mano desde parseValues, sin FieldSpec[] exportado)"
     }
   ],
   "files": [
     {
       "path": "article_machines.json",
-      "sha256": "f73927c30fae62b597422c400de142a586d24bb60ebe36e860462f98bf108c43",
-      "bytes": 6956
+      "sha256": "2675fa744bd855342952c53d126c8a3c6fe2b8c1399572bb90a64ec8eeaf416a",
+      "bytes": 18358
     },
     {
       "path": "articles.json",
-      "sha256": "1217fabb9ef362a437f48eb49131115b4d5124bdbcb43fc10a9c0d53c5698585",
-      "bytes": 31607
+      "sha256": "3ed1d986150b91220ae0f43766f709278d38491f119d1b8b0d5447bff5a34371",
+      "bytes": 80412
     },
     {
       "path": "forms/VINTO-P1-01.json",
@@ -161,6 +179,16 @@
       "path": "forms/VINTO-P1-06.json",
       "sha256": "c6a6eb97c981b39e68848d28c7a54eb07d2886ee5d69296e0a5d50ee25e7118e",
       "bytes": 2118
+    },
+    {
+      "path": "forms/VINTO-P1-07.json",
+      "sha256": "4c1bbcbed6326e5f5d17a8d6d09ba86788bffdf3773f76f2f56aa899c3ec30b4",
+      "bytes": 7591
+    },
+    {
+      "path": "forms/VINTO-P1-10.json",
+      "sha256": "06bee5c05e320ef5e472f7153d799c8612c4b2fcfeec73d402f17a225035ec05",
+      "bytes": 1221
     },
     {
       "path": "forms/VINTO-P1-18.json",
@@ -213,14 +241,19 @@
       "bytes": 1879
     },
     {
+      "path": "forms/VINTO-P1-30.json",
+      "sha256": "559e289770711ea94a45202334d4420ae78a39aeaf600a0f4fe6b272b86c8cb4",
+      "bytes": 2447
+    },
+    {
       "path": "forms/VINTO-P1-31.json",
       "sha256": "b0b7298ca1e8d88a22781847297016e1792ef23760a2cf93d4e5248305e61453",
       "bytes": 2221
     },
     {
       "path": "machines.json",
-      "sha256": "40efa5298b0b1466df09040438573313d9ed9ed79eb94f9d05a2a3452f993587",
-      "bytes": 228
+      "sha256": "5c180b50937febd6264abb61a343dff25342e2ad714841a8160e0fa30e9ec948",
+      "bytes": 588
     },
     {
       "path": "material_classes.json",
@@ -234,13 +267,13 @@
     },
     {
       "path": "sectors.json",
-      "sha256": "028bd49589857d4888327850826d1822670a9e16b97fbb28fb32543a44143af7",
-      "bytes": 127
+      "sha256": "ae0fc09726885785b407491ce5f74b9c9d6cce447df1223586f610cc93365941",
+      "bytes": 195
     },
     {
       "path": "shifts.json",
-      "sha256": "e5bc481b4a2401241fb7413fba81e9a2f21a66b99efedbdeb6acf5b6e8ed8c4c",
-      "bytes": 769
+      "sha256": "c2a331d93d27a5255fb00e7b96a51f8e16a8b09c7db78178be94b997c1cb6cb6",
+      "bytes": 1195
     },
     {
       "path": "units.json",
@@ -256,19 +289,19 @@
   "counts": {
     "units": 3,
     "material_classes": 4,
-    "sectors": 1,
-    "machines": 2,
-    "articles": 93,
-    "article_machines": 93,
-    "articles_also_material": 91,
+    "sectors": 2,
+    "machines": 6,
+    "articles": 240,
+    "article_machines": 240,
+    "articles_also_material": 108,
     "articles_with_nominal_weight": 0,
-    "articles_with_grammage": 92,
+    "articles_with_grammage": 236,
     "profiles": 5,
     "workflows": 2,
     "shifts": 2,
-    "shift_schedules": 2,
-    "forms": 17,
-    "form_fields": 272,
+    "shift_schedules": 4,
+    "forms": 20,
+    "form_fields": 322,
     "form_options": 5
   },
   "authority_rules": {
@@ -364,6 +397,12 @@
       "severity": "warning",
       "message": "CLOUD-DEP G.12-C4: 13 formularios candidatos (Bobinas P1-01/02/04/05/31, Calidad P1-18/21/22/24/25/26/27/28) habilitados exclusivamente para QA interno sobre MP1/MP3. Ninguno homologado por VINTO (contrato, catálogos, rangos ni unidades aprobados). No implica liberación/rechazo de Calidad. No activa Rebobinado ni Conversión.",
       "count": 13
+    },
+    {
+      "code": "REBOBINADO_SECTOR_ENABLED_FOR_QA",
+      "severity": "warning",
+      "message": "CLOUD-DEP G.12-C4-COMPLETE: sector REBOBINADO y máquinas BELOIT/OVER/COPASA/PERICHUN (TUBETERA excluida) habilitados para QA junto con 3 formularios candidatos (VINTO-P1-07, VINTO-P1-10, VINTO-P1-30). Máquinas, turnos, artículos y relaciones son CANDIDATOS técnicos derivados de PRODUCTS_BY_MACHINE legacy, sin homologación de VINTO (docs/M4-B1-homologacion-rebobinado.md). Autorizado explícitamente para este piloto con datos sintéticos (CLOUD-DEP G.12-C4-COMPLETE sección A); no implica homologación industrial ni libera ninguna bobina ni control de Calidad.",
+      "count": 3
     }
   ]
 }

@@ -12,8 +12,8 @@ try:
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
 
-P102_CODE = "VINTO-P1-02"
-P101_CODE = "VINTO-P1-01"
+P102_CODE = "ZZFIX-P1-02"
+P101_CODE = "ZZFIX-P1-01"
 P102_MACHINES = ("MP1",)
 P101_MACHINES = ("MP3",)
 TIME_KEYS = ("hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza")

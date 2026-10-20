@@ -39,13 +39,16 @@ FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de 
 #
 # CLOUD-DEP G.12-C4: se añaden los 5 formularios candidatos de Bobinas (P1-01/02/04/05/31) EXCLUSIVAMENTE
 # para QA interno -- ya tienen máquinas reales (MP1/MP3) y versión publicada en el bundle (ver
-# backend/seed_data/forms/VINTO-P1-0{1,2,4,5}.json y VINTO-P1-31.json). Deliberadamente NO se añade
-# ningún código de Rebobinado/Conversión (P1-07/10/11/12/13/16/29/30): ningún sector operativo los
-# respalda (sectors.py::DEFAULT_OPERATIONAL_SECTORS sigue siendo solo BOBINAS) y, aunque se añadieran
-# aquí, `published_form_version` seguiría rechazándolos por falta de máquinas reales -- añadirlos sin
-# esas máquinas sería una ampliación de política sin ningún efecto verificable, y el encargo prohíbe
-# inventar máquinas. Ninguno de los 5 códigos nuevos implica liberación/rechazo de Calidad.
-CENTRAL_FORM_CODES = frozenset({FORM_CODE, "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31"})
+# backend/seed_data/forms/VINTO-P1-0{1,2,4,5}.json y VINTO-P1-31.json).
+#
+# CLOUD-DEP G.12-C4-COMPLETE: se añaden también P1-07/10/30 (Rebobinado), ahora que sectors.py activa
+# REBOBINADO y el bundle tiene BELOIT/OVER/COPASA/PERICHUN publicadas para ellos (ver
+# backend/seed_data/forms/VINTO-P1-{07,10,30}.json). Deliberadamente NO se añaden P1-11/12/13/16/29:
+# P1-11/29 usan grupos repetibles que el importador no soporta (bundle.py), y P1-12/13/16 son hipótesis
+# de prueba con un contrato distinto al de la definición legacy aprobada (decisión explícita de este
+# encargo: no presentar datos bajo un contrato que no es el real). Ninguno de los 8 códigos nuevos
+# implica liberación/rechazo de Calidad ni homologación industrial.
+CENTRAL_FORM_CODES = frozenset({FORM_CODE, "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"})
 PRODUCTION_AREA = "production"
 GROUPS_KEY = "_groups"  # propiedad RESERVADA de `values` para los grupos repetibles; ningún campo de una definición puede llamarse así
 TECHNICAL_MAX_GROUP_ROWS = 1000  # tope TÉCNICO (no funcional) por grupo cuando la definición no declara max_rows: evita cargas absurdas

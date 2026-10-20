@@ -23,11 +23,11 @@ from app.ephemeral_db import build_reference_template, connect, copy_database, d
 from app.seed.bundle import load_bundle
 
 try:
-    from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, P110_VALUES, install_p110
+    from m2b2_fixtures import ENABLED_SECTORS, P110_CODE, P110_VALUES, REB_MACHINE, install_p110
     from m3b_fixtures import P129_CODE, P129_GROUPS, P129_SIMPLE_FIELDS, P129_VALUES, TUBETERA_MACHINE, install_p129, install_tubetera
     from test_assignments_api import call
 except ModuleNotFoundError:
-    from tests.m2b2_fixtures import ENABLED_SECTORS, P110_CODE, P110_VALUES, install_p110
+    from tests.m2b2_fixtures import ENABLED_SECTORS, P110_CODE, P110_VALUES, REB_MACHINE, install_p110
     from tests.m3b_fixtures import P129_CODE, P129_GROUPS, P129_SIMPLE_FIELDS, P129_VALUES, TUBETERA_MACHINE, install_p129, install_tubetera
     from tests.test_assignments_api import call
 
@@ -160,8 +160,8 @@ class DefinitionTests(P129Case):
         self.assertEqual(groups, [(RODELAS, True, 1, None), (FORMATOS, True, 1, None)])  # TEST-ONLY hypotheses
 
     async def test_the_shipped_configuration_is_unchanged_and_p129_is_unreachable_without_the_test_configuration(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
         _, assignment = await self.assignment()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", SHIPPED_POLICY):
             reply = await self.post(self.body(assignment))
@@ -297,7 +297,7 @@ class WriteTests(P129Case):
         _, mp1 = await self.assignment("MP1")
         reply = await self.post(self.body(mp1))
         self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"))
-        _, copasa = await self.assignment("COPASA")
+        _, copasa = await self.assignment(REB_MACHINE)
         self.assertEqual((await self.post(self.body(copasa))).json()["code"], "FORM_NOT_AVAILABLE")
 
     async def test_a_failure_while_writing_rows_rolls_everything_back(self):
@@ -355,7 +355,7 @@ class ReadTests(P129Case):
         only = (await self.get(f"/api/captures?form_code={P129_CODE}")).json()
         self.assertNotIn(f6["id"], [c["id"] for c in only])
         self.assertEqual((await self.get(f"/api/captures/{f6['id']}")).json()["form"]["code"], F6)
-        _, copasa = await self.assignment("COPASA")
+        _, copasa = await self.assignment(REB_MACHINE)
         p110 = await self.post(self.body(copasa, dict(P110_VALUES), form_code=P110_CODE))  # P1-10 keeps working next to P1-29 and never carries _groups
         self.assertEqual(p110.status, 201, p110.text)
         self.assertNotIn("_groups", p110.json()["capture"]["values"])

@@ -30,6 +30,24 @@
       "timezone": "America/La_Paz",
       "valid_from": "2026-01-01",
       "valid_to": null
+    },
+    {
+      "shift": "DIA",
+      "sector": "REBOBINADO",
+      "starts_at": "06:00",
+      "ends_at": "18:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
+    },
+    {
+      "shift": "NOCHE",
+      "sector": "REBOBINADO",
+      "starts_at": "18:00",
+      "ends_at": "06:00",
+      "timezone": "America/La_Paz",
+      "valid_from": "2026-01-01",
+      "valid_to": null
     }
   ]
 }

@@ -12,8 +12,8 @@ try:
 except ModuleNotFoundError:
     from tests.devq2_fixtures import _install
 
-P124_CODE = "VINTO-P1-24"
-P125_CODE = "VINTO-P1-25"
+P124_CODE = "ZZFIX-P1-24"
+P125_CODE = "ZZFIX-P1-25"
 BOBINAS_MACHINES = ("MP1", "MP3")
 
 # key, label, value_type, required, option keys

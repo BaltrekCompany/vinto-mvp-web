@@ -12,8 +12,8 @@ try:
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
 
-P118_CODE = "VINTO-P1-18"
-P121_CODE = "VINTO-P1-21"
+P118_CODE = "ZZFIX-P1-18"
+P121_CODE = "ZZFIX-P1-21"
 BOBINAS_MACHINES = ("MP1", "MP3")
 
 # key, label, value_type, required, option keys

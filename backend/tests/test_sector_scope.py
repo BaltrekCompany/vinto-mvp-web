@@ -54,11 +54,14 @@ PINNED_MIGRATIONS = [
 # ---- 1. configuración -------------------------------------------------------------------------------------------------------
 
 class SectorConfigTests(unittest.TestCase):
-    def test_bobinas_is_the_only_operational_sector_by_default(self):
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS",))
-        self.assertEqual(sectors.DEFAULT_OPERATIONAL_SECTORS, ("BOBINAS",))
+    def test_bobinas_and_rebobinado_are_operational_by_default_conversion_is_not(self):
+        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO se habilitó para el piloto de QA (sigue siendo un cambio
+        # de código revisado, nunca una variable de entorno); CONVERSION sigue reconocido pero NO operativo.
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(sectors.DEFAULT_OPERATIONAL_SECTORS, ("BOBINAS", "REBOBINADO"))
         self.assertTrue(sectors.is_operational_sector("BOBINAS"))
-        for code in ("REBOBINADO", "CONVERSION", "OTRO", "bobinas", " BOBINAS", "", None, 1):
+        self.assertTrue(sectors.is_operational_sector("REBOBINADO"))
+        for code in ("CONVERSION", "OTRO", "bobinas", " BOBINAS", "", None, 1):
             self.assertFalse(sectors.is_operational_sector(code), repr(code))
 
     def test_the_configuration_is_immutable_and_returns_text_codes(self):
@@ -73,9 +76,9 @@ class SectorConfigTests(unittest.TestCase):
         self.assertLess(set(sectors.operational_sector_codes()), sectors.KNOWN_SECTOR_CODES)  # recognized != enabled
 
     def test_a_valid_future_configuration_is_accepted_but_not_applied(self):
-        self.assertEqual(sectors.validate_operational_sectors(("BOBINAS", "REBOBINADO")), ("BOBINAS", "REBOBINADO"))
+        self.assertEqual(sectors.validate_operational_sectors(("BOBINAS", "CONVERSION")), ("BOBINAS", "CONVERSION"))
         self.assertEqual(sectors.validate_operational_sectors(["BOBINAS", "REBOBINADO", "CONVERSION"]), ("BOBINAS", "REBOBINADO", "CONVERSION"))
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS",))  # validar no habilita nada
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))  # validar no habilita nada
 
     def test_invalid_configurations_are_rejected(self):
         invalid = {
@@ -140,7 +143,9 @@ class StaticScopeTests(unittest.TestCase):
 
 # ---- 3. escenario de extremo a extremo con un sector futuro SINTÉTICO (solo en la plantilla efímera) -------------------------
 
-FUTURE_SECTOR, FUTURE_MACHINE = "REBOBINADO", "TESTREB1"
+# CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es operativo para el piloto de QA; CONVERSION sigue siendo
+# el sector "futuro" (reconocido pero no operativo) que este escenario necesita.
+FUTURE_SECTOR, FUTURE_MACHINE = "CONVERSION", "TESTREB1"
 STATE = {}
 
 
@@ -242,7 +247,7 @@ class SectorGateTests(f3.BobbinApiCase):
 
         # ---------- FASE 2: configuración por defecto. Los MISMOS datos y operaciones deben quedar bloqueados o invisibles. ----------
         before = self.counts()
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS",))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO"))
         listed = lambda reply, key=None: [(i[key] if key else i["id"]) for i in reply.json()]
         self.assertNotIn(order["id"], listed(await call("GET", "/api/work-orders", cookie=jefatura)))
         self.assertNotIn(assignment["id"], listed(await call("GET", "/api/assignments", cookie=supervision)))

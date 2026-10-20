@@ -111,16 +111,24 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationAndAvailabilityTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_the_forms_are_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset())  # NO machine-level quality form is enabled in the real configuration
-        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-06"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
+        # CLOUD-DEP G.12-C4: MACHINE_QUALITY_FORM_CODES/CENTRAL_FORM_CODES reales ya incluyen los
+        # candidatos habilitados para QA; lo que importa es que P122_CODE/P126_CODE (fixtures sintéticas) NO estén.
+        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))
+        # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_PRODUCTION_POLICY también incluye P1-07/10/30 (Rebobinado),
+        # pero esos 3 solo están vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 nunca los ofrecen.
+        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
         with patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", SHIPPED_MACHINE_POLICY):
             for code in (P122_CODE, P126_CODE):
                 reply = await self.post(self.body(code))
                 self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"), code)
                 self.assertEqual((await self.get(f"/api/quality/machines/MP1/captures?form_code={code}")).status, 422, code)
             listed = (await self.get("/api/quality/machine-forms")).json()["sectors"]
-            self.assertEqual([m["forms"] for s in listed for m in s["machines"]], [[], []])  # published but not enabled: nothing is offered
+            offered = [[f["code"] for f in m["forms"]] for s in listed for m in s["machines"]]
+            self.assertEqual(offered, [sorted(SHIPPED_MACHINE_POLICY), sorted(SHIPPED_MACHINE_POLICY)])
+            for codes in offered:
+                self.assertNotIn(P122_CODE, codes)
+                self.assertNotIn(P126_CODE, codes)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)
 
     async def test_the_backend_publishes_both_forms_on_mp1_and_mp3_only_to_quality_users_in_scope(self):
@@ -137,7 +145,12 @@ class ConfigurationAndAvailabilityTests(Base):
 
     async def test_the_production_availability_is_not_affected(self):
         reply = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
-        self.assertEqual({m["code"]: [f["code"] for f in m["forms"]] for s in reply.json()["sectors"] for m in s["machines"]}, {"MP1": ["VINTO-P1-06"], "MP3": ["VINTO-P1-06"]})
+        offered = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] for m in s["machines"]}
+        bobinas_forms = sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
+        self.assertEqual({k: v for k, v in offered.items() if k in ("MP1", "MP3")}, {"MP1": bobinas_forms, "MP3": bobinas_forms})
+        for codes in offered.values():
+            self.assertNotIn(P122_CODE, codes)
+            self.assertNotIn(P126_CODE, codes)
 
     async def test_the_candidate_contracts_are_exactly_the_manual_legacy_fields(self):
         self.assertEqual([f[0] for f in P122_FIELDS], ["numero_de_cuba", "masa_humeda", "volumen_desplazado", "grado_de_refinacion_sr", "amperaje", "observacion"])

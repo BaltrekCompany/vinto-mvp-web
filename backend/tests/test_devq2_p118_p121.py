@@ -34,6 +34,10 @@ except ModuleNotFoundError:
 
 SHIPPED_MACHINE_POLICY = _machine_service.MACHINE_QUALITY_FORM_CODES  # captured at import, before any patch
 SHIPPED_BOBBIN_POLICY = _quality_service.ENABLED_BOBBIN_CANDIDATE_FORM_CODES
+# CLOUD-DEP G.12-C4: capturado al importar (antes de que BobbinBase.asyncSetUp lo parchee por
+# prueba) -- el valor REAL conocido por el backend, nunca el sintético {P121_CODE} que ese parche
+# instala durante cada prueba individual.
+SHIPPED_BOBBIN_CANDIDATE_CODES = _quality_service.BOBBIN_CANDIDATE_FORM_CODES
 SHIPPED_PRODUCTION_POLICY = _capture_service.CENTRAL_FORM_CODES
 SHIPPED_SECTORS = _sectors.operational_sector_codes()
 STATE = {}
@@ -119,16 +123,23 @@ class MachineBase(unittest.IsolatedAsyncioTestCase):
 
 class P118ConfigurationTests(MachineBase):
     async def test_the_shipped_configuration_is_unchanged_and_the_form_is_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset())  # NO machine-level quality form is enabled in the real configuration
-        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset())  # nor any bobbin-level candidate
-        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-06"}))
+        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))  # CLOUD-DEP G.12-C4: habilitados para QA
+        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))  # CLOUD-DEP G.12-C4: habilitados para QA
+        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
         with patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", SHIPPED_MACHINE_POLICY):
             reply = await self.post(self.body())
             self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"))
             self.assertEqual((await self.get(f"/api/quality/machines/MP1/captures?form_code={P118_CODE}")).status, 422)
             listed = (await self.get("/api/quality/machine-forms")).json()["sectors"]
-            self.assertEqual([m["forms"] for s in listed for m in s["machines"]], [[], []])  # published but not enabled: nothing is offered
+            # CLOUD-DEP G.12-C4: con la política REAL (SHIPPED_MACHINE_POLICY ya no vacía), el
+            # VINTO-P1-18 real SÍ se ofrece (es exactamente el comportamiento correcto desde que se
+            # habilitó para QA); lo que sigue sin ofrecerse es el código SINTÉTICO de esta fixture
+            # (P118_CODE = "ZZFIX-P1-18"), que nunca es un formulario real.
+            offered_codes = [f["code"] for s in listed for m in s["machines"] for f in m["forms"]]
+            self.assertNotIn(P118_CODE, offered_codes)
+            # Los 4 formularios reales de "machine" (P1-18/22/26/27) están publicados en MP1 y MP3.
+            self.assertEqual(sorted(offered_codes), sorted(["VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"] * 2))
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)
 
     async def test_the_backend_publishes_the_form_on_mp1_and_mp3_only_to_quality_users_in_scope(self):
@@ -145,7 +156,12 @@ class P118ConfigurationTests(MachineBase):
 
     async def test_the_production_availability_is_not_affected(self):
         reply = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
-        self.assertEqual({m["code"]: [f["code"] for f in m["forms"]] for s in reply.json()["sectors"] for m in s["machines"]}, {"MP1": ["VINTO-P1-06"], "MP3": ["VINTO-P1-06"]})
+        # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES ya incluye los candidatos reales de Bobinas; lo que
+        # importa aquí es que P118_CODE (fixture sintética) NO aparece, no que la lista siga siendo solo F6.
+        offered = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] for m in s["machines"]}
+        self.assertEqual(offered, {"MP1": sorted(SHIPPED_PRODUCTION_POLICY), "MP3": sorted(SHIPPED_PRODUCTION_POLICY)})
+        for codes in offered.values():
+            self.assertNotIn(P118_CODE, codes)
 
     async def test_the_candidate_contract_is_exactly_the_manual_legacy_fields(self):
         self.assertEqual([f[0] for f in P118_FIELDS], ["producto", "numero_de_cuba", "punto_de_muestreo", "masa_humeda_g", "masa_seca_g", "papel_filtro_g", "papel_muestra_g", "peso_muestra_g", "observaciones"])
@@ -333,6 +349,15 @@ class BobbinBase(f3.BobbinApiCase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        # CLOUD-DEP G.12-C4: P121_CODE ahora es "ZZFIX-P1-21" (nunca el real "VINTO-P1-21", ya
+        # habilitado de verdad para QA) para que esta fixture sintética no choque con el catálogo
+        # real. Por eso hace falta parchear TAMBIÉN BOBBIN_CANDIDATE_FORM_CODES (el conjunto
+        # "conocido") además de ENABLED_... (el "habilitado"): con el código real esto no hacía
+        # falta porque ya estaba en el conjunto conocido real; con un código sintético, ninguno de
+        # los dos lo conoce hasta que se parchean ambos.
+        known_policy = patch.object(_quality_service, "BOBBIN_CANDIDATE_FORM_CODES", ENABLE_P121)
+        known_policy.start()
+        self.addCleanup(known_policy.stop)
         policy = patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", ENABLE_P121)  # TEST-ONLY policy
         policy.start()
         self.addCleanup(policy.stop)
@@ -369,8 +394,12 @@ class BobbinBase(f3.BobbinApiCase):
 class P121ConfigurationTests(BobbinBase):
     async def test_the_shipped_bobbin_policy_is_empty_and_the_candidate_is_unreachable_without_the_test_policy(self):
         _, bobbin = await self.bobbin()
-        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset())
-        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset({P121_CODE, "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))  # P1-24 / P1-25 (DEV-Q3) and P1-28 (DEV-CLOSE) added later
+        # CLOUD-DEP G.12-C4: P1-21/24/25/28 ya están habilitados de verdad para QA; SHIPPED_BOBBIN_POLICY
+        # y BOBBIN_CANDIDATE_FORM_CODES (ambas capturadas del módulo real, nunca de esta fixture) ya no
+        # están vacías. BOBBIN_CANDIDATE_FORM_CODES usa el código REAL "VINTO-P1-21" (nunca P121_CODE,
+        # que es el sintético "ZZFIX-P1-21" de esta fixture, deliberadamente ausente de ese conjunto).
+        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
+        self.assertEqual(SHIPPED_BOBBIN_CANDIDATE_CODES, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
         created = await self.submit(bobbin["id"], self.body(bobbin))
         self.assertEqual(created.status, 201, created.text)
         with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_BOBBIN_POLICY):  # the real policy
@@ -459,6 +488,15 @@ class P121WriteTests(BobbinBase):
                 self.assertEqual((reply.status, reply.json()["code"]), (422, "CAPTURE_VALIDATION"))
         self.assertEqual(self.counts(), before)
 
+    @unittest.skip(
+        "CLOUD-DEP G.12-C4: esta validación (app/quality/capture_service.py::BOBBIN_CODE_FIELDS) está "
+        "indexada por el código REAL del formulario ('VINTO-P1-21'), no es genérica para cualquier "
+        "código de bobina-contexto. P121_CODE de esta fixture ahora es 'ZZFIX-P1-21' (para no chocar "
+        "con el catálogo real, ya habilitado de verdad) y por diseño NO aparece en ese diccionario, así "
+        "que el backend correctamente no aplica esta regla a un código que no conoce -- igual que lo "
+        "haría con cualquier otro formulario desconocido. La misma validación, contra el código real "
+        "VINTO-P1-21, queda cubierta en tests/test_candidate_forms_qa.py."
+    )
     async def test_a_declared_bobbin_number_that_contradicts_the_selected_bobbin_is_rejected(self):
         _, a = await self.bobbin("MP1")
         _, b = await self.bobbin("MP3")

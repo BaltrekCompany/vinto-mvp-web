@@ -15,13 +15,17 @@ try:
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
 
-P130_CODE = "VINTO-P1-30"
-P107_CODE = "VINTO-P1-07"
-REB_SECTOR = "REBOBINADO"
-P130_MACHINES = ("PERICHUN",)
-P107_MACHINES = ("COPASA", "BELOIT", "OVER")
+# CLOUD-DEP G.12-C4-COMPLETE: VINTO-P1-07/P1-30, REBOBINADO y COPASA/BELOIT/OVER/PERICHUN son ahora
+# códigos REALES (formulario, sector y máquinas genuinamente publicados en backend/seed_data); esta
+# fixture usa códigos sintéticos ZZFIX* para no chocar con ellos (UNIQUE(form.code) / UNIQUE(sector.code)
+# / UNIQUE(machine.code)).
+P130_CODE = "ZZFIX-P1-30"
+P107_CODE = "ZZFIX-P1-07"
+REB_SECTOR = "ZZFIX_REBOBINADO"
+P130_MACHINES = ("ZZFIX_PERICHUN",)
+P107_MACHINES = ("ZZFIX_COPASA", "ZZFIX_BELOIT", "ZZFIX_OVER")
 REB_MACHINES = P107_MACHINES + P130_MACHINES
-ENABLED_SECTORS = ("BOBINAS", "REBOBINADO")  # test-only operational scope
+ENABLED_SECTORS = ("BOBINAS", REB_SECTOR)  # test-only operational scope
 
 CRIA_NUMBERS = tuple(range(1, 12)) + tuple(range(13, 23))  # 1-11 and 13-22: NO peso_cria_12
 

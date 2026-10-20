@@ -38,6 +38,7 @@ except ModuleNotFoundError:
 
 SHIPPED_CENTRAL = _quality_service.CENTRAL_BOBBIN_FORM_CODES  # captured at import, before any patch
 SHIPPED_ENABLED = _quality_service.ENABLED_BOBBIN_CANDIDATE_FORM_CODES
+SHIPPED_BOBBIN_CANDIDATE_CODES = _quality_service.BOBBIN_CANDIDATE_FORM_CODES  # captured at import, before any patch
 SHIPPED_MACHINE = _machine_service.MACHINE_QUALITY_FORM_CODES
 STATE = {}
 UNKNOWN = "QA-UNKNOWN-QUALITY"
@@ -72,7 +73,12 @@ class Base(q2.BobbinBase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        # q2.BobbinBase enables P1-21 only; this suite controls the policy explicitly in each test (default: the SHIPPED policy)
+        # q2.BobbinBase (super) enables its own synthetic P121_CODE only and, since G.12-C4, also narrows
+        # BOBBIN_CANDIDATE_FORM_CODES ("known") to that same synthetic code; this suite controls BOTH
+        # policies explicitly in each test (default: the real SHIPPED policy for known and enabled).
+        known = patch.object(_quality_service, "BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_BOBBIN_CANDIDATE_CODES)
+        known.start()
+        self.addCleanup(known.stop)
         policy = patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_ENABLED)
         policy.start()
         self.addCleanup(policy.stop)
@@ -91,11 +97,18 @@ class Base(q2.BobbinBase):
 
 class ShippedPolicyTests(Base):
     async def test_the_shipped_policies_are_exactly_the_central_forms_and_nothing_else(self):
+        # CLOUD-DEP G.12-C4: desde que P1-18/21/22/24/25/26/27/28 se habilitaron de verdad para QA
+        # (G.12-C4), estas tres políticas ya NO están vacías. CANDIDATES (arriba) usa códigos
+        # ZZFIX-* deliberadamente DISTINTOS de los reales (para que las fixtures sintéticas de este
+        # módulo no choquen con el catálogo real) -- por eso la comparación ya no puede hacerse
+        # contra CANDIDATES, sino contra los códigos reales que BOBBIN_CANDIDATE_FORM_CODES siempre
+        # conoció (nunca cambiaron; solo ENABLED_BOBBIN_CANDIDATE_FORM_CODES/MACHINE_QUALITY_FORM_
+        # CODES, que antes eran frozenset() vacíos, pasaron a igualar ese mismo conjunto conocido).
         self.assertEqual(SHIPPED_CENTRAL, frozenset({"VINTO-P1-19", "VINTO-P1-20"}))
-        self.assertEqual(SHIPPED_ENABLED, frozenset())
-        self.assertEqual(SHIPPED_MACHINE, frozenset())
-        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, frozenset(CANDIDATES))
-        self.assertEqual(_quality_service._allowed_codes(), ["VINTO-P1-19", "VINTO-P1-20"])  # with the real configuration the route admits exactly P1-19 and P1-20
+        self.assertEqual(SHIPPED_ENABLED, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
+        self.assertEqual(SHIPPED_MACHINE, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))
+        self.assertEqual(SHIPPED_BOBBIN_CANDIDATE_CODES, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
+        self.assertEqual(_quality_service._allowed_codes(), ["VINTO-P1-19", "VINTO-P1-20", "VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"])
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.quality_release WHERE status <> 'pending'"), 0)
 
 
@@ -144,14 +157,21 @@ class CentralFormsTests(Base):
 
 class CandidatePolicyTests(Base):
     async def test_the_bobbin_candidates_are_blocked_without_the_policy_and_work_with_it(self):
+        # CLOUD-DEP G.12-C4: CANDIDATES usa códigos ZZFIX-* (nunca los reales, ya habilitados de
+        # verdad) para que esta fixture sintética no choque con el catálogo real. Por eso, a
+        # diferencia de antes, hay que parchear TAMBIÉN BOBBIN_CANDIDATE_FORM_CODES (el conjunto
+        # "conocido") dentro del `with`, no solo ENABLED_... (el conjunto "habilitado"): con los
+        # códigos reales esto no hacía falta porque ya estaban en el conjunto conocido real; con
+        # códigos sintéticos, ninguno de los dos conjuntos los conoce hasta que se parchean ambos.
         _, bobbin = await self.bobbin()
         before = self.counts()
-        for code, values in CANDIDATES.items():  # published and linked, but the policy is the shipped (empty) one
+        for code, values in CANDIDATES.items():  # unknown to the shipped policy (synthetic ZZFIX code)
             reply = await self.submit(bobbin["id"], self.post_body(code, values, bobbin))
             self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"), code)
             self.assertEqual((await self.read(f"/api/quality/bobbins/{bobbin['id']}/captures?form_code={code}")).status, 422, code)
         self.assertEqual(self.counts(), before)
-        with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset(CANDIDATES)):  # TEST-ONLY policy
+        with patch.object(_quality_service, "BOBBIN_CANDIDATE_FORM_CODES", frozenset(CANDIDATES)), \
+             patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset(CANDIDATES)):  # TEST-ONLY policy
             made = {}
             for code, values in CANDIDATES.items():
                 reply = await self.submit(bobbin["id"], self.post_body(code, values, bobbin))

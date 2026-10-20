@@ -10,8 +10,10 @@ from datetime import time
 
 try:
     from m2a_fixtures import install_production_form
+    from m2b2_fixtures import REB_MACHINE
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
+    from tests.m2b2_fixtures import REB_MACHINE
 
 P107_TEST_CODE = "VINTO-TEST-P107-SYN"
 P107_TEST_FIELDS = (
@@ -22,7 +24,7 @@ P107_TEST_FIELDS = (
 P107_TEST_VALUES = {"etiqueta_numero_de_bobina": "EJEMPLO-ETIQUETA", "peso": "100.5", "observaciones": "dato sintético M5-A"}
 
 
-def install_p107_test_form(connection, machine_codes=("COPASA",)):
+def install_p107_test_form(connection, machine_codes=(REB_MACHINE,)):
     """Publish the test-only stand-in form for the fictitious Rebobinado machine (ephemeral database only)."""
     return install_production_form(connection, P107_TEST_CODE, machine_codes=machine_codes, fields=P107_TEST_FIELDS)
 

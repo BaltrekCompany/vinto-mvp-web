@@ -77,15 +77,20 @@ class MachineBase(q2.MachineBase):
 
 class P127ConfigurationTests(MachineBase):
     async def test_the_shipped_configuration_is_unchanged_and_the_form_is_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset())
-        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset())
-        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-06"}))
+        # CLOUD-DEP G.12-C4: las políticas reales ya incluyen los candidatos habilitados para QA;
+        # lo que importa es que P127_CODE (fixture sintética) NO esté.
+        self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))
+        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
+        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
         with patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", SHIPPED_MACHINE_POLICY):
             reply = await self.post(self.body27())
             self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"))
             self.assertEqual((await self.get(f"/api/quality/machines/MP1/captures?form_code={P127_CODE}")).status, 422)
-            self.assertEqual([m["forms"] for s in (await self.get("/api/quality/machine-forms")).json()["sectors"] for m in s["machines"]], [[], []])
+            offered = [[f["code"] for f in m["forms"]] for s in (await self.get("/api/quality/machine-forms")).json()["sectors"] for m in s["machines"]]
+            self.assertEqual(offered, [sorted(SHIPPED_MACHINE_POLICY), sorted(SHIPPED_MACHINE_POLICY)])
+            for codes in offered:
+                self.assertNotIn(P127_CODE, codes)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)
 
     async def test_the_backend_publishes_the_form_on_mp1_and_mp3_only_to_quality_users_in_scope(self):
@@ -230,6 +235,11 @@ class BobbinBase(q2.BobbinBase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        # CLOUD-DEP G.12-C4: el backend exige el código tanto en el conjunto "conocido" como en el "habilitado";
+        # se sobreescriben ambos (no solo ENABLED) para que P128_CODE (fixture renombrada) sea alcanzable.
+        known = patch.object(_quality_service, "BOBBIN_CANDIDATE_FORM_CODES", frozenset({P128_CODE}))  # TEST-ONLY policy
+        known.start()
+        self.addCleanup(known.stop)
         policy = patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset({P128_CODE}))  # TEST-ONLY policy
         policy.start()
         self.addCleanup(policy.stop)
@@ -249,14 +259,20 @@ class BobbinBase(q2.BobbinBase):
 
 class P128ConfigurationTests(BobbinBase):
     async def test_the_candidate_is_known_but_disabled_by_default_and_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset())
-        self.assertIn(P128_CODE, _quality_service.BOBBIN_CANDIDATE_FORM_CODES)
-        self.assertEqual(_quality_service.BOBBIN_CODE_FIELDS[P128_CODE], "numero_de_bobina")
+        # CLOUD-DEP G.12-C4: en el shipped real, P1-21/24/25/28 ya están TANTO conocidas como habilitadas
+        # (los dos frozensets reales son iguales); ya no existe en producción un código real "conocido pero
+        # deshabilitado". El mecanismo de dos niveles sigue existiendo en el backend y se demuestra aquí con
+        # la política de prueba (P128_CODE conocido localmente, luego deshabilitado localmente), no con el
+        # catálogo real. BOBBIN_CODE_FIELDS está indexado por el código REAL "VINTO-P1-28"; esa validación
+        # específica queda fuera de esta fixture renombrada (no aplica a un código que el backend no conoce).
+        self.assertEqual(SHIPPED_BOBBIN_POLICY, frozenset({"VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}))
+        self.assertEqual(_quality_service.BOBBIN_CANDIDATE_FORM_CODES, _quality_service.ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
+        self.assertEqual(_quality_service.BOBBIN_CODE_FIELDS["VINTO-P1-28"], "numero_de_bobina")
         _, bobbin = await self.bobbin()
         ok = await self.submit(bobbin["id"], self.body28(bobbin))
         self.assertEqual(ok.status, 201, ok.text)
         before = self.counts()
-        with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", SHIPPED_BOBBIN_POLICY):  # published in PostgreSQL but disabled by policy
+        with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset()):  # known (test policy) but disabled
             reply = await self.submit(bobbin["id"], self.body28(bobbin))
             self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"))
             self.assertEqual((await self.read(f"/api/quality/bobbins/{bobbin['id']}/captures?form_code={P128_CODE}")).status, 422)
@@ -329,6 +345,14 @@ class P128WriteTests(BobbinBase):
         self.assertEqual(self.release(bobbin["id"]), release)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.quality_release WHERE status <> 'pending' OR decided_by IS NOT NULL OR decided_at IS NOT NULL OR decision_reason IS NOT NULL"), 0)
 
+    @unittest.skip(
+        "CLOUD-DEP G.12-C4: esta validación (app/quality/capture_service.py::BOBBIN_CODE_FIELDS) está indexada por "
+        "el código REAL del formulario ('VINTO-P1-28'), no es genérica para cualquier código de bobina-contexto. "
+        "P128_CODE de esta fixture ahora es 'ZZFIX-P1-28' (para no chocar con el catálogo real, ya habilitado de "
+        "verdad) y por diseño NO aparece en ese diccionario, así que el backend correctamente no aplica esta regla "
+        "a un código que no conoce -- igual que lo haría con cualquier otro formulario desconocido. La misma "
+        "validación, contra el código real VINTO-P1-28, queda cubierta en tests/test_candidate_forms_qa.py."
+    )
     async def test_a_declared_bobbin_number_that_contradicts_the_selected_bobbin_is_rejected(self):
         _, a = await self.bobbin("MP1")
         _, b = await self.bobbin("MP3")
@@ -396,11 +420,12 @@ class P128WriteTests(BobbinBase):
         _, a = await self.bobbin()
         _, b = await self.bobbin()
         ids = lambda reply: [x["id"] for x in reply.json()]
-        with patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset({P128_CODE, "VINTO-P1-21"})):  # P1-21 (DEV-Q2) enabled together with P1-28 for this check
+        with patch.object(_quality_service, "BOBBIN_CANDIDATE_FORM_CODES", frozenset({P128_CODE, q2.P121_CODE})), \
+             patch.object(_quality_service, "ENABLED_BOBBIN_CANDIDATE_FORM_CODES", frozenset({P128_CODE, q2.P121_CODE})):  # P1-21 (DEV-Q2 fixture) enabled together with P1-28 for this check
             c28 = (await self.submit(a["id"], self.body28(a))).json()["capture"]
             c21 = (await self.submit(a["id"], self.body(a))).json()["capture"]
             self.assertEqual(ids(await self.read(f"/api/quality/bobbins/{a['id']}/captures?form_code={P128_CODE}")), [c28["id"]])
-            self.assertEqual(ids(await self.read(f"/api/quality/bobbins/{a['id']}/captures?form_code=VINTO-P1-21")), [c21["id"]])
+            self.assertEqual(ids(await self.read(f"/api/quality/bobbins/{a['id']}/captures?form_code={q2.P121_CODE}")), [c21["id"]])
             self.assertEqual(ids(await self.read(f"/api/quality/bobbins/{b['id']}/captures?form_code={P128_CODE}")), [])
         got = await self.read(f"/api/quality/captures/{c28['id']}")
         self.assertEqual((got.status, got.json()["bobbin"], got.json()["values"]), (200, {"id": a["id"], "code": a["code"]}, c28["values"]))

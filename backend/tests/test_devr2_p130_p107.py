@@ -134,11 +134,16 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 
 class ConfigurationTests(Base):
-    async def test_the_shipped_configuration_is_unchanged_and_the_real_seed_has_no_rebobinado(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # REBOBINADO is recognised but NOT operational
-        self.assertNotIn(P130_CODE, {r["code"] for r in BUNDLE.forms}) if hasattr(BUNDLE, "forms") else None
-        self.assertNotIn("PERICHUN", {r["code"] for r in BUNDLE.machines}) if hasattr(BUNDLE, "machines") else None
+    async def test_the_shipped_configuration_is_unchanged_and_the_fixture_codes_are_not_in_the_real_seed(self):
+        # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO y P1-07/10/30 ya son reales y operativos (SHIPPED_POLICY/
+        # SHIPPED_SECTORS ya no son solo Bobinas); lo que importa aquí es que los códigos SINTÉTICOS de
+        # esta fixture (ZZFIX-P1-30/ZZFIX-P1-07, ZZFIX_PERICHUN) nunca aparezcan en el bundle real.
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO"))
+        self.assertNotIn(P130_CODE, {r["code"] for r in BUNDLE.forms})
+        self.assertNotIn(P107_CODE, {r["code"] for r in BUNDLE.forms})
+        self.assertNotIn("ZZFIX_PERICHUN", {r["code"] for r in BUNDLE.machines})
+        self.assertIn("PERICHUN", {r["code"] for r in BUNDLE.machines})  # real, genuinely published for VINTO-P1-30
 
     async def test_without_the_test_configuration_the_forms_are_unreachable(self):
         for code, machine in self.cases():
@@ -170,11 +175,11 @@ class ConfigurationTests(Base):
 
     async def test_the_backend_publishes_each_form_only_for_its_machines_and_only_in_the_users_scope(self):
         reply = await self.get("/api/production/machines")
-        machines = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] if s["code"] == "REBOBINADO" for m in s["machines"]}
-        self.assertEqual(machines, {"COPASA": [P110_CODE, P107_CODE], "BELOIT": [P107_CODE], "OVER": [P107_CODE], "PERICHUN": [P130_CODE]} | {"COPASA": sorted([P110_CODE, P107_CODE])})
+        machines = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] if s["code"] == "ZZFIX_REBOBINADO" for m in s["machines"]}
+        self.assertEqual(machines, {"ZZFIX_COPASA": [P110_CODE, P107_CODE], "ZZFIX_BELOIT": [P107_CODE], "ZZFIX_OVER": [P107_CODE], "ZZFIX_PERICHUN": [P130_CODE]} | {"ZZFIX_COPASA": sorted([P110_CODE, P107_CODE])})
         for who in ("OPERACION_SOLO_BOBINAS", "OPERACION_SIN_SECTOR"):
             sectors = [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]]
-            self.assertNotIn("REBOBINADO", sectors, who)
+            self.assertNotIn("ZZFIX_REBOBINADO", sectors, who)
 
 
 class WriteTests(Base):
@@ -197,11 +202,11 @@ class WriteTests(Base):
             self.assertEqual({k: after[k] - before[k] for k in after}, {"vinto_txn.capture": 1, "vinto_txn.capture_detail": len(values), "vinto_txn.bobbin": 0, "vinto_txn.quality_release": 0})
 
     async def test_text_fields_are_stored_as_typed_and_nothing_is_calculated(self):
-        _, assignment = await self.assignment("PERICHUN")
+        _, assignment = await self.assignment("ZZFIX_PERICHUN")
         capture = (await self.post(self.payload(assignment, P130_CODE))).json()["capture"]
         stored = self.rows(capture["id"])
         self.assertEqual((stored["peso_de_bobina"], stored["numero_mrp"], stored["numero_de_bobina"]), ("text:850,5 kg (texto)", "text:MRP-EJEMPLO-9", "text:B-EJEMPLO-30 (texto, no crea bobina)"))
-        _, assignment = await self.assignment("COPASA")
+        _, assignment = await self.assignment("ZZFIX_COPASA")
         capture = (await self.post(self.payload(assignment, P107_CODE))).json()["capture"]
         stored = self.rows(capture["id"])
         self.assertEqual(sorted(stored), sorted(P107_VALUES))
@@ -255,7 +260,7 @@ class WriteTests(Base):
             self.assertEqual(self.counts(), before)
 
     async def test_a_form_is_available_only_on_its_own_machines(self):
-        for code, wrong in ((P130_CODE, "COPASA"), (P107_CODE, "PERICHUN")):
+        for code, wrong in ((P130_CODE, "ZZFIX_COPASA"), (P107_CODE, "ZZFIX_PERICHUN")):
             _, assignment = await self.assignment(wrong)
             before = self.counts()
             reply = await self.post(self.payload(assignment, code))
@@ -280,7 +285,7 @@ class WriteTests(Base):
             self.assertEqual((await self.post({**self.payload(assignment, other), "capture_id": body["capture_id"]})).status, 409)
 
     async def test_concurrency_identical_posts_create_one_capture(self):
-        for code, machine in (("VINTO-P1-30", "PERICHUN"), ("VINTO-P1-07", "OVER")):
+        for code, machine in ((P130_CODE, "ZZFIX_PERICHUN"), (P107_CODE, "ZZFIX_OVER")):
             _, assignment = await self.assignment(machine)
             body = self.payload(assignment, code)
             replies = await asyncio.gather(*[self.post(body) for _ in range(5)])
@@ -289,7 +294,7 @@ class WriteTests(Base):
             self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id = %s", (body["capture_id"],)), len(FORMS[code][0]))
 
     async def test_roles_sector_scope_and_a_finished_assignment(self):
-        _, assignment = await self.assignment("COPASA")
+        _, assignment = await self.assignment("ZZFIX_COPASA")
         body = self.payload(assignment, P107_CODE)
         self.assertEqual((await call("POST", "/api/captures", json_body=body)).status, 401)
         for who in ("JEFATURA", "SUPERVISION", "CALIDAD"):
@@ -304,8 +309,8 @@ class WriteTests(Base):
         self.assertEqual(self.counts(), before)
 
     async def test_the_payload_stays_closed(self):
-        _, assignment = await self.assignment("PERICHUN")
-        for extra in ({"machine_code": "PERICHUN"}, {"bobbin_id": str(uuid4())}, {"hora_inicio": "07:00"}, {"operating_date": "2026-01-01"}, {"form_version_id": str(uuid4())}):
+        _, assignment = await self.assignment("ZZFIX_PERICHUN")
+        for extra in ({"machine_code": "ZZFIX_PERICHUN"}, {"bobbin_id": str(uuid4())}, {"hora_inicio": "07:00"}, {"operating_date": "2026-01-01"}, {"form_version_id": str(uuid4())}):
             self.assertEqual((await self.post({**self.payload(assignment, P130_CODE), **extra})).status, 422, extra)
 
     async def test_no_bobbin_genealogy_or_release_is_ever_created_or_changed(self):
@@ -359,25 +364,25 @@ class ReadTests(Base):
 
 
 class UnavailableTests(Base):
-    install = staticmethod(lambda connection: (install_p130(connection, publish=False), install_p107(connection, machine_codes=("COPASA",))))
+    install = staticmethod(lambda connection: (install_p130(connection, publish=False), install_p107(connection, machine_codes=("ZZFIX_COPASA",))))
     prefix = "vinto_devr2u"
 
     async def test_an_unpublished_form_or_a_machine_without_the_link_is_not_available(self):
-        machines = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == "REBOBINADO" for m in s["machines"]}
-        self.assertEqual(machines["PERICHUN"], [])
-        self.assertEqual(machines["BELOIT"], [])
-        self.assertEqual(machines["COPASA"], sorted([P110_CODE, P107_CODE]))
-        for code, machine in ((P130_CODE, "PERICHUN"), (P107_CODE, "BELOIT")):
+        machines = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == "ZZFIX_REBOBINADO" for m in s["machines"]}
+        self.assertEqual(machines["ZZFIX_PERICHUN"], [])
+        self.assertEqual(machines["ZZFIX_BELOIT"], [])
+        self.assertEqual(machines["ZZFIX_COPASA"], sorted([P110_CODE, P107_CODE]))
+        for code, machine in ((P130_CODE, "ZZFIX_PERICHUN"), (P107_CODE, "ZZFIX_BELOIT")):
             _, assignment = await self.assignment(machine)
             reply = await self.post(self.payload(assignment, code))
             self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"), (code, machine))
-        _, assignment = await self.assignment("COPASA")
+        _, assignment = await self.assignment("ZZFIX_COPASA")
         self.assertEqual((await self.post(self.payload(assignment, P107_CODE))).status, 201)
 
 
 class RegressionTests(Base):
     async def test_p1_10_keeps_working_alongside_the_new_candidates(self):
-        _, assignment = await self.assignment("COPASA")
+        _, assignment = await self.assignment("ZZFIX_COPASA")
         body = {"capture_id": str(uuid4()), "form_code": P110_CODE, "assignment_id": assignment["id"], "device_key": str(uuid4()), "values": dict(P110_VALUES)}
         reply = await self.post(body)
         self.assertEqual((reply.status, reply.json()["capture"]["values"]), (201, P110_VALUES))
