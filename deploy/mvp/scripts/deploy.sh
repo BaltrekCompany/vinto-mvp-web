@@ -626,6 +626,11 @@ phase_activate() {
   assert_can_read_mvp_private_paths
   local commit="${1:?Uso: deploy.sh activate <commit-sha>}"
   require_full_sha "$commit"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: candado exclusivo compartido con "rollback.sh version" lo más
+  # cerca posible del principio de la fase, ANTES de cualquier lectura/escritura sobre 'current'
+  # -- impide que una activación y una reversión concurrentes (o dos activaciones concurrentes)
+  # se pisen la conmutación de 'current' entre sí. Ver lib_common.sh para el diseño completo.
+  acquire_activate_lock
   local release_dir="$APP_DIR/releases/$commit"
   if ! mvp_test -x "$release_dir/backend/.venv/bin/uvicorn"; then
     echo "FALLA: $release_dir no tiene un venv con uvicorn instalado. Ejecutar 'python-venv $commit' primero." >&2
@@ -636,43 +641,109 @@ phase_activate() {
     exit 1
   fi
 
+  local units_installed=0
+  if [ -f /etc/systemd/system/vinto-mvp-backend.service ] && [ -f /etc/systemd/system/vinto-mvp-frontend.service ]; then
+    units_installed=1
+  fi
+
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1: TODAS las validaciones que todavía pueden abortar esta fase se
+  # agrupan ANTES de tocar 'current' en absoluto (antes corrían DESPUÉS de conmutar el symlink).
+  # El incidente real que motivó este cambio: un fallo aquí (assert_unit_is_ours por un falso
+  # negativo de permisos) dejaba 'current' apuntando al release nuevo mientras los servicios
+  # seguían ejecutando — sin reiniciar nunca — el release anterior, sin que nada hubiera pasado
+  # por el healthcheck. Reordenado así, cualquier fallo de esta sección nunca llega a tocar
+  # 'current': no hay nada que revertir porque nunca cambió.
+  assert_service_user_is_ours "$SERVICE_USER"
+  if [ "$units_installed" -eq 1 ]; then
+    # CLOUD-DEP-02A.2-R2-2, punto 1: no reiniciar (ni arrancar por primera vez) sobre un esquema
+    # incompleto. Solo verifica (--check); aplicar migraciones sigue exigiendo su propia fase y
+    # confirmación explícita ("deploy.sh migrate").
+    assert_schema_migrated
+    for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
+      assert_unit_is_ours "$unit"
+    done
+  fi
+
   local previous_target=""
   if mvp_test -e "$APP_DIR/current"; then
     previous_target="$(mvp_readlink_f "$APP_DIR/current")"
     mvp_readlink_f "$APP_DIR/current" | sudo -u "$SERVICE_USER" tee "$APP_DIR/.previous-release-path" >/dev/null
   fi
 
-  sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"
-  sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1-R1: la ventana protegida por el trap se amplía a TODA la fase
+  # posterior a la conmutación (reinicio, healthcheck, y el propio rollback automático con su
+  # reinicio/healthcheck), no solo al primer reinicio — un fallo durante el rollback automático
+  # mismo (p. ej. la reversión del symlink) quedaba antes sin ningún trato especial. El manejador
+  # se autodesarma como PRIMERA acción ("trap '' INT TERM") para que una SEGUNDA señal mientras
+  # corre no lo reentre ni lo interrumpa a mitad de camino.
+  #
+  # Límite real, confirmado empíricamente (no asumido): bash NUNCA entrega una señal con trap
+  # mientras está bloqueado en un comando externo en primer plano (systemctl/sleep/curl) — el
+  # trap solo se atiende al volver al bucle de comandos, es decir, en las PAUSAS entre comandos
+  # (p. ej. justo después de "mv -T", antes de que empiece "systemctl restart"). Confirmado con
+  # una prueba directa: una señal enviada 1s después de iniciar un "sleep 10" en primer plano NO
+  # dispara el trap hasta el segundo 10 (cuando el "sleep" termina por su cuenta), nunca antes. Un
+  # patrón de "comando en segundo plano + wait" SÍ permite que esa espera concreta se interrumpa
+  # de inmediato (confirmado también), pero el propio CALLBACK del trap deja de ejecutarse de
+  # forma fiable en cuanto ese patrón se envuelve en una función — por lo que una protección
+  # realmente a prueba de señales DURANTE "systemctl restart"/"sleep"/el healthcheck exigiría
+  # comprobar el código de salida (128+señal) en cada una de esas llamadas individualmente, en vez
+  # de depender del callback del trap. Eso es un cambio más amplio, repartido en varios puntos de
+  # esta función — se documenta aquí como limitación conocida y se propone para una ronda aparte
+  # (CLOUD-DEP-02B.2-G.12-B4-P3-H1-R1, informe), en vez de implementarse sin una revisión previa.
+  on_activate_interrupt() {
+    trap '' INT TERM
+    echo "" >&2
+    echo "AVISO: señal de interrupción recibida durante la activación (tras conmutar 'current'). Intentando reiniciar los servicios contra el 'current' actual como medida de contención (mejor esfuerzo; esto NO protege contra pérdida de energía ni SIGKILL, ni contra una señal que llegue mientras este propio script está bloqueado dentro de 'systemctl restart'/'sleep'/el healthcheck — ver comentario de diseño arriba)." >&2
+    run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service 2>&1 || true
+    echo "FALLA: activación interrumpida. Revisar manualmente el estado de 'current' y de los servicios antes de cualquier otra operación." >&2
+    exit 130
+  }
+  trap on_activate_interrupt INT TERM
+
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1-R1: "set -e" ya evitaba que un "mv -T" fallido hiciera continuar
+  # el script como si hubiera tenido éxito, pero el mensaje habría sido el genérico de "set -e"
+  # (sin explicar qué pasó ni que 'current' en sí no debería haber cambiado). Los "if ! cmd" de
+  # abajo están exentos de "set -e" (están dentro de una condición) y dan un mensaje honesto.
+  if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" ln -sfn "$release_dir" "$APP_DIR/current.tmp"; then
+    trap - INT TERM
+    echo "FALLA: no se pudo preparar la conmutación de 'current' (ln -sfn). 'current' NO se tocó." >&2
+    exit 1
+  fi
+  if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
+    trap - INT TERM
+    echo "FALLA: no se pudo completar la conmutación de 'current' (mv -T). Revisar manualmente: puede haber quedado 'current.tmp' sin aplicar; 'current' en sí no debería haber cambiado." >&2
+    exit 1
+  fi
   echo "'current' -> $release_dir."
 
-  local units_installed=0
-  if [ -f /etc/systemd/system/vinto-mvp-backend.service ] && [ -f /etc/systemd/system/vinto-mvp-frontend.service ]; then
-    units_installed=1
-  fi
   if [ "$units_installed" -ne 1 ]; then
+    trap - INT TERM
     echo "Los units de systemd no están instalados todavía: nada que reiniciar. Continuar con 'systemd-install' para la primera activación."
     return 0
   fi
 
-  # CLOUD-DEP-02A.2-R2-2, punto 1: no reiniciar (ni arrancar por primera vez) sobre un esquema
-  # incompleto. Solo verifica (--check); aplicar migraciones sigue exigiendo su propia fase y
-  # confirmación explícita ("deploy.sh migrate").
-  assert_schema_migrated
-  for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
-    assert_unit_is_ours "$unit"
-  done
-  sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1, punto 9/15: antes, el código de salida de "systemctl restart"
+  # se ignoraba por completo — un fallo aquí nunca se veía, quedaba oculto detrás del healthcheck
+  # (que de todos modos lo detectaría, pero sin decir nunca POR QUÉ). Ahora se registra de forma
+  # explícita, sin cambiar el camino de recuperación: el healthcheck de abajo sigue siendo quien
+  # decide si hace falta revertir, tanto si el restart "tuvo éxito" como si no.
+  local restart_rc=0
+  run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || restart_rc=$?
+  if [ "$restart_rc" -ne 0 ]; then
+    echo "AVISO: 'systemctl restart' devolvió el código $restart_rc tras conmutar a $commit; continuando hacia el healthcheck, que decidirá si hace falta revertir." >&2
+  fi
   echo "Servicios reiniciados con $commit. Verificando healthcheck..."
   sleep 2
   # Archivo único por ejecución (CLOUD-DEP-02A.2-R2-2, punto 3): nunca un nombre fijo compartido
   # entre invocaciones concurrentes o consecutivas; se borra en todos los caminos de salida.
   local hc_log
   hc_log="$(mktemp)"
-  if mvp_healthcheck >"$hc_log" 2>&1; then
+  if run_with_lock_fd_closed mvp_healthcheck >"$hc_log" 2>&1; then
     cat "$hc_log"
     rm -f "$hc_log"
     echo "Healthcheck OK tras activar $commit."
+    trap - INT TERM
     return 0
   fi
   echo "FALLA: el healthcheck no pasó tras activar $commit:" >&2
@@ -680,14 +751,26 @@ phase_activate() {
   rm -f "$hc_log"
   if [ -n "$previous_target" ] && mvp_test -d "$previous_target"; then
     echo "Revirtiendo 'current' automáticamente a la versión anterior ($previous_target)..." >&2
-    sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp"
-    sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"
-    sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
+    # CLOUD-DEP-02B.2-G.12-B4-P3-H1-R1, puntos 4/6/9: si la PROPIA reversión no logra conmutar el
+    # symlink, antes "set -e" terminaba el script en silencio, sin un mensaje que diga que ni
+    # siquiera se puede garantizar un estado consistente. Ahora se detecta explícitamente y se
+    # sale con un error claro, en vez de dejar que un fallo aquí quede oculto.
+    if ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" ln -sfn "$previous_target" "$APP_DIR/current.tmp" \
+        || ! run_with_lock_fd_closed sudo -u "$SERVICE_USER" mv -T "$APP_DIR/current.tmp" "$APP_DIR/current"; then
+      trap - INT TERM
+      echo "FALLA: no se pudo revertir 'current' a $previous_target (la propia conmutación de la reversión falló). No se puede garantizar un estado consistente: intervención manual requerida de inmediato." >&2
+      exit 1
+    fi
+    local revert_restart_rc=0
+    run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || revert_restart_rc=$?
+    if [ "$revert_restart_rc" -ne 0 ]; then
+      echo "AVISO: 'systemctl restart' devolvió el código $revert_restart_rc al revertir a $previous_target; continuando hacia el healthcheck de la reversión." >&2
+    fi
     # CLOUD-DEP-02A.2-R2-2, punto 2: no afirmar que la recuperación fue exitosa sin comprobarlo.
     sleep 2
     local revert_hc_log
     revert_hc_log="$(mktemp)"
-    if mvp_healthcheck >"$revert_hc_log" 2>&1; then
+    if run_with_lock_fd_closed mvp_healthcheck >"$revert_hc_log" 2>&1; then
       rm -f "$revert_hc_log"
       echo "'current' revertido a $previous_target; healthcheck de la versión anterior OK tras reiniciar. $commit queda sin activar; investigar antes de reintentar." >&2
     else
@@ -699,6 +782,7 @@ phase_activate() {
   else
     echo "No había una versión anterior a la que revertir automáticamente (primera activación real). Los servicios siguen apuntando a $commit, que no pasó el healthcheck: intervención manual requerida." >&2
   fi
+  trap - INT TERM
   exit 1
 }
 

@@ -65,6 +65,11 @@ rollback_version() {
     echo "FALLA: '$sha' no es un SHA completo de 40 caracteres hexadecimales. No se acepta una rama ni una referencia parcial (podría moverse). Abortando." >&2
     exit 1
   fi
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H2: mismo candado exclusivo que deploy.sh::phase_activate (ver
+  # lib_common.sh), adquirido lo más cerca posible del principio, ANTES de cualquier
+  # lectura/escritura sobre 'current' -- impide que esta reversión se pise con una activación (o
+  # con otra reversión) concurrente.
+  acquire_activate_lock
   local release_dir="$MVP_APP_DIR/releases/$sha"
   if ! mvp_test -d "$release_dir"; then
     echo "FALLA: $release_dir no existe. Solo se puede revertir a una versión que ya fue desplegada con deploy.sh checkout. Abortando sin modificar 'current'." >&2
@@ -74,6 +79,17 @@ rollback_version() {
     echo "FALLA: $release_dir existe pero no parece una versión completamente desplegada (falta venv o build del frontend). Abortando sin modificar 'current'." >&2
     exit 1
   fi
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1: la identidad de las unidades (assert_unit_is_ours) se verifica
+  # ANTES de tocar 'current' — antes corría DESPUÉS de conmutar el symlink, el mismo defecto de
+  # orden encontrado y corregido en deploy.sh::phase_activate (ver ese archivo para el incidente
+  # real que lo motivó). Reordenado así, un fallo de identidad aquí nunca llega a modificar
+  # 'current'. assert_unit_is_ours en sí (lib_common.sh) también se corrigió por separado: antes
+  # un "grep" sin privilegios contra un unit root:root 600 fallaba siempre por permisos, nunca por
+  # una discrepancia real — un rollback manual legítimo habría fallado igual que la activación.
+  for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
+    assert_unit_is_ours "$unit"
+  done
+
   local previous_target
   previous_target="$(mvp_readlink_f "$MVP_APP_DIR/current" 2>/dev/null || true)"
   echo "Revirtiendo 'current' de '${previous_target:-?}' a '$release_dir'."
@@ -82,12 +98,17 @@ rollback_version() {
   # $MVP_APP_DIR (750, exclusivo de $MVP_SERVICE_USER). A diferencia de las comprobaciones de
   # lectura de más arriba (que fallaban en silencio, "no existe"), esta era una mutación que
   # habría fallado de forma RUIDOSA y visible — pero fallado igual, sin revertir nunca 'current'.
-  sudo -u "$MVP_SERVICE_USER" ln -sfn "$release_dir" "$MVP_APP_DIR/current.tmp"
-  sudo -u "$MVP_SERVICE_USER" mv -T "$MVP_APP_DIR/current.tmp" "$MVP_APP_DIR/current"
-  for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
-    assert_unit_is_ours "$unit"
-  done
-  sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service
+  run_with_lock_fd_closed sudo -u "$MVP_SERVICE_USER" ln -sfn "$release_dir" "$MVP_APP_DIR/current.tmp"
+  run_with_lock_fd_closed sudo -u "$MVP_SERVICE_USER" mv -T "$MVP_APP_DIR/current.tmp" "$MVP_APP_DIR/current"
+  # CLOUD-DEP-02B.2-G.12-B4-P3-H1, punto 9/15 (mismo tratamiento que phase_activate): el código de
+  # salida de "systemctl restart" ya no se ignora en silencio, aunque el healthcheck de abajo
+  # sigue siendo quien decide si hace falta intervención — esto solo evita que un fallo aquí quede
+  # oculto detrás de un healthcheck que, coincidentemente, pudiera pasar de todos modos.
+  local restart_rc=0
+  run_with_lock_fd_closed sudo systemctl restart vinto-mvp-backend.service vinto-mvp-frontend.service || restart_rc=$?
+  if [ "$restart_rc" -ne 0 ]; then
+    echo "AVISO: 'systemctl restart' devolvió el código $restart_rc al revertir a $sha; continuando hacia el healthcheck." >&2
+  fi
   echo "'current' ahora apunta a $sha. Servicios reiniciados. Ningún dato de PostgreSQL se tocó."
   # CLOUD-DEP-02A.2-R2-2, punto 2: reiniciar no es lo mismo que recuperarse. Comprobar la salud
   # real tras el reinicio y salir con código de error si no responde, en vez de afirmar un éxito
@@ -95,7 +116,7 @@ rollback_version() {
   sleep 2
   local hc_log
   hc_log="$(mktemp)"
-  if mvp_healthcheck >"$hc_log" 2>&1; then
+  if run_with_lock_fd_closed mvp_healthcheck >"$hc_log" 2>&1; then
     rm -f "$hc_log"
     echo "Healthcheck OK tras revertir a $sha: la recuperación se confirma exitosa."
   else
