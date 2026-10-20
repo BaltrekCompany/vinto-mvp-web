@@ -240,16 +240,36 @@ assert_network_is_ours() {
 }
 
 # Verifica que una unidad systemd instalada en el host es la que ESTE despliegue instaló
-# (WorkingDirectory dentro de /opt/vinto-mvp-web) antes de detenerla/deshabilitarla/borrarla
-# (DEP55-01 punto 5). Si el archivo de unidad no existe, no es un error.
+# (WorkingDirectory dentro de /opt/vinto-mvp-web) antes de detenerla/deshabilitarla/borrarla, o
+# antes de reiniciarla (DEP55-01 punto 5). Si el archivo de unidad no existe, no es un error.
+#
+# CLOUD-DEP-02B.2-G.12-B4-P3-H1: los units reales del VPS son root:root 600 (systemd no exige que
+# sean legibles por nadie más para poder arrancarlos). Un "grep" SIN privilegios contra ese
+# archivo nunca puede leer su contenido y SIEMPRE falla — indistinguible, con el código de antes,
+# de "lo leí y de verdad no coincide" (una unidad genuinamente ajena). Tratar un fallo de LECTURA
+# como una discrepancia de IDENTIDAD confirmada es el defecto raíz del incidente real que motivó
+# este cambio: abortó una activación legítima como si la unidad fuera ajena.
+#
+# Corrección: leer el contenido una sola vez con el mismo privilegio que esta misma fase ya usa
+# dos líneas más abajo para "systemctl restart" (sudo sin usuario específico; no amplía el modelo
+# de permisos existente), y separar explícitamente "no pude leerlo" (sale aquí, con su propio
+# mensaje) de "lo leí y no coincide" (el grep de siempre, ahora sobre el contenido ya en memoria,
+# nunca re-abriendo el archivo). El contenido nunca se ejecuta ni se interpreta como código — solo
+# se le hace grep como texto plano, y nunca se imprime (los units no llevan secretos, pero aun así
+# no hace falta mostrarlos para decidir esto).
 assert_unit_is_ours() {
   local unit="$1"
   local unit_file="/etc/systemd/system/$unit"
   if [ ! -f "$unit_file" ]; then
     return 0
   fi
-  if ! grep -q "WorkingDirectory=$MVP_APP_DIR" "$unit_file" 2>/dev/null \
-     && ! grep -qE "^ExecStart=.*$MVP_APP_DIR" "$unit_file" 2>/dev/null; then
+  local unit_content
+  if ! unit_content="$(sudo cat -- "$unit_file" 2>/dev/null)"; then
+    echo "FALLA: no se pudo leer $unit_file (ni siquiera con privilegios) para verificar su identidad. No se asume ajena ni propia ante un fallo de lectura: abortando sin tocarla." >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$unit_content" | grep -q "WorkingDirectory=$MVP_APP_DIR" \
+     && ! printf '%s\n' "$unit_content" | grep -qE "^ExecStart=.*$MVP_APP_DIR"; then
     echo "FALLA DE IDENTIDAD: $unit_file existe pero no referencia $MVP_APP_DIR. Podría ser una unidad de otro proyecto con el mismo nombre. Abortando SIN tocarla." >&2
     exit 1
   fi
