@@ -11,6 +11,86 @@
       "code": "MP3",
       "name": "MP3",
       "sector": "BOBINAS"
+    },
+    {
+      "code": "BELOIT",
+      "name": "Beloit",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "OVER",
+      "name": "Over",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "COPASA",
+      "name": "Copasa",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "PERICHUN",
+      "name": "Perichun",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "TUBETERA",
+      "name": "Tubetera",
+      "sector": "REBOBINADO"
+    },
+    {
+      "code": "GAMBINI",
+      "name": "Gambini",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "SINCRO_II",
+      "name": "Sincro II",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "SINCRO_III",
+      "name": "Sincro III",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "OMET_I",
+      "name": "OMET I",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "OMET_II",
+      "name": "OMET II",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "8_2",
+      "name": "8.2",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "8_5",
+      "name": "8.5",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "8002",
+      "name": "8002",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "SERV_4",
+      "name": "Serv 4",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "WALLY",
+      "name": "Wally",
+      "sector": "CONVERSION"
+    },
+    {
+      "code": "PANUELERA",
+      "name": "Pañuelera",
+      "sector": "CONVERSION"
     }
   ]
 }

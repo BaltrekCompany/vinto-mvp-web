@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_29_produccion_tubetera",
+  "code": "VINTO-P1-29",
+  "legacy_number": 29,
+  "name": "Producción Tubetera",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "TUBETERA"
+  ],
+  "groups": [
+    {
+      "code": "rodelas",
+      "label": "Rodelas de papel kraft",
+      "display_order": 1,
+      "repeatable": true,
+      "min_rows": 1,
+      "max_rows": null,
+      "fields": [
+        {
+          "key": "rodela_papel_kraft_identificacion",
+          "label": "Identificación de la rodela / lote",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 1
+        },
+        {
+          "key": "rodela_papel_kraft_peso_kg",
+          "label": "Peso de la rodela",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2
+        }
+      ]
+    },
+    {
+      "code": "formatos",
+      "label": "Formatos de tubete",
+      "display_order": 2,
+      "repeatable": true,
+      "min_rows": 1,
+      "max_rows": null,
+      "fields": [
+        {
+          "key": "formato_tipo_de_tubete",
+          "label": "Tipo de tubete",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 1
+        },
+        {
+          "key": "cantidad_tubetes_producidos_por_formato",
+          "label": "Cantidad de tubetes producidos",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2
+        },
+        {
+          "key": "cantidad_tubetes_observados_por_formato",
+          "label": "Cantidad de tubetes observados",
+          "value_type": "textarea",
+          "source": "manual",
+          "required": false,
+          "unit": null,
+          "display_order": 3
+        },
+        {
+          "key": "merma_kg_por_formato",
+          "label": "Merma",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 4
+        },
+        {
+          "key": "diametro_interno_mm_por_formato",
+          "label": "Diámetro interno",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 5
+        },
+        {
+          "key": "diametro_externo_mm_por_formato",
+          "label": "Diámetro externo",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 6
+        },
+        {
+          "key": "cantidad_de_hojas_por_formato",
+          "label": "Cantidad de hojas",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 7
+        },
+        {
+          "key": "espesor_mm_por_formato",
+          "label": "Espesor",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 8
+        },
+        {
+          "key": "peso_kg_por_formato",
+          "label": "Peso",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 9
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "fecha_de_produccion",
+      "label": "Fecha de producción",
+      "value_type": "date",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "lote_de_produccion",
+      "label": "Lote de producción",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "pegamento_total_kg",
+      "label": "Pegamento total",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "peso_fardo",
+      "label": "Peso fardo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "numero_mrp_del_sistema",
+      "label": "Número MRP del sistema",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 6
+    }
+  ],
+  "definition_checksum": "52e21ebae85952a6631aa86cdd765a48efc21f2b96633ced7ebec156e25fd148"
+}

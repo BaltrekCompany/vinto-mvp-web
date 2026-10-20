@@ -10,7 +10,7 @@ try:
 except ModuleNotFoundError:
     from tests.devb1_fixtures import BOBINAS_MACHINES, _install
 
-P104_CODE = "VINTO-P1-04"
+P104_CODE = "ZZFIX-P1-04"
 
 # key, label, value_type, required, option keys
 P104_FIELDS = (

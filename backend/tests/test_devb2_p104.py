@@ -125,21 +125,25 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationAndAvailabilityTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_p104_is_unreachable_without_the_test_policy(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
+        # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES real ya incluye los candidatos de Bobinas habilitados;
+        # lo que importa es que P104_CODE (fixture sintética) NO esté.
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         _, assignment = await self.assignment()
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", SHIPPED_POLICY):
             reply = await self.post(self.payload(assignment))
             self.assertEqual((reply.status, reply.json()["code"]), (422, "UNSUPPORTED_FORM"))
             self.assertEqual((await self.get(f"/api/captures?form_code={P104_CODE}")).status, 422)
             machines = {m["code"]: [f["code"] for f in m["forms"]] for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
-            self.assertEqual(machines, {"MP1": [F6], "MP3": [F6]})
+            self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"})), "MP3": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_POLICY entero ya no aplica solo a MP1/MP3 (P1-07/10/11/12/13/16/29/30 son de otros sectores)
+            for codes in machines.values():
+                self.assertNotIn(P104_CODE, codes)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)
 
     async def test_the_backend_publishes_p104_on_mp1_and_mp3_only_with_the_test_policy(self):
         machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
         for machine in ("MP1", "MP3"):
-            self.assertEqual([f["code"] for f in machines[machine]["forms"]], [P104_CODE, F6])  # ordered by form code
+            self.assertEqual([f["code"] for f in machines[machine]["forms"]], sorted([P104_CODE, F6]))  # ordered by form code
         self.assertEqual({f["code"]: f["name"] for f in machines["MP1"]["forms"]}[P104_CODE], "Registro de consumo de fibra (candidato DEV-B2)")
         self.assertEqual((await self.get("/api/production/machines", "OPERACION_SIN_SECTOR")).json()["sectors"], [])
 
@@ -296,7 +300,7 @@ class UnlinkedMachineTests(Base):
 
     async def test_availability_and_capture_follow_the_machine_link(self):
         machines = {m["code"]: [f["code"] for f in m["forms"]] for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
-        self.assertEqual(machines, {"MP1": [P104_CODE, F6], "MP3": [F6]})
+        self.assertEqual(machines, {"MP1": sorted([P104_CODE, F6]), "MP3": [F6]})
         _, mp3 = await self.assignment("MP3")
         reply = await self.post(self.payload(mp3))
         self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"))

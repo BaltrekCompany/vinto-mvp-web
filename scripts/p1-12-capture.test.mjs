@@ -272,8 +272,10 @@ test("component and clients never touch business storage; P1-12 is wired only be
   const code = (file) => readFileSync(join(root, file), "utf8").replace(/\r\n/g, "\n").replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const file of ["components/vinto/p1-12-capture.tsx", "lib/vinto/p1-12.ts", "lib/vinto/p1-12-api.ts"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records|vinto-ot|vinto-asg|document\.cookie|Authorization/.test(code(file)), false, file);
   assert.equal(/form-definitions/.test(code("components/vinto/p1-12-capture.tsx")) || /form-definitions/.test(code("lib/vinto/p1-12.ts")), false);
+  // G.12-C4-FINAL25: P1-12 pasó al renderizador genérico (CandidateFormCapture + CONVERSION_CANDIDATES); P112CaptureForm queda sin enlazar (código muerto documentado, no eliminado).
   const page = readFileSync(join(root, "app/page.tsx"), "utf8");
-  assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p112"/);
-  assert.match(page, /P112CaptureForm/);
+  assert.match(page, /convCapture && front === "Conversión" && isConversionCandidate\(convCapture\.screen\)/);
+  assert.match(page, /candidate=\{CONVERSION_CANDIDATES\[screen\]\}/);
+  assert.equal(/P112CaptureForm/.test(page), false);
   for (const dir of ["app/p1-12", "app/preview", "app/qa-harness", "app/__qa", "app/e2e"]) assert.equal(existsSync(join(root, dir)), false, dir);
 });

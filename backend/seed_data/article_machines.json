@@ -373,6 +373,990 @@
     {
       "article_code": "TB-4001",
       "machine_code": "MP3"
+    },
+    {
+      "article_code": "BC-1031",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1032",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1208-200",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1208-400",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1216-200",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1216-230",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1220",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1233-200",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1233-440",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1234-200",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1234-400",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1234-420",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1234-440",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1239",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1240",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1241",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1242-200",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1242-400",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1242-440",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1400",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1407",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1429",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1430",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1442",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1449",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1450",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1451",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1452",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1457",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1458",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1470",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1476",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1480",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1482",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1484",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1486",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1608",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1609",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-1610",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3004",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3008",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3012",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3013",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3034",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3036",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3042",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3043",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3044",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3045",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3047",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3049",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3050",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3051",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3211",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3212",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3213",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3215",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3401",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3406",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3408",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3410",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3411",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3413",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3414",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3418",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3419",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3420",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3421",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3422",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3423",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3424",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "BC-3451-420",
+      "machine_code": "COPASA"
+    },
+    {
+      "article_code": "RB-1202-170",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1208-200",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1208-400",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1208-440",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1216-200",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1216-230",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1216-580",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1233-200",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1233-400",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1233-440",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1234-200",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1234-210",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1234-400",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1234-440",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1242-200",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1242-400",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1242-440",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1473",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-1611",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RB-9169-85",
+      "machine_code": "BELOIT"
+    },
+    {
+      "article_code": "RO-1024",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1029",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1032",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1033",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1208-200",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1208-400",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1208-440",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1212",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1220",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1233-200",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1233-440",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1234-200",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1234-400",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1234-420",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1234-435",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1234-440",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1236",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1238",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1240",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1241",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1242-200",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1242-400",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1242-440",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1400",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1407",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1410",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1411",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1429",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1430",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1438",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1442",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1445",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1450",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1451",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1456",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1457",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1459",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1459-330",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1462",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1468",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1469",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1470",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1471",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1472",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1477",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1479",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1482",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1483",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1485",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1608",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1609",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1610",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RO-1612",
+      "machine_code": "OVER"
+    },
+    {
+      "article_code": "RP-11901",
+      "machine_code": "PERICHUN"
+    },
+    {
+      "article_code": "RP-11902",
+      "machine_code": "PERICHUN"
+    },
+    {
+      "article_code": "10326",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10327",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10327",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10328",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10329",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10330",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10331",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10332",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10333",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10333",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10334",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10335",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10336",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10337",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10338",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10338",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10339",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10340",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10342",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10344",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10345",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10345",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10347",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10348",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10349",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10350",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10351",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10352",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10353",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10354",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10355",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10356",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10357",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10358",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10359",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10360",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10403",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10425",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10427",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10427",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10428",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10428",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10430",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10430",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10432",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10433",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10434",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10435",
+      "machine_code": "GAMBINI"
+    },
+    {
+      "article_code": "10436",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10437",
+      "machine_code": "SINCRO_II"
+    },
+    {
+      "article_code": "10438",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10503",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "10504",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11102",
+      "machine_code": "SERV_4"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11103",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11104",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11104",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11110",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11202",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11202",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "OMET_I"
+    },
+    {
+      "article_code": "11203",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8002"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11204",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11205",
+      "machine_code": "8_2"
+    },
+    {
+      "article_code": "11205",
+      "machine_code": "8_5"
+    },
+    {
+      "article_code": "11206",
+      "machine_code": "OMET_II"
+    },
+    {
+      "article_code": "11307",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11308",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11309",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11313",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11314",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11316",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11317",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11318",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11319",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11320",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11321",
+      "machine_code": "WALLY"
+    },
+    {
+      "article_code": "11402",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11403",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11404",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11405",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11406",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11499",
+      "machine_code": "SINCRO_III"
+    },
+    {
+      "article_code": "11502",
+      "machine_code": "PANUELERA"
+    },
+    {
+      "article_code": "11503",
+      "machine_code": "PANUELERA"
+    },
+    {
+      "article_code": "TB-4002",
+      "machine_code": "TUBETERA"
     }
   ]
 }

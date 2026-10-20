@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_11_consumo_de_bobinas",
+  "code": "VINTO-P1-11",
+  "legacy_number": 11,
+  "name": "Consumo de bobinas",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "GAMBINI",
+    "SINCRO_II",
+    "SINCRO_III"
+  ],
+  "groups": [
+    {
+      "code": "bobinas",
+      "label": "Bobinas declaradas",
+      "display_order": 1,
+      "repeatable": true,
+      "min_rows": 1,
+      "max_rows": null,
+      "fields": [
+        {
+          "key": "numero_bobina",
+          "label": "N.º de bobina (declarado)",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 1
+        },
+        {
+          "key": "posicion",
+          "label": "Posición (declarada)",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2,
+          "options": [
+            {
+              "option_key": "superior",
+              "label": "Superior",
+              "display_order": 1
+            },
+            {
+              "option_key": "inferior",
+              "label": "Inferior",
+              "display_order": 2
+            }
+          ]
+        },
+        {
+          "key": "saldo_inicial_kg",
+          "label": "Saldo inicial declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 3
+        },
+        {
+          "key": "ingreso_kg",
+          "label": "Ingreso declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 4
+        },
+        {
+          "key": "saldo_final_kg",
+          "label": "Saldo final declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 5
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 1
+    }
+  ],
+  "definition_checksum": "654282edc8e7cc1254ef29c29451722e12e3588ab0b17936dd570885c8f85505"
+}

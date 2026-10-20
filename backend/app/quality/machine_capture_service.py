@@ -28,8 +28,13 @@ REASON = "submit quality machine capture"
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
 
-# POLÍTICA: formularios de Calidad por máquina habilitados. VACÍA en producción (P1-22 / P1-26 son candidatos sin homologar).
-MACHINE_QUALITY_FORM_CODES: frozenset = frozenset()
+# POLÍTICA: formularios de Calidad por máquina habilitados.
+#
+# CLOUD-DEP G.12-C4: habilitados P1-18/22/26/27 EXCLUSIVAMENTE para QA interno sobre MP1/MP3 (ver
+# backend/seed_data/forms/VINTO-P1-{18,22,26,27}.json, ya publicados y vinculados a esas máquinas).
+# Ninguno de los cuatro homologado por VINTO (contratos, rangos ni unidades aprobados); ninguno toca
+# quality_release.
+MACHINE_QUALITY_FORM_CODES: frozenset = frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"})
 
 
 @dataclass(frozen=True)

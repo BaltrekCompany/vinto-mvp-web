@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_28_registro_de_bobinas_rechazadas",
+  "code": "VINTO-P1-28",
+  "legacy_number": 28,
+  "name": "Registro de bobinas rechazadas",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "numero_de_bobina",
+      "label": "Número de bobina",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "producto",
+      "label": "Producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "detalle_motivo_de_rechazo",
+      "label": "Detalle / motivo de rechazo",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "accion_correctiva",
+      "label": "Acción correctiva",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "peso_rechazado",
+      "label": "Peso rechazado",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "estado_disposicion_final",
+      "label": "Estado / disposición final",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 7
+    }
+  ],
+  "definition_checksum": "671ba8452d1c04123a2fc0b3eb7341f16df9f656caae53668064e3f774cdcbcb"
+}

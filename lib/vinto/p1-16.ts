@@ -1,17 +1,20 @@
 // Captura CENTRAL CANDIDATA de VINTO-P1-16 «Registro de control de merma» (Conversión), M6-A: valores, borrador, validación ESTRUCTURAL, payload e intento pendiente. Reutiliza el núcleo
 // común (capture-core.ts) y aporta su propio parser estricto de `values` con el código esperado «VINTO-P1-16».
 //
-// HIPÓTESIS DE PRUEBA, NO una definición aprobada: los tres campos son la interpretación de `WasteCapture` (la pantalla legacy de app/page.tsx): una PESADA por captura con tipo, origen y
-// peso real. La definición legacy de P1-16 es otra (columnas de kg por tipo de merma, correlativo, total) y NO se implementa aquí. No se inventa: correlativo, firma, grupo, totales ni
-// fórmulas; tampoco unidad, rango ni decimales del peso (solo se exige el formato decimal que el backend ya valida). Las opciones de tipo y origen son las de la pantalla legacy.
+// CLOUD-DEP G.12-C4-FINAL25: el contrato REAL usado por el backend (seed_data, política, UI) es `P116_FIELDS` + `defineCandidateForm`, más abajo en este archivo -- los 8 campos MANUALES
+// exactos de la definición legacy (form_16_registro_de_control_de_merma, 14 campos: 5 automáticos, 8 manuales, 1 calculado). Todo lo de ARRIBA de esta nota (hipótesis `WasteCapture`: una
+// pesada con tipo/origen/peso) es la HIPÓTESIS DE PRUEBA original y ya NO se usa desde app/page.tsx: queda como código muerto, sin eliminar.
 //
-// Todo es PURO (sin red, sin DOM). P1-16 NO está habilitado en la política de captura central del backend ni Conversión es un sector operativo: este cliente solo funciona contra un backend
-// de prueba que lo habilite explícitamente.
+// QUÉ NO HACE el contrato real (decisiones pendientes de VINTO, docs/M6-A-conversion-central-p116.md): no calcula total_merma_kg (calculado, sin fórmula aprobada). Solo exige lo
+// estructural que la propia definición declara (texto; el correlativo es texto digitado, no generado).
+//
+// Todo es PURO (sin red, sin DOM).
 
 import {
     DECIMAL, MAX_DECIMAL_CHARS, freezeAttempt, isRec, newCaptureId, parseCaptureListOf, parseCaptureOf, parseSubmissionOf, reconcileOf, submitAttemptOf,
     type CaptureOf, type Option, type PendingAttemptOf, type SubmissionOf, type SubmitDepsOf, type SubmitOutcomeOf,
 } from "./capture-core.ts";
+import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_16_CODE = "VINTO-P1-16";
 
@@ -93,3 +96,23 @@ export type P116SubmitOutcome = SubmitOutcomeOf<P116Capture>;
 
 export const submitP116Attempt = (attempt: P116Attempt, deps: P116SubmitDeps): Promise<P116SubmitOutcome> => submitAttemptOf(attempt, deps);
 export const reconcileP116 = (captureId: string, deps: P116SubmitDeps): Promise<P116SubmitOutcome> => reconcileOf(captureId, deps);
+
+// ---- CLOUD-DEP G.12-C4-FINAL25: contrato REAL (8 campos manuales de la definición legacy, en su orden) -----------------------------------
+// Fuente única: form-definitions.ts / form_16_registro_de_control_de_merma. Automáticos excluidos (fecha, turno, grupo, operador, maquina);
+// calculado excluido (total_merma_kg): sin fórmula aprobada, no se calcula ni se acepta del cliente.
+export const P116_FIELDS: readonly FieldSpec[] = [
+    { key: "numero_correlativo", label: "Número correlativo", kind: "text", required: true },
+    { key: "hoja_doble_kg", label: "Hoja doble kg", kind: "text", required: true },
+    { key: "servilleta_kg", label: "Servilleta kg", kind: "text", required: true },
+    { key: "toalla_kg", label: "Toalla kg", kind: "text", required: true },
+    { key: "carton_kg", label: "Cartón kg", kind: "text", required: true },
+    { key: "hoja_simple_kg", label: "Hoja simple kg", kind: "text", required: true },
+    { key: "plastico_kg", label: "Plástico kg", kind: "text", required: true },
+    { key: "observacion", label: "Observación", kind: "textarea", required: false },
+];
+export const P116 = defineCandidateForm(P1_16_CODE, P116_FIELDS);
+
+export const P116_AUTOMATIC = ["Fecha", "Turno", "Grupo", "Operador", "Máquina"] as const;
+export const P116_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Merma total", pending: "total_merma_kg es un campo calculado de la definición legacy, sin fórmula aprobada: no se calcula ni se acepta del cliente." },
+];

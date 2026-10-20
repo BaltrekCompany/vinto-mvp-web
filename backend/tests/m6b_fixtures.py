@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
     from tests.m6a_fixtures import CONV_MACHINE
 
-P112_CODE = "VINTO-P1-12"
+P112_CODE = "ZZFIX-P1-12"  # CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-12 ya es real
 P112_DRAFT_CODE = "VINTO-TEST-P112-DRAFT"  # linked to GAMBINI but NEVER published: it must not be offered or accepted
 
 # key, label, value_type, required, options

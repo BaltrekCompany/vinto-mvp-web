@@ -23,11 +23,11 @@ from app.ephemeral_db import build_reference_template, connect, copy_database, d
 from app.seed.bundle import load_bundle
 
 try:
-    from m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from m6b_fixtures import P112_CODE, P112_DRAFT_CODE, P112_VALUES, install_p112, install_p112_draft
     from test_assignments_api import call
 except ModuleNotFoundError:
-    from tests.m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from tests.m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from tests.m6b_fixtures import P112_CODE, P112_DRAFT_CODE, P112_VALUES, install_p112, install_p112_draft
     from tests.test_assignments_api import call
 
@@ -139,8 +139,8 @@ class P112Case(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationTests(P112Case):
     async def test_the_shipped_configuration_is_unchanged(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))  # neither P1-12 nor P1-16 are in the production policy
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # Conversión is NOT operational in the real configuration
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # neither P1-12 nor P1-16 are in the production policy
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
     async def test_without_the_test_configuration_p112_is_unreachable(self):
         _, assignment = await self.assignment()
@@ -155,18 +155,18 @@ class ConfigurationTests(P112Case):
 
 class AvailabilityTests(P112Case):
     async def test_the_backend_publishes_both_candidate_forms_only_on_the_linked_machine_and_never_the_draft(self):
-        machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == "CONVERSION" for m in s["machines"]}
+        machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == CONV_SECTOR for m in s["machines"]}
         self.assertEqual([f["code"] for f in machines[CONV_MACHINE]["forms"]], [P112_CODE, P116_CODE])
         self.assertEqual(machines[CONV_MACHINE_NO_FORM]["forms"], [])
         self.assertNotIn(P112_DRAFT_CODE, [f["code"] for f in machines[CONV_MACHINE]["forms"]])  # linked but not published: not offered
 
     async def test_p112_is_not_offered_without_grant_or_with_a_non_operational_sector_or_policy(self):
         for who in ("OPERACION_SOLO_BOBINAS", "OPERACION_SIN_SECTOR"):
-            self.assertNotIn("CONVERSION", [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]], who)
+            self.assertNotIn(CONV_SECTOR, [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]], who)
         with patch.object(_sectors, "_OPERATIONAL", SHIPPED_SECTORS):
-            self.assertNotIn("CONVERSION", [s["code"] for s in (await self.get("/api/production/machines")).json()["sectors"]])
+            self.assertNotIn(CONV_SECTOR, [s["code"] for s in (await self.get("/api/production/machines")).json()["sectors"]])
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", frozenset({F6, P116_CODE})):  # P1-12 not in the policy: only P1-16 remains
-            machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == "CONVERSION" for m in s["machines"]}
+            machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == CONV_SECTOR for m in s["machines"]}
             self.assertEqual([f["code"] for f in machines[CONV_MACHINE]["forms"]], [P116_CODE])
 
 

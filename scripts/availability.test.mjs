@@ -112,9 +112,10 @@ test("M6-A: Home enruta Conversión al shell central y deja Rebobinado y Bobinas
   assert.match(page, /front === "Conversión" \? <ConversionCentral module=\{activeModule\}/);
   assert.match(page, /: front === "Rebobinado" \? <RebobinadoCentral module=\{activeModule\}/);
   assert.ok(page.includes("onSessionLost={sessionLost}/> : <>")); // la rama de Bobinas / Calidad sigue después de Rebobinado
-  assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p116"/);
-  assert.match(page, /setConvCapture\(null\); setP116Attempt\(null\); setP116Context\(null\)/); // sesión perdida y logout limpian el intento de Conversión
-  assert.equal((page.match(/setP116Attempt\(null\); setP116Context\(null\)/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
+  // G.12-C4-FINAL25: P1-16 pasó al renderizador genérico (CandidateFormCapture + CONVERSION_CANDIDATES + isConversionCandidate), junto con P1-12/P1-13.
+  assert.match(page, /convCapture && front === "Conversión" && isConversionCandidate\(convCapture\.screen\)/);
+  assert.match(page, /setConvCapture\(null\); setConvCandAttempts\(\{\}\)/); // sesión perdida y logout limpian el intento de Conversión
+  assert.equal((page.match(/setConvCandAttempts\(\{\}\)/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession
   // el código de la ruta central no escribe ni borra las claves legacy (se conservan intactas en el navegador)
   for (const file of ["components/vinto/sector-central.tsx", "components/vinto/conversion-central.tsx", "components/vinto/p1-16-capture.tsx"]) assert.equal(/removeItem|localStorage|vinto-ot|vinto-asg|vinto-p1-records/.test(code(file)), false, file);
 });
@@ -144,7 +145,7 @@ test("M6-A review: una pantalla solo se ofrece para su sector; los cruces P1-16 
   const page = read("app/page.tsx");
   assert.match(page, /rebCapture && front === "Rebobinado" && rebCapture\.screen === "p110"/);
   assert.match(page, /rebCapture && front === "Rebobinado" && rebCapture\.screen === "p129"/);
-  assert.match(page, /convCapture && front === "Conversión" && convCapture\.screen === "p116"/);
+  assert.match(page, /convCapture && front === "Conversión" && isConversionCandidate\(convCapture\.screen\)/);
 });
 
 test("M6-A review: E2E_DEV_READ está desactivado por defecto (solo `on` permite las lecturas de DEV ya existentes)", () => {

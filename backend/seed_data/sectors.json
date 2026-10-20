@@ -5,6 +5,14 @@
     {
       "code": "BOBINAS",
       "name": "Bobinas"
+    },
+    {
+      "code": "REBOBINADO",
+      "name": "Rebobinado"
+    },
+    {
+      "code": "CONVERSION",
+      "name": "Conversión"
     }
   ]
 }

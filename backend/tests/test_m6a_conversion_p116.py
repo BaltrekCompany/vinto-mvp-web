@@ -24,11 +24,11 @@ from app.seed.bundle import load_bundle
 
 try:
     from m2a_fixtures import install_production_form
-    from m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from test_assignments_api import call
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
-    from tests.m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from tests.m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from tests.test_assignments_api import call
 
 SHIPPED_POLICY = _capture_service.CENTRAL_FORM_CODES  # captured at import, before any patch
@@ -138,8 +138,8 @@ class P116Case(unittest.IsolatedAsyncioTestCase):
 
 class ConfigurationTests(P116Case):
     async def test_the_shipped_configuration_is_unchanged(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))  # P1-16 is NOT in the production policy
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # Conversión is NOT operational in the real configuration
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # P1-16 is NOT in the production policy
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
     async def test_without_the_test_configuration_p116_is_unreachable(self):
         order, assignment = await self.assignment()
@@ -162,8 +162,8 @@ class AvailabilityTests(P116Case):
         reply = await self.get("/api/production/machines?articles=true")
         self.assertEqual(reply.status, 200, reply.text)
         sectors = {s["code"]: s for s in reply.json()["sectors"]}
-        self.assertIn("CONVERSION", sectors)
-        machines = {m["code"]: m for m in sectors["CONVERSION"]["machines"]}
+        self.assertIn(CONV_SECTOR, sectors)
+        machines = {m["code"]: m for m in sectors[CONV_SECTOR]["machines"]}
         self.assertEqual(sorted(machines), sorted([CONV_MACHINE, CONV_MACHINE_NO_FORM]))
         self.assertEqual([f["code"] for f in machines[CONV_MACHINE]["forms"]], [P116_CODE])
         self.assertEqual(machines[CONV_MACHINE_NO_FORM]["forms"], [])  # no relation: nothing offered
@@ -172,12 +172,12 @@ class AvailabilityTests(P116Case):
     async def test_a_sector_without_grant_or_not_operational_is_not_listed(self):
         for who in ("OPERACION_SOLO_BOBINAS", "OPERACION_SIN_SECTOR"):
             codes = [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]]
-            self.assertNotIn("CONVERSION", codes, who)
+            self.assertNotIn(CONV_SECTOR, codes, who)
         with patch.object(_sectors, "_OPERATIONAL", SHIPPED_SECTORS):
             codes = [s["code"] for s in (await self.get("/api/production/machines")).json()["sectors"]]
-            self.assertNotIn("CONVERSION", codes)
+            self.assertNotIn(CONV_SECTOR, codes)
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", SHIPPED_POLICY):  # sector listed but the form is not enabled by the policy
-            machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == "CONVERSION" for m in s["machines"]}
+            machines = {m["code"]: m for s in (await self.get("/api/production/machines")).json()["sectors"] if s["code"] == CONV_SECTOR for m in s["machines"]}
             self.assertEqual(machines[CONV_MACHINE]["forms"], [])
 
 

@@ -288,7 +288,10 @@ test("VINTO-P1-20 excludes automatic data, bobbin/F3 context and averages; no ca
   for (const word of ["promedio", "calculated", "automatic", "minimo", "maximo", "tolerancia", "conforme", "default"]) assert.equal(text.toLowerCase().includes(word), false, word);
   assert.equal(form.fields.find((f) => f.key === "gramaje").unit, null);
   const units = JSON.parse(buildBundle(sources).files.get("units.json")).items.map((u) => u.code);
-  assert.deepEqual(units, JSON.parse(readFileSync(join(DEFAULT_OUT, "units.json"), "utf8")).items.map((u) => u.code), "no new unit code");
+  const committedUnits = JSON.parse(readFileSync(join(DEFAULT_OUT, "units.json"), "utf8")).items.map((u) => u.code);
+  for (const code of units) assert.ok(committedUnits.includes(code), `${code}: sigue en el bundle comprometido`); // P1-20 / DEFAULT_SCOPE no inventa ninguna unidad
+  // G.12-C4-FINAL25: Conversión (alcance candidato, fuera de DEFAULT_SCOPE) añadió PACK de forma aditiva al bundle comprometido (catálogo real, scripts/export-seed-data.mjs::CONVERSION_SECTOR).
+  assert.deepEqual(committedUnits.filter((u) => !units.includes(u)), ["PACK"], "unidades añadidas solo por candidatos fuera del alcance DEFAULT");
   assert.equal(units.length, 3);
   assert.equal(units.some((u) => /G.?M2|GM2|G\/M/i.test(u)), false);
   // the technical *_centro keys stay intact

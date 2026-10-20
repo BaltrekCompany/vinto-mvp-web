@@ -18,7 +18,7 @@ except ModuleNotFoundError:
     from tests.m3a_fixtures import install_grouped_form
     from tests.m6a_fixtures import CONV_MACHINE
 
-P111_CODE = "VINTO-P1-11"
+P111_CODE = "ZZFIX-P1-11"  # CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-11 ya es real
 P111_DRAFT_CODE = "VINTO-TEST-P111-DRAFT"  # linked to GAMBINI but NEVER published: it must not be offered or accepted
 P111_MACHINE = CONV_MACHINE  # GAMBINI
 

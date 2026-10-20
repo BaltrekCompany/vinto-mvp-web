@@ -110,9 +110,8 @@ class MotherFromF3Tests(GenealogyCase):
         self.assertEqual(self.scalar("SELECT status FROM vinto_txn.quality_release WHERE bobbin_id = %s", (bobbin.id,)), "pending")
 
     def test_policy_and_sectors_are_only_patched_inside_the_test(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-06"}))
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))
-        self.assertNotIn("VINTO-P1-07", SHIPPED_POLICY)
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))  # CLOUD-DEP G.12-C4-FINAL25: +5 candidatos (Conversión/TUBETERA) habilitados para QA
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
 
 class RelationModelTests(GenealogyCase):

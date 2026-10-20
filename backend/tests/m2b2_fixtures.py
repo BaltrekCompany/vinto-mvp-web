@@ -12,10 +12,13 @@ try:
 except ModuleNotFoundError:
     from tests.m2a_fixtures import install_production_form
 
-P110_CODE = "VINTO-P1-10"
-REB_SECTOR = "REBOBINADO"
-REB_MACHINE = "COPASA"  # the only machine of the legacy definition (allowedMachineIds: copasa); the real machine list is a pending decision
-ENABLED_SECTORS = ("BOBINAS", "REBOBINADO")  # test-only operational scope
+# CLOUD-DEP G.12-C4-COMPLETE: VINTO-P1-10/REBOBINADO/COPASA son ahora códigos REALES (formulario, sector
+# y máquina genuinamente publicados en backend/seed_data); esta fixture usa códigos sintéticos ZZFIX* para
+# no chocar con ellos (UNIQUE(form.code) / UNIQUE(sector.code) / UNIQUE(machine.code)).
+P110_CODE = "ZZFIX-P1-10"
+REB_SECTOR = "ZZFIX_REBOBINADO"
+REB_MACHINE = "ZZFIX_COPASA"  # the only machine of the legacy definition (allowedMachineIds: copasa); the real machine list is a pending decision
+ENABLED_SECTORS = ("BOBINAS", REB_SECTOR)  # test-only operational scope
 
 # key, label, value_type, required, options  (labels as in the legacy definition)
 P110_FIELDS = (

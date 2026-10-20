@@ -52,16 +52,19 @@ class ScopeFunctionTests(unittest.TestCase):
             sectors.in_scope("BOBINAS", None)
         with self.assertRaises(TypeError):
             sectors.in_scope("BOBINAS")  # type: ignore[call-arg]
-        self.assertEqual(sectors.scoped_sector_codes(sectors.operational_sector_codes()), ("BOBINAS",))  # broad access must be asked for explicitly
+        self.assertEqual(sectors.scoped_sector_codes(sectors.operational_sector_codes()), ("BOBINAS", "REBOBINADO", "CONVERSION"))  # broad access must be asked for explicitly
         self.assertEqual(sectors.scoped_sector_codes(()), ())
         self.assertEqual(sectors.scoped_sector_codes(frozenset()), ())
         self.assertFalse(sectors.in_scope("BOBINAS", frozenset()))  # no grant never means access
 
     def test_a_grant_to_a_non_operational_sector_is_inert(self):
-        self.assertEqual(sectors.scoped_sector_codes({"REBOBINADO"}), ())
-        self.assertEqual(sectors.scoped_sector_codes({"REBOBINADO", "CONVERSION"}), ())
-        self.assertEqual(sectors.scoped_sector_codes({"BOBINAS", "REBOBINADO"}), ("BOBINAS",))
-        self.assertFalse(sectors.in_scope("REBOBINADO", {"REBOBINADO"}))
+        # CLOUD-DEP G.12-C4-FINAL25: los 3 sectores conocidos ya son operativos por defecto -- no queda
+        # ningún código conocido "no operativo" real; "OTRO" (desconocido, nunca en _OPERATIONAL) cubre
+        # el mismo caso (una concesión a un sector que nunca es operativo no amplía nada).
+        self.assertEqual(sectors.scoped_sector_codes({"OTRO"}), ())
+        self.assertEqual(sectors.scoped_sector_codes({"REBOBINADO", "OTRO"}), ("REBOBINADO",))
+        self.assertEqual(sectors.scoped_sector_codes({"BOBINAS", "OTRO"}), ("BOBINAS",))
+        self.assertFalse(sectors.in_scope("OTRO", {"OTRO"}))
 
     def test_the_scope_is_the_intersection_of_grants_and_operational_sectors(self):
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):
@@ -403,14 +406,16 @@ class CrossSectorIsolationTests(SectorAuthorizationCase):
             self.assertIn(mp1_order["id"], ids)
 
     async def test_a_grant_to_a_sector_that_is_not_enabled_does_nothing(self):
-        # default configuration: only BOBINAS is operational, so a REBOBINADO grant is inert even though the data exists
+        # CLOUD-DEP G.12-C4-COMPLETE: default configuration is now (BOBINAS, REBOBINADO); CONVERSION
+        # (FUTURE_SECTOR) is still recognised but not operational, so a grant to it stays inert.
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
         _, cookie = await self.new_user("JEFATURA", FUTURE_SECTOR)
         before = self.counts()
         self.assertEqual((await call("GET", "/api/work-orders", cookie=cookie)).json(), [])
         reply = await call("POST", "/api/work-orders", json_body={**order_body("MP1"), "machine_code": FUTURE_MACHINE}, cookie=cookie)
         self.assertEqual((reply.status, reply.json()["code"]), (422, "MACHINE_OUTSIDE_SCOPE"))
         self.assertEqual(self.counts(), before)
-        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS",))
+        self.assertEqual(sectors.operational_sector_codes(), ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
     async def test_existing_bobinas_behaviour_is_unchanged_for_granted_users(self):
         order, assignment = await self.assignment("MP1")
@@ -520,11 +525,11 @@ class ServiceScopeTests(SectorAuthorizationCase):
         ids = lambda scope: [o.id.__str__() for o in work_orders.list_work_orders(self.connection, sectors=scope)]
         self.assertIn(order["id"], ids(("BOBINAS",)))
         self.assertEqual(ids((FUTURE_SECTOR,)), [])  # granted but not operational: nothing
-        self.assertIn(order["id"], ids(("BOBINAS", FUTURE_SECTOR, "CONVERSION", "INVENTADO")))
+        self.assertIn(order["id"], ids(("BOBINAS", FUTURE_SECTOR, "INVENTADO")))
         self.assertEqual(ids(("INVENTADO", "bobinas", "")), [])
         with patch.object(sectors, "_OPERATIONAL", BOTH):
             self.assertIn(order["id"], ids(("BOBINAS",)))
-            self.assertNotIn(order["id"], ids((FUTURE_SECTOR,)), "REBOBINADO without BOBINAS must not reach Bobinas even when both are operational")
+            self.assertNotIn(order["id"], ids((FUTURE_SECTOR,)), f"{FUTURE_SECTOR} without BOBINAS must not reach Bobinas even when both are operational")
             self.assertIn(order["id"], ids(BOTH))
             self.assertEqual(ids(()), [])
         from app.work_orders import errors as wo_errors

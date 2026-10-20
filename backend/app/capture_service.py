@@ -36,7 +36,25 @@ from app.sectors import scoped_sector_codes
 FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de las lecturas
 # POLÍTICA EXPLÍCITA de formularios de producción habilitados para captura central. Añadir un formulario aquí (p. ej. VINTO-P1-10) es una decisión
 # deliberada de producto, nunca automática; además cada captura exige área production, versión publicada y relación formulario-máquina.
-CENTRAL_FORM_CODES = frozenset({FORM_CODE})
+#
+# CLOUD-DEP G.12-C4: se añaden los 5 formularios candidatos de Bobinas (P1-01/02/04/05/31) EXCLUSIVAMENTE
+# para QA interno -- ya tienen máquinas reales (MP1/MP3) y versión publicada en el bundle (ver
+# backend/seed_data/forms/VINTO-P1-0{1,2,4,5}.json y VINTO-P1-31.json).
+#
+# CLOUD-DEP G.12-C4-COMPLETE: se añaden también P1-07/10/30 (Rebobinado), ahora que sectors.py activa
+# REBOBINADO y el bundle tiene BELOIT/OVER/COPASA/PERICHUN publicadas para ellos (ver
+# backend/seed_data/forms/VINTO-P1-{07,10,30}.json).
+#
+# CLOUD-DEP G.12-C4-FINAL25: se añaden los 5 últimos (P1-11/12/13/16, Conversión; P1-29, Rebobinado/
+# TUBETERA), cerrando los 25. El importador (bundle.py/reference.py) ahora soporta grupos repetibles,
+# lo que desbloqueó P1-11/29; P1-12/13/16 usan el subconjunto MANUAL exacto de su definición legacy
+# (reemplaza la hipótesis de prueba que tenían antes esos mismos módulos). Ninguno de los 5 implica
+# liberación/rechazo de Calidad ni homologación industrial de Conversión (sus 36 puntos CV:* siguen
+# "Pendiente" en docs/M7-A-conversion-decisiones-VINTO.md).
+CENTRAL_FORM_CODES = frozenset({
+    FORM_CODE, "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30",
+    "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29",
+})
 PRODUCTION_AREA = "production"
 GROUPS_KEY = "_groups"  # propiedad RESERVADA de `values` para los grupos repetibles; ningún campo de una definición puede llamarse así
 TECHNICAL_MAX_GROUP_ROWS = 1000  # tope TÉCNICO (no funcional) por grupo cuando la definición no declara max_rows: evita cargas absurdas

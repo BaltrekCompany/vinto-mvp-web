@@ -1,0 +1,792 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_1_operacion_e_inspeccion_de_maquina",
+  "code": "VINTO-P1-01",
+  "legacy_number": 1,
+  "name": "Operación e inspección de máquina",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "producto_gramaje_crepado",
+      "label": "Producto / gramaje / crepado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "nivel_tanque_t_30",
+      "label": "Nivel tanque T-30",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "nivel_tanque_h_1",
+      "label": "Nivel tanque H-1",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "nivel_tanque_h_3",
+      "label": "Nivel tanque H-3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "peso_balas_fibra_corta",
+      "label": "Peso balas fibra corta",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "peso_balas_fibra_larga",
+      "label": "Peso balas fibra larga",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "tiempo_de_pulpeo_fibra_corta",
+      "label": "Tiempo de pulpeo fibra corta",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "tiempo_de_pulpeo_fibra_larga",
+      "label": "Tiempo de pulpeo fibra larga",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "nivel_tanque_t_20",
+      "label": "Nivel tanque T-20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "caudal_b_4",
+      "label": "Caudal B-4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "caudal_b_7",
+      "label": "Caudal B-7",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "mezcla_fibra_corta_fibra_larga",
+      "label": "Mezcla fibra corta/fibra larga",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "nivel_tanque_h_20",
+      "label": "Nivel tanque H-20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "consistencia_h_4",
+      "label": "Consistencia H-4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "apertura_valvula_consistencia",
+      "label": "Apertura válvula consistencia",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "gramaje_valvula",
+      "label": "Gramaje válvula",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "nivel_tanque_p17",
+      "label": "Nivel tanque P17",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "motor_fan_b23",
+      "label": "Motor Fan B23",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "motor_fan_b23b",
+      "label": "Motor Fan B23B",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "nivel_tanque_t_21",
+      "label": "Nivel tanque T-21",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 20
+    },
+    {
+      "key": "velocidad_chorro",
+      "label": "Velocidad chorro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 21
+    },
+    {
+      "key": "velocidad_tela",
+      "label": "Velocidad tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 22
+    },
+    {
+      "key": "error_chorro_tela",
+      "label": "Error chorro/tela",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 23
+    },
+    {
+      "key": "presion_labio",
+      "label": "Presión labio",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 24
+    },
+    {
+      "key": "apertura_labio",
+      "label": "Apertura labio",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 25
+    },
+    {
+      "key": "angulo_labio",
+      "label": "Ángulo labio",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 26
+    },
+    {
+      "key": "distancia",
+      "label": "Distancia",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 27
+    },
+    {
+      "key": "presion_entrada_colador",
+      "label": "Presión entrada colador",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 28
+    },
+    {
+      "key": "presion_salida_colador",
+      "label": "Presión salida colador",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 29
+    },
+    {
+      "key": "apertura_purga",
+      "label": "Apertura purga",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 30
+    },
+    {
+      "key": "dosificacion_release",
+      "label": "Dosificación Release",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 31
+    },
+    {
+      "key": "dosificacion_fosfato",
+      "label": "Dosificación Fosfato",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 32
+    },
+    {
+      "key": "dosificacion_pasiv_tela",
+      "label": "Dosificación Pasiv. tela",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 33
+    },
+    {
+      "key": "dosificacion_pasiv_fieltro",
+      "label": "Dosificación Pasiv. fieltro",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 34
+    },
+    {
+      "key": "bomba_ba1",
+      "label": "Bomba BA1",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 35
+    },
+    {
+      "key": "bomba_ba2",
+      "label": "Bomba BA2",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 36
+    },
+    {
+      "key": "bomba_ba3",
+      "label": "Bomba BA3",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 37
+    },
+    {
+      "key": "presion_cocedores",
+      "label": "Presión cocedores",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 38
+    },
+    {
+      "key": "cambio",
+      "label": "Cambio",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 39
+    },
+    {
+      "key": "crepado",
+      "label": "Crepado",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 40
+    },
+    {
+      "key": "limpieza",
+      "label": "Limpieza",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 41
+    },
+    {
+      "key": "nivel_tanque_t_30_aguas",
+      "label": "Nivel tanque T-30 aguas",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 42
+    },
+    {
+      "key": "nivel_tanque_h_20_aguas",
+      "label": "Nivel tanque H-20 aguas",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 43
+    },
+    {
+      "key": "nivel_tanque_t_30_aguas_2",
+      "label": "Nivel tanque T-30 aguas 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 44
+    },
+    {
+      "key": "nivel_tanque_h_20_aguas_2",
+      "label": "Nivel tanque H-20 aguas 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 45
+    },
+    {
+      "key": "nivel_tanque_t_30_accionamientos",
+      "label": "Nivel tanque T-30 accionamientos",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 46
+    },
+    {
+      "key": "nivel_tanque_h_20_accionamientos",
+      "label": "Nivel tanque H-20 accionamientos",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 47
+    },
+    {
+      "key": "opertado",
+      "label": "Opertado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 48
+    },
+    {
+      "key": "produccion",
+      "label": "Producción",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 49
+    },
+    {
+      "key": "velocidad_fieltro",
+      "label": "Velocidad fieltro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 50
+    },
+    {
+      "key": "velocidad_secador",
+      "label": "Velocidad secador",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 51
+    },
+    {
+      "key": "presion_cilindro",
+      "label": "Presión cilindro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 52
+    },
+    {
+      "key": "presion_pope",
+      "label": "Presión pope",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 53
+    },
+    {
+      "key": "presion_caldero",
+      "label": "Presión caldero",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 54
+    },
+    {
+      "key": "temperatura_lado_seco",
+      "label": "Temperatura lado seco",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 55
+    },
+    {
+      "key": "temperatura_lado_humedo",
+      "label": "Temperatura lado húmedo",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 56
+    },
+    {
+      "key": "apertura_campana",
+      "label": "Apertura campana",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 57
+    },
+    {
+      "key": "presion_regaderas",
+      "label": "Presión regaderas",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 58
+    },
+    {
+      "key": "apertura_purga_prensa",
+      "label": "Apertura purga prensa",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 59
+    },
+    {
+      "key": "presion_aceite_alta_tela",
+      "label": "Presión aceite alta tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 60
+    },
+    {
+      "key": "presion_aceite_guia_tela",
+      "label": "Presión aceite guía tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 61
+    },
+    {
+      "key": "presion_aceite_lubricacion",
+      "label": "Presión aceite lubricación",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 62
+    },
+    {
+      "key": "presion_agua_prensa",
+      "label": "Presión agua prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 63
+    },
+    {
+      "key": "presion_aire_prensa",
+      "label": "Presión aire prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 64
+    },
+    {
+      "key": "presion_vacio_prensa",
+      "label": "Presión vacío prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 65
+    },
+    {
+      "key": "presion_fuelle_comando",
+      "label": "Presión fuelle comando",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 66
+    },
+    {
+      "key": "presion_fuelle_transmision",
+      "label": "Presión fuelle transmisión",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 67
+    },
+    {
+      "key": "caudal_agua_sello_1",
+      "label": "Caudal agua sello 1",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 68
+    },
+    {
+      "key": "caudal_agua_sello_2",
+      "label": "Caudal agua sello 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 69
+    },
+    {
+      "key": "caudal_agua_sello_3",
+      "label": "Caudal agua sello 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 70
+    },
+    {
+      "key": "filtro_agua_prensa",
+      "label": "Filtro agua prensa",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 71
+    },
+    {
+      "key": "filtro_quimicos",
+      "label": "Filtro químicos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 72
+    },
+    {
+      "key": "rodillos_quimicos",
+      "label": "Rodillos químicos",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 73
+    },
+    {
+      "key": "vacio_prensa",
+      "label": "Vacío prensa",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 74
+    },
+    {
+      "key": "vacio_pope",
+      "label": "Vacío pope",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 75
+    },
+    {
+      "key": "vacio_fieltro",
+      "label": "Vacío fieltro",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 76
+    },
+    {
+      "key": "vacio_tela",
+      "label": "Vacío tela",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 77
+    },
+    {
+      "key": "limpieza_sala_de_control",
+      "label": "Limpieza sala de control",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 78
+    },
+    {
+      "key": "limpieza_escalera",
+      "label": "Limpieza escalera",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 79
+    },
+    {
+      "key": "limpieza_mezzanine",
+      "label": "Limpieza mezzanine",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 80
+    },
+    {
+      "key": "limpieza_lado_transmision",
+      "label": "Limpieza lado transmisión",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 81
+    },
+    {
+      "key": "limpieza_pasos_y_escaleras",
+      "label": "Limpieza pasos y escaleras",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 82
+    },
+    {
+      "key": "hora_cambio_cuchilla_de_cambio",
+      "label": "Hora cambio cuchilla de cambio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 83
+    },
+    {
+      "key": "hora_cambio_cuchilla_de_crepado",
+      "label": "Hora cambio cuchilla de crepado",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 84
+    },
+    {
+      "key": "hora_cambio_cuchilla_de_limpieza",
+      "label": "Hora cambio cuchilla de limpieza",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 85
+    },
+    {
+      "key": "novedades",
+      "label": "Novedades",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 86
+    }
+  ],
+  "definition_checksum": "e85a2c03a45038eeefde7fd89be1e2ec0fab1d2e357207f3958d26b4c3796df7"
+}

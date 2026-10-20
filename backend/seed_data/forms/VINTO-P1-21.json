@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_21_perfil_de_gramaje_y_humedad",
+  "code": "VINTO-P1-21",
+  "legacy_number": 21,
+  "name": "Perfil de gramaje y humedad",
+  "area": "quality",
+  "workflow": "quality-release",
+  "version_number": 1,
+  "machines": [
+    "MP1",
+    "MP3"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "numero_de_bobina",
+      "label": "Número de bobina",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "posicion_de_perfil",
+      "label": "Posición de perfil",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "gramaje",
+      "label": "Gramaje",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "peso_seco",
+      "label": "Peso seco",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 5
+    }
+  ],
+  "definition_checksum": "8660dd68dfbe9237561c4e81596034c8eb6b8c7f53a6c327fd424b6c22332647"
+}

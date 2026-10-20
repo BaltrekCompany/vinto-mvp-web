@@ -11,14 +11,17 @@ TEST-ONLY HYPOTHESES (not industrial rules, not to be moved to an operational bu
 """
 
 try:
-    from m2b2_fixtures import install_rebobinado_fixture
+    from m2b2_fixtures import REB_SECTOR, install_rebobinado_fixture
     from m3a_fixtures import install_grouped_form
 except ModuleNotFoundError:
-    from tests.m2b2_fixtures import install_rebobinado_fixture
+    from tests.m2b2_fixtures import REB_SECTOR, install_rebobinado_fixture
     from tests.m3a_fixtures import install_grouped_form
 
-P129_CODE = "VINTO-P1-29"
-TUBETERA_MACHINE = "TUBETERA"  # FICTITIOUS test machine. The legacy frontend definition says "tubertera"; the candidate catalog says TUBETERA (unresolved discrepancy)
+# CLOUD-DEP G.12-C4-FINAL25: VINTO-P1-29 y TUBETERA ya son códigos REALES (formulario y máquina
+# genuinamente publicados en backend/seed_data); esta fixture usa códigos sintéticos ZZFIX* para no
+# chocar con ellos.
+P129_CODE = "ZZFIX-P1-29"
+TUBETERA_MACHINE = "ZZFIX_TUBETERA"  # FICTITIOUS test machine. The legacy frontend definition says "tubertera"; the candidate catalog says TUBETERA (unresolved discrepancy)
 
 # key, label, value_type, required, options  (declared types are the legacy ones)
 P129_SIMPLE_FIELDS = (
@@ -68,7 +71,9 @@ P129_VALUES = {
 
 def install_tubetera_machine(connection, article_codes):
     """A fictitious TUBETERA machine in the (already installed) fictitious REBOBINADO sector, linked to `article_codes`; returns its id."""
-    sector_id = connection.execute("SELECT id FROM vinto_master.sector WHERE code = 'REBOBINADO'").fetchone()[0]
+    # CLOUD-DEP G.12-C4-COMPLETE: REBOBINADO ya es un código REAL; esta fixture usa el código sintético
+    # ZZFIX_REBOBINADO (REB_SECTOR, tests/m2b2_fixtures.py) para no apuntar al sector real.
+    sector_id = connection.execute("SELECT id FROM vinto_master.sector WHERE code = %s", (REB_SECTOR,)).fetchone()[0]
     machine_id = connection.execute("INSERT INTO vinto_master.machine (sector_id, code, name) VALUES (%s, %s, %s) RETURNING id", (sector_id, TUBETERA_MACHINE, "Tubetera (prueba)")).fetchone()[0]
     for article in article_codes:
         connection.execute("INSERT INTO vinto_master.article_machine (article_id, machine_id) SELECT id, %s FROM vinto_master.article WHERE code = %s", (machine_id, article))

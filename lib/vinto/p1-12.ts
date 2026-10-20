@@ -1,20 +1,22 @@
 // Captura CENTRAL CANDIDATA de VINTO-P1-12 «Producción diaria de papel higiénico» (Conversión), M6-B: valores, borrador, validación ESTRUCTURAL, payload e intento pendiente. Reutiliza el núcleo
 // común (capture-core.ts) y aporta su propio parser estricto de `values` con el código esperado «VINTO-P1-12».
 //
-// HIPÓTESIS DE PRUEBA, NO una definición aprobada: los tres campos son la interpretación de `PalletProduction` (la pantalla legacy de app/page.tsx): UN PALLET por envío, con cantidad de jabas,
-// hora de inicio y hora de fin. La definición legacy de P1-12 es otra (37 campos: balances de empaque, subempaque, bolsa, segundas y asas, mermas y total de producción) y NO se implementa aquí.
+// CLOUD-DEP G.12-C4-FINAL25: el contrato REAL usado por el backend (seed_data, política, UI) es `P112_FIELDS` + `defineCandidateForm`, más abajo en este archivo -- los 20 campos MANUALES
+// exactos de la definición legacy (form_12_produccion_diaria_de_papel_higienico, 37 campos: 9 automáticos, 20 manuales, 8 calculados), igual que P1-01/02/04/05/etc. Todo lo de ARRIBA de esta
+// nota (P112Values/parseValues/P112_LABELS/normalizeP112Draft/createP112Attempt/...) es la HIPÓTESIS DE PRUEBA original (3 campos: cantidad de jabas + dos horas, interpretación de
+// `PalletProduction`, la pantalla legacy de app/page.tsx) y ya NO se usa desde app/page.tsx: queda como código muerto, sin eliminar, documentando esa hipótesis descartada (igual que
+// components/vinto/p1-10-preview.tsx). No la reutilices para nada nuevo: no es el contrato que el backend acepta.
 //
-// QUÉ NO HACE (decisiones pendientes de VINTO, docs/M6-B-conversion-p112.md): no calcula ni envía peso nominal ni peso total (el maestro de pesos no está homologado), no genera ni muestra un
-// número de pallet (el código `PAL-AAAAMMDD-XXXXXX` del legacy era aleatorio y NO es un correlativo), no impone mínimos ni máximos de jabas (un entero negativo es estructuralmente válido; eso NO autoriza cantidades negativas en operación), no exige que la hora de fin sea posterior a la de
-// inicio (un turno nocturno cruza la medianoche), no valida contra la receta ni el artículo. Solo exige lo estructural: un entero y dos horas HH:MM.
+// QUÉ NO HACE el contrato real (decisiones pendientes de VINTO, docs/M6-B-conversion-p112.md): no calcula ni envía los 8 saldos finales/mermas (calculados, sin fórmula aprobada), no genera
+// firma ni asume el peso nominal/total (maestro no homologado). Solo exige lo estructural que la propia definición declara: texto/decimal, obligatorio según corresponda.
 //
-// Todo es PURO (sin red, sin DOM). P1-12 NO está habilitado en la política de captura central del backend ni Conversión es un sector operativo: este cliente solo funciona contra un backend de
-// prueba que lo habilite explícitamente.
+// Todo es PURO (sin red, sin DOM).
 
 import {
     freezeAttempt, isRec, newCaptureId, parseCaptureListOf, parseCaptureOf, parseSubmissionOf, reconcileOf, submitAttemptOf,
     type CaptureOf, type PendingAttemptOf, type SubmissionOf, type SubmitDepsOf, type SubmitOutcomeOf,
 } from "./capture-core.ts";
+import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_12_CODE = "VINTO-P1-12";
 
@@ -98,3 +100,37 @@ export type P112SubmitOutcome = SubmitOutcomeOf<P112Capture>;
 
 export const submitP112Attempt = (attempt: P112Attempt, deps: P112SubmitDeps): Promise<P112SubmitOutcome> => submitAttemptOf(attempt, deps);
 export const reconcileP112 = (captureId: string, deps: P112SubmitDeps): Promise<P112SubmitOutcome> => reconcileOf(captureId, deps);
+
+// ---- CLOUD-DEP G.12-C4-FINAL25: contrato REAL (20 campos manuales de la definición legacy, en su orden) -----------------------------------
+// Fuente única: form-definitions.ts / form_12_produccion_diaria_de_papel_higienico. Automáticos excluidos (fecha, operador, turno, grupo,
+// maquina, merma_maquina, merma_maquina_kg, firma_operador, firma_encargada); calculados excluidos (empaque/subempaque/bolsa/segundas/asas
+// _saldo_final, merma_logs, merma_cola, total_produccion): sin fórmula aprobada, no se calculan ni se aceptan del cliente.
+export const P112_FIELDS: readonly FieldSpec[] = [
+    { key: "empaque_saldo_inicial", label: "Empaque saldo inicial", kind: "text", required: true },
+    { key: "empaque_solicitado", label: "Empaque solicitado", kind: "text", required: true },
+    { key: "empaque_utilizado", label: "Empaque utilizado", kind: "text", required: true },
+    { key: "subempaque_saldo_inicial", label: "Subempaque saldo inicial", kind: "text", required: true },
+    { key: "subempaque_solicitado", label: "Subempaque solicitado", kind: "text", required: true },
+    { key: "subempaque_utilizado", label: "Subempaque utilizado", kind: "text", required: true },
+    { key: "bolsa_saldo_inicial", label: "Bolsa saldo inicial", kind: "text", required: true },
+    { key: "bolsa_solicitado", label: "Bolsa solicitado", kind: "text", required: true },
+    { key: "bolsa_utilizado", label: "Bolsa utilizado", kind: "text", required: true },
+    { key: "segundas_saldo_inicial", label: "Segundas saldo inicial", kind: "text", required: true },
+    { key: "segundas_solicitado", label: "Segundas solicitado", kind: "text", required: true },
+    { key: "segundas_utilizado", label: "Segundas utilizado", kind: "text", required: true },
+    { key: "asas_saldo_inicial", label: "Asas saldo inicial", kind: "text", required: true },
+    { key: "asas_solicitado", label: "Asas solicitado", kind: "text", required: true },
+    { key: "asas_utilizado", label: "Asas utilizado", kind: "text", required: true },
+    { key: "codigo_producto", label: "Código producto", kind: "text", required: true },
+    { key: "producto", label: "Producto", kind: "text", required: true },
+    { key: "formato", label: "Formato", kind: "decimal", required: true },
+    { key: "cantidad_producida_jabas", label: "Cantidad producida jabas", kind: "text", required: true },
+    { key: "cantidad_producida_segundas", label: "Cantidad producida segundas", kind: "text", required: true },
+];
+export const P112 = defineCandidateForm(P1_12_CODE, P112_FIELDS);
+
+export const P112_AUTOMATIC = ["Fecha", "Operador", "Turno", "Grupo", "Máquina", "Merma de máquina", "Merma de máquina (kg)", "Firma del operador", "Firma de la encargada"] as const;
+export const P112_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Saldos finales y mermas", pending: "8 campos calculados de la definición legacy (saldos finales de empaque/subempaque/bolsa/segundas/asas, merma de logs, merma de cola, producción total): sin fórmula aprobada, no se calculan ni se aceptan del cliente." },
+    { label: "Firma", pending: "La definición legacy declara firma del operador y firma de la encargada; sin mecanismo de firma en el modelo central, no se simulan." },
+];

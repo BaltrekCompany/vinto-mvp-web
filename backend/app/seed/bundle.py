@@ -195,8 +195,9 @@ def _validate_counts(bundle: Bundle) -> None:
         "shifts": len(bundle.shifts),
         "shift_schedules": len(bundle.schedules),
         "forms": len(bundle.forms),
-        "form_fields": sum(len(f["fields"]) for f in bundle.forms),
-        "form_options": sum(len(field.get("options", [])) for f in bundle.forms for field in f["fields"]),
+        "form_fields": sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in bundle.forms),
+        "form_options": sum(len(field.get("options", [])) for f in bundle.forms for field in f["fields"] + [fld for g in f["groups"] for fld in g["fields"]]),
+        "form_groups": sum(len(f["groups"]) for f in bundle.forms),
     }
     for name, value in actual.items():
         _require(counts.get(name) == value, f"Conteo inconsistente en {name}: manifest={counts.get(name)!r}, datos={value}")
@@ -344,12 +345,29 @@ def _validate_content(bundle: Bundle) -> None:
         _require(form["machines"] and len(form["machines"]) == len(set(form["machines"])), f"{label}: máquinas vacías o repetidas")
         for machine in form["machines"]:
             _require(machine in machines, f"{label}: máquina inexistente {machine}")
-        _require(form["groups"] == [], f"{label}: los grupos de campos no están soportados por este importador")
         keys = [f["key"] for f in form["fields"]]
         _require(keys and len(keys) == len(set(keys)), f"{label}: campos vacíos o con claves repetidas")
-        for field in form["fields"]:
-            _require(field["value_type"] in VALUE_TYPES, f"{label}/{field['key']}: tipo inválido")
-            _require(field["source"] == "manual", f"{label}/{field['key']}: solo se importan campos manuales")
-            _require(field["unit"] is None or field["unit"] in units, f"{label}/{field['key']}: unidad inexistente {field['unit']}")
-            option_keys = [o["option_key"] for o in field.get("options", [])]
-            _require(len(option_keys) == len(set(option_keys)), f"{label}/{field['key']}: opciones duplicadas")
+        _validate_fields(form["fields"], units, f"{label}")
+        group_codes = [g["code"] for g in form["groups"]]
+        _require(len(group_codes) == len(set(group_codes)), f"{label}: grupos con códigos repetidos")
+        for group in form["groups"]:
+            glabel = f"{label}/{group['code']}"
+            _require(isinstance(group["code"], str) and group["code"], f"{glabel}: código de grupo vacío")
+            _require(isinstance(group["label"], str) and group["label"], f"{glabel}: etiqueta de grupo vacía")
+            _require(isinstance(group["display_order"], int) and group["display_order"] >= 0, f"{glabel}: display_order inválido")
+            _require(isinstance(group["repeatable"], bool), f"{glabel}: repeatable debe ser booleano")
+            _require(isinstance(group["min_rows"], int) and group["min_rows"] >= 0, f"{glabel}: min_rows inválido")
+            _require(group["max_rows"] is None or (isinstance(group["max_rows"], int) and group["max_rows"] >= group["min_rows"]),
+                     f"{glabel}: max_rows inválido")
+            group_keys = [f["key"] for f in group["fields"]]
+            _require(group_keys and len(group_keys) == len(set(group_keys)), f"{glabel}: campos vacíos o con claves repetidas")
+            _validate_fields(group["fields"], units, glabel)
+
+
+def _validate_fields(fields, units, label) -> None:
+    for field in fields:
+        _require(field["value_type"] in VALUE_TYPES, f"{label}/{field['key']}: tipo inválido")
+        _require(field["source"] == "manual", f"{label}/{field['key']}: solo se importan campos manuales")
+        _require(field["unit"] is None or field["unit"] in units, f"{label}/{field['key']}: unidad inexistente {field['unit']}")
+        option_keys = [o["option_key"] for o in field.get("options", [])]
+        _require(len(option_keys) == len(set(option_keys)), f"{label}/{field['key']}: opciones duplicadas")

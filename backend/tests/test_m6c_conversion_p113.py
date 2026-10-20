@@ -23,12 +23,12 @@ from app.ephemeral_db import build_reference_template, connect, copy_database, d
 from app.seed.bundle import load_bundle
 
 try:
-    from m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from m6b_fixtures import P112_CODE, P112_DRAFT_CODE, P112_VALUES, install_p112, install_p112_draft
     from m6c_fixtures import P113_CODE, P113_DRAFT_CODE, P113_MACHINE, P113_VALUES, install_p113, install_p113_draft
     from test_assignments_api import call
 except ModuleNotFoundError:
-    from tests.m6a_fixtures import CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
+    from tests.m6a_fixtures import CONV_SECTOR, CONV_MACHINE, CONV_MACHINE_NO_FORM, ENABLED_CONVERSION_SECTORS, P116_CODE, P116_VALUES, install_conversion_fixture, install_p116
     from tests.m6b_fixtures import P112_CODE, P112_DRAFT_CODE, P112_VALUES, install_p112, install_p112_draft
     from tests.m6c_fixtures import P113_CODE, P113_DRAFT_CODE, P113_MACHINE, P113_VALUES, install_p113, install_p113_draft
     from tests.test_assignments_api import call
@@ -147,8 +147,8 @@ EIGHT = ["cantidad_jabas", "hora_fin", "hora_inicio", "ingreso_kg", "numero_bobi
 
 class ConfigurationTests(P113Case):
     async def test_the_shipped_configuration_is_unchanged(self):
-        self.assertEqual(SHIPPED_POLICY, frozenset({F6}))  # none of the candidate forms is in the production policy
-        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS",))  # Conversión is NOT operational in the real configuration
+        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))  # CLOUD-DEP G.12-C4: +5 candidatos de Bobinas habilitados para QA  # none of the candidate forms is in the production policy
+        self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
 
     async def test_without_the_test_configuration_p113_is_unreachable(self):
         _, assignment = await self.assignment()
@@ -163,7 +163,7 @@ class ConfigurationTests(P113Case):
 
 class AvailabilityTests(P113Case):
     async def machines(self, who="OPERACION"):
-        return {m["code"]: m for s in (await self.get("/api/production/machines", who)).json()["sectors"] if s["code"] == "CONVERSION" for m in s["machines"]}
+        return {m["code"]: m for s in (await self.get("/api/production/machines", who)).json()["sectors"] if s["code"] == CONV_SECTOR for m in s["machines"]}
 
     async def test_wally_offers_only_p113_and_gambini_keeps_p112_and_p116(self):
         machines = await self.machines()
@@ -174,9 +174,9 @@ class AvailabilityTests(P113Case):
 
     async def test_p113_is_not_offered_without_grant_or_with_a_non_operational_sector_or_policy(self):
         for who in ("OPERACION_SOLO_BOBINAS", "OPERACION_SIN_SECTOR"):
-            self.assertNotIn("CONVERSION", [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]], who)
+            self.assertNotIn(CONV_SECTOR, [s["code"] for s in (await self.get("/api/production/machines", who)).json()["sectors"]], who)
         with patch.object(_sectors, "_OPERATIONAL", SHIPPED_SECTORS):
-            self.assertNotIn("CONVERSION", [s["code"] for s in (await self.get("/api/production/machines")).json()["sectors"]])
+            self.assertNotIn(CONV_SECTOR, [s["code"] for s in (await self.get("/api/production/machines")).json()["sectors"]])
         with patch.object(_capture_service, "CENTRAL_FORM_CODES", frozenset({F6, P116_CODE, P112_CODE})):  # P1-13 not in the policy: WALLY has nothing again
             self.assertEqual((await self.machines())[P113_MACHINE]["forms"], [])
 

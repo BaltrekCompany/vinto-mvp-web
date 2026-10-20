@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_12_produccion_diaria_de_papel_higienico",
+  "code": "VINTO-P1-12",
+  "legacy_number": 12,
+  "name": "Producción diaria de papel higiénico",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 1,
+  "machines": [
+    "GAMBINI",
+    "SINCRO_II",
+    "SINCRO_III"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "empaque_saldo_inicial",
+      "label": "Empaque saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "empaque_solicitado",
+      "label": "Empaque solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "empaque_utilizado",
+      "label": "Empaque utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "subempaque_saldo_inicial",
+      "label": "Subempaque saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 4
+    },
+    {
+      "key": "subempaque_solicitado",
+      "label": "Subempaque solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "subempaque_utilizado",
+      "label": "Subempaque utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "bolsa_saldo_inicial",
+      "label": "Bolsa saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "bolsa_solicitado",
+      "label": "Bolsa solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "bolsa_utilizado",
+      "label": "Bolsa utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "segundas_saldo_inicial",
+      "label": "Segundas saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "segundas_solicitado",
+      "label": "Segundas solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "segundas_utilizado",
+      "label": "Segundas utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "asas_saldo_inicial",
+      "label": "Asas saldo inicial",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "asas_solicitado",
+      "label": "Asas solicitado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "asas_utilizado",
+      "label": "Asas utilizado",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "codigo_producto",
+      "label": "Código producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "producto",
+      "label": "Producto",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "formato",
+      "label": "Formato",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "cantidad_producida_jabas",
+      "label": "Cantidad producida jabas",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "cantidad_producida_segundas",
+      "label": "Cantidad producida segundas",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 20
+    }
+  ],
+  "definition_checksum": "cd9c6a0b3c57d4cdf2cbf0c9545ae4131f23f796a0d238ed3aa1ff80f92ad0b4"
+}
