@@ -68,11 +68,14 @@ GRANT SELECT, INSERT, UPDATE ON
   vinto_master.article_version_spec, vinto_master.article_machine
 TO vinto_reference;
 
--- vinto_config: las 8 tablas que el importador escribe (backend/app/seed/reference.py:234-356).
+-- vinto_config: las 9 tablas que el importador escribe (backend/app/seed/reference.py:234-356).
+-- G.12-C5-DEPLOY: field_group faltaba aquí -- reference.py ya la escribe desde G.12-C4-FINAL25
+-- (grupos repetibles de P1-11/P1-29), pero este archivo nunca se actualizó; el import-reference
+-- real contra vinto_piloto falló con InsufficientPrivilege (42501) hasta corregirlo.
 GRANT SELECT, INSERT, UPDATE ON
   vinto_config.shift, vinto_config.shift_schedule, vinto_config.workflow_definition, vinto_config.form,
-  vinto_config.form_version, vinto_config.form_version_machine, vinto_config.field_definition,
-  vinto_config.field_option
+  vinto_config.form_version, vinto_config.form_version_machine, vinto_config.field_group,
+  vinto_config.field_definition, vinto_config.field_option
 TO vinto_reference;
 
 -- vinto_audit: import_batch necesita UPDATE (cierre de batch, backend/app/seed/reference.py:376-447);
