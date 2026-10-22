@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { CONTEXT_MESSAGES, type ContextCheck } from "@/lib/vinto/orders";
+import { CONTEXT_MESSAGES, programmedQuantityText, type ContextCheck } from "@/lib/vinto/orders";
 
 export type ExecState =
     | { kind: "loading" }
@@ -13,7 +13,7 @@ const WARN = "border-amber-300 bg-amber-50";
 
 // Estado del punto de captura: verde solo con una asignación vigente. Una asignación vencida (stale), sin turno resoluble o
 // inexistente nunca da contexto de captura.
-export function ContextBanner({ state, machine }: { state: ExecState; machine: string }) {
+export function ContextBanner({ state, machine, showProgrammedQuantity = false }: { state: ExecState; machine: string; showProgrammedQuantity?: boolean }) {
     if (state.kind === "loading") {
         return <div role="status" className={`mt-5 rounded-2xl border p-5 ${WARN}`}><p className="font-black">Consultando la asignación activa de {machine}…</p></div>;
     }
@@ -23,7 +23,11 @@ export function ContextBanner({ state, machine }: { state: ExecState; machine: s
     const { check } = state;
     if (check.ok) {
         const c = check.context;
-        return <div className={`mt-5 rounded-2xl border p-5 ${OK}`}><p className="font-black">{`${c.otId} · ${c.lineId} · ${c.productName}`}</p><p className="mt-1 text-sm">{`${c.pv} · ${c.machine} · ${c.shift} · ${c.date}`}</p></div>;
+        const programmed = showProgrammedQuantity ? programmedQuantityText(c) : null;
+        return <div className={`mt-5 rounded-2xl border p-5 ${OK}`}><p className="font-black">{`${c.otId} · ${c.lineId} · ${c.productName}`}</p><p className="mt-1 text-sm">{`${c.pv} · ${c.machine} · ${c.shift} · ${c.date}`}</p>
+            {showProgrammedQuantity && (programmed
+                ? <p className="mt-2 text-base font-black" data-testid="programmed-quantity">{`Cantidad programada: ${programmed}`}</p>
+                : <p className="mt-2 text-sm font-bold text-amber-900" data-testid="programmed-quantity">Cantidad programada no disponible. Consulta con Supervisión.</p>)}</div>;
     }
     const assignment = check.assignment;
     return <div role="alert" className={`mt-5 rounded-2xl border p-5 ${WARN}`}>
