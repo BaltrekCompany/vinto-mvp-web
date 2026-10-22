@@ -204,6 +204,8 @@ export type CaptureContext = {
     pv: string;
     productCode: string;
     productName: string;
+    quantity: number; // cantidad programada de ESTA línea (no el total de la OT), tal como la fija Jefatura
+    unit: string; // unidad de la línea de programación
     machine: string;
     shift: string;
     date: string;
@@ -219,10 +221,17 @@ export const CONTEXT_MESSAGES = {
     unresolvable: "No se pudo resolver el turno vigente, por lo que no se permite capturar.",
 } as const;
 
+// Texto de la cantidad programada para el operario. Solo si la cifra es válida (> 0) y hay unidad; nunca se inventa ninguna de las dos.
+export function programmedQuantityText(context: Pick<CaptureContext, "quantity" | "unit">): string | null {
+    const unit = typeof context.unit === "string" ? context.unit.trim() : "";
+    if (typeof context.quantity !== "number" || !Number.isFinite(context.quantity) || context.quantity <= 0 || unit === "") return null;
+    return `${new Intl.NumberFormat("es-BO", { maximumFractionDigits: 3 }).format(context.quantity)} ${unit}`;
+}
+
 export function captureContextOf(assignment: Assignment): CaptureContext {
     return { assignmentId: assignment.id, workOrderId: assignment.work_order.id, otId: assignment.work_order.number, lineId: assignment.line.line_code,
         pv: assignment.line.pv_reference, productCode: assignment.line.article.code, productName: assignment.line.article.description,
-        machine: assignment.machine.code, shift: assignment.shift.name, date: assignment.operating_date };
+        quantity: assignment.line.quantity, unit: assignment.line.unit, machine: assignment.machine.code, shift: assignment.shift.name, date: assignment.operating_date };
 }
 
 // Producción: SOLO una asignación vigente (stale === false) da contexto. Sin asignación, vencida o con turno no resoluble: no hay captura.

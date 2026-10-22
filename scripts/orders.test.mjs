@@ -6,8 +6,9 @@ import test from "node:test";
 import {
   ASSIGNMENT_LABELS, CONTEXT_MESSAGES, FAILURE_MESSAGES, WORK_ORDER_LABELS, activatePayload, addLinePayload, captureContextOf, contextFromActive,
   createWorkOrderPayload, failureKindFromStatus, failureMessage, parseActivation, parseActive, parseAssignment, parseAssignmentList, parseLineDraft,
-  parseWorkOrder, parseWorkOrderList, toDisplayAssignment, toDisplayOt, usesCentralAssignment,
+  parseWorkOrder, parseWorkOrderList, programmedQuantityText, toDisplayAssignment, toDisplayOt, usesCentralAssignment,
 } from "../lib/vinto/orders.ts";
+import { buildBobbinPayload } from "../lib/vinto/bobbins.ts";
 
 const line = (overrides = {}) => ({
   id: "11111111-1111-4111-8111-111111111111", line_code: "L1", pv_reference: "PV-001",
@@ -92,7 +93,7 @@ test("stale === false is the only state that gives a production capture context"
   assert.equal(check.ok, true);
   assert.deepEqual(check.context, {
     assignmentId: assignment().id, workOrderId: order().id, otId: "OT-2026-0001", lineId: "L1", pv: "PV-001", productCode: "M1-1024",
-    productName: "M1-BOBINA PH G-22 CR-25% R-540640", machine: "MP1", shift: "Día", date: "2026-10-06",
+    productName: "M1-BOBINA PH G-22 CR-25% R-540640", quantity: 100, unit: "KG", machine: "MP1", shift: "Día", date: "2026-10-06",
   });
 });
 
@@ -193,4 +194,48 @@ test("central data adapts to the existing visual shapes without inventing fields
   const shown = toDisplayAssignment(parseAssignment(assignment({ status: "finished", finished_at: "2026-10-06T20:00:00Z" })));
   assert.deepEqual(shown, { id: assignment().id, ot: "OT-2026-0001", line: "L1", machine: "MP1", shift: "Día", date: "2026-10-06", status: "Finalizada", by: "Supervisión DEV" });
   assert.equal(toDisplayOt(parseWorkOrder(order())).id.startsWith("OT-PRUEBA"), false);
+});
+
+// ---- MF-01: cantidad programada en Ejecución de Bobinas ---------------------------------------------------------------
+
+test("MF-01: the capture context carries the quantity and unit of the assigned line (MP1 and MP3)", () => {
+  const mp1 = captureContextOf(assignment({ line: line({ quantity: 100, unit: "KG" }) }));
+  assert.equal(mp1.quantity, 100);
+  assert.equal(mp1.unit, "KG");
+  assert.equal(programmedQuantityText(mp1), "100 KG");
+  const mp3 = captureContextOf(assignment({ machine: { code: "MP3", name: "MP3" }, line: line({ quantity: 2500.5, unit: "KG" }) }));
+  assert.match(programmedQuantityText(mp3), /^2\D?500[.,]5 KG$/);
+});
+
+test("MF-01: each assignment shows ITS OWN line quantity, not the total of the OT", () => {
+  const l1 = line({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", line_code: "L1", quantity: 100 });
+  const l2 = line({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", line_code: "L2", quantity: 40, unit: "UN" });
+  const a1 = captureContextOf(assignment({ line: l1 }));
+  const a2 = captureContextOf(assignment({ line: l2 }));
+  assert.equal(programmedQuantityText(a1), "100 KG");
+  assert.equal(programmedQuantityText(a2), "40 UN");
+  assert.notEqual(programmedQuantityText(a1), programmedQuantityText(a2));
+});
+
+test("MF-01: no valid quantity or unit yields null (never a made-up figure or unit)", () => {
+  for (const bad of [{ quantity: 0, unit: "KG" }, { quantity: -5, unit: "KG" }, { quantity: Number.NaN, unit: "KG" }, { quantity: Infinity, unit: "KG" },
+    { quantity: undefined, unit: "KG" }, { quantity: "100", unit: "KG" }, { quantity: 100, unit: "" }, { quantity: 100, unit: "  " }, { quantity: 100, unit: undefined }])
+    assert.equal(programmedQuantityText(bad), null, JSON.stringify(bad));
+});
+
+test("MF-01: the active-assignment flow exposes the quantity only with a current assignment; without one there is no context", () => {
+  const check = contextFromActive(active(false, assignment({ line: line({ quantity: 75, unit: "KG" }) })));
+  assert.equal(check.ok, true);
+  assert.equal(programmedQuantityText(check.context), "75 KG");
+  const none = contextFromActive({ assignment: null, current_shift: null, stale: null });
+  assert.equal(none.ok, false);
+  assert.equal("context" in none, false);
+});
+
+test("MF-01: the extra fields never reach the capture request payloads", () => {
+  const context = captureContextOf(assignment());
+  const payload = buildBobbinPayload("cap-1", context.assignmentId, "dev-1", {});
+  const text = JSON.stringify(payload);
+  for (const forbidden of ["quantity", "unit"]) assert.equal(text.includes(forbidden), false, forbidden);
+  assert.equal(Object.keys(payload).includes("quantity"), false);
 });
