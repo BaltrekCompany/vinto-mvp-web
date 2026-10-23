@@ -43,7 +43,9 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const m = legacy.fields.filter(isManual);
     assert.equal(c.fields.length, c.counts[0]);
     assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    // MF-02: único texto visible aprobado que difiere de la definición legacy; la clave consistencia_h_4 no cambia.
+    const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia" } };
+    assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => LABEL_OVERRIDES[c.name]?.[f.key] ?? f.label), `${c.name}: etiquetas`);
     assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
     assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const f of c.fields) assert.equal(f.suffix, m.find((x) => x.key === f.key).unit ?? undefined, `${c.name}: ${f.key} unidad`);
@@ -247,4 +249,12 @@ test("alcance: política, sectores y seed intactos, sin migraciones nuevas, sin 
   assert.match(capture, /^TIME_PATTERN = re\.compile\(r"\(\[01\]\[0-9\]\|2\[0-3\]\):\[0-5\]\[0-9\]\(:\[0-5\]\[0-9\]\)\?"\)$/m);
   assert.match(capture, /if not isinstance\(raw, str\) or not TIME_PATTERN\.fullmatch\(raw\)/);
   assert.equal(/quality_release|INSERT INTO vinto_txn\.(bobbin|quality_release)/.test(code("lib/vinto/p1-02.ts") + code("lib/vinto/p1-01.ts")), false);
+});
+
+test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, tipo y unidad", () => {
+  const f = P101_FIELDS.find((x) => x.key === "consistencia_h_4");
+  assert.deepEqual({ ...f }, { key: "consistencia_h_4", label: "Consistencia", kind: "decimal", required: true, suffix: "%" });
+  assert.equal(P101_FIELDS.length, 86);
+  assert.equal(P101_FIELDS.some((x) => x.label.includes("H-4")), false);
+  assert.equal(P101_FIELDS.find((x) => x.key === "nivel_tanque_h_3").label, "Nivel tanque H-3");
 });
