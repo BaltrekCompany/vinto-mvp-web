@@ -37,7 +37,7 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "error_chorro_tela", label: "Error chorro/tela", kind: "text", required: true },
     { key: "presion_labio", label: "Presión labio", kind: "decimal", required: true },
     { key: "apertura_labio", label: "Apertura labio", kind: "text", required: true },
-    { key: "angulo_labio", label: "Ángulo labio", kind: "text", required: true },
+    { key: "angulo_labio", label: "Ángulo caja", kind: "text", required: true },
     { key: "distancia", label: "Distancia", kind: "text", required: true },
     { key: "presion_entrada_colador", label: "Presión entrada colador", kind: "decimal", required: true },
     { key: "presion_salida_colador", label: "Presión salida colador", kind: "decimal", required: true },
