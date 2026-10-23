@@ -106,7 +106,7 @@ test("las secciones visuales cubren cada campo manual EXACTAMENTE una vez, en el
     assert.equal(/_groups|repeat|total|promedio/i.test(JSON.stringify(c.sections.map((s) => s.title))), false);
   }
   assert.deepEqual(P102_SECTIONS.map((s) => s.title), ["Velocidad y corriente", "Vacíos y presiones", "Temperaturas y gramaje", "Humedad y peso seco, y ajustes de caja de entrada", "Limpieza y novedades"]);
-  assert.deepEqual(P101_SECTIONS.map((s) => s.title), ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Tela, chorro y labio", "Dosificaciones y accionamientos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]);
+  assert.deepEqual(P101_SECTIONS.map((s) => s.title), ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Tela, chorro y labio", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]);
   assert.deepEqual(P101_SECTIONS.find((s) => s.title === "Limpieza y cambios de cuchillas").keys.slice(-3), TIME_KEYS);
   assert.match(code("components/vinto/candidate-form-capture.tsx"), /candidate\.sections/);
   assert.match(read("lib/vinto/p1-02.ts"), /SOLO VISUAL[\s\S]*representa grupos industriales aprobados/);
@@ -266,4 +266,12 @@ test("MF-03: P1-01 muestra «Ángulo caja» con la misma clave, obligatoriedad, 
   assert.equal(P101_FIELDS.some((x) => x.label === "Ángulo labio"), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "apertura_labio").label, "Apertura labio");
   assert.ok(P101_SECTIONS.some((s) => s.keys.includes("angulo_labio")));
+});
+
+test("MF-04: la sección «Químicos» conserva sus campos, orden y claves", () => {
+  const sec = P101_SECTIONS.find((x) => x.title === "Químicos");
+  assert.deepEqual(sec.keys.slice(0, 4), ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro"]);
+  assert.equal(P101_SECTIONS.some((x) => x.title === "Dosificaciones y accionamientos"), false);
+  assert.equal(P101_SECTIONS.reduce((n, x) => n + x.keys.length, 0), 86);
+  assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, 86);
 });
