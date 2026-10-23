@@ -43,8 +43,8 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const m = legacy.fields.filter(isManual);
     assert.equal(c.fields.length, c.counts[0]);
     assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    // MF-02: único texto visible aprobado que difiere de la definición legacy; la clave consistencia_h_4 no cambia.
-    const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia" } };
+    // MF-02/MF-03: textos visibles aprobados que difieren de la definición legacy; la clave consistencia_h_4 no cambia.
+    const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia", angulo_labio: "Ángulo caja" } };
     assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => LABEL_OVERRIDES[c.name]?.[f.key] ?? f.label), `${c.name}: etiquetas`);
     assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
     assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
@@ -257,4 +257,13 @@ test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, 
   assert.equal(P101_FIELDS.length, 86);
   assert.equal(P101_FIELDS.some((x) => x.label.includes("H-4")), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "nivel_tanque_h_3").label, "Nivel tanque H-3");
+});
+
+test("MF-03: P1-01 muestra «Ángulo caja» con la misma clave, obligatoriedad, tipo y sección", () => {
+  const f = P101_FIELDS.find((x) => x.key === "angulo_labio");
+  assert.deepEqual({ ...f }, { key: "angulo_labio", label: "Ángulo caja", kind: "text", required: true });
+  assert.equal(P101_FIELDS.length, 86);
+  assert.equal(P101_FIELDS.some((x) => x.label === "Ángulo labio"), false);
+  assert.equal(P101_FIELDS.find((x) => x.key === "apertura_labio").label, "Apertura labio");
+  assert.ok(P101_SECTIONS.some((s) => s.keys.includes("angulo_labio")));
 });
