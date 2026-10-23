@@ -25,7 +25,7 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "caudal_b_7", label: "Caudal B-7", kind: "decimal", required: true },
     { key: "mezcla_fibra_corta_fibra_larga", label: "Mezcla fibra corta/fibra larga", kind: "text", required: true },
     { key: "nivel_tanque_h_20", label: "Nivel tanque H-20", kind: "decimal", required: true },
-    { key: "consistencia_h_4", label: "Consistencia H-4", kind: "decimal", required: true, suffix: "%" },
+    { key: "consistencia_h_4", label: "Consistencia", kind: "decimal", required: true, suffix: "%" },
     { key: "apertura_valvula_consistencia", label: "Apertura válvula consistencia", kind: "decimal", required: true, suffix: "%" },
     { key: "gramaje_valvula", label: "Gramaje válvula", kind: "decimal", required: true, suffix: "g/m²" },
     { key: "nivel_tanque_p17", label: "Nivel tanque P17", kind: "decimal", required: true },
