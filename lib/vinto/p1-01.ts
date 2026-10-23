@@ -11,8 +11,9 @@
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_01_CODE = "VINTO-P1-01";
+// MF-05 (versión 2 del formulario): respecto de la definición legacy se RETIRAN «producto_gramaje_crepado» y «nivel_tanque_t_20» (ya no se piden ni se exigen) y «nivel_tanque_p17» se muestra como «Nivel tanque PIT»
+// (la clave no cambia). Las capturas de la versión 1 conservan esos dos valores en PostgreSQL; el parser ignora claves extra y no exige las retiradas, por lo que el historial sigue legible.
 export const P101_FIELDS: readonly FieldSpec[] = [
-    { key: "producto_gramaje_crepado", label: "Producto / gramaje / crepado", kind: "text", required: true, suffix: "g/m²" },
     { key: "nivel_tanque_t_30", label: "Nivel tanque T-30", kind: "decimal", required: true },
     { key: "nivel_tanque_h_1", label: "Nivel tanque H-1", kind: "decimal", required: true },
     { key: "nivel_tanque_h_3", label: "Nivel tanque H-3", kind: "decimal", required: true },
@@ -20,7 +21,6 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "peso_balas_fibra_larga", label: "Peso balas fibra larga", kind: "text", required: true, suffix: "kg" },
     { key: "tiempo_de_pulpeo_fibra_corta", label: "Tiempo de pulpeo fibra corta", kind: "text", required: true, suffix: "min" },
     { key: "tiempo_de_pulpeo_fibra_larga", label: "Tiempo de pulpeo fibra larga", kind: "text", required: true, suffix: "min" },
-    { key: "nivel_tanque_t_20", label: "Nivel tanque T-20", kind: "decimal", required: true },
     { key: "caudal_b_4", label: "Caudal B-4", kind: "decimal", required: true },
     { key: "caudal_b_7", label: "Caudal B-7", kind: "decimal", required: true },
     { key: "mezcla_fibra_corta_fibra_larga", label: "Mezcla fibra corta/fibra larga", kind: "text", required: true },
@@ -28,7 +28,7 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "consistencia_h_4", label: "Consistencia", kind: "decimal", required: true, suffix: "%" },
     { key: "apertura_valvula_consistencia", label: "Apertura válvula consistencia", kind: "decimal", required: true, suffix: "%" },
     { key: "gramaje_valvula", label: "Gramaje válvula", kind: "decimal", required: true, suffix: "g/m²" },
-    { key: "nivel_tanque_p17", label: "Nivel tanque P17", kind: "decimal", required: true },
+    { key: "nivel_tanque_p17", label: "Nivel tanque PIT", kind: "decimal", required: true },
     { key: "motor_fan_b23", label: "Motor Fan B23", kind: "text", required: true },
     { key: "motor_fan_b23b", label: "Motor Fan B23B", kind: "text", required: true },
     { key: "nivel_tanque_t_21", label: "Nivel tanque T-21", kind: "decimal", required: true },
@@ -101,9 +101,8 @@ export const P101_FIELDS: readonly FieldSpec[] = [
 ];
 // Agrupación SOLO VISUAL de la captura (no cambia la estructura persistida ni representa grupos industriales aprobados): cada campo aparece exactamente una vez, en el orden del contrato.
 export const P101_SECTIONS: readonly { title: string; hint?: string; keys: readonly string[] }[] = [
-    { title: "Materia prima, tanques y pulpeo", keys: ["producto_gramaje_crepado", "nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga"] },
-    { title: "Caudales, mezclas y consistencias", keys: ["nivel_tanque_t_20", "caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20", "consistencia_h_4", "apertura_valvula_consistencia", "gramaje_valvula"] },
-    { title: "Tela, chorro y labio", keys: ["nivel_tanque_p17", "motor_fan_b23", "motor_fan_b23b", "nivel_tanque_t_21", "velocidad_chorro", "velocidad_tela", "error_chorro_tela", "presion_labio", "apertura_labio", "angulo_labio", "distancia", "presion_entrada_colador", "presion_salida_colador", "apertura_purga"] },
+    { title: "Materia prima, tanques y pulpeo", keys: ["nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga"] },
+    { title: "Caudales, mezclas y consistencias", keys: ["caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20", "consistencia_h_4", "apertura_valvula_consistencia", "gramaje_valvula", "nivel_tanque_p17", "motor_fan_b23", "motor_fan_b23b", "nivel_tanque_t_21", "velocidad_chorro", "velocidad_tela", "error_chorro_tela", "presion_labio", "apertura_labio", "angulo_labio", "distancia", "presion_entrada_colador", "presion_salida_colador", "apertura_purga"] },
     { title: "Químicos", keys: ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "presion_cocedores", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_h_20_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_h_20_aguas_2", "nivel_tanque_t_30_accionamientos", "nivel_tanque_h_20_accionamientos", "opertado", "produccion"] },
     { title: "Secador, presiones y temperaturas", keys: ["velocidad_fieltro", "velocidad_secador", "presion_cilindro", "presion_pope", "presion_caldero", "temperatura_lado_seco", "temperatura_lado_humedo", "apertura_campana", "presion_regaderas"] },
     { title: "Prensa, aceite, vacío y filtros", keys: ["apertura_purga_prensa", "presion_aceite_alta_tela", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "presion_agua_prensa", "presion_aire_prensa", "presion_vacio_prensa", "presion_fuelle_comando", "presion_fuelle_transmision", "caudal_agua_sello_1", "caudal_agua_sello_2", "caudal_agua_sello_3", "filtro_agua_prensa", "filtro_quimicos", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro", "vacio_tela"] },

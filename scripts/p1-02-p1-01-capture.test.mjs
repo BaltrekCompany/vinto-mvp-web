@@ -26,7 +26,7 @@ const TIME_KEYS = ["hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_cr
 const fill = (fields) => Object.fromEntries(fields.map((f, i) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "time" ? ["06:30", "14:45", "22:10"][i % 3] : f.kind === "textarea" ? " nota " : "texto 12,5"]));
 const CASES = [
   { name: "P1-02", id: "form_2_parametros_de_operacion_de_maquina", form: P102, formCode: P1_02_CODE, fields: P102_FIELDS, sections: P102_SECTIONS, pending: P102_PENDING, counts: [48, 4], machines: ["mp1"], screen: "p102", machine: "MP1" },
-  { name: "P1-01", id: "form_1_operacion_e_inspeccion_de_maquina", form: P101, formCode: P1_01_CODE, fields: P101_FIELDS, sections: P101_SECTIONS, pending: P101_PENDING, counts: [86, 7], machines: ["mp3"], screen: "p101", machine: "MP3" },
+  { name: "P1-01", id: "form_1_operacion_e_inspeccion_de_maquina", form: P101, formCode: P1_01_CODE, fields: P101_FIELDS, sections: P101_SECTIONS, pending: P101_PENDING, counts: [86, 7], removed: ["producto_gramaje_crepado", "nivel_tanque_t_20"], machines: ["mp3"], screen: "p101", machine: "MP3" },
 ];
 const envelope = (formCode, values) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
   machine: { code: "MP3", name: "MP3" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", assignment: { id: ASSIGNMENT }, work_order: { id: UUID, number: "OT-1" },
@@ -40,11 +40,12 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.deepEqual(legacy.allowedMachineIds, c.machines);
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [...c.counts, 0], c.name);
     assert.equal(legacy.fields.length, c.counts[0] + c.counts[1]);
-    const m = legacy.fields.filter(isManual);
-    assert.equal(c.fields.length, c.counts[0]);
+    // MF-05: la versión 2 de P1-01 retira dos campos de la definición legacy; todo lo demás (claves, orden, tipos, obligatoriedad, unidades) sigue idéntico.
+    const m = legacy.fields.filter(isManual).filter((f) => !(c.removed ?? []).includes(f.key));
+    assert.equal(c.fields.length, c.counts[0] - (c.removed ?? []).length);
     assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    // MF-02/MF-03: textos visibles aprobados que difieren de la definición legacy; la clave consistencia_h_4 no cambia.
-    const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia", angulo_labio: "Ángulo caja" } };
+    // MF-02/MF-03/MF-05: textos visibles aprobados que difieren de la definición legacy; la clave consistencia_h_4 no cambia.
+    const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia", angulo_labio: "Ángulo caja", nivel_tanque_p17: "Nivel tanque PIT" } };
     assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => LABEL_OVERRIDES[c.name]?.[f.key] ?? f.label), `${c.name}: etiquetas`);
     assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
     assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
@@ -58,7 +59,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
 
 test("campos que parecen numéricos pero son TEXTO en la definición se conservan como texto; `opertado` conserva su ortografía; las tres horas son `time` manual obligatorio", () => {
   const k01 = Object.fromEntries(P101_FIELDS.map((f) => [f.key, f.kind])), k02 = Object.fromEntries(P102_FIELDS.map((f) => [f.key, f.kind]));
-  for (const key of ["peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga", "opertado", "produccion", "producto_gramaje_crepado"]) assert.equal(k01[key], "text", key);
+  for (const key of ["peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga", "opertado", "produccion"]) assert.equal(k01[key], "text", key);
   assert.ok("opertado" in k01 && !("operado" in k01) && !("operated" in k01), "se conserva la clave original `opertado`");
   for (const key of ["producto", "apertura_gas", "apertura_termocompresor", "relacion_chorro_tela", "altura_caja_entrada", "apertura_labio", "dosificacion_release", "novedades", ...Object.keys(k02).filter((k) => k.startsWith("limpieza_"))]) assert.equal(k02[key], "text", key);
   assert.equal(Object.keys(k02).filter((k) => k.startsWith("limpieza_")).length, 8);
@@ -106,7 +107,7 @@ test("las secciones visuales cubren cada campo manual EXACTAMENTE una vez, en el
     assert.equal(/_groups|repeat|total|promedio/i.test(JSON.stringify(c.sections.map((s) => s.title))), false);
   }
   assert.deepEqual(P102_SECTIONS.map((s) => s.title), ["Velocidad y corriente", "Vacíos y presiones", "Temperaturas y gramaje", "Humedad y peso seco, y ajustes de caja de entrada", "Limpieza y novedades"]);
-  assert.deepEqual(P101_SECTIONS.map((s) => s.title), ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Tela, chorro y labio", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]);
+  assert.deepEqual(P101_SECTIONS.map((s) => s.title), ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]);
   assert.deepEqual(P101_SECTIONS.find((s) => s.title === "Limpieza y cambios de cuchillas").keys.slice(-3), TIME_KEYS);
   assert.match(code("components/vinto/candidate-form-capture.tsx"), /candidate\.sections/);
   assert.match(read("lib/vinto/p1-02.ts"), /SOLO VISUAL[\s\S]*representa grupos industriales aprobados/);
@@ -254,7 +255,7 @@ test("alcance: política, sectores y seed intactos, sin migraciones nuevas, sin 
 test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, tipo y unidad", () => {
   const f = P101_FIELDS.find((x) => x.key === "consistencia_h_4");
   assert.deepEqual({ ...f }, { key: "consistencia_h_4", label: "Consistencia", kind: "decimal", required: true, suffix: "%" });
-  assert.equal(P101_FIELDS.length, 86);
+  assert.equal(P101_FIELDS.length, 84);
   assert.equal(P101_FIELDS.some((x) => x.label.includes("H-4")), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "nivel_tanque_h_3").label, "Nivel tanque H-3");
 });
@@ -262,7 +263,7 @@ test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, 
 test("MF-03: P1-01 muestra «Ángulo caja» con la misma clave, obligatoriedad, tipo y sección", () => {
   const f = P101_FIELDS.find((x) => x.key === "angulo_labio");
   assert.deepEqual({ ...f }, { key: "angulo_labio", label: "Ángulo caja", kind: "text", required: true });
-  assert.equal(P101_FIELDS.length, 86);
+  assert.equal(P101_FIELDS.length, 84);
   assert.equal(P101_FIELDS.some((x) => x.label === "Ángulo labio"), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "apertura_labio").label, "Apertura labio");
   assert.ok(P101_SECTIONS.some((s) => s.keys.includes("angulo_labio")));
@@ -272,6 +273,44 @@ test("MF-04: la sección «Químicos» conserva sus campos, orden y claves", () 
   const sec = P101_SECTIONS.find((x) => x.title === "Químicos");
   assert.deepEqual(sec.keys.slice(0, 4), ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro"]);
   assert.equal(P101_SECTIONS.some((x) => x.title === "Dosificaciones y accionamientos"), false);
-  assert.equal(P101_SECTIONS.reduce((n, x) => n + x.keys.length, 0), 86);
-  assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, 86);
+  assert.equal(P101_SECTIONS.reduce((n, x) => n + x.keys.length, 0), 84);
+  assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, 84);
+});
+
+test("MF-05: P1-01 v2 retira «Producto / gramaje / crepado» y «Nivel tanque T-20», muestra «Nivel tanque PIT» y fusiona «Tela, chorro y labio» en la sección anterior", () => {
+  const keys = P101_FIELDS.map((f) => f.key);
+  for (const gone of ["producto_gramaje_crepado", "nivel_tanque_t_20"]) {
+    assert.equal(keys.includes(gone), false, gone);
+    assert.equal(P101_SECTIONS.some((s) => s.keys.includes(gone)), false, gone);
+    assert.equal(Object.keys(P101.emptyDraft()).includes(gone), false, gone);
+  }
+  // no se confunden con campos vecinos: T-30, H-1, H-3, H-20, T-21 permanecen
+  for (const stay of ["nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "nivel_tanque_h_20", "nivel_tanque_t_21"]) assert.ok(keys.includes(stay), stay);
+  const pit = P101_FIELDS.find((f) => f.key === "nivel_tanque_p17");
+  assert.deepEqual({ ...pit }, { key: "nivel_tanque_p17", label: "Nivel tanque PIT", kind: "decimal", required: true });
+  assert.equal(P101_SECTIONS.some((s) => s.title === "Tela, chorro y labio"), false);
+  const merged = P101_SECTIONS.find((s) => s.title === "Caudales, mezclas y consistencias");
+  assert.deepEqual(merged.keys.slice(0, 4), ["caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20"]);
+  assert.deepEqual(merged.keys.slice(merged.keys.indexOf("gramaje_valvula"), merged.keys.indexOf("gramaje_valvula") + 3), ["gramaje_valvula", "nivel_tanque_p17", "motor_fan_b23"]);
+  assert.equal(P101_SECTIONS.every((s) => s.keys.length > 0), true);
+  assert.equal(new Set(P101_SECTIONS.map((s) => s.title)).size, P101_SECTIONS.length, "sin encabezados duplicados");
+  // una captura nueva sin los dos campos retirados es válida; sus claves nunca viajan en el payload
+  const draft = fill(P101_FIELDS);
+  const attempt = P101.createAttempt(draft, ASSIGNMENT, DEVICE);
+  assert.equal(attempt.ok, true);
+  assert.equal(Object.keys(attempt.attempt.payload.values).length, 84);
+  assert.equal("producto_gramaje_crepado" in attempt.attempt.payload.values || "nivel_tanque_t_20" in attempt.attempt.payload.values, false);
+});
+
+test("MF-05: el historial de la versión 1 sigue legible (las claves retiradas se ignoran) y una captura v2 también", () => {
+  const v2 = Object.fromEntries(Object.entries(P101.normalizeDraft(fill(P101_FIELDS)).values).map(([k, v]) => [k, TIME_KEYS.includes(k) ? `${v}:00` : v])); // el backend sirve las horas como HH:MM:SS
+  const v1 = { ...v2, producto_gramaje_crepado: "Higiénico 17 g/m² crepado 22", nivel_tanque_t_20: "55,5" };
+  for (const values of [v1, v2]) {
+    const parsed = P101.parseCapture(envelope(P1_01_CODE, values));
+    assert.ok(parsed, "la captura se interpreta");
+    assert.equal(Object.keys(parsed.values).length, 84);
+    assert.equal("nivel_tanque_t_20" in parsed.values, false);
+  }
+  const list = P101.parseList([envelope(P1_01_CODE, v1), envelope(P1_01_CODE, v2)]);
+  assert.equal(list.length, 2);
 });
