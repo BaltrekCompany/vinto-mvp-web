@@ -60,7 +60,7 @@
     },
     {
       "path": "lib/vinto/p1-01.ts",
-      "sha256": "b69d2aa5ef9e3724c6e4beed929cf2f4a0e22f96423f5699183af6d20f003674",
+      "sha256": "fb9dcf58a1923bc13e4a8d2a9b1cfc7213337c57f621a045d0892ae3526c53a3",
       "scope": "candidate-fields:VINTO-P1-01"
     },
     {
@@ -182,8 +182,8 @@
     },
     {
       "path": "forms/VINTO-P1-01.json",
-      "sha256": "72bd6365676eaf2c4e88ed974118f9ce94beefaff854b689d6228b8c67ce22a5",
-      "bytes": 18655
+      "sha256": "61f993f6162db9207961db9ea6395559ec0fe371f27a64a905d4a56048d27911",
+      "bytes": 18215
     },
     {
       "path": "forms/VINTO-P1-02.json",
@@ -356,7 +356,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 25,
-    "form_fields": 391,
+    "form_fields": 389,
     "form_options": 7,
     "form_groups": 3
   },
