@@ -4,7 +4,11 @@
   - P1-25 v2 (MD_Ejec 27, 28 y 29): sin «numero_de_bobina», «producto» ni «gramaje_laboratorio_g_m2»; con «caudal_rh_ml_min» al inicio y «n_cortes» al final (13 campos).
 
 Se verifica contra PostgreSQL REAL (base efímera *_test) con los formularios REALES del bundle (no fixtures): la versión 1 sigue publicada e intacta, la versión 2 es la que elige el backend
-para capturas nuevas, y una captura histórica de la versión 1 sigue siendo legible. La ruta de Calidad por bobina toma la bobina de la URL, por lo que ya no necesita que se digite su número."""
+para capturas nuevas, y una captura histórica de la versión 1 sigue siendo legible. La ruta de Calidad por bobina toma la bobina de la URL, por lo que ya no necesita que se digite su número.
+
+MF-07: el bundle trae hoy la versión 3 de P1-24 y P1-25 (etiquetas Comando / Medio / Transversal y promedios calculados). Estas pruebas reproducen el estado de producción ENTRE MF-06 y MF-07: la v2 (los campos
+MANUALES de la v3, que conservan claves, tipos y obligatoriedad) se instala publicada y la v3 se retira solo en la base efímera de la prueba, de modo que el backend vuelve a elegir la v2 como en producción.
+Que la v3 funciona y que la v2 sigue siendo legible se prueba en test_mf07_p121_p124_p125_v3.py."""
 
 import contextlib
 import dataclasses
@@ -35,6 +39,11 @@ REMOVED = {P124: ("numero_de_bobina", "producto"), P125: ("numero_de_bobina", "p
 ADDED = {P124: (), P125: ("caudal_rh_ml_min", "n_cortes")}
 BUNDLE = load_bundle()
 FORMS = {f["code"]: f for f in BUNDLE.forms}
+
+
+def v2_fields(code):
+    """Campos de la versión 2 (MF-06) de P1-24 / P1-25: los MANUALES de la versión vigente del bundle, renumerados."""
+    return [{**f, "display_order": n} for n, f in enumerate((f for f in FORMS[code]["fields"] if f["source"] == "manual"), start=1)]
 STATE = {}
 
 
@@ -67,12 +76,28 @@ class Base(q2.BobbinBase):
         super().setUpClass()
         cls.v1, cls.v2 = {}, {}
         for code in (P124, P125):
-            cls.v2[code] = cls.version(code, 2)
+            cls.v2[code] = cls.install_v2(code)
             cls.v1[code] = cls.install_v1(code)
 
     @classmethod
     def version(cls, code, number):
         return cls.connection.execute("SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()[0]
+
+    @classmethod
+    def install_v2(cls, code):
+        """Estado de producción tras MF-06: v2 publicada (campos manuales del bundle vigente); la versión vigente del bundle (v3, MF-07) se retira para que el backend elija la v2."""
+        c = cls.connection
+        current = cls.version(code, FORMS[code]["version_number"])
+        form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (current,)).fetchone()
+        v2 = c.execute("""INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s, 2, %s, %s, %s, %s) RETURNING id""",
+                       (form_id, name, area, workflow, "b" * 64)).fetchone()[0]
+        for f in v2_fields(code):
+            c.execute("""INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,'manual',%s,%s)""",
+                      (v2, f["key"], f["label"], f["value_type"], f["required"], f["display_order"]))
+        c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (v2, current))
+        c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (v2,))
+        c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (current,))
+        return v2
 
     @classmethod
     def install_v1(cls, code):
@@ -112,7 +137,7 @@ class Base(q2.BobbinBase):
 
 def legacy_fields(code):
     """Campos de la versión 1 (antes de MF-06): la v2 del bundle con los campos retirados en su posición original y sin los añadidos."""
-    v2 = [{**f} for f in FORMS[code]["fields"] if f["key"] not in ADDED[code]]
+    v2 = [{**f} for f in v2_fields(code) if f["key"] not in ADDED[code]]
     head = [{"key": "numero_de_bobina", "label": "Número de bobina", "value_type": "text", "required": True}, {"key": "producto", "label": "Producto", "value_type": "text", "required": True}]
     if code == P125:  # P1-25: tras «crepado» venía «gramaje_laboratorio_g_m2» (ver bundle anterior)
         crepado = next(i for i, f in enumerate(v2) if f["key"] == "crepado")
@@ -124,8 +149,8 @@ class DefinitionTests(Base):
     async def test_versions_and_bundle_match_the_request(self):
         for code in (P124, P125):
             v1, v2 = [k for k, _ in self.definition(self.v1[code])], [k for k, _ in self.definition(self.v2[code])]
-            self.assertEqual(FORMS[code]["version_number"], 2)
-            self.assertEqual(v2, [f["key"] for f in FORMS[code]["fields"]])
+            self.assertEqual(FORMS[code]["version_number"], 3)  # MF-07
+            self.assertEqual(v2, [f["key"] for f in v2_fields(code)])
             self.assertEqual(sorted(set(v1) - set(v2)), sorted(REMOVED[code]), code)
             self.assertEqual(sorted(set(v2) - set(v1)), sorted(ADDED[code]), code)
             for key in REMOVED[code]:
@@ -144,9 +169,6 @@ class DefinitionTests(Base):
         self.assertEqual(self.connection.execute(rest, (self.v1[P125], list(REMOVED[P125]) + list(ADDED[P125]))).fetchall(), self.connection.execute(rest, (self.v2[P125], list(REMOVED[P125]) + list(ADDED[P125]))).fetchall())
         rest24 = self.connection.execute(rest, (self.v1[P124], list(REMOVED[P124]))).fetchall()
         self.assertEqual(rest24, self.connection.execute(rest, (self.v2[P124], list(REMOVED[P124]))).fetchall())
-
-    async def test_only_the_three_expected_forms_are_at_version_2_in_the_bundle(self):
-        self.assertEqual(sorted(f["code"] for f in BUNDLE.forms if f["version_number"] != 1), ["VINTO-P1-01", P124, P125])
 
 
 class WriteTests(Base):
@@ -263,21 +285,22 @@ class WriteTests(Base):
         self.assertEqual(reply.status, 422, reply.text)
 
 
-def previous_bundle():
-    """El bundle de ANTES de MF-06 (P1-24 y P1-25 versión 1, con los campos que se retiran): la v2 más los retirados, sin los añadidos, con su checksum recalculado."""
+def bundle_at_mf06(*, version):
+    """El bundle de MF-06 (version=2: los campos manuales de la v2) o el de ANTES de MF-06 (version=1: con los campos que se retiran y sin los añadidos), con su checksum recalculado.
+    El resto de los formularios se deja como en el bundle vigente."""
     forms = []
     for form in BUNDLE.forms:
         if form["code"] in (P124, P125):
-            fields = legacy_fields(form["code"])
+            fields = legacy_fields(form["code"]) if version == 1 else v2_fields(form["code"])
             for n, f in enumerate(fields, start=1):
                 f.setdefault("source", "manual")
                 f.setdefault("unit", None)
                 f["display_order"] = n
-            old = {**form, "version_number": 1, "fields": fields}
+            old = {**form, "version_number": version, "fields": fields}
             old["definition_checksum"] = compute_definition_checksum(old)
             form = old
         forms.append(form)
-    return dataclasses.replace(BUNDLE, source_checksum="d" * 64, forms=tuple(forms))
+    return dataclasses.replace(BUNDLE, source_checksum=("d" if version == 1 else "e") * 64, forms=tuple(forms))
 
 
 class ProductionImportScenarioTests(unittest.TestCase):
@@ -290,7 +313,8 @@ class ProductionImportScenarioTests(unittest.TestCase):
         cls.connection = connect(cls.database)
         with contextlib.redirect_stdout(io.StringIO()):
             apply_migrations(cls.connection, read_migrations())
-        reference.apply(cls.connection, previous_bundle())
+        reference.apply(cls.connection, bundle_at_mf06(version=1))
+        cls.mf06 = bundle_at_mf06(version=2)
 
     @classmethod
     def tearDownClass(cls):
@@ -309,13 +333,13 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual((len(before[P124][1]), len(before[P125][1])), (12, 14))
         others = self.connection.execute("""SELECT f.code, v.version_number, v.definition_checksum FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id
                                             WHERE f.code <> ALL(%s) ORDER BY f.code, 2""", ([P124, P125],)).fetchall()
-        dry = reference.dry_run(self.connection, BUNDLE)
+        dry = reference.dry_run(self.connection, self.mf06)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 2)
         self.assertEqual(dry.counts["field"]["create"], 10 + 13)
         self.assertEqual(dry.counts["form_version_machine"]["create"], 4)
         self.assertEqual({code: self.snapshot(code) for code in before}, before, "el dry-run no escribe")
-        result = reference.apply(self.connection, BUNDLE)
+        result = reference.apply(self.connection, self.mf06)
         self.assertEqual((result.mode, result.conflicts), ("applied", []))
         self.assertEqual({code: self.snapshot(code) for code in before}, before, "las versiones 1 quedan idénticas tras importar las 2")
         for code, count in ((P124, 10), (P125, 13)):
@@ -325,7 +349,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
                                                         JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = 2""", (code,)).fetchone()[0], count)
         self.assertEqual(self.connection.execute("""SELECT f.code, v.version_number, v.definition_checksum FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id
                                                     WHERE f.code <> ALL(%s) ORDER BY f.code, 2""", ([P124, P125],)).fetchall(), others, "los demás formularios no se tocan")
-        again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="c" * 64))
+        again = reference.apply(self.connection, dataclasses.replace(self.mf06, source_checksum="c" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente")
 
 

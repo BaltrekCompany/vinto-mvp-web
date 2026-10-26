@@ -6,7 +6,7 @@
   "name": "Resistencia en húmedo – curado",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "MP1",
     "MP3"
@@ -42,7 +42,7 @@
     },
     {
       "key": "resistencia_longitudinal_centro_kgf",
-      "label": "Resistencia longitudinal centro kgf",
+      "label": "Resistencia longitudinal – Comando kgf",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -51,7 +51,7 @@
     },
     {
       "key": "resistencia_longitudinal_medio_kgf",
-      "label": "Resistencia longitudinal medio kgf",
+      "label": "Resistencia longitudinal – Medio kgf",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -60,12 +60,21 @@
     },
     {
       "key": "resistencia_longitudinal_extremo_kgf",
-      "label": "Resistencia longitudinal extremo kgf",
+      "label": "Resistencia longitudinal – Transversal kgf",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 6
+    },
+    {
+      "key": "promedio_resistencia_longitudinal_kgf",
+      "label": "Promedio resistencia longitudinal kgf",
+      "value_type": "decimal",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 7
     },
     {
       "key": "elongacion_media_longitudinal",
@@ -74,20 +83,11 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
-    },
-    {
-      "key": "resistencia_longitudinal_humeda_centro_kgf",
-      "label": "Resistencia longitudinal húmeda centro kgf",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
       "display_order": 8
     },
     {
-      "key": "resistencia_longitudinal_humeda_medio_kgf",
-      "label": "Resistencia longitudinal húmeda medio kgf",
+      "key": "resistencia_longitudinal_humeda_centro_kgf",
+      "label": "Resistencia longitudinal húmeda – Comando kgf",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -95,13 +95,31 @@
       "display_order": 9
     },
     {
-      "key": "resistencia_longitudinal_humeda_extremo_kgf",
-      "label": "Resistencia longitudinal húmeda extremo kgf",
+      "key": "resistencia_longitudinal_humeda_medio_kgf",
+      "label": "Resistencia longitudinal húmeda – Medio kgf",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 10
+    },
+    {
+      "key": "resistencia_longitudinal_humeda_extremo_kgf",
+      "label": "Resistencia longitudinal húmeda – Transversal kgf",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "promedio_resistencia_longitudinal_humeda_kgf",
+      "label": "Promedio resistencia longitudinal húmeda kgf",
+      "value_type": "decimal",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 12
     },
     {
       "key": "elongacion_media_transversal",
@@ -110,7 +128,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 11
+      "display_order": 13
     },
     {
       "key": "n_cortes",
@@ -119,7 +137,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 12
+      "display_order": 14
     },
     {
       "key": "observaciones",
@@ -128,8 +146,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 13
+      "display_order": 15
     }
   ],
-  "definition_checksum": "241af3b5ebafde96efdff91c2fa0cce93aad19c9900172d23aaeffef29cffce3"
+  "definition_checksum": "946291b01d867fed26d0b029457d4fd281fc0647e697ef45f48437d959fc9391"
 }

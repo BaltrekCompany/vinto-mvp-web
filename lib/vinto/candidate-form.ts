@@ -20,7 +20,9 @@ export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no
 export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
 // `integer` (MF-06): entero NO negativo (0, 1, 2…), guardado como `integer` en PostgreSQL; el backend lo devuelve como número JSON y aquí se lee como texto.
 // `sinceVersion` (MF-06): el campo existe desde esa versión del formulario; las capturas de versiones anteriores no lo traen y se leen sin exigirlo.
-export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number };
+// `renamedAt` (MF-07): el campo cambió de etiqueta en esa versión; las capturas de versiones anteriores se muestran con la etiqueta `previous` (la clave técnica no cambia). Ver `labelFor`.
+export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string } };
+export const labelFor = (field: FieldSpec, version?: number): string => field.renamedAt && version !== undefined && version < field.renamedAt.version ? field.renamedAt.previous : field.label;
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
 // Respuesta de una captura: la de Producción lleva asignación, OT y línea; la de Calidad por máquina no (lleva `recorded_by`); la de Calidad por bobina lleva `bobbin`, OT y línea, sin asignación. Los campos de
@@ -80,11 +82,17 @@ function parseBobbinEnvelope(value: unknown, parseValues: (values: unknown, vers
 
 // `legacy` (MF-06): campos de versiones ANTERIORES ya retirados del formulario. Nunca se digitan, no entran en el borrador ni en el payload; solo se LEEN (opcionales, con el mismo formato) para que el historial de las
 // capturas antiguas siga mostrando lo que se guardó.
-export function defineCandidateForm(code: string, fields: readonly FieldSpec[], options: { context?: CandidateContext; legacy?: readonly FieldSpec[] } = {}) {
+// `calculated` (MF-07): campos CALCULADOS por el backend al guardar (promedios, posiciones usadas). Nunca se digitan ni se envían; solo se LEEN (opcionales: las capturas anteriores no los traen). Un `integer` llega como número JSON.
+// `completeRows` (MF-07, P1-21): filas de una tabla; cada fila (lista de claves) debe estar COMPLETA o totalmente VACÍA y se exigen al menos `min` filas completas. Un «0» es un valor; solo el texto vacío cuenta como vacío.
+export type CompleteRows = { rows: readonly (readonly string[])[]; min: number; label: (index: number) => string };
+export function defineCandidateForm(code: string, fields: readonly FieldSpec[], options: { context?: CandidateContext; legacy?: readonly FieldSpec[]; calculated?: readonly FieldSpec[]; completeRows?: CompleteRows } = {}) {
     const context: CandidateContext = options.context ?? "assignment";
     const legacy = options.legacy ?? [];
+    const calculated = options.calculated ?? [];
+    const completeRows = options.completeRows;
     const keys = fields.map((f) => f.key);
-    if (new Set([...keys, ...legacy.map((f) => f.key)]).size !== keys.length + legacy.length || keys.includes("_groups")) throw new Error(`Definición candidata inválida: ${code}`);
+    const readOnlyKeys = [...legacy, ...calculated].map((f) => f.key);
+    if (new Set([...keys, ...readOnlyKeys]).size !== keys.length + readOnlyKeys.length || keys.includes("_groups")) throw new Error(`Definición candidata inválida: ${code}`);
 
     // Parser ESTRICTO de las respuestas del backend: obligatorios presentes y no vacíos (decimales con formato decimal), opcionales ausentes o texto; lo demás se ignora.
     function parseValues(value: unknown, version?: number): CandidateValues | null {
@@ -101,10 +109,10 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (field.kind === "time" && !isTimeText(raw)) return null;
             clean[field.key] = raw;
         }
-        for (const field of legacy) { // campos retirados: se conservan solo si la captura antigua los trae
-            const raw = value[field.key];
+        for (const field of [...legacy, ...calculated]) { // campos retirados o calculados por el backend: se conservan solo si la captura los trae
+            const raw = value[field.key] !== undefined && field.kind === "integer" && typeof value[field.key] === "number" ? String(value[field.key]) : value[field.key];
             if (raw === undefined) continue;
-            if (typeof raw !== "string" || (field.kind === "decimal" && !isDecimalText(raw))) return null;
+            if (typeof raw !== "string" || (field.kind === "decimal" && !isDecimalText(raw)) || (field.kind === "integer" && !isIntegerText(raw))) return null;
             clean[field.key] = raw;
         }
         return clean;
@@ -129,6 +137,15 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (text.length > MAX_TEXT_LENGTH) { errors.push(`${field.label}: supera ${MAX_TEXT_LENGTH} caracteres.`); continue; }
             values[field.key] = text;
         }
+        if (completeRows) {
+            let complete = 0;
+            completeRows.rows.forEach((row, index) => {
+                const filled = row.filter((key) => values[key] !== undefined).length;
+                if (filled === row.length) complete += 1;
+                else if (filled > 0) errors.push(`${completeRows.label(index)}: fila incompleta; completa los ${row.length} valores o deja la fila vacía.`);
+            });
+            if (complete < completeRows.min && !errors.length) errors.push(`Registra al menos ${completeRows.min === 1 ? "una fila completa" : `${completeRows.min} filas completas`}.`);
+        }
         return errors.length ? { ok: false, errors } : { ok: true, values };
     }
 
@@ -147,7 +164,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
     const submitAttempt = (attempt: CandidateAttempt, deps: CandidateSubmitDeps): Promise<CandidateSubmitOutcome> => submitAttemptOf(attempt, deps);
     const reconcile = (captureId: string, deps: CandidateSubmitDeps): Promise<CandidateSubmitOutcome> => reconcileOf(captureId, deps);
 
-    return { code, context, fields, legacy, parseValues, parseCapture, parseSubmission, parseList, emptyDraft, normalizeDraft, buildPayload, createAttempt, submitAttempt, reconcile };
+    return { code, context, fields, legacy, calculated, completeRows, parseValues, parseCapture, parseSubmission, parseList, emptyDraft, normalizeDraft, buildPayload, createAttempt, submitAttempt, reconcile };
 }
 
 export type CandidateForm = ReturnType<typeof defineCandidateForm>;

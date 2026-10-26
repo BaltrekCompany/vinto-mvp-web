@@ -10,7 +10,7 @@ import test from "node:test";
 import { parseAvailability } from "../lib/vinto/availability.ts";
 import { FORM_DEFINITIONS } from "../lib/vinto/form-definitions.ts";
 import { P118, P118_CALCULATED, P118_FIELDS, P118_PENDING, P1_18_CODE } from "../lib/vinto/p1-18.ts";
-import { P121, P121_BOBBIN_CODE_FIELD, P121_CALCULATED, P121_FIELDS, P121_PENDING, P1_21_CODE } from "../lib/vinto/p1-21.ts";
+import { P121, P121_CALCULATED_FIELDS, P121_COLUMNS, P121_FIELDS, P121_LEGACY_FIELDS, P121_PENDING, P121_POSITIONS, P121_ROWS, P1_21_CODE } from "../lib/vinto/p1-21.ts";
 import { BOBBIN_SCREEN_BY_FORM, QUALITY_BOBBIN_SCREENS, bobbinScreensFor, publishedQualityScreens, qualityMachines, qualityScreensFor } from "../lib/vinto/quality-offers.ts";
 import { availabilityKey, candidateHistoryKey, deriveView, sessionScope } from "../lib/vinto/resource-view.ts";
 
@@ -20,7 +20,8 @@ const code = (file) => read(file).split("\n").filter((l) => !/^\s*\/\//.test(l))
 const pyCode = (file) => read(file).replace(/^"""[\s\S]*?"""/, "").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"); // sin docstrings ni comentarios
 const UUID = "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", DEVICE = "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", USER = "5c4d3e2f-1a0b-4c9d-8e7f-6a5b4c3d2e1f", BOBBIN = "7d6e5f4a-3b2c-4d1e-8f0a-9b8c7d6e5f4a";
 const D118 = { producto: " producto ", numero_de_cuba: "C-2", punto_de_muestreo: "p", masa_humeda_g: "100,50", masa_seca_g: "3.25", papel_filtro_g: " 1,10 ", papel_muestra_g: "4.35 g", peso_muestra_g: "0,0032", observaciones: "" };
-const D121 = { numero_de_bobina: "12", posicion_de_perfil: " centro ", gramaje: "85,5", peso_seco: "0.250", observaciones: " nota " };
+// MF-07: P1-21 versión 2 = tabla de 27 posiciones (gramaje_NN / peso_seco_NN / humedad_NN); la versión 1 (una posición por captura) se conserva en los campos `legacy`.
+const D121 = { gramaje_01: "85,5", peso_seco_01: "0.250", humedad_01: " 6,5 ", observaciones: " nota " };
 const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
@@ -28,11 +29,11 @@ const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? 
 const base = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
   machine: { code: "MP1", name: "MP1" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", values, ...extra });
 const machineEnvelope = (formCode, values, extra = {}) => base(formCode, values, { recorded_by: { id: USER, display_name: "Calidad" }, ...extra });
-const bobbinEnvelope = (values, extra = {}) => base(P1_21_CODE, values, { bobbin: { id: BOBBIN, code: "12" }, work_order: { id: UUID, number: "OT-1" },
+const bobbinEnvelope = (values, extra = {}) => base(P1_21_CODE, values, { form: { code: P1_21_CODE, version_number: 2, name: "x" }, bobbin: { id: BOBBIN, code: "12" }, work_order: { id: UUID, number: "OT-1" },
   line: { id: UUID, line_code: "L1", pv_reference: "PV-1", article: { code: "A1", description: "d" } }, ...extra });
 
 test("los contratos son EXACTAMENTE los campos manuales de las definiciones legacy; los automáticos y los calculados no se digitan", () => {
-  for (const [id, fields, manual, automatic, calculated] of [["form_18_porcentaje_de_consistencia", P118_FIELDS, 9, 4, 1], ["form_21_perfil_de_gramaje_y_humedad", P121_FIELDS, 5, 4, 3]]) {
+  for (const [id, fields, manual, automatic, calculated] of [["form_18_porcentaje_de_consistencia", P118_FIELDS, 9, 4, 1]]) {
     const legacy = defOf(id);
     assert.equal(legacy.area, "quality");
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [manual, automatic, calculated], id);
@@ -46,9 +47,17 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   }
   assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda_g", "masa_seca_g", "peso_muestra_g"]);
   assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "text").map((f) => f.key), ["producto", "numero_de_cuba", "punto_de_muestreo", "papel_filtro_g", "papel_muestra_g"], "los pesos de papel son TEXTO, no decimal por su nombre");
-  assert.deepEqual(P121_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["gramaje", "peso_seco"]);
+  // P1-21 (MF-07, versión 2): ya no coincide con la definición legacy; la versión 1 se conserva como campos de solo lectura y los calculados los guarda el backend.
+  const legacy21 = defOf("form_21_perfil_de_gramaje_y_humedad").fields.filter(isManual);
+  assert.deepEqual(legacy21.map((f) => f.key), ["numero_de_bobina", "posicion_de_perfil", "gramaje", "peso_seco", "observaciones"]);
+  assert.deepEqual(P121_LEGACY_FIELDS.map((f) => f.key), legacy21.filter((f) => f.key !== "observaciones").map((f) => f.key), "la versión 1 sigue siendo legible");
+  assert.equal(P121_FIELDS.length, 3 * P121_POSITIONS + 1);
+  assert.deepEqual(P121_FIELDS.filter((f) => f.kind === "decimal").length, 81);
+  assert.equal(P121_FIELDS.some((f) => f.required), false, "las 27 filas son opcionales; la regla es al menos una fila COMPLETA");
+  assert.equal(P121_FIELDS.some((f) => ["numero_de_bobina", "posicion_de_perfil"].includes(f.key)), false, "ni número de bobina ni posición de texto libre");
+  assert.deepEqual(P121_CALCULATED_FIELDS.map((f) => f.key), ["promedio_gramaje", "promedio_peso_seco", "promedio_humedad", "posiciones_utilizadas"]);
+  assert.equal(P121_CALCULATED_FIELDS.some((f) => P121_FIELDS.some((x) => x.key === f.key)), false, "los calculados no se digitan");
   assert.deepEqual([...P118_CALCULATED], ["Consistencia %"]);
-  assert.deepEqual([...P121_CALCULATED], ["Humedad %", "Promedio gramaje", "Promedio humedad"]);
   assert.deepEqual(defOf("form_18_porcentaje_de_consistencia").allowedMachineIds, ["mp1", "mp3"]);
   assert.deepEqual(defOf("form_21_perfil_de_gramaje_y_humedad").allowedMachineIds, ["mp1", "mp3"]);
 });
@@ -57,7 +66,9 @@ test("las unidades solo se muestran donde la definición no es contradictoria: P
   const u21 = defOf("form_21_perfil_de_gramaje_y_humedad").fields;
   assert.equal(u21.find((f) => f.key === "gramaje").unit, "g/m²");
   assert.equal(u21.find((f) => f.key === "peso_seco").unit, "kg");
-  assert.deepEqual(P121_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", "g/m²"], ["peso_seco", "kg"]]);
+  assert.deepEqual(P121_FIELDS.slice(0, 3).map((f) => [f.key, f.suffix]), [["gramaje_01", "g/m²"], ["peso_seco_01", "kg"], ["humedad_01", "%"]], "peso seco conserva kg");
+  assert.deepEqual(P121_COLUMNS.map((c) => c.label), ["Gramaje", "Peso seco (kg)", "% Humedad"]);
+  assert.deepEqual(P121_LEGACY_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", "g/m²"], ["peso_seco", "kg"]]);
   const peso = defOf("form_18_porcentaje_de_consistencia").fields.find((f) => f.key === "peso_muestra_g");
   assert.deepEqual([peso.label, peso.unit], ["Peso muestra g", "kg"]); // la etiqueta dice «g» y la unidad «kg»: contradicción de la definición legacy
   assert.equal(P118_FIELDS.filter((f) => f.suffix).length, 0, "no se inventa ni se elige una unidad para P1-18");
@@ -70,31 +81,31 @@ test("las brechas se documentan: consistencia y promedios sin fórmula, hora de 
   assert.match(t118, /no se calcula, no se guarda ni se muestra/);
   assert.match(t118, /Hora del ensayo/);
   assert.match(t118, /son texto en la definición legacy: se guardan tal como se digitan, sin convertirlos a número/);
-  assert.match(t121, /promedio de gramaje y promedio de humedad son calculados/);
-  assert.match(t121, /no se calculan, no se guardan ni se muestran/);
-  assert.match(t121, /UNA posición declarada de la bobina/);
-  assert.match(t121, /Perfil multiposición, series de ensayo y promedios siguen pendientes de VINTO/);
-  assert.match(t121, /debe coincidir con la bobina seleccionada/i);
+  assert.match(t121, /Registra al menos una fila completa/);
+  assert.match(t121, /Una fila a medias no se guarda/);
+  assert.match(t121, /media aritmética simple, dos decimales/);
+  assert.match(t121, /el sistema no lo calcula a partir del gramaje ni del peso seco/);
+  assert.match(t121, /Ya no se digitan: la bobina es la seleccionada y la posición es el número de fila/);
   assert.match(t121, /no libera ni rechaza la bobina/);
   assert.match(read("lib/vinto/p1-18.ts"), /NO se calcula `consistencia`/);
-  assert.match(read("lib/vinto/p1-21.ts"), /NO se calculan `humedad`, `promedio_gramaje` ni `promedio_humedad`/);
+  assert.match(read("lib/vinto/p1-21.ts"), /el % de humedad NO se calcula a partir de gramaje ni de peso seco/);
   assert.match(read("components/vinto/candidate-form-capture.tsx"), /candidate\.calculated/);
 });
 
 test("el borrador valida estructuralmente, deja los textos como se digitaron y NO calcula consistencia, humedad ni promedios", () => {
   const a = P118.normalizeDraft(D118), b = P121.normalizeDraft(D121);
   assert.deepEqual(a.values, { producto: "producto", numero_de_cuba: "C-2", punto_de_muestreo: "p", masa_humeda_g: "100.50", masa_seca_g: "3.25", papel_filtro_g: "1,10", papel_muestra_g: "4.35 g", peso_muestra_g: "0.0032" });
-  assert.deepEqual(b.values, { numero_de_bobina: "12", posicion_de_perfil: "centro", gramaje: "85.5", peso_seco: "0.250", observaciones: "nota" });
+  assert.deepEqual(b.values, { gramaje_01: "85.5", peso_seco_01: "0.250", humedad_01: "6.5", observaciones: "nota" });
   assert.equal(a.values.papel_filtro_g, "1,10", "un campo de TEXTO conserva su coma: no se convierte a decimal por su nombre");
   assert.equal(a.values.papel_muestra_g, "4.35 g", "ni se rechaza por tener una unidad");
   for (const key of ["consistencia", "humedad", "promedio_gramaje", "promedio_humedad", "hora", "fecha", "maquina", "responsable", "total"]) assert.equal(key in a.values || key in b.values, false, key);
-  for (const [form, draft, keys] of [[P118, D118, ["masa_humeda_g", "masa_seca_g", "peso_muestra_g"]], [P121, D121, ["gramaje", "peso_seco"]]]) for (const key of keys) {
+  for (const [form, draft, keys] of [[P118, D118, ["masa_humeda_g", "masa_seca_g", "peso_muestra_g"]], [P121, D121, ["gramaje_01", "peso_seco_01", "humedad_01"]]]) for (const key of keys) {
     for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(form.normalizeDraft({ ...draft, [key]: bad }).errors.join(" "), /debe ser un número decimal/, `${key} ${bad}`);
-    assert.match(form.normalizeDraft({ ...draft, [key]: " " }).errors.join(" "), /es obligatorio/, key);
+    assert.match(form.normalizeDraft({ ...draft, [key]: " " }).errors.join(" "), form === P121 ? /fila incompleta/ : /es obligatorio/, key);
     assert.equal(form.normalizeDraft({ ...draft, [key]: "-1,5" }).values[key], "-1.5", "sin rangos inventados");
   }
   assert.equal(P118.normalizeDraft(P118.emptyDraft()).errors.length, 8);
-  assert.equal(P121.normalizeDraft(P121.emptyDraft()).errors.length, 4);
+  assert.deepEqual(P121.normalizeDraft(P121.emptyDraft()).errors, ["Registra al menos una fila completa."]);
 });
 
 test("P1-18 usa el contexto «máquina» y P1-21 el contexto «bobina»: payloads cerrados, sin asignación, y congelados", () => {
@@ -131,14 +142,21 @@ test("el parser de P1-18 acepta la respuesta por máquina y el de P1-21 exige la
   assert.equal(P121.parseCapture(bobbinEnvelope(v121, { bobbin: { id: BOBBIN } })), null);
   for (const [form, values, build] of [[P118, v118, (v) => machineEnvelope(P1_18_CODE, v)], [P121, v121, bobbinEnvelope]]) {
     for (const field of form.fields.filter((f) => f.required)) { const m = { ...values }; delete m[field.key]; assert.equal(form.parseCapture(build(m)), null, `falta ${field.key}`); }
-    for (const key of ["consistencia", "humedad", "promedio_gramaje", "promedio_humedad"]) assert.deepEqual(form.parseCapture(build({ ...values, [key]: "9" }))?.values, values, `${key}: un calculado que llegara se ignora y nunca se presenta`);
+    for (const key of ["consistencia", "humedad", "promedio_x"]) assert.deepEqual(form.parseCapture(build({ ...values, [key]: "9" }))?.values, values, `${key}: lo que la definición no declara se ignora y nunca se presenta`);
     assert.equal(form.parseCapture(null), null);
     assert.equal(form.parseList([{ nope: 1 }]), null);
     assert.equal(form.parseList([build(values)])?.length, 1);
     assert.equal(form.parseSubmission({ created: true, already_submitted: false, capture: build(values) })?.created, true);
   }
   assert.equal(P118.parseCapture(machineEnvelope(P1_18_CODE, { ...v118, masa_humeda_g: "12,5" })), null, "decimal inválido");
-  assert.equal(P121.parseCapture(bobbinEnvelope({ ...v121, gramaje: "abc" })), null);
+  assert.equal(P121.parseCapture(bobbinEnvelope({ ...v121, gramaje_01: "abc" })), null);
+  // MF-07: los calculados que guarda el backend se leen (decimal exacto; la cuenta llega como número JSON); una versión 1 se lee con sus campos de entonces
+  const calculated = { ...v121, promedio_gramaje: "85.50", promedio_peso_seco: "0.25", promedio_humedad: "6.50", posiciones_utilizadas: 1 };
+  assert.deepEqual(P121.parseCapture(bobbinEnvelope(calculated))?.values, { ...v121, promedio_gramaje: "85.50", promedio_peso_seco: "0.25", promedio_humedad: "6.50", posiciones_utilizadas: "1" });
+  assert.equal(P121.parseCapture(bobbinEnvelope({ ...v121, promedio_gramaje: "abc" })), null);
+  assert.equal(P121.parseCapture(bobbinEnvelope({ ...v121, posiciones_utilizadas: -1 })), null);
+  const v1 = { numero_de_bobina: "12", posicion_de_perfil: "centro", gramaje: "85.5", peso_seco: "0.250", observaciones: "nota" };
+  assert.deepEqual(P121.parseCapture(bobbinEnvelope(v1, { form: { code: P1_21_CODE, version_number: 1, name: "x" } }))?.values, v1, "las capturas de la versión 1 siguen siendo legibles");
 });
 
 const response = (status, data, errCode) => (status >= 200 && status < 300 ? { ok: true, status, data } : { ok: false, kind: "http", status, code: errCode });
@@ -219,12 +237,12 @@ test("el cliente HTTP de P1-21 reutiliza las rutas de Calidad por bobina (bobina
     "components/vinto/quality-bobbin-candidate-capture.tsx", "components/vinto/quality-bobbin-inbox.tsx"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records|document\.cookie/.test(code(file)), false, file);
 });
 
-test("la pantalla de P1-21 precarga y bloquea el número de bobina, muestra el identificador y código de la bobina y su historial central; el backend sigue siendo la autoridad", () => {
-  assert.equal(P121_BOBBIN_CODE_FIELD, "numero_de_bobina");
+test("la pantalla de P1-21 ya no pide el número de bobina: la bobina es la seleccionada; muestra su identificador y código y su historial central; el backend sigue siendo la autoridad", () => {
   const capture = code("components/vinto/candidate-form-capture.tsx"), wrapper = code("components/vinto/quality-bobbin-candidate-capture.tsx"), history = code("components/vinto/candidate-history.tsx"), candidates = code("lib/vinto/quality-bobbin-candidates.ts");
-  assert.match(candidates, /bobbinCodeField: P121_BOBBIN_CODE_FIELD/);
-  assert.match(capture, /draft\[codeField\] = bobbin\.bobbin\.code/);
-  assert.match(capture, /disabled=\{locked \|\| field\.key === codeField\}/);
+  assert.equal(/bobbinCodeField: P121/.test(candidates), false, "P1-21 v2 no declara número de bobina");
+  assert.match(candidates, /table: \{ columns: P121_COLUMNS, positions: P121_POSITION_NUMBERS, keyFor: p121Key \}, preview: previewP121/);
+  assert.match(capture, /data-section="profile-table"/);
+  assert.equal(P121_ROWS.length, 27);
   assert.match(capture, /bobbin \? `\$\{bobbin\.bobbin\.code\} · \$\{bobbin\.bobbin\.id\}`/);
   assert.match(capture, /contextId = form\.context === "machine" \? machine\?\.code : form\.context === "bobbin" \? bobbin\?\.bobbin\.id : context\?\.assignmentId/);
   assert.match(capture, /sameBobbin/);

@@ -8,6 +8,7 @@ import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
+import { Input } from "@/components/ui/input";
 import { qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
@@ -102,10 +103,33 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} hint={candidate.hints?.[field.key]}/>
         : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
             inputMode={field.kind === "decimal" ? "decimal" : field.kind === "integer" ? "numeric" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"} hint={candidate.hints?.[field.key]}/>;
+    // MF-07: tabla editable de posiciones numeradas (P1-21). Los campos de la tabla no se dibujan aparte; la estructura guardada (un campo por celda) no cambia.
+    const table = candidate.table;
+    const tableKeys = new Set(table ? table.positions.flatMap(n => table.columns.map(c => table.keyFor(c.prefix, n))) : []);
+    const preview = candidate.preview?.(draft) ?? {};
+    const usedPositions = preview.posiciones_utilizadas;
+    const renderTable = () => table && <div className="border-b p-6" data-section="profile-table">
+        <h2 className="font-black">Posiciones</h2>
+        <p className="mb-4 text-sm text-slate-700">Registra al menos una fila completa (los tres valores). Una fila a medias no se guarda; deja vacías las posiciones que no midas.</p>
+        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm">
+            <caption className="sr-only">Tabla de {table.positions.length} posiciones de la bobina</caption>
+            <thead><tr className="border-b text-xs uppercase text-slate-600"><th scope="col" className="px-2 py-2">Posición</th>{table.columns.map(c => <th key={c.prefix} scope="col" className="px-2 py-2">{c.label}{c.suffix && !c.label.includes(c.suffix) ? ` (${c.suffix})` : ""}</th>)}</tr></thead>
+            <tbody>{table.positions.map(n => <tr key={n} className="border-b">
+                <th scope="row" className="px-2 py-1 font-semibold tabular-nums">{n}</th>
+                {table.columns.map(c => { const key = table.keyFor(c.prefix, n); return <td key={key} className="px-1 py-1"><Input disabled={locked} inputMode="decimal" aria-label={`${c.label} posición ${n}`} className="text-slate-950" value={draft[key] ?? ""} onChange={e => set(key)(e.target.value)}/></td>; })}</tr>)}</tbody>
+        </table></div></div>;
+    // Calculados por el backend (solo lectura): aquí se muestran como vista previa mientras se digita; el valor que vale es el que calcula y guarda el servidor.
+    const renderCalculated = () => form.calculated.length > 0 && candidate.preview && <div className="border-b bg-slate-50 p-6" data-section="calculated-preview">
+        <h2 className="font-black">Promedios (calculados al guardar)</h2>
+        <p className="mb-3 text-sm text-slate-700">Media aritmética simple con dos decimales; no se digitan. {table ? "Solo se usan las filas completas." : "El sistema los recalcula al guardar."}</p>
+        <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">{form.calculated.filter(f => f.kind !== "integer").map(f => {
+            const value = preview[f.key];
+            return <div key={f.key} data-calculated={f.key}><dt className="text-xs font-semibold text-slate-600">{f.label}</dt><dd className="mt-0.5 font-bold tabular-nums">{value ? `${value}${f.suffix ? ` ${f.suffix}` : ""}` : "—"}</dd></div>;
+        })}{usedPositions !== undefined && <div data-calculated="posiciones_utilizadas"><dt className="text-xs font-semibold text-slate-600">Posiciones utilizadas en los promedios</dt><dd className="mt-0.5 font-bold tabular-nums">{`${usedPositions ?? 0} de ${table?.positions.length ?? 0}`}</dd></div>}</dl></div>;
     // Agrupación solo visual (candidate.sections): cada campo se dibuja una vez y la estructura guardada no cambia. Sin secciones: un único bloque con todos los campos.
     const groups = candidate.sections
         ? candidate.sections.map(s => ({ title: s.title, hint: s.hint, fields: s.keys.map(k => form.fields.find(f => f.key === k)).filter((f): f is (typeof form.fields)[number] => f !== undefined) }))
-        : [{ title: candidate.title, hint: "Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.", fields: [...form.fields] }];
+        : [{ title: candidate.title, hint: "Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.", fields: form.fields.filter(f => !tableKeys.has(f.key)) }];
 
     return <CaptureShell kicker={candidate.kicker} title={candidate.title} onBack={back}>
         <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
@@ -123,7 +147,10 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         {(candidate.unresolved || candidate.calculated) && <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-950" data-section="gaps">
             {candidate.unresolved && <p>Automáticos sin fuente confirmada (no se generan ni se sustituyen por la hora de envío): <b>{candidate.unresolved.join(", ")}</b>.</p>}
             {candidate.calculated && <p>Calculados sin fórmula aprobada (no se calculan, no se guardan ni se muestran como oficiales): <b>{candidate.calculated.join(", ")}</b>.</p>}</div>}
+        {renderTable()}
+        {table && renderCalculated()}
         {groups.map(group => <CaptureSection key={group.title} title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>)}
+        {!table && renderCalculated()}
         <CaptureNotice text={notice}/>
         {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
             <p className="font-black">{saved.message}</p>

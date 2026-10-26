@@ -90,7 +90,7 @@
     },
     {
       "path": "lib/vinto/p1-21.ts",
-      "sha256": "990a8bfe63aaaedef5583faf9df4b430bab31010115146a0da96ab4971c132a4",
+      "sha256": "b6be1bc055fa1fe21cb8d98e1930f67fc83c0b2be9b72c86e59558bf0ba713a6",
       "scope": "candidate-fields:VINTO-P1-21"
     },
     {
@@ -100,12 +100,12 @@
     },
     {
       "path": "lib/vinto/p1-24.ts",
-      "sha256": "f33033178fada7effe824d7afb9167d08db878e58dfc3efc67c518ecf2ad1d7c",
+      "sha256": "ff2328dc02febc0438bf43dc1543c2fa7c2bf49444986e5cd67b693c293bd843",
       "scope": "candidate-fields:VINTO-P1-24"
     },
     {
       "path": "lib/vinto/p1-25.ts",
-      "sha256": "73b15ee26275a52b27fcd4eed82419ff31657a1948748a6cd455b5cd6d9b479a",
+      "sha256": "39169f6b00a304cf6f2793cb9d5b5f95ef0a4687c5b6555547a83202c2bde478",
       "scope": "candidate-fields:VINTO-P1-25"
     },
     {
@@ -257,8 +257,8 @@
     },
     {
       "path": "forms/VINTO-P1-21.json",
-      "sha256": "d282f189f905fb8e4bdc885e14b0a9d848049b0a01e0e332d7e83fdaa54a9f66",
-      "bytes": 1415
+      "sha256": "2ca3e2b7097d8a6802e7125c2216ef5fda9af76746d9d3666755096a8f54705a",
+      "bytes": 18776
     },
     {
       "path": "forms/VINTO-P1-22.json",
@@ -267,13 +267,13 @@
     },
     {
       "path": "forms/VINTO-P1-24.json",
-      "sha256": "ae4cbe20e0d86f9de8b759352c554a8c675f4749ccf66e53767a7198eec7f521",
-      "bytes": 2740
+      "sha256": "a40a4e53546fed094c6fc2336df635a5187f96530ffceb7f02a0c8a1300142fd",
+      "bytes": 3272
     },
     {
       "path": "forms/VINTO-P1-25.json",
-      "sha256": "a30b22425aeca590aa8f7fb7e84bbea4120d5bbcccdcbbc9cb226a201457852d",
-      "bytes": 3393
+      "sha256": "579e9546983b94b9c90fa3951e6abc24279b5c4efacdcb49b837487267202a72",
+      "bytes": 3952
     },
     {
       "path": "forms/VINTO-P1-26.json",
@@ -356,7 +356,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 25,
-    "form_fields": 386,
+    "form_fields": 471,
     "form_options": 7,
     "form_groups": 3
   },

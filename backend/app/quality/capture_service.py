@@ -23,9 +23,11 @@ sea candidato deshabilitado, exclusivo de Calidad por máquina o desconocido, au
 Si el formulario declara un campo con el número de bobina (`BOBBIN_CODE_FIELDS`), debe coincidir con la Bobina de la ruta: un registro contradictorio se rechaza (422).
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
@@ -49,6 +51,26 @@ BOBBIN_CODE_FIELDS: dict = {"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "n
 
 # Valor mínimo de campos enteros por formulario (MF-06): «# Cortes» de P1-25 es un entero NO negativo. El tipo `integer` admite negativos; la regla vive aquí y solo se aplica si la versión publicada declara el campo.
 MIN_INTEGER_VALUES: dict = {"VINTO-P1-25": {"n_cortes": 0}}
+
+# PROMEDIOS CALCULADOS POR EL BACKEND (MF-07, fuente de verdad): media aritmética simple, dos decimales (mitad hacia arriba). Solo se calculan y guardan si la versión publicada DECLARA el campo calculado (source = calculated);
+# las capturas de versiones anteriores no los tienen y nunca se recalculan. El cliente NO puede enviarlos (422). Cada promedio usa SIEMPRE las tres mediciones indicadas (todas obligatorias en su formulario).
+MEAN_RULES: dict = {
+    "VINTO-P1-24": {  # MD_Ejec 26: resistencia longitudinal húmeda y transversal húmeda (Comando, Medio, Transversal)
+        "promedio_longitudinal_humedo": ("resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo"),
+        "promedio_transversal_humedo": ("resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo"),
+    },
+    "VINTO-P1-25": {  # MD_Ejec 25: resistencia longitudinal (seca) y longitudinal húmeda (Comando, Medio, Transversal)
+        "promedio_resistencia_longitudinal_kgf": ("resistencia_longitudinal_centro_kgf", "resistencia_longitudinal_medio_kgf", "resistencia_longitudinal_extremo_kgf"),
+        "promedio_resistencia_longitudinal_humeda_kgf": ("resistencia_longitudinal_humeda_centro_kgf", "resistencia_longitudinal_humeda_medio_kgf", "resistencia_longitudinal_humeda_extremo_kgf"),
+    },
+}
+# P1-21 versión 2 (MD_Ejec 21): tabla de posiciones (gramaje_01 … humedad_27). Una posición está COMPLETA con sus tres valores; se exige al menos una completa y ninguna a medias. Los tres promedios usan solo las completas.
+PROFILE_FORM = "VINTO-P1-21"
+PROFILE_COLUMNS = ("gramaje", "peso_seco", "humedad")
+PROFILE_AVERAGE_KEYS = {"gramaje": "promedio_gramaje", "peso_seco": "promedio_peso_seco", "humedad": "promedio_humedad"}
+PROFILE_COUNT_KEY = "posiciones_utilizadas"
+_POSITION_KEY = re.compile(r"^(gramaje|peso_seco|humedad)_(\d{2})$")
+_CENTS = Decimal("0.01")
 
 
 @dataclass(frozen=True)
@@ -164,6 +186,78 @@ def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):
         raise CaptureValidationError(f"{key} no coincide con la bobina seleccionada")
 
 
+def mean_two_decimals(values) -> Decimal:
+    """Media aritmética simple EXACTA con dos decimales, mitad hacia arriba (alejándose de cero). Sin coma flotante."""
+    values = list(values)
+    with localcontext() as context:
+        context.prec = 100
+        mean = (sum(values, Decimal(0)) / len(values)).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    return mean if mean != 0 else Decimal("0.00")  # sin «-0.00»
+
+
+def _profile_positions(manual_fields) -> dict:
+    """{posición: {columna: clave}} de las posiciones que la versión publicada declara; vacío si no es una tabla de perfil."""
+    positions: dict = {}
+    for f in manual_fields:
+        match = _POSITION_KEY.match(f.key)
+        if match:
+            positions.setdefault(int(match.group(2)), {})[match.group(1)] = f.key
+    return positions
+
+
+def _check_profile_rows(form_code, manual_fields, clean) -> None:
+    """P1-21 v2: una posición a medias o ninguna posición completa se rechazan (422); un 0 es un valor, no un vacío."""
+    if form_code != PROFILE_FORM:
+        return
+    positions = _profile_positions(manual_fields)
+    if not positions:
+        return
+    complete, problems = 0, []
+    for number in sorted(positions):
+        given = [positions[number][column] in clean for column in PROFILE_COLUMNS if column in positions[number]]
+        if all(given) and len(given) == len(PROFILE_COLUMNS):
+            complete += 1
+        elif any(given):
+            problems.append(f"posición {number}: fila incompleta (se requieren gramaje, peso seco y % humedad, o dejar la fila vacía)")
+    if not problems and not complete:
+        problems.append("se requiere al menos una posición completa (gramaje, peso seco y % humedad)")
+    if problems:
+        raise CaptureValidationError("; ".join(problems))
+
+
+def _calculate(form_code, manual_fields, calculated_fields, clean) -> dict:
+    """Valores calculados que la versión publicada declara (promedios y, en P1-21, las posiciones utilizadas). Las capturas de versiones sin esos campos no los reciben."""
+    declared = {f.key for f in calculated_fields}
+    out: dict = {}
+    for key, sources in MEAN_RULES.get(form_code, {}).items():
+        if key in declared and all(source in clean for source in sources):
+            out[key] = mean_two_decimals(clean[source] for source in sources)
+    if form_code == PROFILE_FORM:
+        positions = _profile_positions(manual_fields)
+        complete = [n for n in sorted(positions) if all(positions[n].get(c) in clean for c in PROFILE_COLUMNS)]
+        if complete:
+            for column, key in PROFILE_AVERAGE_KEYS.items():
+                if key in declared:
+                    out[key] = mean_two_decimals(clean[positions[n][column]] for n in complete)
+            if PROFILE_COUNT_KEY in declared:
+                out[PROFILE_COUNT_KEY] = len(complete)
+    return out
+
+
+def _prepare_values(connection, form_version_id, form_code, values):
+    """Campos de la versión (manuales + calculados), valores manuales validados y valores calculados por el backend. Un valor calculado enviado por el cliente es un error 422."""
+    fields = cs.load_fields(connection, form_version_id, allow_calculated=True)
+    manual = [f for f in fields if f.source == "manual"]
+    calculated = [f for f in fields if f.source == "calculated"]
+    if isinstance(values, dict):
+        sent = sorted(f.key for f in calculated if f.key in values)
+        if sent:
+            raise CaptureValidationError("; ".join(f"{key}: es un campo calculado por el sistema; no se envía" for key in sent))
+    clean = cs.validate_values(manual, values)
+    _check_profile_rows(form_code, manual, clean)
+    return fields, manual, {**clean, **_calculate(form_code, manual, calculated, clean)}
+
+
 def _check_minimums(form_code, clean):
     below = sorted(k for k, minimum in MIN_INTEGER_VALUES.get(form_code, {}).items() if k in clean and clean[k] < minimum)
     if below:
@@ -196,7 +290,7 @@ def _existing_matches(connection, existing, *, actor_id, bobbin_id, form_code, d
             or stored_form_code != form_code or stored_device_key != device_key):
         return False
     try:
-        incoming = cs.validate_values(cs.load_fields(connection, form_version_id), values)
+        incoming = _prepare_values(connection, form_version_id, form_code, values)[2]
     except (CaptureValidationError, UnsupportedFormDefinitionError):
         return False
     return incoming == cs._stored_values(connection, capture_id)
@@ -235,9 +329,8 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         context = _bobbin_context(connection, bobbin_id, sectors)
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         form_version_id = cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA)
-        fields = cs.load_fields(connection, form_version_id)  # solo campos manuales sin grupo; lo demás -> UNSUPPORTED_FORM_DEFINITION
-        clean = cs.validate_values(fields, values)
-        _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields)
+        fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
+        _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
         _check_minimums(form_code, clean)
 
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)

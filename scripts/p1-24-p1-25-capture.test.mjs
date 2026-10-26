@@ -8,8 +8,10 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { parseAvailability } from "../lib/vinto/availability.ts";
 import { FORM_DEFINITIONS } from "../lib/vinto/form-definitions.ts";
-import { P124, P124_CALCULATED, P124_FIELDS, P124_PENDING, P1_24_CODE } from "../lib/vinto/p1-24.ts";
-import { P125, P125_CALCULATED, P125_FIELDS, P125_PENDING, P1_25_CODE } from "../lib/vinto/p1-25.ts";
+import { labelFor } from "../lib/vinto/candidate-form.ts";
+import { P124, P124_CALCULATED_FIELDS, P124_FIELDS, P124_MEANS, P124_PENDING, P1_24_CODE } from "../lib/vinto/p1-24.ts";
+import { P125, P125_CALCULATED_FIELDS, P125_FIELDS, P125_MEANS, P125_PENDING, P1_25_CODE } from "../lib/vinto/p1-25.ts";
+import { meanTwoDecimals, previewMeans } from "../lib/vinto/quality-averages.ts";
 import { bobbinScreensFor, publishedQualityScreens, qualityScreensFor } from "../lib/vinto/quality-offers.ts";
 import { candidateHistoryKey, deriveView, sessionScope } from "../lib/vinto/resource-view.ts";
 
@@ -23,8 +25,8 @@ const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? 
 const NEW_KINDS = { n_cortes: "integer" }; // MF-06: no existe en la definición legacy
 const fill = (fields, textValue = "texto") => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "integer" ? "3" : f.key === "numero_de_bobina" ? "12" : f.key === "observaciones" ? " nota " : textValue]));
 const CASES = [
-  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: [], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
-  { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED, pending: P125_PENDING, counts: [14, 3, 3], removed: ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"], added: ["caudal_rh_ml_min", "n_cortes"], screen: "p125", machines: ["por_definir"] },
+  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED_FIELDS, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: [], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
+  { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED_FIELDS, pending: P125_PENDING, counts: [14, 3, 3], removed: ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"], added: ["caudal_rh_ml_min", "n_cortes"], screen: "p125", machines: ["por_definir"] },
 ];
 
 const envelope = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
@@ -41,17 +43,19 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const kept = c.fields.filter((f) => !c.added.includes(f.key));
     assert.deepEqual(c.removed.filter((k) => c.fields.some((f) => f.key === k)), [], `${c.name}: los retirados ya no existen`);
     assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    assert.deepEqual(kept.map((f) => labelFor(f, 2)), m.map((f) => f.label), `${c.name}: etiquetas de la versión anterior (MF-07 solo renombra posiciones; la versión 2 conserva las suyas)`);
     assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
     assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(c.fields.some((x) => x.key === f.key), false, `${c.name}: ${f.key} no se digita`);
     assert.deepEqual(legacy.allowedMachineIds, c.machines, `${c.name}: alcance legacy documentado`);
-    assert.equal(c.calculated.length, c.counts[2]);
+    // MF-07: solo se calculan los promedios aprobados; todos existen como calculados en la definición legacy (el porcentaje de resistencia húmeda de P1-25 no se pidió y no se calcula)
+    assert.ok(c.calculated.every((f) => legacy.fields.some((x) => x.key === f.key && x.source === "calculated")), `${c.name}: calculados`);
+    assert.equal(c.calculated.some((f) => f.key === "porcentaje_de_resistencia_humeda"), false);
     assert.equal(c.form.context, "bobbin");
   }
   assert.equal(P125_FIELDS.find((f) => f.key === "curado_min").kind, "text", "curado_min es TEXTO: no se convierte por su nombre");
   assert.equal(defOf("form_24_propiedades_fisicas_en_humedo").fields.find((f) => f.key === "promedio_transversal_humedo").type, "text"); // tipo legacy del calculado: se documenta, no se corrige
-  assert.match(P124_PENDING.map((p) => p.pending).join(" "), /el transversal figura como texto en la definición legacy/);
+  assert.match(P124_PENDING.map((p) => p.pending).join(" "), /los calcula el sistema al guardar; no se digitan/);
   assert.equal(P125_FIELDS.filter((f) => f.suffix).length, 0, "las unidades de P1-25 ya están en sus etiquetas: no se duplican ni se inventan");
   // MF-06 · P1-25 v2: «Caudal RH [ml/min]» abre el formulario (decimal, opcional) y «# Cortes» (entero, obligatorio desde la v2) va inmediatamente antes de «Observaciones»
   assert.deepEqual(P125_FIELDS[0], { key: "caudal_rh_ml_min", label: "Caudal RH [ml/min]", kind: "decimal", required: false });
@@ -63,10 +67,50 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.deepEqual(P124_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", u24.find((f) => f.key === "gramaje").unit], ["tiempo_de_curado_condicion", u24.find((f) => f.key === "tiempo_de_curado_condicion").unit]]);
 });
 
+test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin cambios y promedios aprobados", () => {
+  const cmd = (dir, wet, kgf) => ["centro", "medio", "extremo"].map((pos) => `resistencia_${dir}_${wet ? "humeda_" : ""}${pos}${kgf ? "_kgf" : ""}`);
+  const names = { centro: "Comando", medio: "Medio", extremo: "Transversal" };
+  for (const [fields, keys, kgf] of [[P124_FIELDS, [...cmd("longitudinal", true, false), ...cmd("transversal", true, false)], false], [P125_FIELDS, [...cmd("longitudinal", false, true), ...cmd("longitudinal", true, true)], true]]) {
+    for (const key of keys) {
+      const f = fields.find((x) => x.key === key);
+      assert.ok(f, key);
+      const position = names[key.match(/(centro|medio|extremo)/)[1]];
+      assert.ok(f.label.endsWith(kgf ? ` – ${position} kgf` : ` – ${position}`), `${key}: ${f.label}`);
+      assert.equal(f.label.includes("Transmisión"), false);
+      assert.ok(f.renamedAt.version === 3 && !f.renamedAt.previous.includes("–"), `${key}: las versiones 1 y 2 conservan su etiqueta`);
+      assert.equal(labelFor(f, 2), f.renamedAt.previous);
+      assert.equal(labelFor(f, 3), f.label);
+      assert.equal(labelFor(f), f.label);
+    }
+  }
+  assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal húmeda – Comando", "Resistencia longitudinal húmeda – Medio", "Resistencia longitudinal húmeda – Transversal", "Resistencia transversal húmeda – Comando", "Resistencia transversal húmeda – Medio", "Resistencia transversal húmeda – Transversal"]);
+  assert.deepEqual(P125_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal – Comando kgf", "Resistencia longitudinal – Medio kgf", "Resistencia longitudinal – Transversal kgf", "Resistencia longitudinal húmeda – Comando kgf", "Resistencia longitudinal húmeda – Medio kgf", "Resistencia longitudinal húmeda – Transversal kgf"]);
+  assert.deepEqual(P124_CALCULATED_FIELDS.map((f) => f.key), ["promedio_longitudinal_humedo", "promedio_transversal_humedo"]);
+  assert.deepEqual(P125_CALCULATED_FIELDS.map((f) => f.key), ["promedio_resistencia_longitudinal_kgf", "promedio_resistencia_longitudinal_humeda_kgf"]);
+  assert.deepEqual(P124_MEANS.promedio_longitudinal_humedo, cmd("longitudinal", true, false));
+  assert.deepEqual(P124_MEANS.promedio_transversal_humedo, cmd("transversal", true, false));
+  assert.deepEqual(P125_MEANS.promedio_resistencia_longitudinal_kgf, cmd("longitudinal", false, true));
+  assert.deepEqual(P125_MEANS.promedio_resistencia_longitudinal_humeda_kgf, cmd("longitudinal", true, true));
+  // las elongaciones de P1-25 se conservan (una vez) y no entran en ningún promedio; ni campos nuevos digitables
+  assert.equal(P125_FIELDS.filter((f) => /elongacion/.test(f.key)).length, 2);
+  assert.equal(Object.values(P125_MEANS).flat().some((k) => /elongacion/.test(k)), false);
+  assert.equal(P124_FIELDS.length, 10);
+  assert.equal(P125_FIELDS.length, 13);
+  // promedios mostrados: media exacta con dos decimales y solo con las tres posiciones digitadas
+  const draft = Object.fromEntries(P124_MEANS.promedio_longitudinal_humedo.map((k, i) => [k, ["1,00", "2", "2"][i]]));
+  assert.deepEqual(previewMeans(P124_MEANS, draft), { promedio_longitudinal_humedo: "1.67", promedio_transversal_humedo: null });
+  assert.equal(previewMeans(P124_MEANS, { ...draft, [P124_MEANS.promedio_longitudinal_humedo[0]]: "" }).promedio_longitudinal_humedo, null, "con una posición vacía no hay promedio");
+  assert.equal(previewMeans(P125_MEANS, {}).promedio_resistencia_longitudinal_kgf, null);
+  assert.deepEqual(["0.005", "-0.005", "0", "1", "2.5", "10.0025"].map((v) => meanTwoDecimals([v])), ["0.01", "-0.01", "0.00", "1.00", "2.50", "10.00"]);
+  assert.equal(meanTwoDecimals([]), null);
+  assert.equal(meanTwoDecimals(["0.01", "0", "0"]), "0.00");
+  assert.equal(meanTwoDecimals(["0", "0", "0"]), "0.00", "un promedio de ceros es 0.00, no vacío");
+});
+
 test("las brechas son visibles: sin fórmulas, rebobinadoras no cubiertas, alcance de P1-25 por definir, producto sin equivalencia, hora de registro y sin efecto sobre la bobina", () => {
   for (const c of CASES) {
     const text = c.pending.map((p) => `${p.label} ${p.pending}`).join(" ");
-    assert.match(text, /no se calculan, no se guardan ni se muestran/, c.name);
+    assert.match(text, /los calcula el sistema al guardar; no se digitan/, c.name);
     assert.match(text, /rebobinadoras NO están cubiertas/, c.name);
     assert.match(text, /no es la hora real del ensayo/, c.name);
     assert.match(text, /no libera, rechaza ni aprueba la bobina/, c.name);
@@ -85,7 +129,7 @@ test("el borrador valida estructuralmente, conserva el texto tal cual y NO calcu
     assert.equal(check.ok, true, c.name);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) assert.equal(check.values[f.key], "1.5", `${c.name}: ${f.key} coma → punto`);
     assert.equal(check.values.observaciones, "nota");
-    const forbidden = ["fecha", "hora", "maquina", "responsable", ...c.calculated.map((x) => x.toLowerCase())];
+    const forbidden = ["fecha", "hora", "maquina", "responsable", ...c.calculated.map((x) => x.key)];
     for (const key of ["fecha", "hora", "maquina", "responsable", "promedio_longitudinal_humedo", "promedio_transversal_humedo", "promedio_resistencia_longitudinal_kgf", "promedio_resistencia_longitudinal_humeda_kgf", "porcentaje_de_resistencia_humeda"]) assert.equal(key in check.values, false, `${c.name}: ${key}`);
     assert.ok(forbidden.length > 0);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) {
@@ -119,8 +163,14 @@ test("el parser exige bobina, OT y línea, su formulario y valores estrictos; ig
     for (const other of ["VINTO-P1-21", c.formCode === P1_24_CODE ? P1_25_CODE : P1_24_CODE, "VINTO-P1-19"]) assert.equal(c.form.parseCapture(envelope(other, values)), null, `${c.name}: ${other}`);
     for (const missing of ["bobbin", "work_order", "line"]) { const e = envelope(c.formCode, values); delete e[missing]; assert.equal(c.form.parseCapture(e), null, `falta ${missing}`); }
     for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; const version = Math.max(1, f.sinceVersion ?? 1); assert.equal(c.form.parseCapture(envelope(c.formCode, m, { form: { code: c.formCode, version_number: version, name: "x" } })), null, `falta ${f.key}`); } // un campo posterior se exige desde su versión
-    const extra = Object.fromEntries(["promedio_longitudinal_humedo", "promedio_transversal_humedo", "porcentaje_de_resistencia_humeda"].map((k) => [k, "9"]));
-    assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, ...extra }))?.values, values, `${c.name}: un calculado que llegara se ignora`);
+    assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, porcentaje_de_resistencia_humeda: "9" }))?.values, values, `${c.name}: lo que no se calcula ni se declara se ignora`);
+    // MF-07: los promedios que guarda el backend (versión 3) se leen; una captura anterior no los trae y se lee igual; un promedio inválido invalida la lectura
+    const averages = Object.fromEntries(c.calculated.map((f) => [f.key, "12.35"]));
+    const v3 = (v) => envelope(c.formCode, v, { form: { code: c.formCode, version_number: 3, name: "x" } });
+    assert.deepEqual(c.form.parseCapture(v3({ ...values, ...averages }))?.values, { ...values, ...averages }, c.name);
+    assert.deepEqual(c.form.parseCapture(envelope(c.formCode, values, { form: { code: c.formCode, version_number: 2, name: "x" } }))?.values, values, `${c.name}: la versión 2 no tiene promedios y se lee tal cual`);
+    assert.equal(c.form.parseCapture(v3({ ...values, [c.calculated[0].key]: "abc" })), null);
+    assert.equal(c.form.parseCapture(v3({ ...values, [c.calculated[0].key]: 12.35 })), null, "los decimales llegan como texto exacto");
     assert.equal(c.form.parseCapture(envelope(c.formCode, { ...values, [c.fields.find((f) => f.kind === "decimal").key]: "abc" })), null);
     assert.equal(c.form.parseList([envelope(c.formCode, values)])?.length, 1);
     assert.equal(c.form.parseList([{ nope: 1 }]), null);

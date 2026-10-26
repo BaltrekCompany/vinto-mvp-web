@@ -2,7 +2,7 @@
 
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { CandidateCapture, FieldSpec } from "@/lib/vinto/candidate-form";
+import { labelFor, type CandidateCapture, type FieldSpec } from "@/lib/vinto/candidate-form";
 import { POSITIONS, POSITION_LABELS, computeHumidity, formatHumidity, type QualityCapture } from "@/lib/vinto/quality-captures";
 import { grammageLabel, qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, physicalAverages, seriesKeys, type PhysicalCapture } from "@/lib/vinto/quality-physical";
@@ -10,9 +10,9 @@ import {
     HISTORY_FAILURE_MESSAGES, HISTORY_MESSAGES, PLANT_TIME_ZONE, captureStatusLabel, formatPlantInstant, historyForBobbin,
     type QualityHistoryEntry, type QualityHistoryLoad, type QualityHistoryMeta,
 } from "@/lib/vinto/quality-history";
-import { P121_FIELDS, P1_21_CODE } from "@/lib/vinto/p1-21";
-import { P124_FIELDS, P124_LEGACY_FIELDS, P1_24_CODE } from "@/lib/vinto/p1-24";
-import { P125_FIELDS, P125_LEGACY_FIELDS, P1_25_CODE } from "@/lib/vinto/p1-25";
+import { P121_CALCULATED_FIELDS, P121_COLUMNS, P121_FIELDS, P121_LEGACY_FIELDS, P121_POSITION_NUMBERS, P1_21_CODE, p121Key } from "@/lib/vinto/p1-21";
+import { P124_CALCULATED_FIELDS, P124_FIELDS, P124_LEGACY_FIELDS, P1_24_CODE } from "@/lib/vinto/p1-24";
+import { P125_CALCULATED_FIELDS, P125_FIELDS, P125_LEGACY_FIELDS, P1_25_CODE } from "@/lib/vinto/p1-25";
 import { P128_FIELDS, P128_OFFICIAL_STATUS_NOTE, P1_28_CODE } from "@/lib/vinto/p1-28";
 import type { Resource } from "@/lib/vinto/use-central";
 
@@ -104,19 +104,41 @@ function EntryCard({ entry, index, total }: { entry: QualityHistoryEntry; index:
 // agrega aparte y nunca sustituye al estado oficial de Calidad mostrado en el encabezado.
 const CANDIDATE_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_21_CODE]: P121_FIELDS, [P1_24_CODE]: P124_FIELDS, [P1_25_CODE]: P125_FIELDS, [P1_28_CODE]: P128_FIELDS };
 // Campos retirados por versiones nuevas (MF-06): se muestran solo si la captura antigua los trae, marcados como «versión anterior». El número de bobina ya figura en el encabezado y no se repite.
-const CANDIDATE_LEGACY_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_24_CODE]: P124_LEGACY_FIELDS, [P1_25_CODE]: P125_LEGACY_FIELDS };
+const CANDIDATE_LEGACY_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_21_CODE]: P121_LEGACY_FIELDS, [P1_24_CODE]: P124_LEGACY_FIELDS, [P1_25_CODE]: P125_LEGACY_FIELDS };
+// Calculados por el backend (MF-07): se muestran solo si la captura los trae (las anteriores no se recalculan ni se inventan).
+const CANDIDATE_CALCULATED_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_21_CODE]: P121_CALCULATED_FIELDS, [P1_24_CODE]: P124_CALCULATED_FIELDS, [P1_25_CODE]: P125_CALCULATED_FIELDS };
+
+// P1-21 versión 2: tabla de las posiciones con valores (las filas vacías no se listan) y, debajo, los promedios guardados con cuántas posiciones usaron.
+function ProfileTable({ values }: { values: Readonly<Record<string, string>> }) {
+    const rows = P121_POSITION_NUMBERS.filter(n => P121_COLUMNS.some(c => values[p121Key(c.prefix, n)] !== undefined));
+    if (rows.length === 0) return null;
+    return <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm" data-section="profile-history">
+        <caption className="sr-only">Posiciones registradas</caption>
+        <thead><tr className="border-b text-xs uppercase text-slate-600"><th scope="col" className="px-2 py-2">Posición</th>{P121_COLUMNS.map(c => <th key={c.prefix} scope="col" className="px-2 py-2">{c.label}{c.suffix && !c.label.includes(c.suffix) ? ` (${c.suffix})` : ""}</th>)}</tr></thead>
+        <tbody>{rows.map(n => <tr key={n} className="border-b"><th scope="row" className="px-2 py-1 font-semibold tabular-nums">{n}</th>{P121_COLUMNS.map(c => <td key={c.prefix} className="px-2 py-1 tabular-nums">{values[p121Key(c.prefix, n)] ?? "—"}</td>)}</tr>)}</tbody>
+    </table></div>;
+}
 const CANDIDATE_OFFICIAL_NOTE: Readonly<Record<string, string>> = { [P1_28_CODE]: P128_OFFICIAL_STATUS_NOTE };
 
 function CandidateDetail({ capture }: { capture: CandidateCapture }) {
-    const fields = (CANDIDATE_FIELDS[capture.form.code] ?? []).filter(f => f.key !== "observaciones");
+    const version = capture.form.version_number;
+    const isProfile = capture.form.code === P1_21_CODE;
+    // Un campo posterior a la versión de la captura no existía entonces (no se lista); en P1-21 las posiciones van en la tabla. Las etiquetas son las de la versión de la captura (`renamedAt`).
+    const fields = (CANDIDATE_FIELDS[capture.form.code] ?? []).filter(f => !isProfile && f.key !== "observaciones" && !(f.sinceVersion !== undefined && version < f.sinceVersion && capture.values[f.key] === undefined));
+    const calculated = (CANDIDATE_CALCULATED_FIELDS[capture.form.code] ?? []).filter(f => capture.values[f.key] !== undefined && !(isProfile && f.key === "posiciones_utilizadas"));
+    const used = capture.values.posiciones_utilizadas;
     const legacy = (CANDIDATE_LEGACY_FIELDS[capture.form.code] ?? []).filter(f => f.key !== "numero_de_bobina" && capture.values[f.key] !== undefined);
     const officialNote = CANDIDATE_OFFICIAL_NOTE[capture.form.code];
     const notes = capture.values.observaciones;
     return <div className="mt-4 space-y-4">
         <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">{fields.map(f => {
             const raw = capture.values[f.key];
-            return <Meta key={f.key} label={f.label} value={raw === undefined ? "—" : withUnit(raw, f.suffix)}/>;
+            return <Meta key={f.key} label={labelFor(f, version)} value={raw === undefined ? "—" : withUnit(raw, f.suffix)}/>;
         })}{legacy.map(f => <Meta key={f.key} label={`${f.label} (versión anterior)`} value={withUnit(capture.values[f.key], f.suffix)}/>)}</dl>
+        {isProfile && <ProfileTable values={capture.values}/>}
+        {calculated.length > 0 && <section aria-label="Promedios calculados"><h4 className="text-xs font-black uppercase text-slate-600">Promedios calculados por el sistema</h4>
+            <dl className="mt-1 grid gap-3 sm:grid-cols-2 md:grid-cols-3">{calculated.map(f => <Meta key={f.key} label={f.label} value={withUnit(capture.values[f.key], f.suffix)}/>)}
+                {isProfile && used !== undefined && <Meta label="Posiciones utilizadas en los promedios" value={`${used} de ${P121_POSITION_NUMBERS.length}`}/>}</dl></section>}
         {officialNote !== undefined && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">{officialNote}</p>}
         {notes !== undefined && notes !== "" && <div><p className="text-xs font-semibold text-slate-600">Observaciones</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{notes}</p></div>}
     </div>;

@@ -367,7 +367,9 @@ def _validate_content(bundle: Bundle) -> None:
 def _validate_fields(fields, units, label) -> None:
     for field in fields:
         _require(field["value_type"] in VALUE_TYPES, f"{label}/{field['key']}: tipo inválido")
-        _require(field["source"] == "manual", f"{label}/{field['key']}: solo se importan campos manuales")
+        # MF-07: además de los manuales se importan campos CALCULADOS por el backend (promedios de Calidad): nunca obligatorios, porque no los digita el usuario. Los automáticos siguen sin importarse.
+        _require(field["source"] in ("manual", "calculated"), f"{label}/{field['key']}: solo se importan campos manuales o calculados")
+        _require(field["source"] != "calculated" or field["required"] is False, f"{label}/{field['key']}: un campo calculado no puede ser obligatorio")
         _require(field["unit"] is None or field["unit"] in units, f"{label}/{field['key']}: unidad inexistente {field['unit']}")
         option_keys = [o["option_key"] for o in field.get("options", [])]
         _require(len(option_keys) == len(set(option_keys)), f"{label}/{field['key']}: opciones duplicadas")

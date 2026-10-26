@@ -162,11 +162,13 @@ def is_central_form(form_code) -> bool:
 # definition and values
 # ---------------------------------------------------------------------------------------------------
 
-def load_fields(connection, form_version_id, *, allow_groups=False) -> list[FieldDef]:
+def load_fields(connection, form_version_id, *, allow_groups=False, allow_calculated=False) -> list[FieldDef]:
     """Campos de la versión. Solo se soportan campos MANUALES; lo demás (automáticos, calculados) se rechaza en vez de aceptarse a medias.
 
     Los campos dentro de un grupo solo se aceptan con `allow_groups=True` (el motor central de producción); P1-03 y Calidad no los manejan y siguen
-    rechazándolos. Un campo cuya clave es la propiedad reservada `_groups` hace inválida la definición."""
+    rechazándolos. Un campo cuya clave es la propiedad reservada `_groups` hace inválida la definición.
+
+    `allow_calculated=True` (MF-07, solo Calidad por Bobina) deja pasar los campos CALCULADOS por el backend (promedios): el llamador los separa de los manuales y los calcula él; los automáticos siguen rechazándose."""
     rows = connection.execute(
         """SELECT f.id, f.key, f.value_type, f.source, f.required, f.field_group_id, u.code, f.display_order
            FROM vinto_config.field_definition f LEFT JOIN vinto_master.unit u ON u.id = f.unit_id
@@ -176,7 +178,7 @@ def load_fields(connection, form_version_id, *, allow_groups=False) -> list[Fiel
             "SELECT field_definition_id, option_key FROM vinto_config.field_option WHERE form_version_id = %s", (form_version_id,)).fetchall():
         options.setdefault(field_id, []).append(option_key)
     fields = [FieldDef(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], tuple(options.get(r[0], ()))) for r in rows]
-    unsupported = [f.key for f in fields if f.source != "manual" or (f.group_id is not None and not allow_groups)]
+    unsupported = [f.key for f in fields if f.source not in (("manual", "calculated") if allow_calculated else ("manual",)) or (f.group_id is not None and not allow_groups)]
     if unsupported:
         raise UnsupportedFormDefinitionError(f"Campos no soportados: {', '.join(unsupported)}")
     if any(f.key == GROUPS_KEY for f in fields):

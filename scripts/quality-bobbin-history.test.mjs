@@ -541,6 +541,23 @@ test("MF-06: una captura de la versión 2 (sin los campos retirados) y una de la
   assert.match(component, /f\.key !== "numero_de_bobina" && capture\.values\[f\.key\] !== undefined/);
 });
 
+test("MF-07: P1-21 versión 2 (tabla + calculados), P1-24 / P1-25 versión 3 (promedios) y las capturas anteriores se leen cada una con su versión", () => {
+  const table = { gramaje_01: "18.250", peso_seco_01: "0.095", humedad_01: "6.5", gramaje_27: "0", peso_seco_27: "0", humedad_27: "0", promedio_gramaje: "9.13", promedio_peso_seco: "0.05", promedio_humedad: "3.25", posiciones_utilizadas: 2, observaciones: "ok" };
+  const v2 = parse([p121({ id: "77777777-7777-4777-8777-777777777777", values: table, form: { code: P1_21_CODE, version_number: 2, name: "x" } }), p121()]);
+  assert.deepEqual(v2.entries.map((e) => e.kind), ["candidate", "candidate"]);
+  assert.deepEqual(v2.entries[0].capture.values, { ...table, posiciones_utilizadas: "2" }, "los calculados se leen (la cuenta llega como número JSON)");
+  assert.equal(v2.entries[0].capture.values.gramaje_27, "0", "un 0 es un valor");
+  assert.deepEqual(v2.entries[1].capture.values, P121_VALUES, "la captura v1 de P1-21 conserva sus campos de entonces");
+  const avg24 = { promedio_longitudinal_humedo: "0.05", promedio_transversal_humedo: "0.03" }, avg25 = { promedio_resistencia_longitudinal_kgf: "0.12", promedio_resistencia_longitudinal_humeda_kgf: "0.05" };
+  const v3 = parse([p124({ values: { ...v2_24Values(), ...avg24 }, form: { code: P1_24_CODE, version_number: 3, name: "x" } }), p125({ id: "cccccccc-dddd-4ddd-8ddd-dddddddddddd", values: { ...v3_25Values(), ...avg25 }, form: { code: P1_25_CODE, version_number: 3, name: "x" } })]);
+  assert.deepEqual(v3.entries.map((e) => e.kind), ["candidate", "candidate"]);
+  assert.deepEqual(Object.keys(avg24).map((k) => v3.entries[0].capture.values[k]), ["0.05", "0.03"]);
+  assert.deepEqual(Object.keys(avg25).map((k) => v3.entries[1].capture.values[k]), ["0.12", "0.05"]);
+  assert.equal(parse([p124({ values: { ...v2_24Values(), promedio_longitudinal_humedo: "abc" }, form: { code: P1_24_CODE, version_number: 3, name: "x" } })]).entries[0].kind, "invalid", "un promedio corrupto invalida la lectura");
+});
+const v2_24Values = () => Object.fromEntries(Object.entries(P124_VALUES).filter(([k]) => !["numero_de_bobina", "producto"].includes(k)));
+const v3_25Values = () => ({ ...Object.fromEntries(Object.entries(P125_VALUES).filter(([k]) => !["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"].includes(k))), n_cortes: 3 });
+
 test("each candidate's own strict parser rejects the other three forms (fields never cross between candidates)", () => {
   assert.equal(P121.parseCapture(p124()), null);
   assert.equal(P124.parseCapture(p125()), null);
@@ -555,7 +572,8 @@ test("each candidate's own strict parser rejects the other three forms (fields n
 test("a candidate capture missing a required field is 'invalid' (never 'unsupported', never shown with partial values)", () => {
   for (const [make, code] of [[p121, P1_21_CODE], [p124, P1_24_CODE], [p125, P1_25_CODE], [p128, P1_28_CODE]]) {
     const missingKey = code === P1_24_CODE || code === P1_25_CODE ? "crepado" : Object.keys(make().values).find((k) => k !== "observaciones"); // P1-24 / P1-25: los primeros valores del fixture v1 son campos retirados (opcionales al leer)
-    const bad = make({ values: Object.fromEntries(Object.entries(make().values).filter(([k]) => k !== missingKey)) });
+    // P1-21 (MF-07) ya no tiene campos obligatorios sueltos (la regla es «al menos una fila completa»): su captura de la versión 1 es inválida si un valor viene corrupto
+    const bad = code === P1_21_CODE ? make({ values: { ...make().values, gramaje: "abc" } }) : make({ values: Object.fromEntries(Object.entries(make().values).filter(([k]) => k !== missingKey)) });
     const history = parse([bad]);
     assert.equal(history.entries[0].kind, "invalid", code);
     assert.equal("capture" in history.entries[0], false, code);
@@ -588,7 +606,8 @@ test("mixed P1-19 / P1-20 / four candidates / unknown history keeps the backend 
 
 test("registering this viewer does not relax or bypass the candidate's own createAttempt/normalizeDraft validation", () => {
   // El visor solo LEE con parseCapture; el envío sigue exigiendo los campos obligatorios de la definición (sin relación con el historial).
-  assert.equal(P121.createAttempt({ ...P121.emptyDraft(), numero_de_bobina: "1" }, BOBBIN_ID, "device-1").ok, false, "still missing posicion_de_perfil/gramaje/peso_seco");
+  assert.equal(P121.createAttempt(P121.emptyDraft(), BOBBIN_ID, "device-1").ok, false, "P1-21 still needs at least one complete row");
+  assert.equal(P121.createAttempt({ ...P121.emptyDraft(), gramaje_01: "1", peso_seco_01: "2" }, BOBBIN_ID, "device-1").ok, false, "a partially filled row is never sent");
   assert.equal(P128.createAttempt(P128.emptyDraft(), BOBBIN_ID, "device-1").ok, false);
 });
 
@@ -605,14 +624,14 @@ test("the candidate detail reuses each form's own FieldSpec (label + suffix), ne
   const body = component.slice(component.indexOf("function CandidateDetail("), component.indexOf("function Body("));
   assert.ok(body.length > 0);
   assert.match(body, /f\.key !== "observaciones"/);
-  assert.match(body, /label=\{f\.label\} value=\{raw === undefined \? "—" : withUnit\(raw, f\.suffix\)\}/);
+  assert.match(body, /label=\{labelFor\(f, version\)\} value=\{raw === undefined \? "—" : withUnit\(raw, f\.suffix\)\}/); // MF-07: la etiqueta es la de la VERSIÓN de la captura
   assert.match(body, /notes !== undefined && notes !== ""/);
   assert.equal(/Number\(|parseFloat|toFixed|dangerouslySetInnerHTML|onClick|<Input|<Textarea|<select/.test(body), false, "read-only: no arithmetic, no HTML injection, no inputs");
 });
 
 test("reading P1-21/P1-24/P1-25/P1-28 history does not touch any pending attempt of another candidate form", () => {
   const device = "99999999-9999-4999-8999-999999999999";
-  const made = P121.createAttempt({ ...P121.emptyDraft(), ...P121_VALUES }, BOBBIN_ID, device, () => P121_ID);
+  const made = P121.createAttempt({ ...P121.emptyDraft(), gramaje_01: "18.250", peso_seco_01: "0.095", humedad_01: "6.5" }, BOBBIN_ID, device, () => P121_ID);
   assert.ok(made.ok);
   const before = JSON.stringify(made.attempt);
   parse([p121(), p124(), p125(), p128()]);
