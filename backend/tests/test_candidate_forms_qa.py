@@ -190,10 +190,11 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
     async def test_p1_21_submitted_by_calidad_is_linked_to_the_bobbin_and_in_its_history(self):
         bobbin_id, bobbin_code = await self.capture_f3("MP1")
         capture_id = str(uuid4())
-        values = {"numero_de_bobina": bobbin_code, "posicion_de_perfil": "centro", "gramaje": "81.2", "peso_seco": "1.9"}
+        values = {"gramaje_01": "81.2", "peso_seco_01": "1.9", "humedad_01": "6.5"}  # MF-07: P1-21 versión 2 = tabla de posiciones; la bobina es la de la ruta
         body = {"capture_id": capture_id, "form_code": "VINTO-P1-21", "device_key": str(uuid4()), "values": values}
         reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
         self.assertEqual(reply.status, 201, reply.text)
+        self.assertEqual(reply.json()["capture"]["bobbin"]["code"], bobbin_code)
         history = await call("GET", f"/api/quality/bobbins/{bobbin_id}/captures", cookie=await self.cookie("CALIDAD"))
         self.assertEqual(history.status, 200)
         self.assertIn(capture_id, [c["id"] for c in history.json()])
@@ -201,17 +202,16 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         status = self.connection.execute("SELECT status, decided_by FROM vinto_txn.quality_release WHERE bobbin_id=%s", (bobbin_id,)).fetchone()
         self.assertEqual(status, ("pending", None))
 
-    async def test_p1_21_declared_bobbin_number_must_match_the_selected_bobbin(self):
-        # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-21 -> "numero_de_bobina":
-        # el valor declarado DEBE coincidir con el código real de la bobina seleccionada en la URL.
+    async def test_p1_21_no_longer_accepts_a_declared_bobbin_number(self):
+        # MF-07: la versión 2 de P1-21 ya no declara «numero_de_bobina» (la bobina es la de la URL): enviarlo es un campo desconocido (el contraste con la bobina sigue vigente para P1-28 y las versiones que lo declaren).
         bobbin_id, bobbin_code = await self.capture_f3("MP3")
-        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "posicion_de_perfil": "borde", "gramaje": "80.0", "peso_seco": "1.7"}
+        wrong_values = {"numero_de_bobina": str(int(bobbin_code) + 1000), "gramaje_01": "80.0", "peso_seco_01": "1.7", "humedad_01": "5"}
         body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-21", "device_key": str(uuid4()), "values": wrong_values}
         reply = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
         self.assertEqual(reply.status, 422, reply.text)
         self.assertEqual(reply.json()["code"], "CAPTURE_VALIDATION")
         count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id=%s", (bobbin_id,)).fetchone()[0]
-        self.assertEqual(count, 0, "un numero_de_bobina que no coincide no debe persistir nada")
+        self.assertEqual(count, 0, "un numero_de_bobina enviado a P1-21 v2 no debe persistir nada")
 
     async def test_p1_28_declared_bobbin_number_must_match_the_selected_bobbin(self):
         # app/quality/capture_service.py::BOBBIN_CODE_FIELDS mapea VINTO-P1-28 -> "numero_de_bobina":
@@ -259,7 +259,7 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
     async def test_p1_21_identical_retry_is_idempotent(self):
         bobbin_id, bobbin_code = await self.capture_f3("MP3")
         capture_id = str(uuid4())
-        values = {"numero_de_bobina": bobbin_code, "posicion_de_perfil": "borde", "gramaje": "79.8", "peso_seco": "1.8"}
+        values = {"gramaje_01": "79.8", "peso_seco_01": "1.8", "humedad_01": "5.5"}
         body = {"capture_id": capture_id, "form_code": "VINTO-P1-21", "device_key": str(uuid4()), "values": values}
         first = await call("POST", f"/api/quality/bobbins/{bobbin_id}/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
         self.assertEqual(first.status, 201, first.text)

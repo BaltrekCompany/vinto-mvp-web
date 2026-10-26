@@ -6,7 +6,7 @@
   "name": "Perfil de gramaje y humedad",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -14,40 +14,733 @@
   "groups": [],
   "fields": [
     {
-      "key": "numero_de_bobina",
-      "label": "Número de bobina",
-      "value_type": "text",
+      "key": "gramaje_01",
+      "label": "Gramaje · posición 1",
+      "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 1
     },
     {
-      "key": "posicion_de_perfil",
-      "label": "Posición de perfil",
-      "value_type": "text",
+      "key": "peso_seco_01",
+      "label": "Peso seco (kg) · posición 1",
+      "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 2
     },
     {
-      "key": "gramaje",
-      "label": "Gramaje",
+      "key": "humedad_01",
+      "label": "% Humedad · posición 1",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 3
     },
     {
-      "key": "peso_seco",
-      "label": "Peso seco",
+      "key": "gramaje_02",
+      "label": "Gramaje · posición 2",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 4
+    },
+    {
+      "key": "peso_seco_02",
+      "label": "Peso seco (kg) · posición 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "humedad_02",
+      "label": "% Humedad · posición 2",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 6
+    },
+    {
+      "key": "gramaje_03",
+      "label": "Gramaje · posición 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 7
+    },
+    {
+      "key": "peso_seco_03",
+      "label": "Peso seco (kg) · posición 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 8
+    },
+    {
+      "key": "humedad_03",
+      "label": "% Humedad · posición 3",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 9
+    },
+    {
+      "key": "gramaje_04",
+      "label": "Gramaje · posición 4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "peso_seco_04",
+      "label": "Peso seco (kg) · posición 4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 11
+    },
+    {
+      "key": "humedad_04",
+      "label": "% Humedad · posición 4",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 12
+    },
+    {
+      "key": "gramaje_05",
+      "label": "Gramaje · posición 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 13
+    },
+    {
+      "key": "peso_seco_05",
+      "label": "Peso seco (kg) · posición 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 14
+    },
+    {
+      "key": "humedad_05",
+      "label": "% Humedad · posición 5",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 15
+    },
+    {
+      "key": "gramaje_06",
+      "label": "Gramaje · posición 6",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 16
+    },
+    {
+      "key": "peso_seco_06",
+      "label": "Peso seco (kg) · posición 6",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 17
+    },
+    {
+      "key": "humedad_06",
+      "label": "% Humedad · posición 6",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 18
+    },
+    {
+      "key": "gramaje_07",
+      "label": "Gramaje · posición 7",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 19
+    },
+    {
+      "key": "peso_seco_07",
+      "label": "Peso seco (kg) · posición 7",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 20
+    },
+    {
+      "key": "humedad_07",
+      "label": "% Humedad · posición 7",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 21
+    },
+    {
+      "key": "gramaje_08",
+      "label": "Gramaje · posición 8",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 22
+    },
+    {
+      "key": "peso_seco_08",
+      "label": "Peso seco (kg) · posición 8",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 23
+    },
+    {
+      "key": "humedad_08",
+      "label": "% Humedad · posición 8",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 24
+    },
+    {
+      "key": "gramaje_09",
+      "label": "Gramaje · posición 9",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 25
+    },
+    {
+      "key": "peso_seco_09",
+      "label": "Peso seco (kg) · posición 9",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 26
+    },
+    {
+      "key": "humedad_09",
+      "label": "% Humedad · posición 9",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 27
+    },
+    {
+      "key": "gramaje_10",
+      "label": "Gramaje · posición 10",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 28
+    },
+    {
+      "key": "peso_seco_10",
+      "label": "Peso seco (kg) · posición 10",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 29
+    },
+    {
+      "key": "humedad_10",
+      "label": "% Humedad · posición 10",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 30
+    },
+    {
+      "key": "gramaje_11",
+      "label": "Gramaje · posición 11",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 31
+    },
+    {
+      "key": "peso_seco_11",
+      "label": "Peso seco (kg) · posición 11",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 32
+    },
+    {
+      "key": "humedad_11",
+      "label": "% Humedad · posición 11",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 33
+    },
+    {
+      "key": "gramaje_12",
+      "label": "Gramaje · posición 12",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 34
+    },
+    {
+      "key": "peso_seco_12",
+      "label": "Peso seco (kg) · posición 12",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 35
+    },
+    {
+      "key": "humedad_12",
+      "label": "% Humedad · posición 12",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 36
+    },
+    {
+      "key": "gramaje_13",
+      "label": "Gramaje · posición 13",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 37
+    },
+    {
+      "key": "peso_seco_13",
+      "label": "Peso seco (kg) · posición 13",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 38
+    },
+    {
+      "key": "humedad_13",
+      "label": "% Humedad · posición 13",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 39
+    },
+    {
+      "key": "gramaje_14",
+      "label": "Gramaje · posición 14",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 40
+    },
+    {
+      "key": "peso_seco_14",
+      "label": "Peso seco (kg) · posición 14",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 41
+    },
+    {
+      "key": "humedad_14",
+      "label": "% Humedad · posición 14",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 42
+    },
+    {
+      "key": "gramaje_15",
+      "label": "Gramaje · posición 15",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 43
+    },
+    {
+      "key": "peso_seco_15",
+      "label": "Peso seco (kg) · posición 15",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 44
+    },
+    {
+      "key": "humedad_15",
+      "label": "% Humedad · posición 15",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 45
+    },
+    {
+      "key": "gramaje_16",
+      "label": "Gramaje · posición 16",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 46
+    },
+    {
+      "key": "peso_seco_16",
+      "label": "Peso seco (kg) · posición 16",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 47
+    },
+    {
+      "key": "humedad_16",
+      "label": "% Humedad · posición 16",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 48
+    },
+    {
+      "key": "gramaje_17",
+      "label": "Gramaje · posición 17",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 49
+    },
+    {
+      "key": "peso_seco_17",
+      "label": "Peso seco (kg) · posición 17",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 50
+    },
+    {
+      "key": "humedad_17",
+      "label": "% Humedad · posición 17",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 51
+    },
+    {
+      "key": "gramaje_18",
+      "label": "Gramaje · posición 18",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 52
+    },
+    {
+      "key": "peso_seco_18",
+      "label": "Peso seco (kg) · posición 18",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 53
+    },
+    {
+      "key": "humedad_18",
+      "label": "% Humedad · posición 18",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 54
+    },
+    {
+      "key": "gramaje_19",
+      "label": "Gramaje · posición 19",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 55
+    },
+    {
+      "key": "peso_seco_19",
+      "label": "Peso seco (kg) · posición 19",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 56
+    },
+    {
+      "key": "humedad_19",
+      "label": "% Humedad · posición 19",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 57
+    },
+    {
+      "key": "gramaje_20",
+      "label": "Gramaje · posición 20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 58
+    },
+    {
+      "key": "peso_seco_20",
+      "label": "Peso seco (kg) · posición 20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 59
+    },
+    {
+      "key": "humedad_20",
+      "label": "% Humedad · posición 20",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 60
+    },
+    {
+      "key": "gramaje_21",
+      "label": "Gramaje · posición 21",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 61
+    },
+    {
+      "key": "peso_seco_21",
+      "label": "Peso seco (kg) · posición 21",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 62
+    },
+    {
+      "key": "humedad_21",
+      "label": "% Humedad · posición 21",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 63
+    },
+    {
+      "key": "gramaje_22",
+      "label": "Gramaje · posición 22",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 64
+    },
+    {
+      "key": "peso_seco_22",
+      "label": "Peso seco (kg) · posición 22",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 65
+    },
+    {
+      "key": "humedad_22",
+      "label": "% Humedad · posición 22",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 66
+    },
+    {
+      "key": "gramaje_23",
+      "label": "Gramaje · posición 23",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 67
+    },
+    {
+      "key": "peso_seco_23",
+      "label": "Peso seco (kg) · posición 23",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 68
+    },
+    {
+      "key": "humedad_23",
+      "label": "% Humedad · posición 23",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 69
+    },
+    {
+      "key": "gramaje_24",
+      "label": "Gramaje · posición 24",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 70
+    },
+    {
+      "key": "peso_seco_24",
+      "label": "Peso seco (kg) · posición 24",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 71
+    },
+    {
+      "key": "humedad_24",
+      "label": "% Humedad · posición 24",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 72
+    },
+    {
+      "key": "gramaje_25",
+      "label": "Gramaje · posición 25",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 73
+    },
+    {
+      "key": "peso_seco_25",
+      "label": "Peso seco (kg) · posición 25",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 74
+    },
+    {
+      "key": "humedad_25",
+      "label": "% Humedad · posición 25",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 75
+    },
+    {
+      "key": "gramaje_26",
+      "label": "Gramaje · posición 26",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 76
+    },
+    {
+      "key": "peso_seco_26",
+      "label": "Peso seco (kg) · posición 26",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 77
+    },
+    {
+      "key": "humedad_26",
+      "label": "% Humedad · posición 26",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 78
+    },
+    {
+      "key": "gramaje_27",
+      "label": "Gramaje · posición 27",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 79
+    },
+    {
+      "key": "peso_seco_27",
+      "label": "Peso seco (kg) · posición 27",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 80
+    },
+    {
+      "key": "humedad_27",
+      "label": "% Humedad · posición 27",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 81
     },
     {
       "key": "observaciones",
@@ -56,8 +749,44 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 5
+      "display_order": 82
+    },
+    {
+      "key": "promedio_gramaje",
+      "label": "Promedio gramaje",
+      "value_type": "decimal",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 83
+    },
+    {
+      "key": "promedio_peso_seco",
+      "label": "Promedio peso seco",
+      "value_type": "decimal",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 84
+    },
+    {
+      "key": "promedio_humedad",
+      "label": "Promedio % humedad",
+      "value_type": "decimal",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 85
+    },
+    {
+      "key": "posiciones_utilizadas",
+      "label": "Posiciones utilizadas en los promedios",
+      "value_type": "integer",
+      "source": "calculated",
+      "required": false,
+      "unit": null,
+      "display_order": 86
     }
   ],
-  "definition_checksum": "8660dd68dfbe9237561c4e81596034c8eb6b8c7f53a6c327fd424b6c22332647"
+  "definition_checksum": "669442f12af07d2523feb721bba1b9c0f3604c288a5780326ffaff6b8f6d22ee"
 }

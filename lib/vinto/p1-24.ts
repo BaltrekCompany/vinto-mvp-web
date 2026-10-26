@@ -16,28 +16,44 @@
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_24_CODE = "VINTO-P1-24";
+// MF-07 (MD_Ejec 26, que el Excel original asignó por error a «Resistencia en húmedo-curado») · versión 3: las posiciones de medición pasan de centro / medio / extremo a Comando / Medio / Transversal (la DIRECCIÓN —longitudinal
+// o transversal— va en la etiqueta y es distinta de la POSICIÓN); las claves técnicas NO cambian y las capturas v1/v2 se muestran con sus etiquetas de entonces (`renamedAt`). Se añaden dos promedios CALCULADOS por el backend
+// (media aritmética simple de las tres posiciones, dos decimales, solo lectura; sin recalcular capturas anteriores).
+const POSITION_LABEL = { centro: "Comando", medio: "Medio", extremo: "Transversal" } as const;
+const wet = (direction: "longitudinal" | "transversal", position: keyof typeof POSITION_LABEL): FieldSpec => ({
+    key: `resistencia_${direction}_humeda_${position}`, label: `Resistencia ${direction} húmeda – ${POSITION_LABEL[position]}`, kind: "decimal", required: true,
+    renamedAt: { version: 3, previous: `Resistencia ${direction} húmeda ${position}` },
+});
 export const P124_FIELDS: readonly FieldSpec[] = [
     { key: "crepado", label: "Crepado", kind: "decimal", required: true },
     { key: "gramaje", label: "Gramaje", kind: "decimal", required: true, suffix: "g/m²" },
-    { key: "resistencia_longitudinal_humeda_centro", label: "Resistencia longitudinal húmeda centro", kind: "decimal", required: true },
-    { key: "resistencia_longitudinal_humeda_medio", label: "Resistencia longitudinal húmeda medio", kind: "decimal", required: true },
-    { key: "resistencia_longitudinal_humeda_extremo", label: "Resistencia longitudinal húmeda extremo", kind: "decimal", required: true },
-    { key: "resistencia_transversal_humeda_centro", label: "Resistencia transversal húmeda centro", kind: "decimal", required: true },
-    { key: "resistencia_transversal_humeda_medio", label: "Resistencia transversal húmeda medio", kind: "decimal", required: true },
-    { key: "resistencia_transversal_humeda_extremo", label: "Resistencia transversal húmeda extremo", kind: "decimal", required: true },
+    wet("longitudinal", "centro"),
+    wet("longitudinal", "medio"),
+    wet("longitudinal", "extremo"),
+    wet("transversal", "centro"),
+    wet("transversal", "medio"),
+    wet("transversal", "extremo"),
     { key: "tiempo_de_curado_condicion", label: "Tiempo de curado / condición", kind: "decimal", required: true, suffix: "min" },
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
 ];
+// Calculados por el backend al guardar (solo lectura, desde la versión 3); las capturas anteriores no los traen.
+export const P124_CALCULATED_FIELDS: readonly FieldSpec[] = [
+    { key: "promedio_longitudinal_humedo", label: "Promedio resistencia longitudinal húmeda", kind: "decimal", required: false, sinceVersion: 3 },
+    { key: "promedio_transversal_humedo", label: "Promedio resistencia transversal húmeda", kind: "decimal", required: false, sinceVersion: 3 },
+];
+export const P124_MEANS: Readonly<Record<string, readonly string[]>> = {
+    promedio_longitudinal_humedo: ["resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo"],
+    promedio_transversal_humedo: ["resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo"],
+};
 // Campos de la versión 1 retirados en la versión 2 (MF-06): solo lectura, para el historial de las capturas antiguas.
 export const P124_LEGACY_FIELDS: readonly FieldSpec[] = [
     { key: "numero_de_bobina", label: "Número de bobina", kind: "text", required: false },
     { key: "producto", label: "Producto", kind: "text", required: false },
 ];
-export const P124 = defineCandidateForm(P1_24_CODE, P124_FIELDS, { context: "bobbin", legacy: P124_LEGACY_FIELDS });
+export const P124 = defineCandidateForm(P1_24_CODE, P124_FIELDS, { context: "bobbin", legacy: P124_LEGACY_FIELDS, calculated: P124_CALCULATED_FIELDS });
 export const P124_AUTOMATIC = ["Fecha (fecha operativa de la bobina)", "Hora (de registro, no del ensayo)", "Máquina (la de la bobina)", "Responsable (usuario autenticado, informativo)"] as const;
-export const P124_CALCULATED = ["Promedio longitudinal húmedo", "Promedio transversal húmedo"] as const; // calculados en la definición, sin fórmula aprobada: no se calculan ni se muestran
 export const P124_PENDING: readonly { label: string; pending: string }[] = [
-    { label: "Calculados", pending: "Los promedios longitudinal y transversal húmedos son calculados en la definición, sin fórmula aprobada (el transversal figura como texto en la definición legacy): no se calculan, no se guardan ni se muestran; el backend rechaza el envío de campos calculados." },
+    { label: "Promedios", pending: "Los promedios de resistencia longitudinal húmeda y transversal húmeda (media aritmética simple de Comando, Medio y Transversal, dos decimales) los calcula el sistema al guardar; no se digitan. Las capturas anteriores no se recalculan." },
     { label: "Alcance de máquinas", pending: "La definición legacy menciona MP1, MP3 y todas las rebobinadoras. Solo se cubren bobinas F3 de MP1 / MP3; las rebobinadoras NO están cubiertas y requieren confirmar identidad de bobina, origen, máquinas y relaciones." },
     { label: "Número de bobina y producto", pending: "Ya no se digitan (MF-06): la bobina y su artículo vienen de la bobina seleccionada y se muestran solo como contexto informativo; las capturas de la versión 1 los conservan." },
     { label: "Curado y unidades", pending: "El tiempo de curado / condición es un decimal en minutos según la definición; no hay regla de curado, rangos, límites ni unidades declaradas para crepado y resistencias." },

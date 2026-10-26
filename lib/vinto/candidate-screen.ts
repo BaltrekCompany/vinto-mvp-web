@@ -18,5 +18,7 @@ export type CandidateScreen = {
     actionLabel?: string; // texto inequívoco de la acción en el inbox (por defecto «<título> (candidato)»)
     officialStatusNote?: string; // contexto "bobbin": aviso de que el estado oficial de Calidad de la bobina se muestra aparte (solo lectura) y esta captura no lo cambia
     hints?: Readonly<Record<string, string>>; // pistas por campo (clave -> texto); no cambian el contrato
+    table?: { columns: readonly { prefix: string; label: string; suffix?: string }[]; positions: readonly number[]; keyFor: (prefix: string, position: number) => string }; // MF-07 (P1-21): los campos «columna_NN» se dibujan como UNA tabla editable de filas numeradas; la estructura guardada no cambia
+    preview?: (draft: Readonly<Record<string, string>>) => Record<string, string | null>; // MF-07: valor mostrado de cada campo calculado por el backend (solo visualización mientras se digita)
     historyNote: string;
 };
