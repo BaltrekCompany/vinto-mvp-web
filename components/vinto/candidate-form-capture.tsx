@@ -101,7 +101,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const renderField = (field: (typeof form.fields)[number]) => field.kind === "textarea"
         ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} hint={candidate.hints?.[field.key]}/>
         : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
-            inputMode={field.kind === "decimal" ? "decimal" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"} hint={candidate.hints?.[field.key]}/>;
+            inputMode={field.kind === "decimal" ? "decimal" : field.kind === "integer" ? "numeric" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"} hint={candidate.hints?.[field.key]}/>;
     // Agrupación solo visual (candidate.sections): cada campo se dibuja una vez y la estructura guardada no cambia. Sin secciones: un único bloque con todos los campos.
     const groups = candidate.sections
         ? candidate.sections.map(s => ({ title: s.title, hint: s.hint, fields: s.keys.map(k => form.fields.find(f => f.key === k)).filter((f): f is (typeof form.fields)[number] => f !== undefined) }))

@@ -20,7 +20,8 @@ const UUID = "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", DEVICE = "9b8a7c6d-5e4f-4a3
 const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
-const fill = (fields, textValue = "texto") => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.key === "numero_de_bobina" ? "12" : f.key === "observaciones" ? " nota " : textValue]));
+const NEW_KINDS = { n_cortes: "integer" }; // MF-06: no existe en la definición legacy
+const fill = (fields, textValue = "texto") => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "integer" ? "3" : f.key === "numero_de_bobina" ? "12" : f.key === "observaciones" ? " nota " : textValue]));
 const CASES = [
   { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: [], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
   { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED, pending: P125_PENDING, counts: [14, 3, 3], removed: ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"], added: ["caudal_rh_ml_min", "n_cortes"], screen: "p125", machines: ["por_definir"] },
@@ -52,8 +53,10 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.equal(defOf("form_24_propiedades_fisicas_en_humedo").fields.find((f) => f.key === "promedio_transversal_humedo").type, "text"); // tipo legacy del calculado: se documenta, no se corrige
   assert.match(P124_PENDING.map((p) => p.pending).join(" "), /el transversal figura como texto en la definición legacy/);
   assert.equal(P125_FIELDS.filter((f) => f.suffix).length, 0, "las unidades de P1-25 ya están en sus etiquetas: no se duplican ni se inventan");
-  // MF-06 · P1-25 v2: «Caudal RH [ml/min]» abre el formulario y «# Cortes» lo cierra; ambos digitables y opcionales
-  assert.deepEqual([P125_FIELDS[0], P125_FIELDS.at(-1)], [{ key: "caudal_rh_ml_min", label: "Caudal RH [ml/min]", kind: "decimal", required: false }, { key: "n_cortes", label: "# Cortes", kind: "decimal", required: false }]);
+  // MF-06 · P1-25 v2: «Caudal RH [ml/min]» abre el formulario (decimal, opcional) y «# Cortes» (entero, obligatorio desde la v2) va inmediatamente antes de «Observaciones»
+  assert.deepEqual(P125_FIELDS[0], { key: "caudal_rh_ml_min", label: "Caudal RH [ml/min]", kind: "decimal", required: false });
+  assert.deepEqual(P125_FIELDS.at(-2), { key: "n_cortes", label: "# Cortes", kind: "integer", required: true, sinceVersion: 2 });
+  assert.equal(P125_FIELDS.at(-1).key, "observaciones");
   assert.equal(P125_FIELDS.length, 13);
   assert.equal(P124_FIELDS.length, 10);
   const u24 = defOf("form_24_propiedades_fisicas_en_humedo").fields;
@@ -115,7 +118,7 @@ test("el parser exige bobina, OT y línea, su formulario y valores estrictos; ig
     assert.deepEqual([parsed?.bobbin, parsed?.work_order?.number, parsed?.assignment], [{ id: BOBBIN, code: "12" }, "OT-1", undefined]);
     for (const other of ["VINTO-P1-21", c.formCode === P1_24_CODE ? P1_25_CODE : P1_24_CODE, "VINTO-P1-19"]) assert.equal(c.form.parseCapture(envelope(other, values)), null, `${c.name}: ${other}`);
     for (const missing of ["bobbin", "work_order", "line"]) { const e = envelope(c.formCode, values); delete e[missing]; assert.equal(c.form.parseCapture(e), null, `falta ${missing}`); }
-    for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; assert.equal(c.form.parseCapture(envelope(c.formCode, m)), null, `falta ${f.key}`); }
+    for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; const version = Math.max(1, f.sinceVersion ?? 1); assert.equal(c.form.parseCapture(envelope(c.formCode, m, { form: { code: c.formCode, version_number: version, name: "x" } })), null, `falta ${f.key}`); } // un campo posterior se exige desde su versión
     const extra = Object.fromEntries(["promedio_longitudinal_humedo", "promedio_transversal_humedo", "porcentaje_de_resistencia_humeda"].map((k) => [k, "9"]));
     assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, ...extra }))?.values, values, `${c.name}: un calculado que llegara se ignora`);
     assert.equal(c.form.parseCapture(envelope(c.formCode, { ...values, [c.fields.find((f) => f.kind === "decimal").key]: "abc" })), null);
@@ -124,7 +127,27 @@ test("el parser exige bobina, OT y línea, su formulario y valores estrictos; ig
   }
 });
 
-test("MF-06: las capturas de la versión 1 (con los campos retirados y sin los añadidos) siguen siendo legibles con la definición de la versión 2; los valores nuevos se leen", () => {
+test("MF-06 · «# Cortes»: entero no negativo OBLIGATORIO; «Caudal RH» decimal OPCIONAL", () => {
+  const base = fill(P125_FIELDS);
+  const check = (extra) => P125.normalizeDraft({ ...base, ...extra });
+  for (const ok of ["0", "1", "12", " 7 ", "000"]) assert.equal(check({ n_cortes: ok }).ok, true, `acepta «${ok}»`);
+  assert.equal(check({ n_cortes: " 7 " }).values.n_cortes, "7");
+  for (const bad of ["-1", "1.5", "1,5", "2.0", "abc", "1e3", "+3", "3 cortes", "", "   "]) {
+    const out = check({ n_cortes: bad });
+    assert.equal(out.ok, false, `rechaza «${bad}»`);
+    assert.match(out.errors.join(" "), bad.trim() === "" ? /# Cortes: es obligatorio/ : /# Cortes: debe ser un número entero no negativo/, bad);
+  }
+  assert.equal(P125.normalizeDraft(P125.emptyDraft()).errors.some((e) => e.startsWith("# Cortes")), true);
+  // Caudal RH: decimal válido o vacío; texto o separador raro se rechaza
+  assert.equal(check({ caudal_rh_ml_min: "" }).ok, true);
+  assert.equal(check({ caudal_rh_ml_min: "12,5" }).values.caudal_rh_ml_min, "12.5");
+  assert.equal(check({ caudal_rh_ml_min: "abc" }).ok, false);
+  const { attempt } = P125.createAttempt({ ...base, n_cortes: "4", caudal_rh_ml_min: "9.5" }, BOBBIN, DEVICE, () => UUID);
+  assert.deepEqual([attempt.payload.values.n_cortes, attempt.payload.values.caudal_rh_ml_min], ["4", "9.5"]);
+  assert.equal("n_cortes" in P124.emptyDraft(), false, "P1-24 no cambia");
+});
+
+test("MF-06 · compatibilidad: las capturas v1 se leen sin «# Cortes»; las v2 lo exigen; el backend lo entrega como número", () => {
   const v1 = {
     [P1_24_CODE]: { numero_de_bobina: "12", producto: "ficticio", crepado: "18.5", gramaje: "21.3", resistencia_longitudinal_humeda_centro: "1", resistencia_longitudinal_humeda_medio: "1", resistencia_longitudinal_humeda_extremo: "1",
       resistencia_transversal_humeda_centro: "1", resistencia_transversal_humeda_medio: "1", resistencia_transversal_humeda_extremo: "1", tiempo_de_curado_condicion: "30" },
@@ -134,16 +157,23 @@ test("MF-06: las capturas de la versión 1 (con los campos retirados y sin los a
   for (const c of CASES) {
     const old = c.form.parseCapture(envelope(c.formCode, v1[c.formCode], { form: { code: c.formCode, version_number: 1, name: "x" } }));
     assert.notEqual(old, null, `${c.name}: la captura v1 se lee`);
-    for (const key of c.removed) assert.equal(old.values[key], v1[c.formCode][key], `${c.name}: ${key} (campo retirado) se conserva al LEER la captura antigua`); // solo lectura: no entra en el borrador ni en el payload
-    assert.equal(old.values.crepado, v1[c.formCode].crepado);
+    for (const key of c.removed) assert.equal(old.values[key], v1[c.formCode][key], `${c.name}: ${key} (campo retirado) se conserva al LEER la captura antigua`);
     for (const key of c.added) assert.equal(key in old.values, false, `${c.name}: ${key} no existe en la v1`);
+    assert.equal(old.form.version_number, 1);
   }
-  const fresh = P125.parseCapture(envelope(P1_25_CODE, { ...P125.normalizeDraft(fill(P125_FIELDS)).values, caudal_rh_ml_min: "12.5", n_cortes: "3" }, { form: { code: P1_25_CODE, version_number: 2, name: "x" } }));
-  assert.deepEqual([fresh?.values.caudal_rh_ml_min, fresh?.values.n_cortes], ["12.5", "3"]);
-  const without = P125.normalizeDraft(fill(P125_FIELDS.filter((f) => !["caudal_rh_ml_min", "n_cortes"].includes(f.key))));
-  assert.equal(without.ok, true, "los campos nuevos son opcionales");
-  for (const c of CASES) assert.deepEqual(Object.keys(c.form.emptyDraft()).filter((k) => c.removed.includes(k)), [], `${c.name}: los retirados no están en el borrador`);
-  assert.deepEqual(Object.keys(P125.createAttempt(fill(P125_FIELDS), BOBBIN, DEVICE, () => UUID).attempt.payload.values).filter((k) => ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"].includes(k)), [], "el payload nuevo no envía los retirados");
+  // la MISMA captura marcada como v2 sin «# Cortes» NO es válida (es obligatorio desde la v2)
+  const asV2 = (values) => P125.parseCapture(envelope(P1_25_CODE, values, { form: { code: P1_25_CODE, version_number: 2, name: "x" } }));
+  const v2Values = { ...P125.normalizeDraft({ ...fill(P125_FIELDS), n_cortes: "3" }).values };
+  assert.equal(asV2(v2Values)?.values.n_cortes, "3");
+  const { n_cortes: _omit, ...withoutCortes } = v2Values;
+  assert.equal(asV2(withoutCortes), null, "v2 sin # Cortes: inválida");
+  assert.equal(asV2({ ...v2Values, n_cortes: 3 })?.values.n_cortes, "3", "el backend devuelve el entero como número JSON");
+  for (const bad of [-1, 1.5, "1.5", "-2", "x", true, null]) assert.equal(asV2({ ...v2Values, n_cortes: bad }), null, `v2 con n_cortes=${String(bad)}`);
+  assert.deepEqual([asV2({ ...v2Values, n_cortes: 0 })?.values.n_cortes, asV2({ ...v2Values, n_cortes: "0" })?.values.n_cortes], ["0", "0"]);
+  const fresh = asV2({ ...v2Values, caudal_rh_ml_min: "12.5" });
+  assert.equal(fresh?.values.caudal_rh_ml_min, "12.5");
+  const { caudal_rh_ml_min: _c, ...noCaudal } = v2Values;
+  assert.equal(asV2(noCaudal)?.values.caudal_rh_ml_min, undefined, "Caudal RH puede faltar");
 });
 
 const response = (status, data, errCode) => (status >= 200 && status < 300 ? { ok: true, status, data } : { ok: false, kind: "http", status, code: errCode });

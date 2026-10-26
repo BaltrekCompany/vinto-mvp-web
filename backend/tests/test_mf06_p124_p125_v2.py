@@ -55,7 +55,7 @@ def values_for(fields, skip=()):
     for n, (key, kind) in enumerate(fields):
         if key == "observaciones" or key in skip:
             continue
-        out[key] = f"{n}.25" if kind == "decimal" else "dato ficticio MF-06"
+        out[key] = f"{n}.25" if kind == "decimal" else (str(n) if kind == "integer" else "dato ficticio MF-06")
     return out
 
 
@@ -136,7 +136,8 @@ class DefinitionTests(Base):
     async def test_the_new_p1_25_fields_are_at_the_requested_positions_and_are_digitable(self):
         rows = self.connection.execute("SELECT key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (self.v2[P125],)).fetchall()
         self.assertEqual(rows[0][:5], ("caudal_rh_ml_min", "Caudal RH [ml/min]", "decimal", "manual", False))
-        self.assertEqual(rows[-1][:5], ("n_cortes", "# Cortes", "decimal", "manual", False))
+        self.assertEqual(rows[-2][:5], ("n_cortes", "# Cortes", "integer", "manual", True), "# Cortes: entero obligatorio, inmediatamente antes de Observaciones")
+        self.assertEqual(rows[-1][0], "observaciones")
         self.assertEqual([r[5] for r in rows], list(range(1, 14)))
         # los demás campos conservan tipo y obligatoriedad de la v1
         rest = "SELECT key, value_type, required FROM vinto_config.field_definition WHERE form_version_id = %s AND key <> ALL(%s) ORDER BY key"
@@ -162,7 +163,7 @@ class WriteTests(Base):
                 self.assertEqual(new.status, 201, (code, machine, new.text))
                 capture = new.json()["capture"]
                 self.assertEqual((capture["form"]["version_number"], capture["bobbin"], capture["machine"]["code"]), (2, {"id": bobbin["id"], "code": bobbin["code"]}, machine))
-                self.assertEqual(capture["values"], values)
+                self.assertEqual(capture["values"], {k: (int(v) if k == "n_cortes" else v) for k, v in values.items()})  # el entero vuelve como número JSON
                 for key in REMOVED[code]:
                     self.assertNotIn(key, capture["values"])
                     self.assertIn(key, old_capture["values"], "la captura histórica conserva sus valores")
@@ -176,27 +177,53 @@ class WriteTests(Base):
                 self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id = %s", (old_capture["id"],)), len(self.definition(self.v1[code])) - 1)  # observaciones omitida
                 self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.field_definition WHERE form_version_id = %s", (self.v1[code],)), len(self.definition(self.v1[code])))
 
-    async def test_the_new_p1_25_fields_are_saved_typed_and_are_optional(self):
+    async def test_n_cortes_is_a_required_non_negative_integer_and_caudal_rh_an_optional_decimal(self):
         _, bobbin = await self.bobbin("MP1")
         base = values_for(self.definition(self.v2[P125]), skip=ADDED[P125])
-        # 1) con los dos campos nuevos digitados: se guardan tipados (decimal exacto)
-        full = {**base, "caudal_rh_ml_min": "12.5", "n_cortes": "3"}
-        reply = await self.submit(bobbin["id"], self.body_of(P125, full))
-        self.assertEqual(reply.status, 201, reply.text)
-        capture = reply.json()["capture"]
-        self.assertEqual((capture["values"]["caudal_rh_ml_min"], capture["values"]["n_cortes"]), ("12.5", "3"))
-        stored = self.rows(capture["id"])
-        self.assertEqual((stored["caudal_rh_ml_min"], stored["n_cortes"]), ("decimal:12.5", "decimal:3"))
-        # 2) sin ellos: es válido (opcionales, a confirmar con el funcional) y no se guarda nada para ellos
-        other = await self.submit(bobbin["id"], self.body_of(P125, base))
-        self.assertEqual(other.status, 201, other.text)
-        self.assertNotIn("caudal_rh_ml_min", other.json()["capture"]["values"])
-        # 3) un valor no numérico en cualquiera de los dos es 422 y no deja filas
-        count = self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id = %s", (bobbin["id"],))
-        for key in ADDED[P125]:
-            bad = await self.submit(bobbin["id"], self.body_of(P125, {**base, key: "abc"}))
-            self.assertEqual(bad.status, 422, (key, bad.text))
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id = %s", (bobbin["id"],)), count)
+        count = lambda: self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE bobbin_id = %s", (bobbin["id"],))
+        # 1) válidos: 0 y enteros positivos (como número JSON o como texto); Caudal RH se guarda decimal exacto
+        for n, given in enumerate((0, "0", 5, "12", " 7 ")):
+            reply = await self.submit(bobbin["id"], self.body_of(P125, {**base, "n_cortes": given, "caudal_rh_ml_min": "12.5"}))
+            self.assertEqual(reply.status, 201, (given, reply.text))
+            capture = reply.json()["capture"]
+            self.assertEqual(capture["values"]["n_cortes"], int(str(given).strip()))
+            self.assertEqual(capture["values"]["caudal_rh_ml_min"], "12.5")
+            stored = {k: (t, i, d) for k, t, i, d in self.connection.execute(
+                """SELECT f.key, d.value_type, d.value_integer, d.value_decimal FROM vinto_txn.capture_detail d JOIN vinto_config.field_definition f ON f.id = d.field_definition_id
+                   WHERE d.capture_id = %s AND f.key IN ('n_cortes','caudal_rh_ml_min')""", (capture["id"],)).fetchall()}
+            self.assertEqual(stored["n_cortes"], ("integer", int(str(given).strip()), None))
+            self.assertEqual(str(stored["caudal_rh_ml_min"][2]), "12.5")
+        # 2) Caudal RH es opcional
+        without = await self.submit(bobbin["id"], self.body_of(P125, {**base, "n_cortes": 2}))
+        self.assertEqual(without.status, 201, without.text)
+        self.assertNotIn("caudal_rh_ml_min", without.json()["capture"]["values"])
+        valid = count()
+        # 3) inválidos: negativos, decimales, texto, vacío, ausente, booleano, nulo → 422 y no dejan filas
+        for bad in (-1, "-1", "-0.5", 1.5, "1.5", "1,5", "2.0", "abc", "1e3", "+3", "", "   ", None, True, [], {}):
+            reply = await self.submit(bobbin["id"], self.body_of(P125, {**base, "n_cortes": bad}))
+            self.assertEqual(reply.status, 422, (bad, reply.text))
+        missing = await self.submit(bobbin["id"], self.body_of(P125, base))
+        self.assertEqual(missing.status, 422, missing.text)
+        self.assertIn("n_cortes", missing.text)
+        # 4) Caudal RH no numérico → 422
+        self.assertEqual((await self.submit(bobbin["id"], self.body_of(P125, {**base, "n_cortes": 1, "caudal_rh_ml_min": "abc"}))).status, 422)
+        self.assertEqual(count(), valid, "ningún intento inválido dejó filas")
+
+    async def test_n_cortes_is_not_asked_of_version_1_captures_nor_of_other_forms(self):
+        _, bobbin = await self.bobbin("MP3")
+        old = await self.submit_v1(bobbin, P125)
+        self.assertEqual(old.status, 201, old.text)
+        self.assertNotIn("n_cortes", old.json()["capture"]["values"])
+        self.assertEqual(old.json()["capture"]["form"]["version_number"], 1)
+        # P1-24 no tiene «# Cortes»: enviarlo es un campo desconocido
+        values = {**values_for(self.definition(self.v2[P124])), "n_cortes": 1}
+        self.assertEqual((await self.submit(bobbin["id"], self.body_of(P124, values))).status, 422)
+        # la regla del mínimo vive solo en P1-25 y solo si la versión declara el campo
+        self.assertEqual(_quality_service.MIN_INTEGER_VALUES, {P125: {"n_cortes": 0}})
+        # el backend elige la versión 2 para capturas nuevas de P1-24 y P1-25
+        for code in (P124, P125):
+            new = await self.submit(bobbin["id"], self.body_of(code, values_for(self.definition(self.v2[code]))))
+            self.assertEqual((new.status, new.json()["capture"]["form"]["version_number"]), (201, 2), code)
 
     async def test_removed_fields_are_not_required_and_are_rejected_if_sent(self):
         for code in (P124, P125):

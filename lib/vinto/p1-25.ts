@@ -1,5 +1,5 @@
-// MF-06 (MD_Ejec 27, 28 y 29) · versión 2: se retiran «Número de bobina», «Producto» y «Gramaje laboratorio g/m²»; se añade «Caudal RH [ml/min]» al inicio y «# Cortes» al final, ambos digitables y OPCIONALES (obligatoriedad y
-// tipo del conteo pendientes de confirmar con el funcional; opcionales también para que las capturas de la versión 1, que no los tienen, sigan siendo legibles con el parser estricto). La versión 1 y sus capturas se conservan.
+// MF-06 (MD_Ejec 27, 28 y 29) · versión 2: se retiran «Número de bobina», «Producto» y «Gramaje laboratorio g/m²»; «Caudal RH [ml/min]» se añade al inicio (decimal, OPCIONAL) y «# Cortes» antes de «Observaciones»
+// (entero no negativo, OBLIGATORIO solo desde la versión 2: las capturas de la versión 1 no lo tienen y se leen sin exigirlo; `sinceVersion`). La versión 1 y sus capturas se conservan.
 // VINTO-P1-25 «Resistencia en húmedo-curado» (Calidad): contrato técnico CANDIDATO, control ligado a UNA BOBINA física F3 de MP1 / MP3 (POST /api/quality/bobbins/{id}/captures). Los catorce campos manuales son
 // exactamente los de la definición legacy (form_25_resistencia_en_humedo_curado, 20 campos: 14 manuales, 3 automáticos y 3 calculados), con sus claves, etiquetas, orden, tipos y obligatoriedad: número de bobina,
 // producto y `curado_min` son TEXTO (curado_min NO se convierte a decimal por su nombre); gramaje de laboratorio, crepado, las seis resistencias y las dos elongaciones son decimales; `observaciones` es opcional.
@@ -27,8 +27,8 @@ export const P125_FIELDS: readonly FieldSpec[] = [
     { key: "resistencia_longitudinal_humeda_medio_kgf", label: "Resistencia longitudinal húmeda medio kgf", kind: "decimal", required: true },
     { key: "resistencia_longitudinal_humeda_extremo_kgf", label: "Resistencia longitudinal húmeda extremo kgf", kind: "decimal", required: true },
     { key: "elongacion_media_transversal", label: "Elongación media transversal", kind: "decimal", required: true },
+    { key: "n_cortes", label: "# Cortes", kind: "integer", required: true, sinceVersion: 2 },
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
-    { key: "n_cortes", label: "# Cortes", kind: "decimal", required: false },
 ];
 // Campos de la versión 1 retirados en la versión 2 (MF-06): solo lectura, para el historial de las capturas antiguas.
 export const P125_LEGACY_FIELDS: readonly FieldSpec[] = [

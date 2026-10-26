@@ -17,8 +17,10 @@ import {
 
 export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no una regla funcional
 
-export type FieldKind = "text" | "decimal" | "textarea" | "time"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
-export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string };
+export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
+// `integer` (MF-06): entero NO negativo (0, 1, 2…), guardado como `integer` en PostgreSQL; el backend lo devuelve como número JSON y aquí se lee como texto.
+// `sinceVersion` (MF-06): el campo existe desde esa versión del formulario; las capturas de versiones anteriores no lo traen y se leen sin exigirlo.
+export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number };
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
 // Respuesta de una captura: la de Producción lleva asignación, OT y línea; la de Calidad por máquina no (lleva `recorded_by`); la de Calidad por bobina lleva `bobbin`, OT y línea, sin asignación. Los campos de
@@ -37,6 +39,8 @@ export type CandidateSubmitOutcome = SubmitOutcomeOf<CandidateCapture>;
 // Hora estructural: HH:MM o HH:MM:SS (el backend devuelve HH:MM:SS), 00-23 y 00-59. Sin zona, fracciones ni formatos alternativos; no se interpreta ni se compara con otra hora.
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const isTimeText = (value: unknown): value is string => typeof value === "string" && TIME_PATTERN.test(value);
+export const NON_NEGATIVE_INTEGER = /^\d{1,9}$/;
+const isIntegerText = (value: unknown): value is string => typeof value === "string" && NON_NEGATIVE_INTEGER.test(value);
 const isDecimalText = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_DECIMAL_CHARS && DECIMAL.test(value);
 const pair = (value: unknown): { code: string; name: string } | null => isRec(value) && isStr(value.code) && typeof value.name === "string" ? { code: value.code, name: value.name } : null;
 
@@ -57,14 +61,14 @@ function parseMachineEnvelope(value: unknown, parseValues: (values: unknown) => 
 }
 
 // Respuesta de Calidad por bobina: bobina, máquina, turno, fecha operativa, OT y línea (de la F3 de origen), sin asignación. Se rechaza una captura de OTRO formulario.
-function parseBobbinEnvelope(value: unknown, parseValues: (values: unknown) => CandidateValues | null, expectedFormCode: string): CandidateCapture | null {
+function parseBobbinEnvelope(value: unknown, parseValues: (values: unknown, version?: number) => CandidateValues | null, expectedFormCode: string): CandidateCapture | null {
     if (!isRec(value) || !isStr(value.id) || !isStr(value.status) || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return null;
     if (!isStr(value.captured_at) || !(value.submitted_at === null || isStr(value.submitted_at)) || !isStr(value.operating_date)) return null;
     const form = value.form, bobbin = value.bobbin, machine = pair(value.machine), shift = pair(value.shift), order = value.work_order, line = value.line;
     if (!isRec(form) || form.code !== expectedFormCode || typeof form.version_number !== "number" || typeof form.name !== "string" || !machine || !shift) return null;
     if (!isRec(bobbin) || !isStr(bobbin.id) || !isStr(bobbin.code) || !isRec(order) || !isStr(order.id) || !isStr(order.number)) return null;
     if (!isRec(line) || !isStr(line.id) || !isStr(line.line_code) || !isStr(line.pv_reference) || !isRec(line.article) || !isStr(line.article.code) || typeof line.article.description !== "string") return null;
-    const values = parseValues(value.values);
+    const values = parseValues(value.values, form.version_number as number);
     if (values === null) return null;
     return {
         id: value.id, status: value.status, revision: value.revision, captured_at: value.captured_at, submitted_at: value.submitted_at,
@@ -83,13 +87,15 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
     if (new Set([...keys, ...legacy.map((f) => f.key)]).size !== keys.length + legacy.length || keys.includes("_groups")) throw new Error(`Definición candidata inválida: ${code}`);
 
     // Parser ESTRICTO de las respuestas del backend: obligatorios presentes y no vacíos (decimales con formato decimal), opcionales ausentes o texto; lo demás se ignora.
-    function parseValues(value: unknown): CandidateValues | null {
+    function parseValues(value: unknown, version?: number): CandidateValues | null {
         if (!isRec(value)) return null;
         const clean: CandidateValues = {};
         for (const field of fields) {
-            const raw = value[field.key];
-            if (raw === undefined) { if (field.required) return null; continue; }
+            const raw = value[field.key] === undefined ? undefined : field.kind === "integer" && typeof value[field.key] === "number" ? String(value[field.key]) : value[field.key];
+            const absentOk = !field.required || (field.sinceVersion !== undefined && version !== undefined && version < field.sinceVersion); // un campo posterior a la versión de la captura no se exige
+            if (raw === undefined) { if (!absentOk) return null; continue; }
             if (typeof raw !== "string") return null;
+            if (field.kind === "integer" && !isIntegerText(raw)) return null;
             if (field.required && raw === "") return null;
             if (field.kind === "decimal" && !isDecimalText(raw)) return null;
             if (field.kind === "time" && !isTimeText(raw)) return null;
@@ -116,6 +122,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
         for (const field of fields) {
             let text = (draft[field.key] ?? "").trim();
             if (field.kind === "decimal") text = text.replace(",", ".");
+            if (field.kind === "integer" && text && !isIntegerText(text)) { errors.push(`${field.label}: debe ser un número entero no negativo (por ejemplo 3).`); continue; }
             if (!text) { if (field.required) errors.push(`${field.label}: es obligatorio.`); continue; }
             if (field.kind === "decimal" && !isDecimalText(text)) { errors.push(`${field.label}: debe ser un número decimal (por ejemplo 12.5).`); continue; }
             if (field.kind === "time" && !isTimeText(text)) { errors.push(`${field.label}: debe ser una hora válida HH:MM (por ejemplo 07:30).`); continue; }

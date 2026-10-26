@@ -105,7 +105,7 @@
     },
     {
       "path": "lib/vinto/p1-25.ts",
-      "sha256": "fddda022e45f9b620351aa8db1004a9798ca7481724fcdc105d4656d16315206",
+      "sha256": "73b15ee26275a52b27fcd4eed82419ff31657a1948748a6cd455b5cd6d9b479a",
       "scope": "candidate-fields:VINTO-P1-25"
     },
     {
@@ -272,8 +272,8 @@
     },
     {
       "path": "forms/VINTO-P1-25.json",
-      "sha256": "7e90eca10cff13442027d40005beaa2c6e61684c1f1c75e297bbe05614e3a44c",
-      "bytes": 3394
+      "sha256": "a30b22425aeca590aa8f7fb7e84bbea4120d5bbcccdcbbc9cb226a201457852d",
+      "bytes": 3393
     },
     {
       "path": "forms/VINTO-P1-26.json",

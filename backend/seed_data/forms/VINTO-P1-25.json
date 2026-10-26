@@ -113,23 +113,23 @@
       "display_order": 11
     },
     {
+      "key": "n_cortes",
+      "label": "# Cortes",
+      "value_type": "integer",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 12
+    },
+    {
       "key": "observaciones",
       "label": "Observaciones",
       "value_type": "textarea",
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 12
-    },
-    {
-      "key": "n_cortes",
-      "label": "# Cortes",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": false,
-      "unit": null,
       "display_order": 13
     }
   ],
-  "definition_checksum": "e14b1ccc44272454b52e7141131e348bb8a6b6def852fd8a810cbcf2e24cb847"
+  "definition_checksum": "241af3b5ebafde96efdff91c2fa0cce93aad19c9900172d23aaeffef29cffce3"
 }

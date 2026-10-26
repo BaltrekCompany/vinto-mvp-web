@@ -530,7 +530,8 @@ test("a valid P1-21/P1-24/P1-25/P1-28 capture parses as 'candidate' with its own
 test("MF-06: una captura de la versión 2 (sin los campos retirados) y una de la versión 1 se leen; el historial conserva los retirados de la antigua como «versión anterior»", () => {
   const v2_24 = Object.fromEntries(Object.entries(P124_VALUES).filter(([k]) => !["numero_de_bobina", "producto"].includes(k)));
   const v2_25 = Object.fromEntries(Object.entries(P125_VALUES).filter(([k]) => !["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"].includes(k)));
-  const history = parse([p124({ values: v2_24, form: { code: P1_24_CODE, version_number: 2, name: "x" } }), p125({ id: "cccccccc-dddd-4ddd-8ddd-dddddddddddd", values: { ...v2_25, caudal_rh_ml_min: "12.5", n_cortes: "3" }, form: { code: P1_25_CODE, version_number: 2, name: "x" } }), p125()]);
+  const v2_25b = { ...v2_25 };
+  const history = parse([p124({ values: v2_24, form: { code: P1_24_CODE, version_number: 2, name: "x" } }), p125({ id: "cccccccc-dddd-4ddd-8ddd-dddddddddddd", values: { ...v2_25, caudal_rh_ml_min: "12.5", n_cortes: 3 }, form: { code: P1_25_CODE, version_number: 2, name: "x" } }), p125()]);
   assert.deepEqual(history.entries.map((e) => e.kind), ["candidate", "candidate", "candidate"]);
   assert.deepEqual(history.entries[0].capture.values, v2_24);
   assert.deepEqual([history.entries[1].capture.values.caudal_rh_ml_min, history.entries[1].capture.values.n_cortes], ["12.5", "3"]);

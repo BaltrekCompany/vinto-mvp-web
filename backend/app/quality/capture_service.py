@@ -47,6 +47,9 @@ ENABLED_BOBBIN_CANDIDATE_FORM_CODES: frozenset = BOBBIN_CANDIDATE_FORM_CODES
 # Campo manual que declara el número de bobina: debe ser exactamente el código de la Bobina de la ruta (se compara el texto recortado, sin interpretarlo).
 BOBBIN_CODE_FIELDS: dict = {"VINTO-P1-21": "numero_de_bobina", "VINTO-P1-24": "numero_de_bobina", "VINTO-P1-25": "numero_de_bobina", "VINTO-P1-28": "numero_de_bobina"}
 
+# Valor mínimo de campos enteros por formulario (MF-06): «# Cortes» de P1-25 es un entero NO negativo. El tipo `integer` admite negativos; la regla vive aquí y solo se aplica si la versión publicada declara el campo.
+MIN_INTEGER_VALUES: dict = {"VINTO-P1-25": {"n_cortes": 0}}
+
 
 @dataclass(frozen=True)
 class QualityCaptureView:
@@ -161,6 +164,12 @@ def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):
         raise CaptureValidationError(f"{key} no coincide con la bobina seleccionada")
 
 
+def _check_minimums(form_code, clean):
+    below = sorted(k for k, minimum in MIN_INTEGER_VALUES.get(form_code, {}).items() if k in clean and clean[k] < minimum)
+    if below:
+        raise CaptureValidationError("; ".join(f"{k}: debe ser un entero no negativo" for k in below))
+
+
 def list_bobbin_quality_captures(connection, bobbin_id, *, form_code=None, sectors) -> list[QualityCaptureView]:
     """Capturas de Calidad enviadas de una Bobina (más recientes primero; orden solo de presentación). Sin paginación. `form_code` opcional filtra por formulario (un candidato no habilitado: 422)."""
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
@@ -229,6 +238,7 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         fields = cs.load_fields(connection, form_version_id)  # solo campos manuales sin grupo; lo demás -> UNSUPPORTED_FORM_DEFINITION
         clean = cs.validate_values(fields, values)
         _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields)
+        _check_minimums(form_code, clean)
 
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)
         cs._insert_details(connection, capture_id, form_version_id, fields, clean)
