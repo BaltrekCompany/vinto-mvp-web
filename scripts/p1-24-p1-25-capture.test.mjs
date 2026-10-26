@@ -22,8 +22,8 @@ const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
 const fill = (fields, textValue = "texto") => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.key === "numero_de_bobina" ? "12" : f.key === "observaciones" ? " nota " : textValue]));
 const CASES = [
-  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED, pending: P124_PENDING, counts: [12, 4, 2], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
-  { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED, pending: P125_PENDING, counts: [14, 3, 3], screen: "p125", machines: ["por_definir"] },
+  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: [], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
+  { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED, pending: P125_PENDING, counts: [14, 3, 3], removed: ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"], added: ["caudal_rh_ml_min", "n_cortes"], screen: "p125", machines: ["por_definir"] },
 ];
 
 const envelope = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
@@ -36,11 +36,13 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.equal(legacy.area, "quality");
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], c.counts, c.name);
     assert.equal(legacy.fields.length, c.counts[0] + c.counts[1] + c.counts[2]);
-    const m = legacy.fields.filter(isManual);
-    assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
-    assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
-    assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
+    const m = legacy.fields.filter(isManual).filter((f) => !c.removed.includes(f.key)); // MF-06: versión 2 = definición legacy menos los campos retirados (más los añadidos, comprobados aparte)
+    const kept = c.fields.filter((f) => !c.added.includes(f.key));
+    assert.deepEqual(c.removed.filter((k) => c.fields.some((f) => f.key === k)), [], `${c.name}: los retirados ya no existen`);
+    assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
+    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(c.fields.some((x) => x.key === f.key), false, `${c.name}: ${f.key} no se digita`);
     assert.deepEqual(legacy.allowedMachineIds, c.machines, `${c.name}: alcance legacy documentado`);
     assert.equal(c.calculated.length, c.counts[2]);
@@ -50,6 +52,10 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.equal(defOf("form_24_propiedades_fisicas_en_humedo").fields.find((f) => f.key === "promedio_transversal_humedo").type, "text"); // tipo legacy del calculado: se documenta, no se corrige
   assert.match(P124_PENDING.map((p) => p.pending).join(" "), /el transversal figura como texto en la definición legacy/);
   assert.equal(P125_FIELDS.filter((f) => f.suffix).length, 0, "las unidades de P1-25 ya están en sus etiquetas: no se duplican ni se inventan");
+  // MF-06 · P1-25 v2: «Caudal RH [ml/min]» abre el formulario y «# Cortes» lo cierra; ambos digitables y opcionales
+  assert.deepEqual([P125_FIELDS[0], P125_FIELDS.at(-1)], [{ key: "caudal_rh_ml_min", label: "Caudal RH [ml/min]", kind: "decimal", required: false }, { key: "n_cortes", label: "# Cortes", kind: "decimal", required: false }]);
+  assert.equal(P125_FIELDS.length, 13);
+  assert.equal(P124_FIELDS.length, 10);
   const u24 = defOf("form_24_propiedades_fisicas_en_humedo").fields;
   assert.deepEqual(P124_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", u24.find((f) => f.key === "gramaje").unit], ["tiempo_de_curado_condicion", u24.find((f) => f.key === "tiempo_de_curado_condicion").unit]]);
 });
@@ -59,10 +65,9 @@ test("las brechas son visibles: sin fórmulas, rebobinadoras no cubiertas, alcan
     const text = c.pending.map((p) => `${p.label} ${p.pending}`).join(" ");
     assert.match(text, /no se calculan, no se guardan ni se muestran/, c.name);
     assert.match(text, /rebobinadoras NO están cubiertas/, c.name);
-    assert.match(text, /no se contrasta con el artículo/, c.name);
     assert.match(text, /no es la hora real del ensayo/, c.name);
     assert.match(text, /no libera, rechaza ni aprueba la bobina/, c.name);
-    assert.match(text, /debe coincidir con la bobina seleccionada/, c.name);
+    assert.match(text, /Ya no se digitan \(MF-06\)/, c.name);
   }
   assert.match(P124_PENDING.map((p) => p.pending).join(" "), /MP1, MP3 y todas las rebobinadoras\. Solo se cubren bobinas F3 de MP1 \/ MP3/);
   assert.match(P125_PENDING.map((p) => p.pending).join(" "), /«por definir»/);
@@ -82,7 +87,8 @@ test("el borrador valida estructuralmente, conserva el texto tal cual y NO calcu
     assert.ok(forbidden.length > 0);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) {
       for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: bad }).errors.join(" "), /debe ser un número decimal/, `${c.name} ${f.key} ${bad}`);
-      assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
+      if (f.required) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
+      else assert.equal(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).ok, true, `${c.name}: ${f.key} es opcional`);
     }
     assert.equal(c.form.normalizeDraft(c.form.emptyDraft()).errors.length, c.fields.filter((f) => f.required).length);
   }
@@ -118,6 +124,28 @@ test("el parser exige bobina, OT y línea, su formulario y valores estrictos; ig
   }
 });
 
+test("MF-06: las capturas de la versión 1 (con los campos retirados y sin los añadidos) siguen siendo legibles con la definición de la versión 2; los valores nuevos se leen", () => {
+  const v1 = {
+    [P1_24_CODE]: { numero_de_bobina: "12", producto: "ficticio", crepado: "18.5", gramaje: "21.3", resistencia_longitudinal_humeda_centro: "1", resistencia_longitudinal_humeda_medio: "1", resistencia_longitudinal_humeda_extremo: "1",
+      resistencia_transversal_humeda_centro: "1", resistencia_transversal_humeda_medio: "1", resistencia_transversal_humeda_extremo: "1", tiempo_de_curado_condicion: "30" },
+    [P1_25_CODE]: { numero_de_bobina: "12", producto: "ficticio", crepado: "17", gramaje_laboratorio_g_m2: "20.5", curado_min: "30 min", resistencia_longitudinal_centro_kgf: "1", resistencia_longitudinal_medio_kgf: "1", resistencia_longitudinal_extremo_kgf: "1",
+      elongacion_media_longitudinal: "2", resistencia_longitudinal_humeda_centro_kgf: "1", resistencia_longitudinal_humeda_medio_kgf: "1", resistencia_longitudinal_humeda_extremo_kgf: "1", elongacion_media_transversal: "3" },
+  };
+  for (const c of CASES) {
+    const old = c.form.parseCapture(envelope(c.formCode, v1[c.formCode], { form: { code: c.formCode, version_number: 1, name: "x" } }));
+    assert.notEqual(old, null, `${c.name}: la captura v1 se lee`);
+    for (const key of c.removed) assert.equal(old.values[key], v1[c.formCode][key], `${c.name}: ${key} (campo retirado) se conserva al LEER la captura antigua`); // solo lectura: no entra en el borrador ni en el payload
+    assert.equal(old.values.crepado, v1[c.formCode].crepado);
+    for (const key of c.added) assert.equal(key in old.values, false, `${c.name}: ${key} no existe en la v1`);
+  }
+  const fresh = P125.parseCapture(envelope(P1_25_CODE, { ...P125.normalizeDraft(fill(P125_FIELDS)).values, caudal_rh_ml_min: "12.5", n_cortes: "3" }, { form: { code: P1_25_CODE, version_number: 2, name: "x" } }));
+  assert.deepEqual([fresh?.values.caudal_rh_ml_min, fresh?.values.n_cortes], ["12.5", "3"]);
+  const without = P125.normalizeDraft(fill(P125_FIELDS.filter((f) => !["caudal_rh_ml_min", "n_cortes"].includes(f.key))));
+  assert.equal(without.ok, true, "los campos nuevos son opcionales");
+  for (const c of CASES) assert.deepEqual(Object.keys(c.form.emptyDraft()).filter((k) => c.removed.includes(k)), [], `${c.name}: los retirados no están en el borrador`);
+  assert.deepEqual(Object.keys(P125.createAttempt(fill(P125_FIELDS), BOBBIN, DEVICE, () => UUID).attempt.payload.values).filter((k) => ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"].includes(k)), [], "el payload nuevo no envía los retirados");
+});
+
 const response = (status, data, errCode) => (status >= 200 && status < 300 ? { ok: true, status, data } : { ok: false, kind: "http", status, code: errCode });
 
 test("flujo de envío: 201, 200 idempotente, rechazos definitivos, sesión y reconciliación con el MISMO capture_id", async () => {
@@ -151,7 +179,7 @@ test("la oferta sale del backend y es por la MÁQUINA de la bobina: sin disponib
   for (const c of CASES) {
     const [codeConst, formConst] = c.formCode === P1_24_CODE ? ["P1_24_CODE", "P124"] : ["P1_25_CODE", "P125"];
     assert.ok(registry.includes(`${c.screen}: make({ code: ${codeConst}, form: ${formConst},`), c.name);
-    assert.ok(registry.includes(`bobbinCodeField: ${formConst}_BOBBIN_CODE_FIELD`), c.name);
+    assert.equal(registry.includes(`${formConst}_BOBBIN_CODE_FIELD`), false, `${c.name}: ya no hay campo de número de bobina que precargar`);
   }
 });
 

@@ -527,6 +527,19 @@ test("a valid P1-21/P1-24/P1-25/P1-28 capture parses as 'candidate' with its own
   }
 });
 
+test("MF-06: una captura de la versión 2 (sin los campos retirados) y una de la versión 1 se leen; el historial conserva los retirados de la antigua como «versión anterior»", () => {
+  const v2_24 = Object.fromEntries(Object.entries(P124_VALUES).filter(([k]) => !["numero_de_bobina", "producto"].includes(k)));
+  const v2_25 = Object.fromEntries(Object.entries(P125_VALUES).filter(([k]) => !["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"].includes(k)));
+  const history = parse([p124({ values: v2_24, form: { code: P1_24_CODE, version_number: 2, name: "x" } }), p125({ id: "cccccccc-dddd-4ddd-8ddd-dddddddddddd", values: { ...v2_25, caudal_rh_ml_min: "12.5", n_cortes: "3" }, form: { code: P1_25_CODE, version_number: 2, name: "x" } }), p125()]);
+  assert.deepEqual(history.entries.map((e) => e.kind), ["candidate", "candidate", "candidate"]);
+  assert.deepEqual(history.entries[0].capture.values, v2_24);
+  assert.deepEqual([history.entries[1].capture.values.caudal_rh_ml_min, history.entries[1].capture.values.n_cortes], ["12.5", "3"]);
+  assert.equal(history.entries[2].capture.values.gramaje_laboratorio_g_m2, "18.250", "el valor retirado de una captura v1 no se pierde al leerla");
+  const component = readFileSync(new URL("../components/vinto/quality-bobbin-history.tsx", import.meta.url), "utf8");
+  assert.match(component, /\(versión anterior\)/);
+  assert.match(component, /f\.key !== "numero_de_bobina" && capture\.values\[f\.key\] !== undefined/);
+});
+
 test("each candidate's own strict parser rejects the other three forms (fields never cross between candidates)", () => {
   assert.equal(P121.parseCapture(p124()), null);
   assert.equal(P124.parseCapture(p125()), null);
@@ -540,7 +553,7 @@ test("each candidate's own strict parser rejects the other three forms (fields n
 
 test("a candidate capture missing a required field is 'invalid' (never 'unsupported', never shown with partial values)", () => {
   for (const [make, code] of [[p121, P1_21_CODE], [p124, P1_24_CODE], [p125, P1_25_CODE], [p128, P1_28_CODE]]) {
-    const missingKey = Object.keys(make().values).find((k) => k !== "observaciones");
+    const missingKey = code === P1_24_CODE || code === P1_25_CODE ? "crepado" : Object.keys(make().values).find((k) => k !== "observaciones"); // P1-24 / P1-25: los primeros valores del fixture v1 son campos retirados (opcionales al leer)
     const bad = make({ values: Object.fromEntries(Object.entries(make().values).filter(([k]) => k !== missingKey)) });
     const history = parse([bad]);
     assert.equal(history.entries[0].kind, "invalid", code);

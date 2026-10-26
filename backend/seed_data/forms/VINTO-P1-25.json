@@ -6,7 +6,7 @@
   "name": "Resistencia en húmedo – curado",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -14,22 +14,13 @@
   "groups": [],
   "fields": [
     {
-      "key": "numero_de_bobina",
-      "label": "Número de bobina",
-      "value_type": "text",
+      "key": "caudal_rh_ml_min",
+      "label": "Caudal RH [ml/min]",
+      "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 1
-    },
-    {
-      "key": "producto",
-      "label": "Producto",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 2
     },
     {
       "key": "crepado",
@@ -38,16 +29,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 3
-    },
-    {
-      "key": "gramaje_laboratorio_g_m2",
-      "label": "Gramaje laboratorio g/m²",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 4
+      "display_order": 2
     },
     {
       "key": "curado_min",
@@ -56,7 +38,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 3
     },
     {
       "key": "resistencia_longitudinal_centro_kgf",
@@ -65,7 +47,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 6
+      "display_order": 4
     },
     {
       "key": "resistencia_longitudinal_medio_kgf",
@@ -74,7 +56,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
+      "display_order": 5
     },
     {
       "key": "resistencia_longitudinal_extremo_kgf",
@@ -83,7 +65,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 8
+      "display_order": 6
     },
     {
       "key": "elongacion_media_longitudinal",
@@ -92,7 +74,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 9
+      "display_order": 7
     },
     {
       "key": "resistencia_longitudinal_humeda_centro_kgf",
@@ -101,7 +83,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 10
+      "display_order": 8
     },
     {
       "key": "resistencia_longitudinal_humeda_medio_kgf",
@@ -110,7 +92,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 11
+      "display_order": 9
     },
     {
       "key": "resistencia_longitudinal_humeda_extremo_kgf",
@@ -119,7 +101,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 12
+      "display_order": 10
     },
     {
       "key": "elongacion_media_transversal",
@@ -128,7 +110,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 13
+      "display_order": 11
     },
     {
       "key": "observaciones",
@@ -137,8 +119,17 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 14
+      "display_order": 12
+    },
+    {
+      "key": "n_cortes",
+      "label": "# Cortes",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 13
     }
   ],
-  "definition_checksum": "39e6e0928e03f9c39504b4f291292477ed7118b38ec81a80c24467dc587dc7c3"
+  "definition_checksum": "e14b1ccc44272454b52e7141131e348bb8a6b6def852fd8a810cbcf2e24cb847"
 }

@@ -74,10 +74,13 @@ function parseBobbinEnvelope(value: unknown, parseValues: (values: unknown) => C
     };
 }
 
-export function defineCandidateForm(code: string, fields: readonly FieldSpec[], options: { context?: CandidateContext } = {}) {
+// `legacy` (MF-06): campos de versiones ANTERIORES ya retirados del formulario. Nunca se digitan, no entran en el borrador ni en el payload; solo se LEEN (opcionales, con el mismo formato) para que el historial de las
+// capturas antiguas siga mostrando lo que se guardó.
+export function defineCandidateForm(code: string, fields: readonly FieldSpec[], options: { context?: CandidateContext; legacy?: readonly FieldSpec[] } = {}) {
     const context: CandidateContext = options.context ?? "assignment";
+    const legacy = options.legacy ?? [];
     const keys = fields.map((f) => f.key);
-    if (new Set(keys).size !== keys.length || keys.includes("_groups")) throw new Error(`Definición candidata inválida: ${code}`);
+    if (new Set([...keys, ...legacy.map((f) => f.key)]).size !== keys.length + legacy.length || keys.includes("_groups")) throw new Error(`Definición candidata inválida: ${code}`);
 
     // Parser ESTRICTO de las respuestas del backend: obligatorios presentes y no vacíos (decimales con formato decimal), opcionales ausentes o texto; lo demás se ignora.
     function parseValues(value: unknown): CandidateValues | null {
@@ -90,6 +93,12 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (field.required && raw === "") return null;
             if (field.kind === "decimal" && !isDecimalText(raw)) return null;
             if (field.kind === "time" && !isTimeText(raw)) return null;
+            clean[field.key] = raw;
+        }
+        for (const field of legacy) { // campos retirados: se conservan solo si la captura antigua los trae
+            const raw = value[field.key];
+            if (raw === undefined) continue;
+            if (typeof raw !== "string" || (field.kind === "decimal" && !isDecimalText(raw))) return null;
             clean[field.key] = raw;
         }
         return clean;
@@ -131,7 +140,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
     const submitAttempt = (attempt: CandidateAttempt, deps: CandidateSubmitDeps): Promise<CandidateSubmitOutcome> => submitAttemptOf(attempt, deps);
     const reconcile = (captureId: string, deps: CandidateSubmitDeps): Promise<CandidateSubmitOutcome> => reconcileOf(captureId, deps);
 
-    return { code, context, fields, parseValues, parseCapture, parseSubmission, parseList, emptyDraft, normalizeDraft, buildPayload, createAttempt, submitAttempt, reconcile };
+    return { code, context, fields, legacy, parseValues, parseCapture, parseSubmission, parseList, emptyDraft, normalizeDraft, buildPayload, createAttempt, submitAttempt, reconcile };
 }
 
 export type CandidateForm = ReturnType<typeof defineCandidateForm>;

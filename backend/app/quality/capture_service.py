@@ -149,10 +149,11 @@ def available_bobbin_forms(connection, *, sectors) -> list[dict]:
     return available_quality_forms(connection, sectors, BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
 
 
-def _check_declared_bobbin(connection, form_code, bobbin_id, clean):
-    """Un formulario que declara el número de bobina solo se acepta si coincide con la Bobina seleccionada (sin normalizar más que recortar espacios)."""
+def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):
+    """Un formulario que declara el número de bobina solo se acepta si coincide con la Bobina seleccionada (sin normalizar más que recortar espacios).
+    MF-06: si la versión publicada ya no declara ese campo (P1-24 / P1-25 versión 2), no hay nada que contrastar: la Bobina viene de la ruta."""
     key = BOBBIN_CODE_FIELDS.get(form_code)
-    if key is None:
+    if key is None or key not in {f.key for f in fields}:
         return
     declared = clean.get(key)
     code = connection.execute("SELECT code FROM vinto_txn.bobbin WHERE id = %s", (bobbin_id,)).fetchone()[0]
@@ -227,7 +228,7 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         form_version_id = cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA)
         fields = cs.load_fields(connection, form_version_id)  # solo campos manuales sin grupo; lo demás -> UNSUPPORTED_FORM_DEFINITION
         clean = cs.validate_values(fields, values)
-        _check_declared_bobbin(connection, form_code, bobbin_id, clean)
+        _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields)
 
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)
         cs._insert_details(connection, capture_id, form_version_id, fields, clean)
