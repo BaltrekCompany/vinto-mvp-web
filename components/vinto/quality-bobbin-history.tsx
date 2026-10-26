@@ -11,8 +11,8 @@ import {
     type QualityHistoryEntry, type QualityHistoryLoad, type QualityHistoryMeta,
 } from "@/lib/vinto/quality-history";
 import { P121_FIELDS, P1_21_CODE } from "@/lib/vinto/p1-21";
-import { P124_FIELDS, P1_24_CODE } from "@/lib/vinto/p1-24";
-import { P125_FIELDS, P1_25_CODE } from "@/lib/vinto/p1-25";
+import { P124_FIELDS, P124_LEGACY_FIELDS, P1_24_CODE } from "@/lib/vinto/p1-24";
+import { P125_FIELDS, P125_LEGACY_FIELDS, P1_25_CODE } from "@/lib/vinto/p1-25";
 import { P128_FIELDS, P128_OFFICIAL_STATUS_NOTE, P1_28_CODE } from "@/lib/vinto/p1-28";
 import type { Resource } from "@/lib/vinto/use-central";
 
@@ -103,17 +103,20 @@ function EntryCard({ entry, index, total }: { entry: QualityHistoryEntry; index:
 // captura; el código de bobina ya se muestra en el encabezado y no se repite aquí. P1-28 es DOCUMENTAL: su nota de estado oficial se
 // agrega aparte y nunca sustituye al estado oficial de Calidad mostrado en el encabezado.
 const CANDIDATE_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_21_CODE]: P121_FIELDS, [P1_24_CODE]: P124_FIELDS, [P1_25_CODE]: P125_FIELDS, [P1_28_CODE]: P128_FIELDS };
+// Campos retirados por versiones nuevas (MF-06): se muestran solo si la captura antigua los trae, marcados como «versión anterior». El número de bobina ya figura en el encabezado y no se repite.
+const CANDIDATE_LEGACY_FIELDS: Readonly<Record<string, readonly FieldSpec[]>> = { [P1_24_CODE]: P124_LEGACY_FIELDS, [P1_25_CODE]: P125_LEGACY_FIELDS };
 const CANDIDATE_OFFICIAL_NOTE: Readonly<Record<string, string>> = { [P1_28_CODE]: P128_OFFICIAL_STATUS_NOTE };
 
 function CandidateDetail({ capture }: { capture: CandidateCapture }) {
     const fields = (CANDIDATE_FIELDS[capture.form.code] ?? []).filter(f => f.key !== "observaciones");
+    const legacy = (CANDIDATE_LEGACY_FIELDS[capture.form.code] ?? []).filter(f => f.key !== "numero_de_bobina" && capture.values[f.key] !== undefined);
     const officialNote = CANDIDATE_OFFICIAL_NOTE[capture.form.code];
     const notes = capture.values.observaciones;
     return <div className="mt-4 space-y-4">
         <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">{fields.map(f => {
             const raw = capture.values[f.key];
             return <Meta key={f.key} label={f.label} value={raw === undefined ? "—" : withUnit(raw, f.suffix)}/>;
-        })}</dl>
+        })}{legacy.map(f => <Meta key={f.key} label={`${f.label} (versión anterior)`} value={withUnit(capture.values[f.key], f.suffix)}/>)}</dl>
         {officialNote !== undefined && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">{officialNote}</p>}
         {notes !== undefined && notes !== "" && <div><p className="text-xs font-semibold text-slate-600">Observaciones</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{notes}</p></div>}
     </div>;
