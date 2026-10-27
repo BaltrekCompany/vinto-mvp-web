@@ -17,11 +17,13 @@ import {
 
 export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no una regla funcional
 
-export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
+export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer" | "select"; // `time` (DEV-B3): hora MANUAL HH:MM; el backend la guarda como hora real (value_time)
 // `integer` (MF-06): entero NO negativo (0, 1, 2…), guardado como `integer` en PostgreSQL; el backend lo devuelve como número JSON y aquí se lee como texto.
 // `sinceVersion` (MF-06): el campo existe desde esa versión del formulario; las capturas de versiones anteriores no lo traen y se leen sin exigirlo.
 // `renamedAt` (MF-07): el campo cambió de etiqueta en esa versión; las capturas de versiones anteriores se muestran con la etiqueta `previous` (la clave técnica no cambia). Ver `labelFor`.
-export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string } };
+// `select` (MF-08): lista desplegable de opciones CERRADAS (`options`, el texto exacto es el valor guardado). Desde `optionsSinceVersion` (por defecto, siempre) solo se aceptan esas opciones; las capturas de versiones
+// anteriores, que eran texto libre, se leen tal cual (cualquier texto no vacío).
+export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string }; options?: readonly string[]; optionsSinceVersion?: number };
 export const labelFor = (field: FieldSpec, version?: number): string => field.renamedAt && version !== undefined && version < field.renamedAt.version ? field.renamedAt.previous : field.label;
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
@@ -43,17 +45,20 @@ export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const isTimeText = (value: unknown): value is string => typeof value === "string" && TIME_PATTERN.test(value);
 export const NON_NEGATIVE_INTEGER = /^\d{1,9}$/;
 const isIntegerText = (value: unknown): value is string => typeof value === "string" && NON_NEGATIVE_INTEGER.test(value);
+// Opción válida de una lista desplegable: de las declaradas; en capturas anteriores a `optionsSinceVersion` (texto libre) basta un texto no vacío.
+const selectAllowed = (field: FieldSpec, text: string, version?: number): boolean => text !== "" && (field.options?.includes(text) === true
+    || (field.optionsSinceVersion !== undefined && version !== undefined && version < field.optionsSinceVersion));
 const isDecimalText = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_DECIMAL_CHARS && DECIMAL.test(value);
 const pair = (value: unknown): { code: string; name: string } | null => isRec(value) && isStr(value.code) && typeof value.name === "string" ? { code: value.code, name: value.name } : null;
 
 // Respuesta de Calidad por máquina: sin asignación, OT ni línea. Se rechaza una captura de OTRO formulario.
-function parseMachineEnvelope(value: unknown, parseValues: (values: unknown) => CandidateValues | null, expectedFormCode: string): CandidateCapture | null {
+function parseMachineEnvelope(value: unknown, parseValues: (values: unknown, version?: number) => CandidateValues | null, expectedFormCode: string): CandidateCapture | null {
     if (!isRec(value) || !isStr(value.id) || !isStr(value.status) || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return null;
     if (!isStr(value.captured_at) || !(value.submitted_at === null || isStr(value.submitted_at)) || !isStr(value.operating_date)) return null;
     const form = value.form, machine = pair(value.machine), shift = pair(value.shift), by = value.recorded_by;
     if (!isRec(form) || form.code !== expectedFormCode || typeof form.version_number !== "number" || typeof form.name !== "string" || !machine || !shift) return null;
     if (!(by === null || by === undefined || (isRec(by) && isStr(by.id) && typeof by.display_name === "string"))) return null;
-    const values = parseValues(value.values);
+    const values = parseValues(value.values, form.version_number as number);
     if (values === null) return null;
     return {
         id: value.id, status: value.status, revision: value.revision, captured_at: value.captured_at, submitted_at: value.submitted_at,
@@ -107,6 +112,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (field.required && raw === "") return null;
             if (field.kind === "decimal" && !isDecimalText(raw)) return null;
             if (field.kind === "time" && !isTimeText(raw)) return null;
+            if (field.kind === "select" && (raw === "" ? field.required : !selectAllowed(field, raw, version))) return null;
             clean[field.key] = raw;
         }
         for (const field of [...legacy, ...calculated]) { // campos retirados o calculados por el backend: se conservan solo si la captura los trae
@@ -134,6 +140,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (!text) { if (field.required) errors.push(`${field.label}: es obligatorio.`); continue; }
             if (field.kind === "decimal" && !isDecimalText(text)) { errors.push(`${field.label}: debe ser un número decimal (por ejemplo 12.5).`); continue; }
             if (field.kind === "time" && !isTimeText(text)) { errors.push(`${field.label}: debe ser una hora válida HH:MM (por ejemplo 07:30).`); continue; }
+            if (field.kind === "select" && !field.options?.includes(text)) { errors.push(`${field.label}: elige una de las opciones de la lista.`); continue; }
             if (text.length > MAX_TEXT_LENGTH) { errors.push(`${field.label}: supera ${MAX_TEXT_LENGTH} caracteres.`); continue; }
             values[field.key] = text;
         }

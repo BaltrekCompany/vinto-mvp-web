@@ -6,7 +6,7 @@
   "name": "Grado de refinación Schopper",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -32,22 +32,13 @@
       "display_order": 2
     },
     {
-      "key": "volumen_desplazado",
-      "label": "Volumen desplazado",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 3
-    },
-    {
       "key": "grado_de_refinacion_sr",
       "label": "Grado de refinación °SR",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 4
+      "display_order": 3
     },
     {
       "key": "amperaje",
@@ -56,7 +47,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 4
     },
     {
       "key": "observacion",
@@ -65,8 +56,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 6
+      "display_order": 5
     }
   ],
-  "definition_checksum": "5caf9406daae3372807eae456994d380333bdc22e651bd60f69964125b622742"
+  "definition_checksum": "9766e58595263f2723a0143b24e85281565d05e525429e23e4f09b0b3f68c907"
 }

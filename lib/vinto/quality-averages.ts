@@ -24,3 +24,15 @@ export function previewMeans(means: Readonly<Record<string, readonly string[]>>,
         return [key, given.every((v) => v !== "") ? meanTwoDecimals(given) : null];
     }));
 }
+
+/** Porcentaje exacto `numerador / denominador × 100` con dos decimales (mitad hacia arriba, alejándose de cero). Sin denominador, con denominador cero o con un valor no numérico: null (nunca se inventa un resultado). Visualización: el backend es la fuente de verdad. */
+export function percentTwoDecimals(numerator: string | undefined, denominator: string | undefined): string | null {
+    const parse = (text: string | undefined) => { const m = NUMBER.exec((text ?? "").trim().replace(",", ".")); return m ? { negative: m[1] === "-", digits: BigInt(m[2] + (m[3] ?? "")), scale: (m[3] ?? "").length } : null; };
+    const n = parse(numerator), d = parse(denominator);
+    if (!n || !d || d.digits === ZERO) return null;
+    const top = n.digits * TEN ** BigInt(d.scale) * BigInt(10000), bottom = d.digits * TEN ** BigInt(n.scale);
+    const cents = (TWO * top + bottom) / (TWO * bottom);
+    const negative = n.negative !== d.negative && cents !== ZERO;
+    const text = cents.toString().padStart(3, "0");
+    return `${negative ? "-" : ""}${text.slice(0, -2)}.${text.slice(-2)}`;
+}

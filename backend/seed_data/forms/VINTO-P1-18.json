@@ -6,7 +6,7 @@
   "name": "Porcentaje de consistencia",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -32,9 +32,9 @@
       "display_order": 2
     },
     {
-      "key": "punto_de_muestreo",
-      "label": "Punto de muestreo",
-      "value_type": "text",
+      "key": "hora_del_ensayo",
+      "label": "Hora",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
@@ -59,13 +59,22 @@
       "display_order": 5
     },
     {
+      "key": "porcentaje_consistencia",
+      "label": "% Consistencia",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 6
+    },
+    {
       "key": "papel_filtro_g",
       "label": "Papel filtro g",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 6
+      "display_order": 7
     },
     {
       "key": "papel_muestra_g",
@@ -74,7 +83,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
+      "display_order": 8
     },
     {
       "key": "peso_muestra_g",
@@ -83,7 +92,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 8
+      "display_order": 9
     },
     {
       "key": "observaciones",
@@ -92,8 +101,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 9
+      "display_order": 10
     }
   ],
-  "definition_checksum": "a1114d2526c11a61e42bc5d11aafbb64b5192b4f17a28d43544cdf73f996fb98"
+  "definition_checksum": "ee6e52d610567db5939a26f6463f52422369d167738e4bd8a36756e03658d812"
 }

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CaptureNotice, CaptureSection, CaptureShell, ContextStrip, SubmitBar, TextAreaField, TextField, contextItems, type ContextItem } from "@/components/vinto/capture-kit";
+import { CaptureNotice, CaptureSection, CaptureShell, ChoiceField, ContextStrip, SubmitBar, TextAreaField, TextField, contextItems, type ContextItem } from "@/components/vinto/capture-kit";
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
@@ -99,7 +99,9 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         } finally { busy.current = false; setSending(false); }
     }
 
-    const renderField = (field: (typeof form.fields)[number]) => field.kind === "textarea"
+    const renderField = (field: (typeof form.fields)[number]) => field.kind === "select"
+        ? <ChoiceField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} options={(field.options ?? []).map(o => ({ value: o, label: o }))}/>
+        : field.kind === "textarea"
         ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} hint={candidate.hints?.[field.key]}/>
         : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
             inputMode={field.kind === "decimal" ? "decimal" : field.kind === "integer" ? "numeric" : "text"} suffix={field.suffix} type={field.kind === "time" ? "time" : "text"} hint={candidate.hints?.[field.key]}/>;
