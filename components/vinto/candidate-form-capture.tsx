@@ -133,7 +133,8 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         ? candidate.sections.map(s => ({ title: s.title, hint: s.hint, fields: s.keys.map(k => form.fields.find(f => f.key === k)).filter((f): f is (typeof form.fields)[number] => f !== undefined) }))
         : [{ title: candidate.title, hint: "Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.", fields: form.fields.filter(f => !tableKeys.has(f.key)) }];
 
-    return <CaptureShell kicker={candidate.kicker} title={candidate.title} onBack={back}>
+    const head = candidate.titleFor ? candidate.titleFor(form.context === "assignment" ? context?.machine : undefined) : { kicker: candidate.kicker, title: candidate.title }; // MF-09A: la máquina sale del contexto de la asignación
+    return <CaptureShell kicker={head.kicker} title={head.title} onBack={back}>
         <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
             <p className="font-black">Ficha NO homologada · solo donde el backend la publique</p>
             <p className="mt-1">Los campos son los de la definición legacy como punto de partida técnico. Esta captura solo funciona donde el formulario esté habilitado explícitamente y no sustituye ninguna decisión de VINTO.</p>
