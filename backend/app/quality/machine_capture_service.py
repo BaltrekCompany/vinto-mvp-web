@@ -15,6 +15,7 @@ se resuelven con el backend (resolve_shift) a esa hora de registro. El responsab
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from app import capture_service as cs
 from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError
@@ -35,6 +36,12 @@ MAX_LIST_LIMIT = 200
 # Ninguno de los cuatro homologado por VINTO (contratos, rangos ni unidades aprobados); ninguno toca
 # quality_release.
 MACHINE_QUALITY_FORM_CODES: frozenset = frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"})
+
+# CAMPOS CALCULADOS POR EL BACKEND (MF-08, fuente de verdad): porcentaje = numerador / denominador × 100, dos decimales (mitad hacia arriba). Solo se calculan y guardan si la versión publicada DECLARA el campo
+# calculado (source = calculated); las capturas de versiones anteriores no lo tienen y nunca se recalculan. El cliente NO puede enviarlo (422). Con denominador 0 no hay resultado: el campo no se guarda (no se inventa un valor).
+# VINTO-P1-26 «Medición de secos» (MD_Ejec 40): % Cantidad de seco = masa seca / masa húmeda × 100, con los campos `masa_seca` y `masa_humeda` del mismo formulario.
+PERCENT_RULES: dict = {"VINTO-P1-26": {"porcentaje_cantidad_de_seco": ("masa_seca", "masa_humeda")}}
+_CENTS = Decimal("0.01")
 
 
 @dataclass(frozen=True)
@@ -129,6 +136,34 @@ def _context(connection, actor_id, request_id):
     connection.execute("SELECT set_config('vinto.reason', %s, true)", (REASON,))
 
 
+def percent_two_decimals(numerator: Decimal, denominator: Decimal):
+    """numerador / denominador × 100 con dos decimales, mitad hacia arriba (alejándose de cero); None si el denominador es 0. Sin coma flotante."""
+    if denominator == 0:
+        return None
+    with localcontext() as context:
+        context.prec = 100
+        value = (numerator / denominator * 100).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    return value if value != 0 else Decimal("0.00")  # sin «-0.00»
+
+
+def _prepare_values(connection, form_version_id, form_code, values):
+    """Campos de la versión (manuales + calculados), y los valores a guardar: los manuales validados más los calculados por el backend. Un valor calculado enviado por el cliente es un error 422."""
+    fields = cs.load_fields(connection, form_version_id, allow_calculated=True)
+    manual = [f for f in fields if f.source == "manual"]
+    calculated = {f.key for f in fields if f.source == "calculated"}
+    if isinstance(values, dict):
+        sent = sorted(key for key in calculated if key in values)
+        if sent:
+            raise CaptureValidationError("; ".join(f"{key}: es un campo calculado por el sistema; no se envía" for key in sent))
+    clean = cs.validate_values(manual, values)
+    for key, (numerator, denominator) in PERCENT_RULES.get(form_code, {}).items():
+        if key in calculated and numerator in clean and denominator in clean:
+            result = percent_two_decimals(clean[numerator], clean[denominator])
+            if result is not None:
+                clean[key] = result
+    return fields, clean
+
+
 def _existing_matches(connection, existing, *, actor_id, machine_id, form_code, device_key, values) -> bool:
     """¿El reintento coincide EXACTAMENTE (actor, máquina, formulario de Calidad por máquina, dispositivo y valores normalizados con la versión guardada)?"""
     capture_id, status, created_by, stored_machine, stored_bobbin, stored_assignment, form_version_id, stored_form_code, stored_area, stored_device_key = existing
@@ -136,7 +171,7 @@ def _existing_matches(connection, existing, *, actor_id, machine_id, form_code, 
             or stored_area != QUALITY_AREA or stored_form_code != form_code or stored_device_key != device_key):
         return False
     try:
-        incoming = cs.validate_values(cs.load_fields(connection, form_version_id), values)
+        incoming = _prepare_values(connection, form_version_id, form_code, values)[1]
     except (CaptureValidationError, UnsupportedFormDefinitionError):
         return False
     return incoming == cs._stored_values(connection, capture_id)
@@ -168,8 +203,7 @@ def submit_machine_capture(connection, *, actor_id, machine_code, capture_id, fo
         shift = resolve_shift(connection, now, sector_id=sector_id)  # SHIFT_NOT_CONFIGURED / SHIFT_AMBIGUOUS siguen su manejo seguro
         device_id = cs._resolve_device(connection, device_key, machine_id)
         form_version_id = cs.published_form_version(connection, form_code, machine_id, area=QUALITY_AREA)  # FormNotAvailableError si no está publicado / vinculado
-        fields = cs.load_fields(connection, form_version_id)  # solo campos manuales sin grupo; lo demás -> UNSUPPORTED_FORM_DEFINITION
-        clean = cs.validate_values(fields, values)  # los campos automáticos o calculados enviados no existen en la definición: 422
+        fields, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-08); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION; un calculado enviado: 422
 
         connection.execute(
             """INSERT INTO vinto_txn.capture (id, form_version_id, machine_id, shift_schedule_id, device_id, assignment_id, operating_date, captured_at, status, bobbin_id)

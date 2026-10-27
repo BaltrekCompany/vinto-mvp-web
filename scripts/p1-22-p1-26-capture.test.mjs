@@ -8,8 +8,8 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { parseAvailability } from "../lib/vinto/availability.ts";
 import { FORM_DEFINITIONS } from "../lib/vinto/form-definitions.ts";
-import { P122, P122_FIELDS, P122_PENDING, P1_22_CODE } from "../lib/vinto/p1-22.ts";
-import { P126, P126_CALCULATED, P126_FIELDS, P126_PENDING, P1_26_CODE } from "../lib/vinto/p1-26.ts";
+import { P122, P122_FIELDS, P122_LEGACY_FIELDS, P122_PENDING, P1_22_CODE } from "../lib/vinto/p1-22.ts";
+import { P126, P126_CALCULATED_FIELDS, P126_FIELDS, P126_PENDING, P126_SAMPLING_POINTS, P1_26_CODE } from "../lib/vinto/p1-26.ts";
 import { publishedQualityScreens, qualityMachines, qualityScreensFor, QUALITY_CANDIDATE_SCREENS } from "../lib/vinto/quality-offers.ts";
 import { availabilityKey, candidateHistoryKey, deriveView, sessionScope } from "../lib/vinto/resource-view.ts";
 
@@ -18,8 +18,9 @@ const read = (file) => readFileSync(join(root, file), "utf8").replace(/\r\n/g, "
 const code = (file) => read(file).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
 const pyCode = (file) => read(file).replace(/^"""[\s\S]*?"""/, "").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"); // sin docstrings ni comentarios
 const UUID = "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", DEVICE = "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", USER = "5c4d3e2f-1a0b-4c9d-8e7f-6a5b4c3d2e1f";
-const D122 = { numero_de_cuba: " C-1 ", masa_humeda: "20,5", volumen_desplazado: "630", grado_de_refinacion_sr: " 28,5 ", amperaje: "45.25", observacion: "" };
-const D126 = { punto_de_muestreo: "punto", masa_humeda: "100,50", masa_seca: "3.25", observaciones: " nota " };
+// MF-08: P1-22 v2 sin «Volumen desplazado»; P1-26 v2 con «Punto de muestreo» como lista cerrada y «% Cantidad de seco» calculado por el backend.
+const D122 = { numero_de_cuba: " C-1 ", masa_humeda: "20,5", grado_de_refinacion_sr: " 28,5 ", amperaje: "45.25", observacion: "" };
+const D126 = { punto_de_muestreo: "Fieltro I", masa_humeda: "100,50", masa_seca: "3.25", observaciones: " nota " };
 const CASES = [["P1-22", P122, P1_22_CODE, D122, P122_FIELDS], ["P1-26", P126, P1_26_CODE, D126, P126_FIELDS]];
 const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
@@ -27,26 +28,28 @@ const isManual = (f) => f.source === "manual";
 const machineEnvelope = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
   machine: { code: "MP1", name: "MP1" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", recorded_by: { id: USER, display_name: "Calidad" }, values, ...extra });
 
-test("los contratos son EXACTAMENTE los campos manuales de las definiciones legacy; los automáticos y el calculado no se digitan", () => {
+test("los contratos son los campos manuales de las definiciones legacy salvo los cambios aprobados de MF-08; los automáticos y el calculado no se digitan", () => {
   for (const [id, fields, manual, automatic, calculated] of [["form_22_grado_de_refinacion_schopper", P122_FIELDS, 6, 4, 0], ["form_26_medicion_de_secos", P126_FIELDS, 4, 4, 1]]) {
     const legacy = defOf(id);
     assert.equal(legacy.area, "quality");
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [manual, automatic, calculated], id);
     assert.equal(legacy.fields.length, manual + automatic + calculated);
-    const m = legacy.fields.filter(isManual);
+    const m = legacy.fields.filter(isManual).filter((f) => f.key !== "volumen_desplazado"); // MF-08 (MD_Ejec 31): P1-22 v2 sin «Volumen desplazado»
     assert.deepEqual(fields.map((f) => f.key), m.map((f) => f.key), `${id}: claves y orden`);
     assert.deepEqual(fields.map((f) => f.label), m.map((f) => f.label), `${id}: etiquetas`);
     assert.deepEqual(fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${id}: obligatoriedad`);
-    assert.deepEqual(fields.map((f) => f.kind), m.map((f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text")), `${id}: tipos`);
+    assert.deepEqual(fields.map((f) => f.kind), m.map((f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : f.key === "punto_de_muestreo" ? "select" : "text")), `${id}: tipos (MF-08: el punto de muestreo de P1-26 es una lista)`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(fields.some((x) => x.key === f.key), false, `${id}: ${f.key} no se digita`);
   }
-  assert.deepEqual(P122_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "volumen_desplazado", "grado_de_refinacion_sr", "amperaje"]);
+  assert.deepEqual(P122_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "grado_de_refinacion_sr", "amperaje"]);
+  assert.deepEqual(P122_LEGACY_FIELDS.map((f) => f.key), ["volumen_desplazado"], "el valor retirado sigue legible en las capturas de la versión 1");
   assert.deepEqual(P126_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "masa_seca"]);
   assert.equal(defOf("form_22_grado_de_refinacion_schopper").fields.find((f) => f.key === "amperaje").unit, "A"); // única unidad declarada: se conserva como sufijo, no se añade ninguna
   assert.equal(P122_FIELDS.find((f) => f.key === "amperaje").suffix, "A");
   assert.equal(P122_FIELDS.filter((f) => f.suffix).length + P126_FIELDS.filter((f) => f.suffix).length, 1, "ninguna otra unidad inventada");
   assert.deepEqual(defOf("form_26_medicion_de_secos").allowedMachineIds, ["por_definir"]); // brecha de alcance de máquinas documentada abajo
-  assert.deepEqual([...P126_CALCULATED], ["Porcentaje de secos"]);
+  assert.deepEqual(P126_CALCULATED_FIELDS.map((f) => f.key), ["porcentaje_cantidad_de_seco"]);
+  assert.deepEqual([...P126_SAMPLING_POINTS], ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]);
 });
 
 test("las brechas se documentan: hora de registro frente a hora del ensayo, porcentaje de secos sin fórmula y alcance de máquinas de P1-26", () => {
@@ -54,17 +57,17 @@ test("las brechas se documentan: hora de registro frente a hora del ensayo, porc
   assert.match(t122, /Hora del ensayo/);
   assert.match(t122, /es la de registro \(servidor\): no es la hora real de la prueba/);
   assert.match(t122, /no libera ni rechaza ninguna bobina/);
-  assert.match(t126, /Porcentaje de secos/);
-  assert.match(t126, /no se calcula, no se guarda ni se muestra/);
+  assert.match(t126, /% Cantidad de seco/);
+  assert.match(t126, /Se calcula al guardar: masa seca ÷ masa húmeda × 100/);
   assert.match(t126, /por definir/);
-  assert.match(read("lib/vinto/p1-26.ts"), /NO se calcula `porcentaje_de_secos`/);
+  assert.match(read("lib/vinto/p1-26.ts"), /CALCULADO por el backend: masa seca \/ masa húmeda × 100/);
   assert.match(read("components/vinto/candidate-form-capture.tsx"), /candidate\.calculated/);
 });
 
 test("el borrador valida los decimales estructuralmente y NO calcula porcentajes ni genera horas", () => {
   const a = P122.normalizeDraft(D122), b = P126.normalizeDraft(D126);
-  assert.deepEqual(a.values, { numero_de_cuba: "C-1", masa_humeda: "20.5", volumen_desplazado: "630", grado_de_refinacion_sr: "28.5", amperaje: "45.25" });
-  assert.deepEqual(b.values, { punto_de_muestreo: "punto", masa_humeda: "100.50", masa_seca: "3.25", observaciones: "nota" });
+  assert.deepEqual(a.values, { numero_de_cuba: "C-1", masa_humeda: "20.5", grado_de_refinacion_sr: "28.5", amperaje: "45.25" });
+  assert.deepEqual(b.values, { punto_de_muestreo: "Fieltro I", masa_humeda: "100.50", masa_seca: "3.25", observaciones: "nota" });
   for (const key of ["porcentaje_de_secos", "hora", "fecha", "maquina", "responsable", "total"]) assert.equal(key in a.values || key in b.values, false, key);
   assert.equal(b.values.masa_seca, "3.25"); // las masas se guardan tal cual: nada derivado de ellas
   for (const [, form, , draft, fields] of CASES) for (const key of fields.filter((f) => f.kind === "decimal").map((f) => f.key)) {
@@ -72,7 +75,7 @@ test("el borrador valida los decimales estructuralmente y NO calcula porcentajes
     assert.match(form.normalizeDraft({ ...draft, [key]: " " }).errors.join(" "), /es obligatorio/, key);
     assert.equal(form.normalizeDraft({ ...draft, [key]: "-1,5" }).values[key], "-1.5", "sin rangos inventados");
   }
-  assert.equal(P122.normalizeDraft(P122.emptyDraft()).errors.length, 5);
+  assert.equal(P122.normalizeDraft(P122.emptyDraft()).errors.length, 4);
   assert.equal(P126.normalizeDraft(P126.emptyDraft()).errors.length, 3);
 });
 

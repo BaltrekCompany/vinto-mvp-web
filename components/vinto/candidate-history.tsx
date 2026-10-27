@@ -12,7 +12,10 @@ export function CandidateHistory({ candidate, resource, refresh }: { candidate: 
     const title = `${candidate.title} (${candidate.code.replace("VINTO-", "")}) · registros centrales`;
     const machineLevel = candidate.form.context === "machine"; // Calidad por máquina: sin OT ni línea; con hora de registro y usuario
     const bobbinLevel = candidate.form.context === "bobbin"; // Calidad por bobina: con la bobina, OT y línea de la F3 de origen; sin asignación
-    const headers = bobbinLevel ? ["Fecha operativa", "Bobina", "OT", "Línea / PV", "Máquina", "Turno", "Hora de registro", ...candidate.form.fields.map(f => f.label), "Rev."] : machineLevel ? ["Fecha operativa", "Máquina", "Turno", "Hora de registro", "Registrado por", ...candidate.form.fields.map(f => f.label), "Rev."] : ["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", ...candidate.form.fields.map(f => f.label), "Rev."];
+    // MF-08: además de los campos vigentes, las columnas calculadas por el backend y los campos retirados de versiones anteriores (solo lectura, marcados «versión anterior»).
+    const extra = [...candidate.form.calculated, ...candidate.form.legacy];
+    const extraLabels = [...candidate.form.calculated.map(f => f.label), ...candidate.form.legacy.map(f => `${f.label} (versión anterior)`)];
+    const headers = bobbinLevel ? ["Fecha operativa", "Bobina", "OT", "Línea / PV", "Máquina", "Turno", "Hora de registro", ...candidate.form.fields.map(f => f.label), ...extraLabels, "Rev."] : machineLevel ? ["Fecha operativa", "Máquina", "Turno", "Hora de registro", "Registrado por", ...candidate.form.fields.map(f => f.label), ...extraLabels, "Rev."] : ["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", ...candidate.form.fields.map(f => f.label), ...extraLabels, "Rev."];
     return <div className="rounded-2xl border bg-white p-6 shadow-sm" aria-live="polite" data-history={title}>
         <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-slate-700">{candidate.historyNote}</p></div><Button variant="ghost" size="sm" onClick={refresh}>Actualizar</Button></div>
         {resource.status === "error" ? <p className="mt-4 text-sm text-amber-900">{resource.kind === "invalid" ? "El backend no habilita este formulario para tu sesión." : failureMessage(resource.kind)}</p>
@@ -23,6 +26,6 @@ export function CandidateHistory({ candidate, resource, refresh }: { candidate: 
                     {bobbinLevel ? <><td className="px-2 py-2">{c.operating_date}</td><td className="px-2 py-2 font-bold">{c.bobbin?.code ?? "—"}</td><td className="px-2 py-2">{c.work_order?.number ?? "—"}</td><td className="px-2 py-2">{c.line ? `${c.line.line_code} / ${c.line.pv_reference}` : "—"}</td><td className="px-2 py-2">{c.machine.code}</td><td className="px-2 py-2">{c.shift.name}</td><td className="px-2 py-2">{c.captured_at}</td></>
                         : machineLevel ? <><td className="px-2 py-2">{c.operating_date}</td><td className="px-2 py-2">{c.machine.code}</td><td className="px-2 py-2">{c.shift.name}</td><td className="px-2 py-2">{c.captured_at}</td><td className="px-2 py-2">{c.recorded_by?.display_name ?? "—"}</td></>
                         : <><td className="px-2 py-2">{c.operating_date}</td><td className="px-2 py-2">{c.work_order?.number ?? "—"}</td><td className="px-2 py-2">{c.line ? `${c.line.line_code} / ${c.line.pv_reference}` : "—"}</td><td className="px-2 py-2">{c.machine.code}</td><td className="px-2 py-2">{c.shift.name}</td></>}
-                    {candidate.form.fields.map(f => <td key={f.key} className="px-2 py-2">{c.values[f.key] ?? ""}</td>)}<td className="px-2 py-2">{c.revision}</td></tr>)}</tbody></table></div>}
+                    {[...candidate.form.fields, ...extra].map(f => <td key={f.key} className="px-2 py-2">{c.values[f.key] ?? ""}</td>)}<td className="px-2 py-2">{c.revision}</td></tr>)}</tbody></table></div>}
     </div>;
 }

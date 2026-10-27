@@ -152,7 +152,8 @@ class Base(q2.BobbinBase):
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
         self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 3, P125: 3})
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 2), (P121, 2), (P124, 3), (P125, 3)], "ningún otro formulario cambia")
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 2), ("VINTO-P1-18", 2), (P121, 2), ("VINTO-P1-22", 2), (P124, 3), (P125, 3), ("VINTO-P1-26", 2)],
+                         "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
             self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.current[code],)), "published")

@@ -85,7 +85,7 @@
     },
     {
       "path": "lib/vinto/p1-18.ts",
-      "sha256": "6368b34ee9133faa0ca2ef26d01b7f3ffebdf46abcc42d545fb62d92b3694040",
+      "sha256": "02d2d07d19d4244e9b625029de876a5b0f47487ee94889697273f146e8d660a1",
       "scope": "candidate-fields:VINTO-P1-18"
     },
     {
@@ -95,7 +95,7 @@
     },
     {
       "path": "lib/vinto/p1-22.ts",
-      "sha256": "89c445378898ccd34cb4f9766d3400319b5b76589b112da0900ecccee36209b2",
+      "sha256": "2f4635045edc0193dd315d69c1cf92139a8994203c8b4902655d9d2c3a2ec947",
       "scope": "candidate-fields:VINTO-P1-22"
     },
     {
@@ -110,7 +110,7 @@
     },
     {
       "path": "lib/vinto/p1-26.ts",
-      "sha256": "0d4fd1a6811dec8672e433eb94a63651d8cc1eac7ee2462bbd51f42dd40a3e1b",
+      "sha256": "29e3f7c6e7fcc9131124ccafcf37a85505fde5b3e2a28624e16315537d671c5f",
       "scope": "candidate-fields:VINTO-P1-26"
     },
     {
@@ -242,8 +242,8 @@
     },
     {
       "path": "forms/VINTO-P1-18.json",
-      "sha256": "7e61b1b4213e762bd15dda9bb23d35dac60a493b8e5af700caff1ff1fd2ec7dc",
-      "bytes": 2218
+      "sha256": "440d053fa414dc137afba6016ed69d351808adbc64985ba3ea63d0a6dadcae6b",
+      "bytes": 2417
     },
     {
       "path": "forms/VINTO-P1-19.json",
@@ -262,8 +262,8 @@
     },
     {
       "path": "forms/VINTO-P1-22.json",
-      "sha256": "26ad6470c0898f822c733ab1fca74db630f0dfa977eaac4e9ca18354dd34b50d",
-      "bytes": 1642
+      "sha256": "9dcdf3d019ed636b7f7d919757182f75c86889e203c88a0f11e9b02bbfc66fb8",
+      "bytes": 1431
     },
     {
       "path": "forms/VINTO-P1-24.json",
@@ -277,8 +277,8 @@
     },
     {
       "path": "forms/VINTO-P1-26.json",
-      "sha256": "9c3068b120951ef74f5f798a663fb4558643d0002f87bf631fc2f8848713b579",
-      "bytes": 1197
+      "sha256": "5d3e7521e2630ce3e0dac9add67da128fad505c3dd84f6506d9081c55f6176cc",
+      "bytes": 2239
     },
     {
       "path": "forms/VINTO-P1-27.json",
@@ -356,8 +356,8 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 25,
-    "form_fields": 471,
-    "form_options": 7,
+    "form_fields": 472,
+    "form_options": 13,
     "form_groups": 3
   },
   "authority_rules": {

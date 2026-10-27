@@ -19,14 +19,15 @@ const read = (file) => readFileSync(join(root, file), "utf8").replace(/\r\n/g, "
 const code = (file) => read(file).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
 const pyCode = (file) => read(file).replace(/^"""[\s\S]*?"""/, "").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"); // sin docstrings ni comentarios
 const UUID = "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", DEVICE = "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", USER = "5c4d3e2f-1a0b-4c9d-8e7f-6a5b4c3d2e1f", BOBBIN = "7d6e5f4a-3b2c-4d1e-8f0a-9b8c7d6e5f4a";
-const D118 = { producto: " producto ", numero_de_cuba: "C-2", punto_de_muestreo: "p", masa_humeda_g: "100,50", masa_seca_g: "3.25", papel_filtro_g: " 1,10 ", papel_muestra_g: "4.35 g", peso_muestra_g: "0,0032", observaciones: "" };
+// MF-08: P1-18 v2 sin «Punto de muestreo», con «Hora» del ensayo (HH:MM, obligatoria) y «% Consistencia» (decimal digitado, opcional).
+const D118 = { producto: " producto ", numero_de_cuba: "C-2", hora_del_ensayo: " 07:30 ", masa_humeda_g: "100,50", masa_seca_g: "3.25", porcentaje_consistencia: " 12,5 ", papel_filtro_g: " 1,10 ", papel_muestra_g: "4.35 g", peso_muestra_g: "0,0032", observaciones: "" };
 // MF-07: P1-21 versión 2 = tabla de 27 posiciones (gramaje_NN / peso_seco_NN / humedad_NN); la versión 1 (una posición por captura) se conserva en los campos `legacy`.
 const D121 = { gramaje_01: "85,5", peso_seco_01: "0.250", humedad_01: " 6,5 ", observaciones: " nota " };
 const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
 
-const base = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
+const base = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: formCode === P1_18_CODE ? 2 : 1, name: "x" },
   machine: { code: "MP1", name: "MP1" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", values, ...extra });
 const machineEnvelope = (formCode, values, extra = {}) => base(formCode, values, { recorded_by: { id: USER, display_name: "Calidad" }, ...extra });
 const bobbinEnvelope = (values, extra = {}) => base(P1_21_CODE, values, { form: { code: P1_21_CODE, version_number: 2, name: "x" }, bobbin: { id: BOBBIN, code: "12" }, work_order: { id: UUID, number: "OT-1" },
@@ -39,14 +40,20 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [manual, automatic, calculated], id);
     assert.equal(legacy.fields.length, manual + automatic + calculated);
     const m = legacy.fields.filter(isManual);
-    assert.deepEqual(fields.map((f) => f.key), m.map((f) => f.key), `${id}: claves y orden`);
-    assert.deepEqual(fields.map((f) => f.label), m.map((f) => f.label), `${id}: etiquetas`);
-    assert.deepEqual(fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${id}: obligatoriedad`);
-    assert.deepEqual(fields.map((f) => f.kind), m.map(KIND), `${id}: tipos`);
+    // MF-08: P1-18 v2 = definición legacy sin «punto_de_muestreo», con «hora_del_ensayo» tras «numero_de_cuba» y «porcentaje_consistencia» justo después de «masa_seca_g»
+    const kept = fields.filter((f) => !["hora_del_ensayo", "porcentaje_consistencia"].includes(f.key)), mm = m.filter((f) => f.key !== "punto_de_muestreo");
+    assert.deepEqual(kept.map((f) => f.key), mm.map((f) => f.key), `${id}: claves y orden`);
+    assert.deepEqual(fields.map((f) => f.key).slice(0, 5), ["producto", "numero_de_cuba", "hora_del_ensayo", "masa_humeda_g", "masa_seca_g"]);
+    assert.equal(fields[fields.findIndex((f) => f.key === "masa_seca_g") + 1].key, "porcentaje_consistencia");
+    assert.deepEqual(kept.map((f) => f.label), mm.map((f) => f.label), `${id}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.required), mm.map((f) => f.required ?? f.requirement), `${id}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.kind), mm.map(KIND), `${id}: tipos`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(fields.some((x) => x.key === f.key), false, `${id}: ${f.key} no se digita`);
   }
-  assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda_g", "masa_seca_g", "peso_muestra_g"]);
-  assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "text").map((f) => f.key), ["producto", "numero_de_cuba", "punto_de_muestreo", "papel_filtro_g", "papel_muestra_g"], "los pesos de papel son TEXTO, no decimal por su nombre");
+  assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda_g", "masa_seca_g", "porcentaje_consistencia", "peso_muestra_g"]);
+  assert.deepEqual(P118_FIELDS.filter((f) => f.kind === "text").map((f) => f.key), ["producto", "numero_de_cuba", "papel_filtro_g", "papel_muestra_g"], "los pesos de papel son TEXTO, no decimal por su nombre");
+  assert.deepEqual(P118_FIELDS.find((f) => f.key === "hora_del_ensayo"), { key: "hora_del_ensayo", label: "Hora", kind: "time", required: true, sinceVersion: 2 });
+  assert.equal(P118_FIELDS.find((f) => f.key === "porcentaje_consistencia").required, false, "% Consistencia es opcional: su obligatoriedad no fue confirmada");
   // P1-21 (MF-07, versión 2): ya no coincide con la definición legacy; la versión 1 se conserva como campos de solo lectura y los calculados los guarda el backend.
   const legacy21 = defOf("form_21_perfil_de_gramaje_y_humedad").fields.filter(isManual);
   assert.deepEqual(legacy21.map((f) => f.key), ["numero_de_bobina", "posicion_de_perfil", "gramaje", "peso_seco", "observaciones"]);
@@ -71,7 +78,7 @@ test("las unidades solo se muestran donde la definición no es contradictoria: P
   assert.deepEqual(P121_LEGACY_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", "g/m²"], ["peso_seco", "kg"]]);
   const peso = defOf("form_18_porcentaje_de_consistencia").fields.find((f) => f.key === "peso_muestra_g");
   assert.deepEqual([peso.label, peso.unit], ["Peso muestra g", "kg"]); // la etiqueta dice «g» y la unidad «kg»: contradicción de la definición legacy
-  assert.equal(P118_FIELDS.filter((f) => f.suffix).length, 0, "no se inventa ni se elige una unidad para P1-18");
+  assert.deepEqual(P118_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["porcentaje_consistencia", "%"]], "solo el % aprobado; no se inventa ni se elige otra unidad para P1-18");
   assert.match(P118_PENDING.map((p) => `${p.label} ${p.pending}`).join(" "), /contradicción pendiente de VINTO y no se muestra ninguna unidad/);
 });
 
@@ -94,7 +101,7 @@ test("las brechas se documentan: consistencia y promedios sin fórmula, hora de 
 
 test("el borrador valida estructuralmente, deja los textos como se digitaron y NO calcula consistencia, humedad ni promedios", () => {
   const a = P118.normalizeDraft(D118), b = P121.normalizeDraft(D121);
-  assert.deepEqual(a.values, { producto: "producto", numero_de_cuba: "C-2", punto_de_muestreo: "p", masa_humeda_g: "100.50", masa_seca_g: "3.25", papel_filtro_g: "1,10", papel_muestra_g: "4.35 g", peso_muestra_g: "0.0032" });
+  assert.deepEqual(a.values, { producto: "producto", numero_de_cuba: "C-2", hora_del_ensayo: "07:30", masa_humeda_g: "100.50", masa_seca_g: "3.25", porcentaje_consistencia: "12.5", papel_filtro_g: "1,10", papel_muestra_g: "4.35 g", peso_muestra_g: "0.0032" });
   assert.deepEqual(b.values, { gramaje_01: "85.5", peso_seco_01: "0.250", humedad_01: "6.5", observaciones: "nota" });
   assert.equal(a.values.papel_filtro_g, "1,10", "un campo de TEXTO conserva su coma: no se convierte a decimal por su nombre");
   assert.equal(a.values.papel_muestra_g, "4.35 g", "ni se rechaza por tener una unidad");

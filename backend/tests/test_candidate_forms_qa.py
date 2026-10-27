@@ -161,26 +161,26 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_p1_18_submitted_by_calidad_is_persisted_and_retrievable(self):
         capture_id = str(uuid4())
-        values = {"producto": "papel higienico", "numero_de_cuba": "C-1", "punto_de_muestreo": "salida", "masa_humeda_g": "12.5",
+        values = {"producto": "papel higienico", "numero_de_cuba": "C-1", "hora_del_ensayo": "07:30", "masa_humeda_g": "12.5",
                   "masa_seca_g": "4.2", "papel_filtro_g": "1.1", "papel_muestra_g": "0.9", "peso_muestra_g": "5.0"}
         body = {"capture_id": capture_id, "form_code": "VINTO-P1-18", "device_key": str(uuid4()), "values": values}
         reply = await call("POST", "/api/quality/machines/MP1/captures", json_body=body, cookie=await self.cookie("CALIDAD"))
         self.assertEqual(reply.status, 201, reply.text)
-        self.assertEqual(reply.json()["capture"]["values"], values)
+        self.assertEqual(reply.json()["capture"]["values"], {**values, "hora_del_ensayo": "07:30:00"})  # MF-08: P1-18 v2 (hora del ensayo digitada; sin punto de muestreo)
         fetched = await call("GET", "/api/quality/machines/MP1/captures", cookie=await self.cookie("CALIDAD"))
         self.assertEqual(fetched.status, 200)
         self.assertIn(capture_id, [c["id"] for c in fetched.json()])
 
     async def test_p1_18_denied_to_operacion_profile_without_quality_capture_permission(self):
         body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-18", "device_key": str(uuid4()),
-                "values": {"producto": "x", "numero_de_cuba": "C-2", "punto_de_muestreo": "entrada", "masa_humeda_g": "1",
+                "values": {"producto": "x", "numero_de_cuba": "C-2", "hora_del_ensayo": "07:30", "masa_humeda_g": "1",
                             "masa_seca_g": "1", "papel_filtro_g": "1", "papel_muestra_g": "1", "peso_muestra_g": "1"}}
         reply = await call("POST", "/api/quality/machines/MP1/captures", json_body=body, cookie=await self.cookie("OPERACION"))
         self.assertEqual(reply.status, 403, reply.text)
 
     async def test_p1_18_denied_without_bobinas_sector_grant(self):
         body = {"capture_id": str(uuid4()), "form_code": "VINTO-P1-18", "device_key": str(uuid4()),
-                "values": {"producto": "x", "numero_de_cuba": "C-3", "punto_de_muestreo": "entrada", "masa_humeda_g": "1",
+                "values": {"producto": "x", "numero_de_cuba": "C-3", "hora_del_ensayo": "07:30", "masa_humeda_g": "1",
                             "masa_seca_g": "1", "papel_filtro_g": "1", "papel_muestra_g": "1", "peso_muestra_g": "1"}}
         reply = await call("POST", "/api/quality/machines/MP1/captures", json_body=body, cookie=await self.cookie("SIN_SECTOR"))
         self.assertEqual(reply.status, 403, reply.text)
