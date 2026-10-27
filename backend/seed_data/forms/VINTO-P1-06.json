@@ -6,7 +6,7 @@
   "name": "Registro de control de fardos",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -66,6 +66,11 @@
           "option_key": "hoja_simple",
           "label": "Hoja simple",
           "display_order": 3
+        },
+        {
+          "option_key": "toalla",
+          "label": "Toalla",
+          "display_order": 4
         }
       ]
     },
@@ -88,5 +93,5 @@
       "display_order": 5
     }
   ],
-  "definition_checksum": "fe0bf83fb71057d8debbd014d20bfd3cd13aa4a6310c2b94be56ce2d2eb4f45f"
+  "definition_checksum": "b54aa84b8180a1c9687b310434257a614cc5e2379ca010dfa80e422326ea54ae"
 }

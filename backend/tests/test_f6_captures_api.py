@@ -111,7 +111,7 @@ class WriteTests(CaptureApiCase):
         self.assertEqual(set(capture), {"id", "status", "revision", "captured_at", "submitted_at", "form", "machine", "shift", "operating_date",
                                         "assignment", "work_order", "line", "values"})
         self.assertEqual((capture["id"], capture["status"], capture["revision"]), (body["capture_id"], "submitted", 1))
-        self.assertEqual(capture["form"], {"code": "VINTO-P1-06", "version_number": 1, "name": capture["form"]["name"]})
+        self.assertEqual(capture["form"], {"code": "VINTO-P1-06", "version_number": 2, "name": capture["form"]["name"]})
         self.assertEqual(capture["machine"]["code"], "MP1")
         self.assertEqual(capture["assignment"], {"id": assignment["id"]})
         self.assertEqual(capture["work_order"], {"id": order["id"], "number": order["number"]})

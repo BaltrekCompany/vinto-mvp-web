@@ -6,7 +6,7 @@
   "name": "Operación e inspección de máquina",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "MP1",
     "MP3"
@@ -329,22 +329,13 @@
       "display_order": 35
     },
     {
-      "key": "presion_cocedores",
-      "label": "Presión cocedores",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 36
-    },
-    {
       "key": "cambio",
       "label": "Cambio",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 37
+      "display_order": 36
     },
     {
       "key": "crepado",
@@ -353,7 +344,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 38
+      "display_order": 37
     },
     {
       "key": "limpieza",
@@ -362,7 +353,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 39
+      "display_order": 38
     },
     {
       "key": "nivel_tanque_t_30_aguas",
@@ -371,16 +362,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 40
-    },
-    {
-      "key": "nivel_tanque_h_20_aguas",
-      "label": "Nivel tanque H-20 aguas",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 41
+      "display_order": 39
     },
     {
       "key": "nivel_tanque_t_30_aguas_2",
@@ -389,16 +371,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 42
-    },
-    {
-      "key": "nivel_tanque_h_20_aguas_2",
-      "label": "Nivel tanque H-20 aguas 2",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 43
+      "display_order": 40
     },
     {
       "key": "nivel_tanque_t_30_accionamientos",
@@ -407,34 +380,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 44
-    },
-    {
-      "key": "nivel_tanque_h_20_accionamientos",
-      "label": "Nivel tanque H-20 accionamientos",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 45
-    },
-    {
-      "key": "opertado",
-      "label": "Opertado",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 46
-    },
-    {
-      "key": "produccion",
-      "label": "Producción",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 47
+      "display_order": 41
     },
     {
       "key": "velocidad_fieltro",
@@ -443,7 +389,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 48
+      "display_order": 42
     },
     {
       "key": "velocidad_secador",
@@ -452,7 +398,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 49
+      "display_order": 43
     },
     {
       "key": "presion_cilindro",
@@ -461,16 +407,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 50
-    },
-    {
-      "key": "presion_pope",
-      "label": "Presión pope",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 51
+      "display_order": 44
     },
     {
       "key": "presion_caldero",
@@ -479,7 +416,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 52
+      "display_order": 45
     },
     {
       "key": "temperatura_lado_seco",
@@ -488,7 +425,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 53
+      "display_order": 46
     },
     {
       "key": "temperatura_lado_humedo",
@@ -497,25 +434,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 54
-    },
-    {
-      "key": "apertura_campana",
-      "label": "Apertura campana",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 55
-    },
-    {
-      "key": "presion_regaderas",
-      "label": "Presión regaderas",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 56
+      "display_order": 47
     },
     {
       "key": "apertura_purga_prensa",
@@ -524,7 +443,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 57
+      "display_order": 48
     },
     {
       "key": "presion_aceite_alta_tela",
@@ -533,7 +452,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 58
+      "display_order": 49
     },
     {
       "key": "presion_aceite_guia_tela",
@@ -542,7 +461,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 59
+      "display_order": 50
     },
     {
       "key": "presion_aceite_lubricacion",
@@ -551,7 +470,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 60
+      "display_order": 51
     },
     {
       "key": "presion_agua_prensa",
@@ -560,7 +479,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 61
+      "display_order": 52
     },
     {
       "key": "presion_aire_prensa",
@@ -569,7 +488,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 62
+      "display_order": 53
     },
     {
       "key": "presion_vacio_prensa",
@@ -578,7 +497,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 63
+      "display_order": 54
     },
     {
       "key": "presion_fuelle_comando",
@@ -587,7 +506,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 64
+      "display_order": 55
     },
     {
       "key": "presion_fuelle_transmision",
@@ -596,7 +515,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 65
+      "display_order": 56
     },
     {
       "key": "caudal_agua_sello_1",
@@ -605,7 +524,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 66
+      "display_order": 57
     },
     {
       "key": "caudal_agua_sello_2",
@@ -614,7 +533,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 67
+      "display_order": 58
     },
     {
       "key": "caudal_agua_sello_3",
@@ -623,7 +542,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 68
+      "display_order": 59
     },
     {
       "key": "filtro_agua_prensa",
@@ -632,7 +551,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 69
+      "display_order": 60
     },
     {
       "key": "filtro_quimicos",
@@ -641,7 +560,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 70
+      "display_order": 61
     },
     {
       "key": "rodillos_quimicos",
@@ -650,7 +569,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 71
+      "display_order": 62
     },
     {
       "key": "vacio_prensa",
@@ -659,7 +578,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 72
+      "display_order": 63
     },
     {
       "key": "vacio_pope",
@@ -668,7 +587,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 73
+      "display_order": 64
     },
     {
       "key": "vacio_fieltro",
@@ -677,7 +596,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 74
+      "display_order": 65
     },
     {
       "key": "vacio_tela",
@@ -686,16 +605,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 75
-    },
-    {
-      "key": "limpieza_sala_de_control",
-      "label": "Limpieza sala de control",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 76
+      "display_order": 66
     },
     {
       "key": "limpieza_escalera",
@@ -704,16 +614,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 77
-    },
-    {
-      "key": "limpieza_mezzanine",
-      "label": "Limpieza mezzanine",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 78
+      "display_order": 67
     },
     {
       "key": "limpieza_lado_transmision",
@@ -722,7 +623,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 79
+      "display_order": 68
     },
     {
       "key": "limpieza_pasos_y_escaleras",
@@ -731,7 +632,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 80
+      "display_order": 69
     },
     {
       "key": "hora_cambio_cuchilla_de_cambio",
@@ -740,7 +641,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 81
+      "display_order": 70
     },
     {
       "key": "hora_cambio_cuchilla_de_crepado",
@@ -749,7 +650,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 82
+      "display_order": 71
     },
     {
       "key": "hora_cambio_cuchilla_de_limpieza",
@@ -758,7 +659,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 83
+      "display_order": 72
     },
     {
       "key": "novedades",
@@ -767,8 +668,8 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 84
+      "display_order": 73
     }
   ],
-  "definition_checksum": "3c8fbfb7ff165375dee838b7edbcf766429979a2aa49dc2a7c66cf674e4ad6b9"
+  "definition_checksum": "55c0d221e8a4b5b081a3238afd7e81f447411a7964ba6cb0d4fe6db9d38b8554"
 }

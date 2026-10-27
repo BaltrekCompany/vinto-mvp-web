@@ -158,11 +158,11 @@ class FormSixTests(unittest.TestCase):
         self.assertEqual([f["unit"] for f in fields], [None, None, None, "KG", None])
         self.assertEqual([f["display_order"] for f in fields], [1, 2, 3, 4, 5])
 
-    def test_five_options_in_total(self):
+    def test_six_options_in_total(self):
         options = {f["key"]: [o["option_key"] for o in f.get("options", [])] for f in self.form["fields"]}
         self.assertEqual(options["punto_merma"], ["bobina_rechazada", "recorte_maquina"])
-        self.assertEqual(options["tipo_producto"], ["servilleta", "hoja_doble", "hoja_simple"])
-        self.assertEqual(sum(len(v) for v in options.values()), 5)
+        self.assertEqual(options["tipo_producto"], ["servilleta", "hoja_doble", "hoja_simple", "toalla"])
+        self.assertEqual(sum(len(v) for v in options.values()), 6)
         for field in self.form["fields"]:
             keys = [o["option_key"] for o in field.get("options", [])]
             self.assertEqual(len(keys), len(set(keys)))
@@ -242,7 +242,7 @@ class QualityP119Tests(unittest.TestCase):
         # CLOUD-DEP G.12-C4-FINAL25: 25 formularios en total (17 candidatos previos + P1-11/12/13/16/29);
         # ninguno añade workflows nuevos (todos reutilizan production-standard/quality-release); P1-11
         # añade 2 opciones nuevas (posicion).
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (25, 472, 13, 2))
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (25, 461, 14, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 
@@ -282,7 +282,7 @@ class QualityP120Tests(unittest.TestCase):
     def test_published_forms_are_unchanged_by_p1_20(self):
         self.assertEqual({code: read(f"forms/{code}.json")["definition_checksum"] for code in ("VINTO-P1-03", "VINTO-P1-06", "VINTO-P1-19")}, {
             "VINTO-P1-03": "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13",
-            "VINTO-P1-06": "fe0bf83fb71057d8debbd014d20bfd3cd13aa4a6310c2b94be56ce2d2eb4f45f",
+            "VINTO-P1-06": "b54aa84b8180a1c9687b310434257a614cc5e2379ca010dfa80e422326ea54ae",
             "VINTO-P1-19": "682908dee7878ce55313011a9a62ef9c0b82dbae404ed129bacaf2366c8a22ff"})
 
     def test_derived_automatic_and_context_values_are_not_central_fields(self):

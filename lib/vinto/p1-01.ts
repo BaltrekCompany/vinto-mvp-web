@@ -11,6 +11,7 @@
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_01_CODE = "VINTO-P1-01";
+// MF-09 (versión 3): ver P101_LEGACY_FIELDS; los 11 campos retirados ya no figuran en P101_FIELDS ni en P101_SECTIONS.
 // MF-05 (versión 2 del formulario): respecto de la definición legacy se RETIRAN «producto_gramaje_crepado» y «nivel_tanque_t_20» (ya no se piden ni se exigen) y «nivel_tanque_p17» se muestra como «Nivel tanque PIT»
 // (la clave no cambia). Las capturas de la versión 1 conservan esos dos valores en PostgreSQL; el parser ignora claves extra y no exige las retiradas, por lo que el historial sigue legible.
 export const P101_FIELDS: readonly FieldSpec[] = [
@@ -49,27 +50,18 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "bomba_ba1", label: "Bomba BA1", kind: "text", required: true },
     { key: "bomba_ba2", label: "Bomba BA2", kind: "text", required: true },
     { key: "bomba_ba3", label: "Bomba BA3", kind: "text", required: true },
-    { key: "presion_cocedores", label: "Presión cocedores", kind: "decimal", required: true },
     { key: "cambio", label: "Cambio", kind: "text", required: true },
     { key: "crepado", label: "Crepado", kind: "decimal", required: true },
     { key: "limpieza", label: "Limpieza", kind: "text", required: true },
     { key: "nivel_tanque_t_30_aguas", label: "Nivel tanque T-30 aguas", kind: "decimal", required: true },
-    { key: "nivel_tanque_h_20_aguas", label: "Nivel tanque H-20 aguas", kind: "decimal", required: true },
     { key: "nivel_tanque_t_30_aguas_2", label: "Nivel tanque T-30 aguas 2", kind: "decimal", required: true },
-    { key: "nivel_tanque_h_20_aguas_2", label: "Nivel tanque H-20 aguas 2", kind: "decimal", required: true },
     { key: "nivel_tanque_t_30_accionamientos", label: "Nivel tanque T-30 accionamientos", kind: "decimal", required: true },
-    { key: "nivel_tanque_h_20_accionamientos", label: "Nivel tanque H-20 accionamientos", kind: "decimal", required: true },
-    { key: "opertado", label: "Opertado", kind: "text", required: true },
-    { key: "produccion", label: "Producción", kind: "text", required: true },
     { key: "velocidad_fieltro", label: "Velocidad fieltro", kind: "decimal", required: true, suffix: "m/min" },
     { key: "velocidad_secador", label: "Velocidad secador", kind: "decimal", required: true, suffix: "m/min" },
     { key: "presion_cilindro", label: "Presión cilindro", kind: "decimal", required: true },
-    { key: "presion_pope", label: "Presión pope", kind: "decimal", required: true },
     { key: "presion_caldero", label: "Presión caldero", kind: "decimal", required: true },
     { key: "temperatura_lado_seco", label: "Temperatura lado seco", kind: "decimal", required: true, suffix: "°C" },
     { key: "temperatura_lado_humedo", label: "Temperatura lado húmedo", kind: "decimal", required: true, suffix: "°C" },
-    { key: "apertura_campana", label: "Apertura campana", kind: "text", required: true },
-    { key: "presion_regaderas", label: "Presión regaderas", kind: "decimal", required: true },
     { key: "apertura_purga_prensa", label: "Apertura purga prensa", kind: "text", required: true },
     { key: "presion_aceite_alta_tela", label: "Presión aceite alta tela", kind: "decimal", required: true },
     { key: "presion_aceite_guia_tela", label: "Presión aceite guía tela", kind: "decimal", required: true },
@@ -89,9 +81,7 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "vacio_pope", label: "Vacío pope", kind: "decimal", required: true },
     { key: "vacio_fieltro", label: "Vacío fieltro", kind: "decimal", required: true },
     { key: "vacio_tela", label: "Vacío tela", kind: "decimal", required: true },
-    { key: "limpieza_sala_de_control", label: "Limpieza sala de control", kind: "text", required: true },
     { key: "limpieza_escalera", label: "Limpieza escalera", kind: "text", required: true },
-    { key: "limpieza_mezzanine", label: "Limpieza mezzanine", kind: "text", required: true },
     { key: "limpieza_lado_transmision", label: "Limpieza lado transmisión", kind: "text", required: true },
     { key: "limpieza_pasos_y_escaleras", label: "Limpieza pasos y escaleras", kind: "text", required: true },
     { key: "hora_cambio_cuchilla_de_cambio", label: "Hora cambio cuchilla de cambio", kind: "time", required: true },
@@ -103,13 +93,28 @@ export const P101_FIELDS: readonly FieldSpec[] = [
 export const P101_SECTIONS: readonly { title: string; hint?: string; keys: readonly string[] }[] = [
     { title: "Materia prima, tanques y pulpeo", keys: ["nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga"] },
     { title: "Caudales, mezclas y consistencias", keys: ["caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20", "consistencia_h_4", "apertura_valvula_consistencia", "gramaje_valvula", "nivel_tanque_p17", "motor_fan_b23", "motor_fan_b23b", "nivel_tanque_t_21", "velocidad_chorro", "velocidad_tela", "error_chorro_tela", "presion_labio", "apertura_labio", "angulo_labio", "distancia", "presion_entrada_colador", "presion_salida_colador", "apertura_purga"] },
-    { title: "Químicos", keys: ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "presion_cocedores", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_h_20_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_h_20_aguas_2", "nivel_tanque_t_30_accionamientos", "nivel_tanque_h_20_accionamientos", "opertado", "produccion"] },
-    { title: "Secador, presiones y temperaturas", keys: ["velocidad_fieltro", "velocidad_secador", "presion_cilindro", "presion_pope", "presion_caldero", "temperatura_lado_seco", "temperatura_lado_humedo", "apertura_campana", "presion_regaderas"] },
+    { title: "Químicos", keys: ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_t_30_accionamientos"] },
+    { title: "Secador, presiones y temperaturas", keys: ["velocidad_fieltro", "velocidad_secador", "presion_cilindro", "presion_caldero", "temperatura_lado_seco", "temperatura_lado_humedo"] },
     { title: "Prensa, aceite, vacío y filtros", keys: ["apertura_purga_prensa", "presion_aceite_alta_tela", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "presion_agua_prensa", "presion_aire_prensa", "presion_vacio_prensa", "presion_fuelle_comando", "presion_fuelle_transmision", "caudal_agua_sello_1", "caudal_agua_sello_2", "caudal_agua_sello_3", "filtro_agua_prensa", "filtro_quimicos", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro", "vacio_tela"] },
-    { title: "Limpieza y cambios de cuchillas", keys: ["limpieza_sala_de_control", "limpieza_escalera", "limpieza_mezzanine", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras", "hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza"] },
+    { title: "Limpieza y cambios de cuchillas", keys: ["limpieza_escalera", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras", "hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza"] },
     { title: "Novedades", keys: ["novedades"] },
 ];
-export const P101 = defineCandidateForm(P1_01_CODE, P101_FIELDS);
+// MF-09 (versión 3, MD_Ejec 10, 12, 13 y 15): se RETIRAN exactamente estos 11 campos (lista aprobada); no se retira ningún otro y no se cambia el orden, la etiqueta ni la obligatoriedad de los demás. «Presión cocedores» tampoco
+// queda como encabezado. Solo lectura para el historial: las capturas de las versiones 1 y 2 conservan sus valores y se muestran como «versión anterior».
+export const P101_LEGACY_FIELDS: readonly FieldSpec[] = [
+    { key: "presion_cocedores", label: "Presión cocedores", kind: "decimal", required: false },
+    { key: "nivel_tanque_h_20_aguas", label: "Nivel tanque H-20 aguas", kind: "decimal", required: false },
+    { key: "nivel_tanque_h_20_aguas_2", label: "Nivel tanque H-20 aguas 2", kind: "decimal", required: false },
+    { key: "nivel_tanque_h_20_accionamientos", label: "Nivel tanque H-20 accionamientos", kind: "decimal", required: false },
+    { key: "opertado", label: "Opertado", kind: "text", required: false },
+    { key: "produccion", label: "Producción", kind: "text", required: false },
+    { key: "presion_pope", label: "Presión pope", kind: "decimal", required: false },
+    { key: "apertura_campana", label: "Apertura campana", kind: "text", required: false },
+    { key: "presion_regaderas", label: "Presión regaderas", kind: "decimal", required: false },
+    { key: "limpieza_sala_de_control", label: "Limpieza sala de control", kind: "text", required: false },
+    { key: "limpieza_mezzanine", label: "Limpieza mezzanine", kind: "text", required: false },
+];
+export const P101 = defineCandidateForm(P1_01_CODE, P101_FIELDS, { legacy: P101_LEGACY_FIELDS });
 export const P101_AUTOMATIC = ["Nombre del operador (usuario autenticado, informativo; no es una firma)", "Fecha (fecha operativa de la asignación)", "Turno (el de la asignación)"] as const;
 export const P101_UNRESOLVED_AUTOMATIC = ["Hora (la del registro del servidor no es la hora de operación)", "Velocidad de máquina", "Firma del operador", "Revisado"] as const; // sin fuente aprobada: no se generan
 export const P101_PENDING: readonly { label: string; pending: string }[] = [
