@@ -22,6 +22,7 @@ export const TIPO_PRODUCTO_OPTIONS: readonly Option[] = [
     { value: "servilleta", label: "Servilleta" },
     { value: "hoja_doble", label: "Hoja doble" },
     { value: "hoja_simple", label: "Hoja simple" },
+    { value: "toalla", label: "Toalla" }, // MF-09 (MD_Ejec 18): cuarta y última opción; requiere la versión 2 de VINTO-P1-06
 ];
 
 export const isF6 = (formId: string) => formId === F6_FORM_ID;

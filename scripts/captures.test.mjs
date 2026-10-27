@@ -80,7 +80,7 @@ test("the payload carries no context fields", () => {
 
 test("options are stored as option_key with a separate label", () => {
   assert.deepEqual(PUNTO_MERMA_OPTIONS.map((o) => [o.value, o.label]), [["bobina_rechazada", "Bobina rechazada"], ["recorte_maquina", "Recorte de máquina"]]);
-  assert.deepEqual(TIPO_PRODUCTO_OPTIONS.map((o) => [o.value, o.label]), [["servilleta", "Servilleta"], ["hoja_doble", "Hoja doble"], ["hoja_simple", "Hoja simple"]]);
+  assert.deepEqual(TIPO_PRODUCTO_OPTIONS.map((o) => [o.value, o.label]), [["servilleta", "Servilleta"], ["hoja_doble", "Hoja doble"], ["hoja_simple", "Hoja simple"], ["toalla", "Toalla"]]); // MF-09 (MD_Ejec 18): «Toalla» es la cuarta y última opción
   for (const label of ["Recorte de máquina", "Hoja doble"]) assert.equal(normalizeDraft(draft({ punto_merma: label, tipo_producto: label })).ok, false); // una etiqueta no es un valor
 });
 
@@ -230,4 +230,15 @@ test("the F6 component and API client never touch local storage for records", ()
   }
   const api = readFileSync(new URL("../lib/vinto/captures-api.ts", import.meta.url), "utf8");
   assert.match(api, /requestJson\("\/api\/captures", \{ method: "POST"/);
+});
+
+test("MF-09: «Toalla» se acepta, las tres opciones anteriores siguen igual y cualquier otro valor se rechaza", () => {
+  assert.deepEqual(TIPO_PRODUCTO_OPTIONS.map((o) => o.value), ["servilleta", "hoja_doble", "hoja_simple", "toalla"], "orden original y Toalla al final");
+  for (const kind of ["servilleta", "hoja_doble", "hoja_simple", "toalla"]) {
+    const check = normalizeDraft(draft({ tipo_producto: kind }));
+    assert.equal(check.ok, true, kind);
+    assert.equal(check.values.tipo_producto, kind);
+  }
+  for (const bad of ["Toalla", "TOALLA", "carton", "cartón", "hoja", "Hoja doble", "", " ", "toalla2"]) assert.equal(normalizeDraft(draft({ tipo_producto: bad })).ok, false, bad);
+  assert.deepEqual(PUNTO_MERMA_OPTIONS.map((o) => o.value), ["bobina_rechazada", "recorte_maquina"], "punto de merma no cambia");
 });

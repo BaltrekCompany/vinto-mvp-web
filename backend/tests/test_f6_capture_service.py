@@ -139,12 +139,12 @@ class ContextTests(CaptureCase):
 
     def test_the_published_form_version_is_resolved_by_code_and_the_highest_published_wins(self):
         _, assignment = self.assignment()
-        self.assertEqual(self.submit(assignment).capture.form_version_number, 1)
+        self.assertEqual(self.submit(assignment).capture.form_version_number, 2)  # MF-09: el bundle vigente trae P1-06 v2 (opción «toalla»)
         c = self.connection
         form_id = self.scalar("SELECT id FROM vinto_config.form WHERE code='VINTO-P1-06'")
-        v1 = self.scalar("SELECT id FROM vinto_config.form_version WHERE form_id=%s AND version_number=1", (form_id,))
+        v1 = self.scalar("SELECT id FROM vinto_config.form_version WHERE form_id=%s AND version_number=2", (form_id,))
         v2 = self.scalar("""INSERT INTO vinto_config.form_version (form_id,version_number,name,area,workflow_id,definition_checksum)
-                            SELECT form_id,2,'Registro de control de fardos v2',area,workflow_id,%s FROM vinto_config.form_version WHERE id=%s RETURNING id""", ("2" * 64, v1))
+                            SELECT form_id,3,'Registro de control de fardos v3',area,workflow_id,%s FROM vinto_config.form_version WHERE id=%s RETURNING id""", ("2" * 64, v1))
         c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id,machine_id) SELECT %s,machine_id FROM vinto_config.form_version_machine WHERE form_version_id=%s", (v2, v1))
         c.execute("""INSERT INTO vinto_config.field_definition (form_version_id,key,label,value_type,source,required,unit_id,display_order)
                      SELECT %s,key,label,value_type,source,required,unit_id,display_order FROM vinto_config.field_definition WHERE form_version_id=%s""", (v2, v1))
@@ -153,7 +153,7 @@ class ContextTests(CaptureCase):
                      JOIN vinto_config.field_definition old ON old.id=o.field_definition_id JOIN vinto_config.field_definition n ON n.form_version_id=%s AND n.key=old.key
                      WHERE o.form_version_id=%s""", (v2, v2, v1))
         c.execute("UPDATE vinto_config.form_version SET status='published',published_at=clock_timestamp() WHERE id=%s", (v2,))
-        self.assertEqual(self.submit(assignment).capture.form_version_number, 2)
+        self.assertEqual(self.submit(assignment).capture.form_version_number, 3)
 
     def test_the_client_cannot_provide_the_form_version_or_any_derived_field(self):
         parameters = set(inspect.signature(capture_service.submit_production_capture).parameters)

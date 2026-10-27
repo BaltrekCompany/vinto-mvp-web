@@ -148,7 +148,7 @@ class DefinitionTests(Base):
     async def test_bundle_versions_and_scope(self):
         self.assertEqual({c: FORMS[c]["version_number"] for c in V1}, {P118: 2, P122: 2, P126: 2})
         self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1),
-                         [("VINTO-P1-01", 2), (P118, 2), ("VINTO-P1-21", 2), (P122, 2), ("VINTO-P1-24", 3), ("VINTO-P1-25", 3), (P126, 2)], "solo estas tres versiones nuevas respecto de MF-07")
+                         [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), (P118, 2), ("VINTO-P1-21", 2), (P122, 2), ("VINTO-P1-24", 3), ("VINTO-P1-25", 3), (P126, 2)], "respecto de MF-07 solo cambian estas tres (MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in V1:
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
             self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.current[code],)), "published")
