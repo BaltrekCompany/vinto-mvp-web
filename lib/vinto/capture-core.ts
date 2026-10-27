@@ -43,7 +43,7 @@ function pair(value: unknown): { code: string; name: string } | null {
 
 // Construye un objeto LIMPIO (los campos desconocidos del backend se ignoran). `parseValues` es el parser ESTRICTO del formulario: si devuelve null,
 // toda la captura se rechaza. Con `expectedFormCode` se rechaza además una captura de OTRO formulario (un parser nuevo debería indicarlo siempre).
-export function parseCaptureOf<V>(value: unknown, parseValues: (values: unknown) => V | null, expectedFormCode?: string): CaptureOf<V> | null {
+export function parseCaptureOf<V>(value: unknown, parseValues: (values: unknown, version?: number) => V | null, expectedFormCode?: string): CaptureOf<V> | null {
     if (!isRec(value) || !isStr(value.id) || !isStr(value.status) || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return null;
     if (!isStr(value.captured_at) || !(value.submitted_at === null || isStr(value.submitted_at)) || !isStr(value.operating_date)) return null;
     const form = value.form, machine = pair(value.machine), shift = pair(value.shift), assignment = value.assignment, order = value.work_order, line = value.line;
@@ -51,7 +51,7 @@ export function parseCaptureOf<V>(value: unknown, parseValues: (values: unknown)
     if (expectedFormCode !== undefined && form.code !== expectedFormCode) return null;
     if (!isRec(assignment) || !isStr(assignment.id) || !isRec(order) || !isStr(order.id) || !isStr(order.number)) return null;
     if (!isRec(line) || !isStr(line.id) || !isStr(line.line_code) || !isStr(line.pv_reference) || !isRec(line.article) || !isStr(line.article.code) || typeof line.article.description !== "string") return null;
-    const values = parseValues(value.values);
+    const values = parseValues(value.values, form.version_number as number); // MF-10: cada captura se interpreta con la definición de SU versión
     if (values === null) return null;
     return {
         id: value.id, status: value.status, revision: value.revision, captured_at: value.captured_at, submitted_at: value.submitted_at,

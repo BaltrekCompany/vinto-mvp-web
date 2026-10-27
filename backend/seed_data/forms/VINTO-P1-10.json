@@ -6,25 +6,25 @@
   "name": "Registro de fardos",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "COPASA"
   ],
   "groups": [],
   "fields": [
     {
-      "key": "codigo_numero_de_producto",
-      "label": "Código / número de producto",
-      "value_type": "text",
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 1
     },
     {
-      "key": "numero_de_fardo",
-      "label": "Número de fardo",
-      "value_type": "text",
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
@@ -49,5 +49,5 @@
       "display_order": 4
     }
   ],
-  "definition_checksum": "99ea38d0649805cb4fe695d805170d7b46d1c8359c6f180aaff623cad75d6f08"
+  "definition_checksum": "e35676ab3f9c430ef46f040174330365516d23ecd167b38e7809bae10695ee89"
 }

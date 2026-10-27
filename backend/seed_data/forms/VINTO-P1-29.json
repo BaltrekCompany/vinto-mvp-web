@@ -6,7 +6,7 @@
   "name": "Producción Tubetera",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "TUBETERA"
   ],
@@ -49,7 +49,7 @@
       "fields": [
         {
           "key": "formato_tipo_de_tubete",
-          "label": "Tipo de tubete",
+          "label": "Formato de tubete",
           "value_type": "text",
           "source": "manual",
           "required": true,
@@ -86,7 +86,7 @@
         {
           "key": "diametro_interno_mm_por_formato",
           "label": "Diámetro interno",
-          "value_type": "decimal",
+          "value_type": "text",
           "source": "manual",
           "required": true,
           "unit": null,
@@ -95,7 +95,7 @@
         {
           "key": "diametro_externo_mm_por_formato",
           "label": "Diámetro externo",
-          "value_type": "decimal",
+          "value_type": "text",
           "source": "manual",
           "required": true,
           "unit": null,
@@ -116,17 +116,8 @@
           "value_type": "decimal",
           "source": "manual",
           "required": true,
-          "unit": null,
+          "unit": "MM",
           "display_order": 8
-        },
-        {
-          "key": "peso_kg_por_formato",
-          "label": "Peso",
-          "value_type": "decimal",
-          "source": "manual",
-          "required": true,
-          "unit": null,
-          "display_order": 9
         }
       ]
     }
@@ -151,22 +142,31 @@
       "display_order": 2
     },
     {
-      "key": "pegamento_total_kg",
-      "label": "Pegamento total",
-      "value_type": "text",
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 3
     },
     {
-      "key": "peso_fardo",
-      "label": "Peso fardo",
-      "value_type": "text",
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 4
+    },
+    {
+      "key": "pegamento_total_kg",
+      "label": "Pegamento total",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
     },
     {
       "key": "numero_mrp_del_sistema",
@@ -175,7 +175,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 6
     },
     {
       "key": "observaciones",
@@ -184,8 +184,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 6
+      "display_order": 7
     }
   ],
-  "definition_checksum": "52e21ebae85952a6631aa86cdd765a48efc21f2b96633ced7ebec156e25fd148"
+  "definition_checksum": "c0c8f5ba5e288429a883daa828d55f347723e4718323bdfa93c29ccfa05d17c0"
 }

@@ -1,7 +1,8 @@
 // node --test scripts/p1-29-capture.test.mjs
 // VINTO-P1-29 «Producción Tubetera» (M3-B), ficha CANDIDATA: la especificación coincide con la definición legacy (claves y tipos), validación ESTRUCTURAL, payload sin contexto ni ids,
 // intento pendiente inmutable con filas, separación de parsers entre formularios, flujo 201/200/409/422/401/403/404 con reconciliación, cliente HTTP con `fetch` simulado y el componente
-// renderizado. Nada de lo que se prueba decide reglas industriales (catálogo de tubetes, unidad del espesor, visto bueno, alcance de los grupos): siguen pendientes.
+// renderizado. Nada de lo que se prueba decide reglas industriales (catálogo de tubetes, unidad en metros, visto bueno, alcance de los grupos): siguen pendientes.
+// MF-10: la versión 2 retira «Peso fardo» y «Peso» por formato, renombra «Formato de tubete», muestra el espesor en mm, guarda los diámetros como texto y añade las horas; la versión 1 se lee con su definición (último bloque).
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -15,7 +16,7 @@ import { addRow, removeRow, setCell } from "../lib/vinto/capture-groups.ts";
 import { parseCapture as parseF6 } from "../lib/vinto/captures.ts";
 import { parseP110Capture } from "../lib/vinto/p1-10.ts";
 import {
-  CONTEXT_NOTES, MAX_TEXT_LENGTH, P129_GROUPS, P129_PENDING, P129_SIMPLE_FIELDS, P1_29_CODE, buildP129Payload, createP129Attempt, emptyP129Draft, isIsoDate, normalizeP129Draft,
+  CONTEXT_NOTES, MAX_TEXT_LENGTH, P129_GROUPS, P129_GROUPS_V1, P129_PENDING, P129_SIMPLE_FIELDS, P1_29_CODE, buildP129Payload, createP129Attempt, emptyP129Draft, isIsoDate, normalizeP129Draft,
   parseP129Capture, parseP129List, parseP129Submission, reconcileP129, submitP129Attempt,
 } from "../lib/vinto/p1-29.ts";
 
@@ -53,25 +54,26 @@ const ASSIGNMENT = "44444444-4444-4444-8444-444444444444", DEVICE = "99999999-99
 let n = 0;
 const key = () => `k${++n}`;
 const rodela = (id, weight) => ({ rodela_papel_kraft_identificacion: id, rodela_papel_kraft_peso_kg: weight });
-const formato = (o = {}) => ({ formato_tipo_de_tubete: "FORMATO-FICTICIO-1", cantidad_tubetes_producidos_por_formato: "120 (texto)", merma_kg_por_formato: "0.500", diametro_interno_mm_por_formato: "38.10",
-  diametro_externo_mm_por_formato: "42.00", cantidad_de_hojas_por_formato: "4", espesor_mm_por_formato: "1.800", peso_kg_por_formato: "6.750", ...o });
-const VALUES = { fecha_de_produccion: "2026-01-15", lote_de_produccion: "LOTE-FICTICIO-001", pegamento_total_kg: "12,5 (texto)", peso_fardo: "100,0 (texto)", numero_mrp_del_sistema: "MRP-FICTICIO", _groups: { rodelas: [rodela("R-A", "10.250"), rodela("R-B", "8.100")], formatos: [formato(), formato({ formato_tipo_de_tubete: "FORMATO-FICTICIO-2", cantidad_tubetes_producidos_por_formato: "80" })] } };
+const formato = (o = {}) => ({ formato_tipo_de_tubete: "FORMATO-FICTICIO-1", cantidad_tubetes_producidos_por_formato: "120 (texto)", merma_kg_por_formato: "0.500", diametro_interno_mm_por_formato: "77-78",
+  diametro_externo_mm_por_formato: "80-81", cantidad_de_hojas_por_formato: "4", espesor_mm_por_formato: "1.800", ...o });
+const formatoV1 = (o = {}) => ({ ...formato(), diametro_interno_mm_por_formato: "38.10", diametro_externo_mm_por_formato: "42.00", peso_kg_por_formato: "6.750", ...o }); // versión 1: diámetros decimales y peso por formato
+const VALUES = { fecha_de_produccion: "2026-01-15", lote_de_produccion: "LOTE-FICTICIO-001", hora_inicio: "06:30:00", hora_fin: "14:45:00", pegamento_total_kg: "12,5 (texto)", numero_mrp_del_sistema: "MRP-FICTICIO", _groups: { rodelas: [rodela("R-A", "10.250"), rodela("R-B", "8.100")], formatos: [formato(), formato({ formato_tipo_de_tubete: "FORMATO-FICTICIO-2", cantidad_tubetes_producidos_por_formato: "80" })] } };
 const envelope = (id, formCode, values) => ({
   id, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "Formulario" },
   machine: { code: "TUBETERA", name: "Tubetera (prueba)" }, shift: { code: "FICT_DIA", name: "Día (ficticio)" }, operating_date: "2026-10-06", assignment: { id: ASSIGNMENT },
   work_order: { id: "22222222-2222-4222-8222-222222222222", number: "OT-2026-0001" }, line: { id: "55555555-5555-4555-8555-555555555555", line_code: "L1", pv_reference: "PV-1", article: { code: "A", description: "B" } }, values,
 });
-const p129 = (id = ID, values = VALUES) => envelope(id, P1_29_CODE, values);
+const p129 = (id = ID, values = VALUES, version = 2) => ({ ...envelope(id, P1_29_CODE, values), form: { code: P1_29_CODE, version_number: version, name: "Formulario" } });
 const draftOf = (o = {}) => {
   const draft = emptyP129Draft(key);
   const rows = (spec, list) => list.map((cells) => ({ rowKey: key(), cells: Object.fromEntries(spec.fields.map((f) => [f.key, cells[f.key] ?? ""])) }));
-  return { simple: { ...draft.simple, fecha_de_produccion: "2026-01-15", lote_de_produccion: "LOTE-FICTICIO-001", pegamento_total_kg: " 12,5 (texto) ", peso_fardo: "100,0 (texto)", numero_mrp_del_sistema: "MRP-FICTICIO", observaciones: "", ...o.simple },
+  return { simple: { ...draft.simple, fecha_de_produccion: "2026-01-15", lote_de_produccion: "LOTE-FICTICIO-001", hora_inicio: "06:30", hora_fin: "14:45", pegamento_total_kg: " 12,5 (texto) ", numero_mrp_del_sistema: "MRP-FICTICIO", observaciones: "", ...o.simple },
     groups: { rodelas: rows(P129_GROUPS[0], o.rodelas ?? [rodela("R-A", "10,250"), rodela("R-B", "8.100")]), formatos: rows(P129_GROUPS[1], o.formatos ?? [formato({ merma_kg_por_formato: "0,500" }), formato({ formato_tipo_de_tubete: "FORMATO-FICTICIO-2" })]) } };
 };
 
 // ---- la especificación coincide con la definición legacy -------------------------------------------------------------------------------------------
 
-test("the candidate specification covers the 17 manual legacy fields with their keys and declared types, and none of the 3 automatic ones", () => {
+test("the candidate specification (v2) is the 17 manual legacy fields minus the two retired weights plus the two hours, with the approved type changes, and none of the 3 automatic ones", () => {
   const legacy = FORM_DEFINITIONS.find((form) => form.code === P1_29_CODE);
   assert.equal(legacy.fields.length, 20);
   const manual = legacy.fields.filter((f) => f.source === "manual"), automatic = legacy.fields.filter((f) => f.source === "automatic");
@@ -79,27 +81,32 @@ test("the candidate specification covers the 17 manual legacy fields with their 
   assert.deepEqual(automatic.map((f) => f.key).sort(), ["operador", "turno", "visto_bueno_responsable"]);
   const spec = [...P129_SIMPLE_FIELDS.map((f) => ({ key: f.key, kind: f.kind, required: f.required })), ...P129_GROUPS.flatMap((g) => g.fields.map((f) => ({ key: f.key, kind: f.kind, required: f.required })))];
   assert.equal(spec.length, 17);
-  assert.deepEqual(spec.map((f) => f.key).sort(), manual.map((f) => f.key).sort());
-  for (const field of manual) {
+  const RETIRED = ["peso_fardo", "peso_kg_por_formato"], NEW = ["hora_inicio", "hora_fin"], TEXT_NOW = ["diametro_interno_mm_por_formato", "diametro_externo_mm_por_formato"];
+  assert.deepEqual(spec.map((f) => f.key).sort(), [...manual.map((f) => f.key).filter((k) => !RETIRED.includes(k)), ...NEW].sort());
+  for (const field of manual.filter((f) => !RETIRED.includes(f.key))) {
     const s = spec.find((x) => x.key === field.key);
-    assert.equal(s.kind, field.type, field.key); // text stays text (quantities), decimal stays decimal, date stays date, textarea stays textarea
+    assert.equal(s.kind, TEXT_NOW.includes(field.key) ? "text" : field.type, field.key); // text stays text (quantities), decimal stays decimal (MF-10: los diámetros pasan a texto), date stays date, textarea stays textarea
     assert.equal(s.required, field.required, field.key);
   }
+  for (const key of NEW) assert.deepEqual(spec.find((x) => x.key === key), { key, kind: "time", required: true });
+  for (const key of RETIRED) assert.equal(spec.some((f) => f.key === key), false, `${key} ya no se solicita`);
   for (const key of ["operador", "turno", "visto_bueno_responsable"]) assert.equal(spec.some((f) => f.key === key), false, key); // no simulated manual fields
   assert.equal(new Set(spec.map((f) => f.key)).size, 17);
 });
 
-test("the legacy definition is untouched and the known discrepancies are documented, not corrected", () => {
+test("the legacy definition is untouched and the known discrepancies are documented, not corrected (MF-10: espesor en mm; sin metros)", () => {
   const legacy = FORM_DEFINITIONS.find((form) => form.code === P1_29_CODE);
   assert.deepEqual(legacy.allowedMachineIds, ["tubertera"]); // the legacy name is NOT silently changed to TUBETERA
   assert.equal(legacy.machineLabel, "Tubertera");
   assert.equal(legacy.fields.find((f) => f.key === "espesor_mm_por_formato").unit, "kg"); // legacy metadata: mm-named field, kg unit
-  assert.equal(P129_GROUPS[1].fields.find((f) => f.key === "espesor_mm_por_formato").unit, undefined); // the form does not pick a unit for it
+  assert.equal(P129_GROUPS[1].fields.find((f) => f.key === "espesor_mm_por_formato").unit, "mm"); // MF-10: la unidad aprobada del espesor es mm
   assert.equal(P129_GROUPS[1].fields.find((f) => f.key === "formato_tipo_de_tubete").kind, "text"); // no approved catalog: free text
-  assert.deepEqual(P129_PENDING.map((p) => p.id), ["maquina", "espesor", "catalogo", "visto-bueno", "alcance"]);
+  assert.equal(P129_GROUPS[1].fields.find((f) => f.key === "formato_tipo_de_tubete").label, "Formato de tubete");
+  assert.deepEqual(P129_GROUPS.flatMap((g) => g.fields).filter((f) => f.unit === "m" || f.unit === "M").map((f) => f.key), [], "la unidad en metros NO está confirmada: no se añade «m» a ningún campo");
+  assert.deepEqual(P129_PENDING.map((p) => p.id), ["maquina", "espesor", "diametros", "horas", "catalogo", "visto-bueno", "alcance"]);
   assert.deepEqual(Object.keys(CONTEXT_NOTES), ["operador", "turno", "visto_bueno_responsable"]);
   assert.ok(P129_PENDING[0].detail.includes("tubertera") && P129_PENDING[0].detail.includes("TUBETERA"));
-  assert.ok(P129_PENDING[1].detail.includes("mm") && P129_PENDING[1].detail.includes("kg"));
+  assert.ok(P129_PENDING[1].detail.includes("mm") && P129_PENDING[1].detail.includes("METROS"));
 });
 
 // ---- parsers: solo P1-29 ------------------------------------------------------------------------------------------------------------------------
@@ -145,7 +152,10 @@ test("validation: trims, keeps quantities as text and decimals as dotted text, a
   assert.equal(check.values._groups.formatos[0].cantidad_tubetes_producidos_por_formato, "120 (texto)"); // a text quantity is NOT turned into an integer
   assert.equal(check.values._groups.formatos[0].cantidad_de_hojas_por_formato, "4");
   assert.equal(typeof check.values._groups.formatos[0].cantidad_de_hojas_por_formato, "string");
-  assert.equal(normalizeP129Draft(draftOf({ simple: { peso_fardo: "cualquier texto" } })).ok, true); // no range/format rule for the text weights
+  assert.equal(normalizeP129Draft(draftOf({ simple: { pegamento_total_kg: "cualquier texto" } })).ok, true); // no range/format rule for the text quantities
+  assert.equal(check.values.hora_inicio, "06:30");
+  assert.equal(check.values.hora_fin, "14:45");
+  assert.equal("peso_fardo" in check.values || "peso_kg_por_formato" in check.values._groups.formatos[0], false, "MF-10: ya no se solicitan");
   assert.equal(normalizeP129Draft(draftOf({ formatos: [formato({ formato_tipo_de_tubete: "tipo inventado" })] })).ok, true); // free text: there is no approved catalog
   assert.equal(normalizeP129Draft(draftOf({ rodelas: [rodela("R", "123456789.123456789")] })).values._groups.rodelas[0].rodela_papel_kraft_peso_kg, "123456789.123456789");
 });
@@ -154,7 +164,7 @@ test("validation errors name the field or the row and block the attempt", () => 
   const empty = normalizeP129Draft(emptyP129Draft(key));
   assert.equal(empty.ok, false);
   const simpleErrors = empty.errors.filter((e) => e.group === "").map((e) => e.message);
-  assert.deepEqual(simpleErrors.sort(), ["Fecha de producción: es obligatorio.", "Lote de producción: es obligatorio.", "Número MRP del sistema: es obligatorio.", "Peso fardo: es obligatorio.", "Pegamento total: es obligatorio."].sort());
+  assert.deepEqual(simpleErrors.sort(), ["Fecha de producción: es obligatorio.", "Lote de producción: es obligatorio.", "Número MRP del sistema: es obligatorio.", "Hora inicio: es obligatorio.", "Hora fin: es obligatorio.", "Pegamento total: es obligatorio."].sort());
   assert.ok(empty.errors.some((e) => e.group === "rodelas" && e.row === 1 && e.field === "rodela_papel_kraft_identificacion"));
   assert.ok(empty.errors.some((e) => e.group === "formatos" && e.row === 1 && e.field === "espesor_mm_por_formato"));
   const bad = normalizeP129Draft(draftOf({ simple: { fecha_de_produccion: "2026-02-30" }, rodelas: [rodela("R-A", "10,250"), rodela("R-B", "ocho")], formatos: [formato({ espesor_mm_por_formato: "1e3" })] }));
@@ -164,6 +174,8 @@ test("validation errors name the field or the row and block the attempt", () => 
   assert.ok(bad.errors.some((e) => e.group === "formatos" && e.row === 1 && e.field === "espesor_mm_por_formato"));
   assert.equal(normalizeP129Draft(draftOf({ rodelas: [] })).ok, false); // minimum rows (test hypothesis)
   assert.equal(normalizeP129Draft(draftOf({ simple: { lote_de_produccion: "x".repeat(MAX_TEXT_LENGTH + 1) } })).ok, false);
+  for (const badHour of ["24:00", "12:60", "7:30", "abc", "1230"]) assert.ok(normalizeP129Draft(draftOf({ simple: { hora_fin: badHour } })).errors.some((e) => e.field === "hora_fin" && /hora válida HH:MM/.test(e.message)), badHour);
+  for (const [start, end] of [["00:00", "23:59"], ["23:30", "00:15"], ["10:00", "09:00"]]) assert.equal(normalizeP129Draft(draftOf({ simple: { hora_inicio: start, hora_fin: end } })).ok, true, `${start}-${end}: sin validación de orden ni de cruce de día`);
   assert.equal(isIsoDate("2026-02-29"), false);
   assert.equal(isIsoDate("2028-02-29"), true);
 });
@@ -284,10 +296,14 @@ const disabledCount = (markup, tag) => (markup.match(new RegExp("<" + tag + "[ ]
 test("component: candidate notice, server context, pending context fields, lote fields and both groups with their first row", () => {
   const markup = html({ user: { display_name: "Operación DEV" } }), plain = text(markup);
   for (const piece of ["Producción Tubetera", "Ficha candidata — No homologada", "OT-2026-0001", "L1 / PV-1", "TUBETERA", "Día (ficticio) · 2026-10-06", "Turno · automático", "Operador", "Visto bueno del responsable",
-    "— pendiente de definición —", "Por definir: responsable, mecanismo y efecto sobre la aprobación", "Fecha de producción *", "Lote de producción *", "Pegamento total *", "Peso fardo *", "Número MRP del sistema *", "Observaciones",
-    "Rodelas de papel kraft", "Formatos de tubete", "Fila 1", "Agregar fila", "Identificación de la rodela / lote *", "Peso de la rodela *", "Tipo de tubete *", "Cantidad de tubetes observados", "Espesor *",
+    "— pendiente de definición —", "Por definir: responsable, mecanismo y efecto sobre la aprobación", "Fecha de producción *", "Lote de producción *", "Hora inicio *", "Hora fin *", "Pegamento total *", "Número MRP del sistema *", "Observaciones",
+    "Rodelas de papel kraft", "Formatos de tubete", "Fila 1", "Agregar fila", "Identificación de la rodela / lote *", "Peso de la rodela *", "Formato de tubete *", "Cantidad de tubetes observados", "Espesor *",
     "1 fila · mínimo 1", "Decisiones pendientes de VINTO", "tubertera", "TUBETERA", "Enviar registro trazable", "no es el operador ni el visto bueno del responsable"]) assert.ok(plain.includes(piece), piece);
   assert.match(markup, /type="date"/);
+  assert.equal((markup.match(/type="time"/g) ?? []).length, 2, "MF-10: Hora inicio y Hora fin");
+  for (const gone of ["Peso fardo", "Tipo de tubete", "Peso *"]) assert.equal(plain.includes(gone), false, `${gone}: ya no se muestra`);
+  assert.match(plain, /Espesor \* mm/, "el espesor muestra mm");
+  assert.match(plain, /Diámetro interno \* mm/);
   assert.equal((markup.match(/data-row="1"/g) ?? []).length, 2);
   assert.equal((markup.match(/data-row="2"/g) ?? []).length, 0);
   assert.equal(disabledCount(markup, "input") + disabledCount(markup, "textarea"), 0);
@@ -331,4 +347,25 @@ test("P1-29 is wired only behind the backend-verified Rebobinado navigation (M4-
     if (existsSync(file)) assert.equal(readFileSync(file, "utf8").includes("VINTO-P1-29"), false, name);
   }
   assert.match(readFileSync(join(root, "backend/app/sectors.py"), "utf8"), /DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)/);
+});
+
+// ---- MF-10: lectura por versión ---------------------------------------------------------------------------------------------------------------------------------
+test("MF-10: la versión 1 conserva «Peso fardo», «Peso» por formato y los diámetros decimales; la versión 2 exige horas y acepta diámetros de texto", () => {
+  const v1Values = { fecha_de_produccion: "2026-01-15", lote_de_produccion: "L1", pegamento_total_kg: "12,5", peso_fardo: "100,0 (texto)", numero_mrp_del_sistema: "MRP", _groups: { rodelas: [rodela("R-A", "10.250")], formatos: [formatoV1()] } };
+  const v1 = parseP129Capture(p129(ID, v1Values, 1));
+  assert.equal(v1.values.peso_fardo, "100,0 (texto)", "los datos históricos conservan su formato");
+  assert.equal(v1.values._groups.formatos[0].peso_kg_por_formato, "6.750");
+  assert.equal(v1.values._groups.formatos[0].diametro_interno_mm_por_formato, "38.10");
+  assert.equal("hora_inicio" in v1.values, false, "no se fabrican horas para registros anteriores");
+  assert.equal(parseP129Capture(p129(ID, { ...v1Values, peso_fardo: "" }, 1)), null, "una v1 sigue exigiendo su peso");
+  assert.equal(parseP129Capture(p129(ID, { ...v1Values, _groups: { ...v1Values._groups, formatos: [formatoV1({ diametro_interno_mm_por_formato: "77-78" })] } }, 1)), null, "en la v1 los diámetros eran decimales");
+  assert.equal(parseP129Capture(p129(ID, v1Values, 2)), null, "una captura v2 sin horas no es válida");
+  const v2 = parseP129Capture(p129());
+  assert.equal(v2.values._groups.formatos[0].diametro_interno_mm_por_formato, "77-78", "los diámetros de texto se conservan sin interpretar");
+  assert.equal(parseP129Capture(p129(ID, { ...VALUES, hora_inicio: "25:00:00" })), null);
+  assert.equal(parseP129Capture(p129(ID, { ...VALUES, hora_fin: undefined })), null);
+  assert.deepEqual(P129_GROUPS_V1[1].fields.map((f) => f.key).filter((k) => k === "peso_kg_por_formato"), ["peso_kg_por_formato"]);
+  const list = parseP129List([p129(ID, v1Values, 1), p129("33333333-3333-4333-8333-333333333333")]);
+  assert.deepEqual(list.map((c) => c.form.version_number), [1, 2]);
+  for (const text of ["77-78", "80-81", "76,5 - 77", "entre 77 y 78"]) assert.equal(normalizeP129Draft(draftOf({ formatos: [formato({ diametro_interno_mm_por_formato: text })] })).values._groups.formatos[0].diametro_interno_mm_por_formato, text, "sin normalizar");
 });

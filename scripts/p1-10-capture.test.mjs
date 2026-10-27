@@ -2,6 +2,7 @@
 // VINTO-P1-10 central (M2-B2): contrato del cliente (valores, validación ESTRUCTURAL, payload inmutable, intento pendiente, reconciliación), separación F6/P1-10 en los
 // parsers y en el cliente HTTP genérico, y el componente de captura renderizado. La red se simula con funciones inyectadas o con un `fetch` de prueba.
 // Nada de lo que se prueba aquí decide reglas industriales de P1-10 (numeración, peso, responsable, firma, máquinas): siguen pendientes.
+// MF-10: la versión 2 retira «Código / número de producto» y «Número de fardo» y añade «Hora inicio» y «Hora fin»; las capturas de la versión 1 se leen con su definición (ver el último bloque).
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -48,7 +49,8 @@ before(async () => {
 after(() => rmSync(workDir, { recursive: true, force: true }));
 
 const ASSIGNMENT = "44444444-4444-4444-8444-444444444444", DEVICE = "99999999-9999-4999-8999-999999999999", ID = "11111111-1111-4111-8111-111111111111";
-const P110_VALUES = { codigo_numero_de_producto: "EJ-PROD", numero_de_fardo: "00-0042", peso_fardo: "12,5 kg", observaciones: "x" };
+const P110_VALUES = { peso_fardo: "12,5 kg", hora_inicio: "06:30:00", hora_fin: "14:45:00", observaciones: "x" }; // versión 2 (el backend sirve las horas como HH:MM:SS)
+const P110_V1_VALUES = { codigo_numero_de_producto: "EJ-PROD", numero_de_fardo: "00-0042", peso_fardo: "12,5 kg", observaciones: "x" };
 const F6_VALUES = { cantidad_fardos: 2, punto_merma: "recorte_maquina", tipo_producto: "hoja_doble", peso_kg: "125.50" };
 const envelope = (id, formCode, values) => ({
   id, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "Formulario" },
@@ -56,9 +58,10 @@ const envelope = (id, formCode, values) => ({
   work_order: { id: "22222222-2222-4222-8222-222222222222", number: "OT-2026-0001" },
   line: { id: "55555555-5555-4555-8555-555555555555", line_code: "L1", pv_reference: "PV-1", article: { code: "M1-1024", description: "BOBINA" } }, values,
 });
-const p110 = (id = ID, values = P110_VALUES) => envelope(id, P1_10_CODE, values);
+const withVersion = (capture, version) => ({ ...capture, form: { ...capture.form, version_number: version } });
+const p110 = (id = ID, values = P110_VALUES) => withVersion(envelope(id, P1_10_CODE, values), 2);
 const f6 = (id = ID) => envelope(id, "VINTO-P1-06", F6_VALUES);
-const draft = (o = {}) => ({ ...EMPTY_P110_DRAFT, codigo_numero_de_producto: "EJ-PROD", numero_de_fardo: "00-0042", peso_fardo: "12,5 kg", observaciones: "x", ...o });
+const draft = (o = {}) => ({ ...EMPTY_P110_DRAFT, peso_fardo: "12,5 kg", hora_inicio: "06:30", hora_fin: "14:45", observaciones: "x", ...o });
 
 // ---- separación F6 / P1-10 en los parsers -------------------------------------------------------------------------------------
 
@@ -75,9 +78,9 @@ test("P1-10 parsers accept only P1-10 captures; F6 parsers accept only F6 captur
   assert.equal(parseP110Submission({ created: true, already_submitted: false, capture: p110() }).capture.form.code, P1_10_CODE);
 });
 
-test("the P1-10 values parser is strict about the three required texts and the optional notes", () => {
-  for (const bad of [{ ...P110_VALUES, codigo_numero_de_producto: "" }, { ...P110_VALUES, numero_de_fardo: 42 }, { ...P110_VALUES, peso_fardo: 12.5 }, { ...P110_VALUES, peso_fardo: null },
-    { ...P110_VALUES, observaciones: 5 }, { numero_de_fardo: "1", peso_fardo: "1" }, null, [], "x"]) assert.equal(parseP110Capture(p110(ID, bad)), null, JSON.stringify(bad));
+test("the P1-10 values parser is strict about the weight, the two hours and the optional notes", () => {
+  for (const bad of [{ ...P110_VALUES, peso_fardo: "" }, { ...P110_VALUES, hora_inicio: 42 }, { ...P110_VALUES, peso_fardo: 12.5 }, { ...P110_VALUES, peso_fardo: null }, { ...P110_VALUES, hora_fin: "25:00:00" },
+    { ...P110_VALUES, hora_inicio: "7:30" }, { ...P110_VALUES, hora_fin: undefined }, { ...P110_VALUES, observaciones: 5 }, { peso_fardo: "1" }, null, [], "x"]) assert.equal(parseP110Capture(p110(ID, bad)), null, JSON.stringify(bad));
   const without = { ...P110_VALUES };
   delete without.observaciones;
   assert.equal("observaciones" in parseP110Capture(p110(ID, without)).values, false);
@@ -86,26 +89,30 @@ test("the P1-10 values parser is strict about the three required texts and the o
 
 // ---- validación estructural: solo lo estructural -----------------------------------------------------------------------------------
 
-test("structural validation: trims, requires the three texts and invents no format, range, unit or uniqueness rule", () => {
-  const ok = normalizeP110Draft(draft({ codigo_numero_de_producto: "  Ab 1/2  ", numero_de_fardo: " 00-0042 ", peso_fardo: " 12,50 kg ", observaciones: "  " }));
-  assert.deepEqual(ok, { ok: true, values: { codigo_numero_de_producto: "Ab 1/2", numero_de_fardo: "00-0042", peso_fardo: "12,50 kg" } }); // blank notes are omitted
+test("structural validation: trims, requires the weight and the two hours and invents no format, range, unit, numbering or order rule", () => {
+  const ok = normalizeP110Draft(draft({ peso_fardo: " 12,50 kg ", hora_inicio: " 06:30 ", observaciones: "  " }));
+  assert.deepEqual(ok, { ok: true, values: { peso_fardo: "12,50 kg", hora_inicio: "06:30", hora_fin: "14:45" } }); // blank notes are omitted
   for (const weight of ["12,5", "12.5", "abc", "-3", "0", "1e3", "doce kilos", "9".repeat(60)]) assert.equal(normalizeP110Draft(draft({ peso_fardo: weight })).ok, true, weight); // the weight is TEXT
-  for (const bale of ["1", "A", "ñandú-1", "0000000001", "x y z"]) assert.equal(normalizeP110Draft(draft({ numero_de_fardo: bale })).ok, true, bale); // no format, no numbering
+  // MF-10: horas HH:MM digitadas (00:00 a 23:59); sin conversión, sin comparar inicio y fin y sin deducir fechas
+  for (const [start, end] of [["00:00", "23:59"], ["23:30", "00:15"], ["10:00", "09:00"], ["08:00", "08:00"]]) assert.deepEqual(normalizeP110Draft(draft({ hora_inicio: start, hora_fin: end })).values, { peso_fardo: "12,5 kg", hora_inicio: start, hora_fin: end, observaciones: "x" });
+  for (const bad of ["24:00", "12:60", "7:30", "12:5", "abc", "1230", "12.30"]) assert.match(normalizeP110Draft(draft({ hora_fin: bad })).errors.join(" "), /Hora fin: debe ser una hora válida HH:MM/, bad);
   const empty = normalizeP110Draft(EMPTY_P110_DRAFT);
   assert.equal(empty.ok, false);
   assert.equal(empty.errors.length, 3);
   assert.ok(empty.errors.every((e) => e.endsWith("es obligatorio.")));
-  assert.equal(normalizeP110Draft(draft({ numero_de_fardo: "   " })).ok, false);
-  assert.equal(normalizeP110Draft(draft({ codigo_numero_de_producto: "x".repeat(MAX_TEXT_LENGTH + 1) })).ok, false);
+  assert.deepEqual(empty.errors.map((e) => e.split(":")[0]), ["Peso fardo", "Hora inicio", "Hora fin"]);
+  assert.equal(normalizeP110Draft(draft({ hora_inicio: "   " })).ok, false);
+  assert.equal(normalizeP110Draft(draft({ peso_fardo: "x".repeat(MAX_TEXT_LENGTH + 1) })).ok, false);
   assert.equal(normalizeP110Draft(draft({ observaciones: "x".repeat(MAX_TEXT_LENGTH + 1) })).ok, false);
-  assert.equal(normalizeP110Draft(draft({ codigo_numero_de_producto: "x".repeat(MAX_TEXT_LENGTH) })).ok, true);
+  assert.equal(normalizeP110Draft(draft({ peso_fardo: "x".repeat(MAX_TEXT_LENGTH) })).ok, true);
+  assert.equal(Object.keys(EMPTY_P110_DRAFT).some((k) => ["codigo_numero_de_producto", "numero_de_fardo"].includes(k)), false, "ya no se digitan; no se genera ningún correlativo");
 });
 
 test("the payload carries only the agreed fields: no date, machine, responsible, signature or any context", () => {
-  const payload = buildP110Payload(ID, ASSIGNMENT, DEVICE, { codigo_numero_de_producto: "A", numero_de_fardo: "B", peso_fardo: "C" });
+  const payload = buildP110Payload(ID, ASSIGNMENT, DEVICE, { peso_fardo: "C", hora_inicio: "06:30", hora_fin: "14:45" });
   assert.deepEqual(Object.keys(payload).sort(), ["assignment_id", "capture_id", "device_key", "form_code", "values"]);
   assert.equal(payload.form_code, "VINTO-P1-10");
-  assert.deepEqual(Object.keys(payload.values).sort(), ["codigo_numero_de_producto", "numero_de_fardo", "peso_fardo"]);
+  assert.deepEqual(Object.keys(payload.values).sort(), ["hora_fin", "hora_inicio", "peso_fardo"]);
   for (const key of ["fecha", "maquina", "responsable", "firma"]) assert.equal(key in payload.values, false, key);
 });
 
@@ -240,12 +247,14 @@ const disabledCount = (markup, tag) => (markup.match(new RegExp("<" + tag + "[ ]
 
 test("component: manual fields, server context, pending contextual fields and the non-homologated notice", () => {
   const markup = html({ user: { display_name: "Operación DEV" } }), plain = text(markup);
-  for (const piece of ["Registro de fardos", "Código / número de producto *", "Número de fardo *", "Peso fardo *", "Observaciones", "OT-2026-0001", "COPASA", "Día (ficticio) · 2026-10-06",
+  for (const piece of ["Registro de fardos", "Hora inicio *", "Hora fin *", "Peso fardo *", "Observaciones", "OT-2026-0001", "COPASA", "Día (ficticio) · 2026-10-06",
     "Ficha NO homologada · solo entorno de prueba", "Fecha · automático", "Máquina · automático", "Responsable", "Firma", "— pendiente de definición —",
-    "Por confirmar: no se asume que el responsable sea el operador que captura.", "no existe firma digital en el sistema y no se simula una", "Sin correlativo, formato ni unicidad confirmados.",
+    "Por confirmar: no se asume que el responsable sea el operador que captura.", "no existe firma digital en el sistema y no se simula una", "El número de fardo no se genera todavía (numeración automática pendiente de VINTO)", "El producto y la OT salen de la asignación",
     "Tipo declarado: texto", "Enviar registro trazable"]) assert.ok(plain.includes(piece), piece);
   assert.equal(disabledCount(markup, "input") + disabledCount(markup, "textarea"), 0);
   assert.equal((markup.match(/<input/g) ?? []).length, 3);
+  assert.equal((markup.match(/type="time"/g) ?? []).length, 2, "MF-10: Hora inicio y Hora fin son campos de hora");
+  assert.equal(plain.includes("Código / número de producto *") || plain.includes("Número de fardo *"), false, "MF-10: ya no se digitan");
   assert.equal((markup.match(/<textarea/g) ?? []).length, 1);
   // the authenticated user is shown as information only, never as responsible/signature
   assert.ok(plain.includes("Operación DEV") && plain.includes("no es el responsable aprobado ni una firma"));
@@ -254,7 +263,7 @@ test("component: manual fields, server context, pending contextual fields and th
 
 test("component: contextual fields are not editable inputs and the form has no way to send them", () => {
   const markup = html({});
-  const contextual = markup.slice(markup.indexOf('data-section="contextual"'), markup.indexOf("Campos manuales"));
+  const contextual = markup.slice(markup.indexOf('data-section="contextual"'), markup.indexOf("El producto y la OT"));
   assert.equal(/<(input|select|textarea)/.test(contextual), false);
   assert.equal(markup.includes('data-section="session"'), false); // no session line without a user
 });
@@ -285,4 +294,17 @@ test("component and clients never touch business storage or credentials; P1-10 i
 
 test("F6 draft and values are not affected by the P1-10 additions", () => {
   assert.deepEqual(Object.keys(EMPTY_DRAFT), ["cantidad_fardos", "punto_merma", "tipo_producto", "peso_kg", "observaciones"]);
+});
+
+// ---- MF-10: lectura de las capturas de la versión 1 (con código y número de fardo) y de la versión 2 --------------------------------------------------------
+test("MF-10: la versión 1 conserva su código de producto y su número de fardo; cada captura se lee con la definición de SU versión", () => {
+  const v1 = parseP110Capture(withVersion(envelope(ID, P1_10_CODE, P110_V1_VALUES), 1));
+  assert.deepEqual(v1.values, P110_V1_VALUES, "los números de fardo existentes se conservan");
+  assert.equal(parseP110Capture(withVersion(envelope(ID, P1_10_CODE, { peso_fardo: "1", observaciones: "x" }), 1)), null, "una v1 sin código ni número no es válida");
+  assert.equal(parseP110Capture(withVersion(envelope(ID, P1_10_CODE, P110_V1_VALUES), 2)), null, "una v2 sin horas no es válida");
+  const v2 = parseP110Capture(p110());
+  assert.deepEqual(v2.values, P110_VALUES);
+  assert.equal("numero_de_fardo" in v2.values || "codigo_numero_de_producto" in v2.values, false, "no se genera ningún correlativo");
+  const list = parseP110List([withVersion(envelope(ID, P1_10_CODE, P110_V1_VALUES), 1), p110("33333333-3333-4333-8333-333333333333")]);
+  assert.deepEqual(list.map((c) => c.form.version_number), [1, 2]);
 });
