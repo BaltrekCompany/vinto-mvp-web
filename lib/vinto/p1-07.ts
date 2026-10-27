@@ -1,3 +1,6 @@
+// MF-10 · versión 2 (MD_Ejec 23 y 47): el formulario de PRODUCCIÓN se llama «Registro de producción de bobinas rebobinadas» (el reporte y la definición legacy conservan «bobinas refiladas»; el identificador técnico
+// VINTO-P1-07 no cambia) y se añaden «Hora inicio» y «Hora fin» (HH:MM, hora local de planta, obligatorias desde la v2): se digitan, no se derivan de la hora de registro, no se convierten a UTC, no se calcula la duración
+// ni se valida que fin sea posterior a inicio, y no se asume otra fecha si el trabajo cruza la medianoche. Campos, reglas y genealogía no cambian; la versión 1 y sus capturas se conservan.
 // VINTO-P1-07 «Registro de producción de bobinas refiladas» (Rebobinado, máquinas legacy COPASA / BELOIT / OVER): contrato técnico CANDIDATO sobre el contexto de ASIGNACIÓN central (POST /api/captures). Los
 // treinta y seis campos manuales son EXACTAMENTE los de la definición legacy (form_7_registro_de_productos_rebobinados, 41 campos: 36 manuales y 5 automáticos), con sus claves, etiquetas, orden, tipos y
 // obligatoriedad. La definición original es la única fuente: no se reconstruye desde la pantalla legacy ni se renombra nada.
@@ -6,8 +9,8 @@
 // como están en la definición legacy; la cardinalidad y la condicionalidad (cuántas crías hay en realidad) están PENDIENTES de homologación y no se resuelven aquí. Texto: etiqueta / número de bobina, destino,
 // producto refilado, auxiliar, tensión, metraje y tubete. Decimales: peso, velocidades, diámetro, formatos 1-3 y las crías. `observaciones` es opcional. Unidades declaradas: kg, m/min y mm.
 //
-// Fecha, hora de inicio, hora final, turno y operador son automáticos: el backend resuelve la fecha operativa y el turno de la asignación y el responsable es el usuario autenticado (solo informativo). NO hay
-// fuente aprobada para las horas de INICIO y FINAL: no se generan ni se sustituyen por la hora de registro.
+// Fecha, turno y operador son automáticos: el backend resuelve la fecha operativa y el turno de la asignación y el responsable es el usuario autenticado (solo informativo). Las horas de INICIO y FIN
+// (v2) se digitan.
 //
 // ESTO ES SOLO UNA CAPTURA TÉCNICA CANDIDATA, NO UNA GENEALOGÍA (docs/M5-A-p107-genealogia.md): `etiqueta_numero_de_bobina` es TEXTO y NO identifica una bobina madre; este circuito no crea bobinas hijas, no consume
 // madres, no crea relaciones madre-hija, correlativos, balances de masa ni movimientos de inventario, y no toca quality_release. Que exista este circuito de captura NO equivale a una genealogía funcional.
@@ -21,6 +24,8 @@ export const P1_07_CODE = "VINTO-P1-07";
 export const P107_CRIA_NUMBERS: readonly number[] = [...Array.from({ length: 11 }, (_, i) => i + 1), ...Array.from({ length: 10 }, (_, i) => i + 13)];
 const CRIAS: readonly FieldSpec[] = P107_CRIA_NUMBERS.map((n) => ({ key: `peso_cria_${n}`, label: `Peso cría ${n}`, kind: "decimal", required: true, suffix: "kg" }));
 export const P107_FIELDS: readonly FieldSpec[] = [
+    { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 2 },
+    { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 2 },
     { key: "etiqueta_numero_de_bobina", label: "Etiqueta / número de bobina", kind: "text", required: true },
     { key: "peso", label: "Peso", kind: "decimal", required: true, suffix: "kg" },
     { key: "destino", label: "Destino", kind: "text", required: true },
@@ -40,6 +45,7 @@ export const P107_FIELDS: readonly FieldSpec[] = [
 ];
 // Agrupación SOLO VISUAL de la captura (no cambia la estructura persistida ni crea grupos repetibles): cada campo aparece exactamente una vez.
 export const P107_SECTIONS: readonly { title: string; hint?: string; keys: readonly string[] }[] = [
+    { title: "Horas del trabajo", hint: "Hora local de planta (HH:MM), digitadas; no son la hora de registro del sistema.", keys: ["hora_inicio", "hora_fin"] },
     { title: "Bobina y destino", keys: ["etiqueta_numero_de_bobina", "peso", "destino", "producto_refilado", "auxiliar"] },
     { title: "Parámetros de proceso", keys: ["velocidad_minima", "tension", "velocidad", "metraje", "diametro", "formato_1", "formato_2", "formato_3", "tubete"] },
     { title: "Pesos de crías", hint: "21 campos individuales (1-11 y 13-22; no existe la cría 12). La definición legacy los marca todos obligatorios: cuántas crías hay en realidad está pendiente de homologación.", keys: CRIAS.map((c) => c.key) },
@@ -47,11 +53,10 @@ export const P107_SECTIONS: readonly { title: string; hint?: string; keys: reado
 ];
 export const P107 = defineCandidateForm(P1_07_CODE, P107_FIELDS);
 export const P107_AUTOMATIC = ["Fecha (fecha operativa de la asignación)", "Turno (el de la asignación)", "Operador (usuario autenticado, informativo)"] as const;
-export const P107_UNRESOLVED_AUTOMATIC = ["Hora inicio", "Hora final"] as const; // sin fuente aprobada: no se generan ni se sustituyen por la hora de registro
 export const P107_PENDING: readonly { label: string; pending: string }[] = [
     { label: "No es genealogía", pending: "Este circuito solo captura los campos manuales de P1-07. No crea bobinas hijas, no consume bobinas madre, no crea relaciones madre-hija ni correlativos, no calcula balances de masa ni mueve inventario, y no toca la liberación de Calidad. Capturar P1-07 NO equivale a una genealogía funcional." },
     { label: "Etiqueta / número de bobina", pending: "Es texto digitado y NO identifica una bobina madre: su identidad y relación siguen pendientes de VINTO." },
-    { label: "Horas de inicio y final", pending: "No hay fuente aprobada: no se generan ni se toman de la hora de registro (captured_at)." },
+    { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no se derivan de la hora de registro, no se calcula la duración ni se valida que fin sea posterior a inicio, y no se asume otra fecha si cruzan la medianoche." },
     { label: "Pesos de crías", pending: "21 campos individuales (1-11 y 13-22; no existe la cría 12), todos decimales obligatorios según la definición legacy. La cardinalidad y la condicionalidad (cuántas salidas hay) están pendientes y no se calcula ningún total ni balance." },
     { label: "Catálogos y reglas", pending: "Producto refilado, destino, tubete, tensión y metraje son texto sin catálogo; no hay reglas de corte, rendimiento ni mermas aprobadas." },
     { label: "Máquinas, sector y turnos", pending: "Rebobinado no es un sector operativo (el seed aprobado solo tiene MP1 y MP3): COPASA, BELOIT, OVER y los turnos oficiales siguen pendientes. Solo se usan en entornos de prueba." },

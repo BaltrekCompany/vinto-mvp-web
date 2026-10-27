@@ -92,9 +92,9 @@ export function P110CaptureForm({ context, online, attempt, setAttempt, back, on
             <div><ContextValue label="Firma" value="— pendiente de definición —"/><p className="mt-1 text-xs font-semibold text-amber-900">{CONTEXT_NOTES.firma.pending}</p></div>
         </div>
         {user && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="session">Sesión iniciada como <b>{user.display_name}</b>. Es solo la identificación del usuario autenticado: no es el responsable aprobado ni una firma.</p>}
-        <CaptureSection title="Registro de fardos" hint="Campos manuales según la definición actual. Se envían como texto, sin formato ni numeración confirmados.">
-            <TextField label={P110_LABELS.codigo_numero_de_producto} required disabled={locked} value={draft.codigo_numero_de_producto} onChange={set("codigo_numero_de_producto")}/>
-            <TextField label={P110_LABELS.numero_de_fardo} required disabled={locked} hint="Sin correlativo, formato ni unicidad confirmados." value={draft.numero_de_fardo} onChange={set("numero_de_fardo")}/>
+        <CaptureSection title="Registro de fardos" hint="El producto y la OT salen de la asignación (arriba): no se digitan. El número de fardo no se genera todavía (numeración automática pendiente de VINTO).">
+            <TextField label={P110_LABELS.hora_inicio} required type="time" disabled={locked} hint="Hora local de planta (HH:MM). No es la hora de registro del sistema." value={draft.hora_inicio} onChange={set("hora_inicio")}/>
+            <TextField label={P110_LABELS.hora_fin} required type="time" disabled={locked} hint="Hora local de planta (HH:MM). No es la hora de registro del sistema." value={draft.hora_fin} onChange={set("hora_fin")}/>
             <TextField label={P110_LABELS.peso_fardo} required suffix="kg" inputMode="decimal" disabled={locked} hint="Tipo declarado: texto. Formato y decimales por confirmar." value={draft.peso_fardo} onChange={set("peso_fardo")}/>
             <TextAreaField label={P110_LABELS.observaciones} disabled={locked} value={draft.observaciones} onChange={set("observaciones")}/>
         </CaptureSection>

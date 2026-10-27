@@ -242,7 +242,7 @@ class QualityP119Tests(unittest.TestCase):
         # CLOUD-DEP G.12-C4-FINAL25: 25 formularios en total (17 candidatos previos + P1-11/12/13/16/29);
         # ninguno añade workflows nuevos (todos reutilizan production-standard/quality-release); P1-11
         # añade 2 opciones nuevas (posicion).
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (25, 461, 14, 2))
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (25, 462, 14, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 

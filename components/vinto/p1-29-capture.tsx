@@ -103,7 +103,7 @@ export function P129CaptureForm({ context, online, attempt, setAttempt, back, on
         <CaptureSection title="Lote de producción" hint="Información general del lote (campos manuales de la ficha).">
             {P129_SIMPLE_FIELDS.map(field => field.kind === "textarea"
                 ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft.simple[field.key]} onChange={setSimple(field.key)}/>
-                : <div key={field.key}><TextField label={field.label} required={field.required} type={field.kind === "date" ? "date" : "text"} suffix={field.unit} disabled={locked} hint={field.hint} value={draft.simple[field.key]} onChange={setSimple(field.key)}/>
+                : <div key={field.key}><TextField label={field.label} required={field.required} type={field.kind === "date" ? "date" : field.kind === "time" ? "time" : "text"} suffix={field.unit} disabled={locked} hint={field.hint} value={draft.simple[field.key]} onChange={setSimple(field.key)}/>
                     {errorsFor(errors, "", null).filter(m => m.startsWith(`${field.label}:`)).map(m => <p key={m} role="alert" className="mt-1 text-xs font-semibold text-amber-900">{m}</p>)}</div>)}
         </CaptureSection>
         {P129_GROUPS.map(spec => { const rows = draft.groups[spec.code] ?? [];

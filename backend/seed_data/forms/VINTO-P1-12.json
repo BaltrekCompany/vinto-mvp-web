@@ -6,7 +6,7 @@
   "name": "Producción diaria de papel higiénico",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -170,7 +170,7 @@
     {
       "key": "formato",
       "label": "Formato",
-      "value_type": "decimal",
+      "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
@@ -195,5 +195,5 @@
       "display_order": 20
     }
   ],
-  "definition_checksum": "cd9c6a0b3c57d4cdf2cbf0c9545ae4131f23f796a0d238ed3aa1ff80f92ad0b4"
+  "definition_checksum": "877c6af9609397875780d723376e327e22266bada68b1874c236d29f7d6c374b"
 }

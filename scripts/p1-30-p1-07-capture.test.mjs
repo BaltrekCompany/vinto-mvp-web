@@ -2,6 +2,7 @@
 // DEV-R2 · fichas CANDIDATAS de Rebobinado sobre el contexto de asignación central: VINTO-P1-30 (Producción Perichun) y VINTO-P1-07 (Registro de producción de bobinas refiladas). Contrato frente a form-definitions.ts
 // (incluidas las 21 crías 1-11 y 13-22, sin la 12), tipos (peso_de_bobina es TEXTO), horas de inicio / término sin fuente (no se generan), payload de asignación, parser estricto, flujo con reconciliación, oferta
 // según el backend, aislamiento por sesión y límites de alcance (Rebobinado no operativo, política y seed intactos, sin genealogía). Lógica PURA: no valida reglas industriales.
+// MF-10: la versión 2 de P1-07 añade «Hora inicio» y «Hora fin» y se llama «bobinas rebobinadas»; la de P1-30 retira gramaje, resistencias y número MRP, añade «Lote» y las horas. Las horas se DIGITAN (HH:MM).
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -9,7 +10,7 @@ import test from "node:test";
 import { REBOBINADO_SECTOR, SECTOR_SCREENS, parseAvailability, rebobinadoView, screenFor } from "../lib/vinto/availability.ts";
 import { FORM_DEFINITIONS } from "../lib/vinto/form-definitions.ts";
 import { P107, P107_CRIA_NUMBERS, P107_FIELDS, P107_PENDING, P107_SECTIONS, P1_07_CODE } from "../lib/vinto/p1-07.ts";
-import { P130, P130_FIELDS, P130_PENDING, P1_30_CODE } from "../lib/vinto/p1-30.ts";
+import { P130, P130_FIELDS, P130_LEGACY_FIELDS, P130_PENDING, P1_30_CODE } from "../lib/vinto/p1-30.ts";
 import { candidateHistoryKey, deriveView, sessionScope } from "../lib/vinto/resource-view.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -19,12 +20,13 @@ const UUID = "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", ASSIGNMENT = "7d6e5f4a-3b2c
 const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
-const fill = (fields) => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.key === "observaciones" ? " nota " : "texto 12,5"]));
+const fill = (fields) => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "time" ? (f.key === "hora_fin" ? "14:45" : "06:30") : f.key === "observaciones" ? " nota " : "texto 12,5"]));
+const NEW_HOURS = ["hora_inicio", "hora_fin"]; // MF-10: manuales, obligatorias desde la versión 2
 const CASES = [
-  { name: "P1-30", id: "form_30_produccion_perichun", form: P130, formCode: P1_30_CODE, fields: P130_FIELDS, pending: P130_PENDING, counts: [10, 5], machines: ["perichun"], hours: ["hora_inicio", "hora_termino"] },
-  { name: "P1-07", id: "form_7_registro_de_productos_rebobinados", form: P107, formCode: P1_07_CODE, fields: P107_FIELDS, pending: P107_PENDING, counts: [36, 5], machines: ["copasa", "beloit", "over"], hours: ["hora_inicio", "hora_final"] },
+  { name: "P1-30", id: "form_30_produccion_perichun", form: P130, formCode: P1_30_CODE, fields: P130_FIELDS, pending: P130_PENDING, counts: [10, 5], machines: ["perichun"], hours: ["hora_inicio", "hora_termino"], retired: ["gramaje_g_m2", "resistencia_longitudinal", "resistencia_transversal", "numero_mrp"], added: [...NEW_HOURS, "lote"] },
+  { name: "P1-07", id: "form_7_registro_de_productos_rebobinados", form: P107, formCode: P1_07_CODE, fields: P107_FIELDS, pending: P107_PENDING, counts: [36, 5], machines: ["copasa", "beloit", "over"], hours: ["hora_inicio", "hora_final"], retired: [], added: NEW_HOURS },
 ];
-const envelope = (formCode, values) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
+const envelope = (formCode, values) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 2, name: "x" }, // MF-10: versión 2 (la 1 se lee en el último bloque)
   machine: { code: "COPASA", name: "Copasa" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", assignment: { id: ASSIGNMENT }, work_order: { id: UUID, number: "OT-1" },
   line: { id: UUID, line_code: "L1", pv_reference: "PV-1", article: { code: "A1", description: "d" } }, values });
 
@@ -36,19 +38,27 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [...c.counts, 0], c.name);
     assert.equal(legacy.fields.length, c.counts[0] + c.counts[1]);
     assert.deepEqual(legacy.allowedMachineIds, c.machines, `${c.name}: máquinas legacy`);
-    const m = legacy.fields.filter(isManual);
-    assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
-    assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
-    assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
-    for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(c.fields.some((x) => x.key === f.key), false, `${c.name}: ${f.key} no se digita`);
+    // MF-10: versión 2 = definición legacy menos los campos retirados, más los añadidos (horas y, en P1-30, «lote»)
+    const m = legacy.fields.filter(isManual).filter((f) => !c.retired.includes(f.key));
+    const kept = c.fields.filter((f) => !c.added.includes(f.key));
+    assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
+    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
+    for (const key of NEW_HOURS) assert.deepEqual({ ...c.fields.find((f) => f.key === key) }, { key, label: key === "hora_inicio" ? "Hora inicio" : "Hora fin", kind: "time", required: true, sinceVersion: 2 }, `${c.name}: ${key}`);
+    assert.equal(c.fields.length, c.counts[0] - c.retired.length + c.added.length);
+    for (const f of legacy.fields.filter((x) => !isManual(x) && !NEW_HOURS.includes(x.key))) assert.equal(c.fields.some((x) => x.key === f.key), false, `${c.name}: ${f.key} no se digita`); // MF-10: «hora_inicio» pasa a ser manual en la v2
     for (const hour of c.hours) assert.equal(legacy.fields.find((f) => f.key === hour).source, "automatic", `${c.name}: ${hour} es automático en la definición`);
     assert.equal(c.form.context, "assignment");
     // las unidades solo salen de la definición: sufijo == unidad declarada, ninguna inventada
-    for (const f of c.fields) assert.equal(f.suffix, m.find((x) => x.key === f.key).unit ?? undefined, `${c.name}: ${f.key}`);
+    for (const f of kept) assert.equal(f.suffix, m.find((x) => x.key === f.key).unit ?? undefined, `${c.name}: ${f.key}`);
   }
   assert.equal(P130_FIELDS.find((f) => f.key === "peso_de_bobina").kind, "text", "peso_de_bobina es TEXTO");
-  assert.equal(P130_FIELDS.find((f) => f.key === "numero_mrp").kind, "text");
+  assert.deepEqual(P130_FIELDS.find((f) => f.key === "lote"), { key: "lote", label: "Lote", kind: "text", required: true, sinceVersion: 2 });
+  const keys30 = P130_FIELDS.map((f) => f.key);
+  assert.equal(keys30.indexOf("lote"), keys30.indexOf("formato_de_salida") + 1, "Lote ocupa el lugar de la resistencia longitudinal");
+  assert.deepEqual(P130_LEGACY_FIELDS.map((f) => f.key), ["gramaje_g_m2", "resistencia_longitudinal", "resistencia_transversal", "numero_mrp"], "retirados: solo lectura para las capturas v1");
+  assert.equal(P130_LEGACY_FIELDS.find((f) => f.key === "numero_mrp").kind, "text");
 });
 
 test("P1-07 tiene EXACTAMENTE 21 crías individuales (1-11 y 13-22) y la cría 12 no existe", () => {
@@ -76,9 +86,9 @@ test("la agrupación visual cubre cada campo exactamente una vez y no cambia la 
 
 test("las brechas son visibles: horas sin fuente, bobina como texto, sector no operativo, cría 12 y, en P1-07, que NO es genealogía", () => {
   const t30 = P130_PENDING.map((p) => `${p.label} ${p.pending}`).join(" "), t07 = P107_PENDING.map((p) => `${p.label} ${p.pending}`).join(" ");
-  assert.match(t30, /Horas de inicio y término[\s\S]*no se generan ni se toman de la hora de registro/);
+  assert.match(t30, /Horas de inicio y fin[\s\S]*Se digitan[\s\S]*no se derivan de la hora de registro/);
   assert.match(t30, /no crea ni busca una bobina física/);
-  assert.match(t30, /Número MRP/);
+  assert.match(t30, /Lote[\s\S]*no se inventa un Lote para las capturas anteriores/);
   assert.match(t30, /peso de bobina es TEXTO/);
   assert.match(t30, /PERICHUN y los turnos oficiales siguen pendientes/);
   assert.match(t07, /NO equivale a una genealogía funcional/);
@@ -86,11 +96,10 @@ test("las brechas son visibles: horas sin fuente, bobina como texto, sector no o
   assert.match(t07, /NO identifica una bobina madre/);
   assert.match(t07, /no existe la cría 12/);
   assert.match(t07, /cardinalidad y la condicionalidad/);
-  assert.match(t07, /Horas de inicio y final[\s\S]*no se generan/);
+  assert.match(t07, /Horas de inicio y fin[\s\S]*Se digitan[\s\S]*no se derivan de la hora de registro/);
   assert.match(t07, /COPASA, BELOIT, OVER y los turnos oficiales siguen pendientes/);
   assert.match(read("lib/vinto/p1-07.ts"), /NO UNA GENEALOGÍA \(docs\/M5-A-p107-genealogia\.md\)/);
-  assert.match(read("lib/vinto/rebobinado-candidates.ts"), /unresolved: P130_UNRESOLVED_AUTOMATIC/);
-  assert.match(read("lib/vinto/rebobinado-candidates.ts"), /unresolved: P107_UNRESOLVED_AUTOMATIC/);
+  assert.equal(/unresolved:/.test(read("lib/vinto/rebobinado-candidates.ts")), false, "MF-10: las horas ya no son automáticas sin fuente: se digitan");
   assert.match(code("components/vinto/candidate-form-capture.tsx"), /Automáticos sin fuente confirmada \(no se generan ni se sustituyen por la hora de envío\)/);
 });
 
@@ -102,7 +111,11 @@ test("el borrador valida estructuralmente, deja los textos tal cual y NO genera 
       if (f.kind === "decimal") assert.equal(check.values[f.key], "1.5", `${c.name}: ${f.key}`);
       if (f.kind === "text") assert.equal(check.values[f.key], "texto 12,5", `${c.name}: ${f.key} conserva su coma`);
     }
-    for (const key of [...c.hours, "fecha", "turno", "operador", "total", "balance", "merma", "peso_cria_12"]) assert.equal(key in check.values, false, `${c.name}: ${key}`);
+    for (const key of [...c.hours.filter((h) => !NEW_HOURS.includes(h)), "fecha", "turno", "operador", "total", "balance", "merma", "peso_cria_12"]) assert.equal(key in check.values, false, `${c.name}: ${key}`);
+    assert.deepEqual([check.values.hora_inicio, check.values.hora_fin], ["06:30", "14:45"], `${c.name}: las horas se conservan tal como se digitan (sin UTC ni fecha)`);
+    for (const bad of ["24:00", "12:60", "7:30", "abc"]) assert.match(c.form.normalizeDraft({ ...fill(c.fields), hora_fin: bad }).errors.join(" "), /Hora fin: debe ser una hora válida HH:MM/, `${c.name}: ${bad}`);
+    for (const key of NEW_HOURS) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [key]: "  " }).errors.join(" "), /es obligatorio/, `${c.name}: ${key}`);
+    assert.equal(c.form.normalizeDraft({ ...fill(c.fields), hora_inicio: "23:30", hora_fin: "00:15" }).ok, true, `${c.name}: sin validación de orden ni de cruce de día`);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) {
       for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: bad }).errors.join(" "), /debe ser un número decimal/, `${c.name} ${f.key} ${bad}`);
       assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
@@ -117,7 +130,8 @@ test("el payload es de contexto «asignación»: cerrado, sin máquina ni bobina
     const { attempt } = c.form.createAttempt(fill(c.fields), ASSIGNMENT, DEVICE, () => UUID);
     assert.deepEqual(Object.keys(attempt.payload).sort(), ["assignment_id", "capture_id", "device_key", "form_code", "values"], c.name);
     assert.deepEqual([attempt.payload.form_code, attempt.payload.assignment_id, attempt.captureId], [c.formCode, ASSIGNMENT, UUID]);
-    for (const key of ["machine_code", "bobbin_id", "hora_inicio", ...c.hours]) assert.equal(key in attempt.payload || key in attempt.payload.values, false, key);
+    for (const key of ["machine_code", "bobbin_id", "hora_registro", ...c.hours.filter((h) => !NEW_HOURS.includes(h))]) assert.equal(key in attempt.payload || key in attempt.payload.values, false, key);
+    assert.deepEqual([attempt.payload.values.hora_inicio, attempt.payload.values.hora_fin], ["06:30", "14:45"], "las horas digitadas viajan tal cual");
     assert.ok(Object.isFrozen(attempt) && Object.isFrozen(attempt.payload) && Object.isFrozen(attempt.payload.values));
     assert.equal(c.form.createAttempt(c.form.emptyDraft(), ASSIGNMENT, DEVICE).ok, false);
   }
@@ -131,7 +145,7 @@ test("el parser exige asignación, OT y línea, su formulario y valores estricto
     assert.equal(parsed?.assignment?.id, ASSIGNMENT);
     for (const other of ["VINTO-P1-10", c.formCode === P1_30_CODE ? P1_07_CODE : P1_30_CODE]) assert.equal(c.form.parseCapture(envelope(other, values)), null, `${c.name}: ${other}`);
     for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; assert.equal(c.form.parseCapture(envelope(c.formCode, m)), null, `falta ${f.key}`); }
-    assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, hora_inicio: "07:00", total: "9", peso_cria_12: "1" }))?.values, values, "un campo ajeno que llegara se ignora y no se presenta");
+    assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, hora_registro: "07:00", total: "9", peso_cria_12: "1" }))?.values, values, "un campo ajeno que llegara se ignora y no se presenta");
     assert.equal(c.form.parseCapture(envelope(c.formCode, { ...values, [c.fields.find((f) => f.kind === "decimal").key]: "abc" })), null);
     assert.equal(c.form.parseList([envelope(c.formCode, values)])?.length, 1);
     assert.equal(c.form.parseList([{ nope: 1 }]), null);
@@ -214,4 +228,41 @@ test("alcance: Rebobinado sigue NO operativo, política y seed intactos, sin mig
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts"]) assert.equal(/quality_release|bobbins?-api|\/api\/bobbins|from "[^"]*(bobbin|genealog)[^"]*"/i.test(code(file)), false, file);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /NO equivale a una genealogía funcional/);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /peso_cria_12/);
+});
+
+// ---- MF-10: lectura por versión ---------------------------------------------------------------------------------------------------------------------------------
+test("MF-10: las capturas de la versión 1 de P1-07 y P1-30 se leen con su definición (sin horas; P1-30 conserva gramaje, resistencias y número MRP) y las de la versión 2 exigen las horas", () => {
+  const v2 = (c) => c.form.normalizeDraft(fill(c.fields)).values;
+  // P1-07: la v1 no tiene horas; la v2 sí
+  const c07 = CASES[1], v07 = v2(c07), v07v1 = Object.fromEntries(Object.entries(v07).filter(([k]) => !NEW_HOURS.includes(k)));
+  assert.deepEqual(P107.parseCapture({ ...envelope(P1_07_CODE, v07v1), form: { code: P1_07_CODE, version_number: 1, name: "Registro de producción de bobinas refiladas" } })?.values, v07v1, "P1-07 v1 se lee sin horas y sin inventarlas");
+  assert.equal(P107.parseCapture(envelope(P1_07_CODE, v07v1)), null, "una v2 sin horas no es válida");
+  assert.equal(P107.parseCapture(envelope(P1_07_CODE, { ...v07, hora_fin: "14:45:00" }))?.values.hora_fin, "14:45:00", "el backend sirve las horas como HH:MM:SS");
+  assert.equal(P107.parseCapture(envelope(P1_07_CODE, { ...v07, hora_fin: "24:00:00" })), null);
+  // P1-30: la v1 conserva los campos retirados
+  const c30 = CASES[0], v30 = v2(c30);
+  const rest = Object.fromEntries(Object.entries(v30).filter(([k]) => ![...NEW_HOURS, "lote"].includes(k)));
+  const v30v1 = { ...rest, gramaje_g_m2: "81.5", resistencia_longitudinal: "1.2", resistencia_transversal: "0.8", numero_mrp: "MRP-77" };
+  const old = P130.parseCapture({ ...envelope(P1_30_CODE, v30v1), form: { code: P1_30_CODE, version_number: 1, name: "x" } });
+  assert.equal(old.values.gramaje_g_m2, "81.5");
+  assert.equal(old.values.numero_mrp, "MRP-77");
+  assert.equal("lote" in old.values, false, "no se inventa un Lote para registros anteriores");
+  assert.equal(P130.parseCapture({ ...envelope(P1_30_CODE, v30v1), form: { code: P1_30_CODE, version_number: 2, name: "x" } }), null, "una v2 sin horas ni lote no es válida");
+  const nuevo = P130.parseCapture(envelope(P1_30_CODE, { ...v30, hora_inicio: "06:30:00", hora_fin: "14:45:00" }));
+  assert.equal(nuevo.values.lote, "texto 12,5");
+  assert.equal(P130.parseCapture({ ...envelope(P1_30_CODE, { ...v30v1, ...Object.fromEntries(NEW_HOURS.map((h) => [h, "06:30:00"])), lote: "L-1" }) })?.values.numero_mrp, "MRP-77", "los valores retirados que llegaran en una v2 se conservan como solo lectura");
+  const draft = P130.normalizeDraft({ ...fill(P130_FIELDS), gramaje_g_m2: "81", numero_mrp: "X", resistencia_longitudinal: "1", resistencia_transversal: "1" });
+  for (const key of ["gramaje_g_m2", "numero_mrp", "resistencia_longitudinal", "resistencia_transversal"]) assert.equal(key in draft.values, false, `${key} nunca se envía desde la v2`);
+});
+
+test("MF-10: P1-07 se muestra como «bobinas rebobinadas» (la definición legacy y el reporte conservan «refiladas»; el código técnico no cambia)", () => {
+  const candidates = read("lib/vinto/rebobinado-candidates.ts");
+  assert.match(candidates, /title: "Registro de producción de bobinas rebobinadas"/);
+  assert.match(candidates, /kicker: "Bobinas rebobinadas · Rebobinado"/);
+  assert.equal(/title: "Registro de producción de bobinas refiladas"/.test(candidates), false);
+  assert.equal(P1_07_CODE, "VINTO-P1-07");
+  assert.equal(defOf("form_7_registro_de_productos_rebobinados").name, "Registro de producción de bobinas refiladas", "la definición legacy (reporte) conserva «refiladas»");
+  const seed = JSON.parse(read("backend/seed_data/forms/VINTO-P1-07.json"));
+  assert.equal(seed.name, "Registro de producción de bobinas rebobinadas");
+  assert.equal(seed.version_number, 2);
 });

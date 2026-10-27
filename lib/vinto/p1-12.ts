@@ -123,7 +123,7 @@ export const P112_FIELDS: readonly FieldSpec[] = [
     { key: "asas_utilizado", label: "Asas utilizado", kind: "text", required: true },
     { key: "codigo_producto", label: "Código producto", kind: "text", required: true },
     { key: "producto", label: "Producto", kind: "text", required: true },
-    { key: "formato", label: "Formato", kind: "decimal", required: true },
+    { key: "formato", label: "Formato", kind: "text", required: true }, // MF-10 (MD_Ejec 43): texto libre (4*12, 4X12, 4x12, 4.12); se guarda exactamente como se digita. La v1 era decimal.
     { key: "cantidad_producida_jabas", label: "Cantidad producida jabas", kind: "text", required: true },
     { key: "cantidad_producida_segundas", label: "Cantidad producida segundas", kind: "text", required: true },
 ];
