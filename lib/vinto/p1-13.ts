@@ -117,6 +117,8 @@ export const reconcileP113 = (captureId: string, deps: P113SubmitDeps): Promise<
 // fórmula aprobada. `observacion` (singular) y `observaciones` (plural) son DOS claves distintas de la definición legacy, ambas opcionales --
 // no se fusionan ni se corrige la aparente duplicación: así está declarada la fuente.
 export const P113_FIELDS: readonly FieldSpec[] = [
+    { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 2 }, // MF-11 (MD_Ejec 46 y 48, un solo par): horas GENERALES de producción, no las del pallet de la hipótesis anterior
+    { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 2 },
     { key: "saldo_inicial", label: "Saldo inicial", kind: "text", required: true },
     { key: "numero_bobina_consumida", label: "Número bobina consumida", kind: "text", required: true },
     { key: "peso_bobina_consumida", label: "Peso bobina consumida", kind: "text", required: true, suffix: "kg" },
@@ -140,6 +142,7 @@ export const P113 = defineCandidateForm(P1_13_CODE, P113_FIELDS);
 
 export const P113_AUTOMATIC = ["Operador", "Firma", "Fecha", "Hora", "Turno", "Grupo", "Máquina", "Encargado de turno"] as const;
 export const P113_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no son la hora de registro del sistema ni las de un pallet, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
     { label: "Mermas y saldos finales", pending: "4 campos calculados de la definición legacy (merma de bobina, saldo final, merma de empaque, saldo final de insumo): sin fórmula aprobada, no se calculan ni se aceptan del cliente." },
     { label: "observacion / observaciones", pending: "La definición legacy declara DOS campos de observación distintos (singular y plural), ambos opcionales: no se fusionan ni se corrige la aparente duplicación." },
 ];

@@ -101,6 +101,8 @@ export const reconcileP116 = (captureId: string, deps: P116SubmitDeps): Promise<
 // Fuente única: form-definitions.ts / form_16_registro_de_control_de_merma. Automáticos excluidos (fecha, turno, grupo, operador, maquina);
 // calculado excluido (total_merma_kg): sin fórmula aprobada, no se calcula ni se acepta del cliente.
 export const P116_FIELDS: readonly FieldSpec[] = [
+    { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 2 }, // MF-11 (MD_Ejec 48): horas GENERALES del registro
+    { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 2 },
     { key: "numero_correlativo", label: "Número correlativo", kind: "text", required: true },
     { key: "hoja_doble_kg", label: "Hoja doble kg", kind: "text", required: true },
     { key: "servilleta_kg", label: "Servilleta kg", kind: "text", required: true },
@@ -114,5 +116,6 @@ export const P116 = defineCandidateForm(P1_16_CODE, P116_FIELDS);
 
 export const P116_AUTOMATIC = ["Fecha", "Turno", "Grupo", "Operador", "Máquina"] as const;
 export const P116_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no son la hora de registro del sistema, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
     { label: "Merma total", pending: "total_merma_kg es un campo calculado de la definición legacy, sin fórmula aprobada: no se calcula ni se acepta del cliente." },
 ];

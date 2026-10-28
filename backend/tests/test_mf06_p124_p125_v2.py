@@ -149,7 +149,7 @@ class DefinitionTests(Base):
     async def test_versions_and_bundle_match_the_request(self):
         for code in (P124, P125):
             v1, v2 = [k for k, _ in self.definition(self.v1[code])], [k for k, _ in self.definition(self.v2[code])]
-            self.assertEqual(FORMS[code]["version_number"], 3)  # MF-07
+            self.assertEqual(FORMS[code]["version_number"], {P124: 4, P125: 3}[code])  # MF-07 (P1-24 v4: MF-11)
             self.assertEqual(v2, [f["key"] for f in v2_fields(code)])
             self.assertEqual(sorted(set(v1) - set(v2)), sorted(REMOVED[code]), code)
             self.assertEqual(sorted(set(v2) - set(v1)), sorted(ADDED[code]), code)

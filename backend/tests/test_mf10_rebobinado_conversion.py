@@ -39,6 +39,7 @@ P107, P110, P112, P129, P130 = "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-12", "VIN
 CODES = (P107, P110, P112, P129, P130)
 BUNDLE = load_bundle()
 FORMS = {f["code"]: f for f in BUNDLE.forms}
+FORMS[P112] = {**FORMS[P112], "version_number": 2, "fields": [f for f in FORMS[P112]["fields"] if f["key"] not in ("hora_inicio", "hora_fin")]}  # MF-11: la v3 añade las horas; aquí se prueba la v2 de MF-10
 MACHINE = {P107: "COPASA", P110: "COPASA", P112: "GAMBINI", P129: "TUBETERA", P130: "PERICHUN"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in set(MACHINE.values()) | {"OVER", "BELOIT", "SINCRO_II", "SINCRO_III"}}
 SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
@@ -47,6 +48,22 @@ STATE = {}
 OLD_P107_NAME = "Registro de producción de bobinas refiladas"
 NEW_P107_NAME = "Registro de producción de bobinas rebobinadas"
 HOURS = {"hora_inicio": "06:30", "hora_fin": "14:45"}
+
+
+def restore_previous(connection, code, number, drop_keys):
+    """MF-11: la base efímera trae la versión nueva del bundle; estas pruebas son de un paquete anterior, así que se RETIRA la nueva y se publica la anterior (copia de la nueva sin los campos añadidos)."""
+    c = connection
+    new_id, form_id, workflow, area, name = c.execute("SELECT v.id, v.form_id, v.workflow_id, v.area, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()
+    c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (new_id,))
+    old_id = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (form_id, number - 1, name, area, workflow, "b" * 64)).fetchone()[0]
+    for fid, key, label, value_type, source, required, order in c.execute("SELECT id, key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (new_id,)).fetchall():
+        if key in drop_keys:
+            continue
+        copy = c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (old_id, key, label, value_type, source, required, order)).fetchone()[0]
+        for option_key, option_label, option_order in c.execute("SELECT option_key, label, display_order FROM vinto_config.field_option WHERE field_definition_id = %s", (fid,)).fetchall():
+            c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
+    c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (old_id, new_id))
+    c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (old_id,))
 
 
 def setUpModule():
@@ -141,6 +158,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.connection = connect(cls.database)
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
+        # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
+        restore_previous(cls.connection, P112, 3, ("hora_inicio", "hora_fin"))
         cls.current = {code: cls.version(code, 2) for code in CODES}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, v1_spec()))  # las versiones 1 históricas, publicadas como en producción (aditivo)
@@ -499,7 +518,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         dry = reference.dry_run(self.connection, BUNDLE)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 5)
-        self.assertEqual(dry.counts["field"]["create"], 38 + 4 + 17 + 9 + 20)
+        self.assertEqual(dry.counts["field"]["create"], 38 + 4 + 17 + 9 + 22)  # P1-12 llega como v3 (MF-11): 22 campos
         self.assertEqual(dry.counts["form_version_machine"]["create"], 3 + 1 + 1 + 1 + 3)
         self.assertEqual(dry.counts["field_group"]["create"], 2)
         self.assertEqual(dry.counts["option"]["create"], 0)
@@ -510,7 +529,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
         for code in CODES:
             self.assertEqual(self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall(),
-                             [(1, "published"), (2, "published")], code)
+                             [(1, "published"), (3 if code == P112 else 2, "published")], code)
         names = dict(self.connection.execute("SELECT v.version_number, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s", (P107,)).fetchall())
         self.assertEqual(names, {1: OLD_P107_NAME, 2: NEW_P107_NAME})
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))

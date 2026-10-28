@@ -24,6 +24,13 @@ export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no
 
 export const ADVISORY = "Ficha candidata no homologada. Los números de bobina y los saldos son declaraciones de prueba: no generan consumo, movimientos de inventario ni vínculos de genealogía.";
 
+// MF-11 (MD_Ejec 48) · versión 2: se añaden «Hora inicio» y «Hora fin» GENERALES (HH:MM, hora local de planta, obligatorias desde la v2). Se digitan: no son la hora de registro, no se convierten a UTC, no se calcula la duración
+// ni se valida el orden, y no se deduce otra fecha si cruzan la medianoche. Las capturas v1 no las traen y se leen sin ellas.
+export const P111_V2 = 2;
+export const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/; // lo que se ENVÍA (HH:MM)
+const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQL devuelve la hora con segundos (HH:MM:SS)
+export const P111_HOUR_FIELDS = [{ key: "hora_inicio", label: "Hora inicio" }, { key: "hora_fin", label: "Hora fin" }] as const;
+
 export const POSICION_OPTIONS = [{ value: "superior", label: "Superior" }, { value: "inferior", label: "Inferior" }] as const;
 export const positionLabel = (value: string): string => POSICION_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
@@ -52,28 +59,34 @@ export const PENDING_NOTES: readonly { key: string; label: string; pending: stri
 // ---- valores y respuestas ----------------------------------------------------------------------------------------------------------------
 
 export type P111Row = { numero_bobina: string; posicion: string; saldo_inicial_kg: string; ingreso_kg: string; saldo_final_kg: string };
-export type P111Simple = { observaciones?: string };
+export type P111Simple = { hora_inicio?: string; hora_fin?: string; observaciones?: string }; // las horas existen desde la v2
 export type P111Values = P111Simple & { _groups: { bobinas: P111Row[] } };
 export type P111Capture = CaptureOf<P111Values>;
 export type P111Submission = SubmissionOf<P111Capture>;
 
-// Solo las observaciones opcionales; lo demás (incluidos campos desconocidos como un consumo) se ignora, nunca se conserva.
-function parseSimple(value: unknown): P111Simple | null {
+// Observaciones opcionales y, desde la versión 2, las dos horas obligatorias; lo demás (incluidos campos desconocidos como un consumo) se ignora, nunca se conserva. Una captura v1 sin horas se lee sin exigirlas.
+const parseSimpleFor = (version?: number) => (value: unknown): P111Simple | null => {
     if (!isRec(value)) return null;
-    const { observaciones: notes } = value;
+    const { observaciones: notes, hora_inicio: start, hora_fin: end } = value;
     if (notes !== undefined && typeof notes !== "string") return null;
-    return notes === undefined ? {} : { observaciones: notes };
-}
+    const clean: P111Simple = {};
+    if (version === undefined || version >= P111_V2) {
+        if (typeof start !== "string" || !STORED_HOUR.test(start) || typeof end !== "string" || !STORED_HOUR.test(end)) return null;
+        clean.hora_inicio = start; clean.hora_fin = end;
+    }
+    if (notes !== undefined) clean.observaciones = notes;
+    return clean;
+};
 
-const parseValues = groupedValuesParser(parseSimple, P111_GROUPS);
-export const parseP111Capture = (value: unknown): P111Capture | null => parseCaptureOf(value, parseValues as (v: unknown) => P111Values | null, P1_11_CODE);
+const parseValues = (value: unknown, version?: number): P111Values | null => groupedValuesParser(parseSimpleFor(version), P111_GROUPS)(value) as P111Values | null;
+export const parseP111Capture = (value: unknown): P111Capture | null => parseCaptureOf(value, parseValues, P1_11_CODE);
 export const parseP111Submission = (value: unknown): P111Submission | null => parseSubmissionOf(value, parseP111Capture);
 export const parseP111List = (value: unknown): P111Capture[] | null => parseCaptureListOf(value, parseP111Capture);
 
 // ---- borrador, validación estructural y payload ------------------------------------------------------------------------------------------
 
-export type P111Draft = { observaciones: string; groups: GroupDrafts };
-export const emptyP111Draft = (makeKey?: () => string): P111Draft => ({ observaciones: "", groups: initialDrafts(P111_GROUPS, makeKey) });
+export type P111Draft = { hora_inicio: string; hora_fin: string; observaciones: string; groups: GroupDrafts };
+export const emptyP111Draft = (makeKey?: () => string): P111Draft => ({ hora_inicio: "", hora_fin: "", observaciones: "", groups: initialDrafts(P111_GROUPS, makeKey) });
 
 export type P111Check = { ok: true; values: Record<string, unknown> } | { ok: false; errors: RowError[] };
 
@@ -82,6 +95,12 @@ export type P111Check = { ok: true; values: Record<string, unknown> } | { ok: fa
 export function normalizeP111Draft(draft: P111Draft): P111Check {
     const errors: RowError[] = [];
     const simple: Record<string, unknown> = {};
+    for (const { key, label } of P111_HOUR_FIELDS) { // obligatorias, HH:MM; se envían tal como se digitan (sin conversión, sin comparar inicio con fin)
+        const text = draft[key].trim();
+        if (!text) errors.push({ group: "", row: null, field: key, message: `${label}: es obligatoria.` });
+        else if (!HOUR.test(text)) errors.push({ group: "", row: null, field: key, message: `${label}: debe ser una hora válida HH:MM (por ejemplo 07:30).` });
+        else simple[key] = text;
+    }
     const notes = draft.observaciones.trim();
     if (notes.length > MAX_TEXT_LENGTH) errors.push({ group: "", row: null, field: "observaciones", message: `Observaciones: supera ${MAX_TEXT_LENGTH} caracteres.` });
     else if (notes) simple.observaciones = notes;

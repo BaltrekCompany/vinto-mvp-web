@@ -74,7 +74,7 @@ test("P1-22 v2: sin Volumen desplazado y con los demás campos obligatorios", ()
   for (const label of ["Número de cuba *", "Masa húmeda *", "Grado de refinación °SR *", "Amperaje *"]) assert.ok(text.includes(label), label);
 });
 
-test("P1-26 v2: Punto de muestreo es una lista obligatoria con las seis opciones exactas y % Cantidad de seco es de solo lectura; sin Absorción de humedad", () => {
+test("P1-26: Punto de muestreo es una lista obligatoria con las seis opciones exactas y % Cantidad de seco es de solo lectura (Absorción de humedad llega en la v3, MF-11)", () => {
   const html = capture("p126"), text = textOf(html);
   assert.equal(count(html, "<select"), 1);
   const options = [...html.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
@@ -85,7 +85,7 @@ test("P1-26 v2: Punto de muestreo es una lista obligatoria con las seis opciones
   assert.ok(block.length > 0);
   assert.match(textOf(block), /% Cantidad de seco —/, "sin masas no hay resultado");
   assert.equal(block.includes("<input") || block.includes("<select") || block.includes("<textarea"), false, "solo lectura");
-  assert.equal(/Absorci[oó]n/i.test(text), false, "MD_Ejec 33 queda fuera");
+  assert.ok(text.includes("Absorción de humedad") && !text.includes("Absorción de humedad *"), "MF-11: Absorción de humedad es opcional; el % de cantidad de seco sigue calculándose aparte");
 });
 
 test("P1-26: lista cerrada (sin texto libre en capturas nuevas) y lectura de la versión 1 con su texto libre original", () => {

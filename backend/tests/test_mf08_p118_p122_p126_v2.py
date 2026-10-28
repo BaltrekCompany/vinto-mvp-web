@@ -40,6 +40,7 @@ except ModuleNotFoundError:
 P118, P122, P126 = "VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26"
 BUNDLE = load_bundle()
 FORMS = {f["code"]: f for f in BUNDLE.forms}
+FORMS[P126] = {**FORMS[P126], "version_number": 2, "fields": [f for f in FORMS[P126]["fields"] if f["key"] != "absorcion_de_humedad"]}  # MF-11: la v3 añade la absorción; aquí se prueba la v2 de MF-08
 STATE = {}
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)  # 12:00 La Paz -> DIA, fecha operativa 2026-10-06
 AFTER_MIDNIGHT = datetime(2026, 10, 7, 6, 0, tzinfo=timezone.utc)  # 02:00 La Paz del 07 -> NOCHE, fecha operativa 2026-10-06
@@ -61,6 +62,22 @@ P122_V2 = {"numero_de_cuba": "C-2", "masa_humeda": "10.5", "grado_de_refinacion_
 P126_V2 = {"punto_de_muestreo": "Fieltro I", "masa_humeda": "80", "masa_seca": "20"}
 
 
+def restore_previous(connection, code, number, drop_keys):
+    """MF-11: la base efímera trae la versión nueva del bundle; estas pruebas son de un paquete anterior, así que se RETIRA la nueva y se publica la anterior (copia de la nueva sin los campos añadidos)."""
+    c = connection
+    new_id, form_id, workflow, area, name = c.execute("SELECT v.id, v.form_id, v.workflow_id, v.area, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()
+    c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (new_id,))
+    old_id = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (form_id, number - 1, name, area, workflow, "b" * 64)).fetchone()[0]
+    for fid, key, label, value_type, source, required, order in c.execute("SELECT id, key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (new_id,)).fetchall():
+        if key in drop_keys:
+            continue
+        copy = c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (old_id, key, label, value_type, source, required, order)).fetchone()[0]
+        for option_key, option_label, option_order in c.execute("SELECT option_key, label, display_order FROM vinto_config.field_option WHERE field_definition_id = %s", (fid,)).fetchall():
+            c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
+    c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (old_id, new_id))
+    c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (old_id,))
+
+
 def setUpModule():
     STATE["template"] = build_reference_template("vinto_mf08_tpl")
 
@@ -77,6 +94,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.connection = connect(cls.database)
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
+        # MF-11 publicó P1-26 v3 (con «Absorción de humedad»): estas pruebas son las de MF-08, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
+        restore_previous(cls.connection, P126, 3, ("absorcion_de_humedad",))
         cls.current = {code: cls.version(code, 2) for code in V1}
         cls.v1 = {code: cls.install_v1(code) for code in V1}
         password = "pw-" + secrets.token_urlsafe(18)
@@ -148,7 +167,7 @@ class DefinitionTests(Base):
     async def test_bundle_versions_and_scope(self):
         self.assertEqual({c: FORMS[c]["version_number"] for c in V1}, {P118: 2, P122: 2, P126: 2})
         self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1),
-                         [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-12", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 3), ("VINTO-P1-25", 3), ("VINTO-P1-26", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)], "respecto de MF-07 solo cambian estas tres (MF-09 añade P1-01 v3 y P1-06 v2)")
+                         [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)], "respecto de MF-07 solo cambian estas tres (MF-09 añade P1-01 v3 y P1-06 v2; MF-10 y MF-11 las demás de la lista)")
         for code in V1:
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
             self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.current[code],)), "published")
@@ -377,7 +396,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         dry = reference.dry_run(self.connection, BUNDLE)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 3)
-        self.assertEqual(dry.counts["field"]["create"], 10 + 5 + 5)
+        self.assertEqual(dry.counts["field"]["create"], 10 + 5 + 6)  # P1-26 llega como v3 (MF-11): 6 campos
         self.assertEqual(dry.counts["form_version_machine"]["create"], 6)
         self.assertEqual(dry.counts["option"]["create"], 6)
         self.assertEqual(self.snapshot(old_where), old, "el dry-run no escribe")
@@ -387,7 +406,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
         for code in (P118, P122, P126):
             self.assertEqual(self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall(),
-                             [(1, "published"), (2, "published")])
+                             [(1, "published"), (3 if code == P126 else 2, "published")])
         opts = self.connection.execute("""SELECT o.option_key, o.display_order FROM vinto_config.field_option o JOIN vinto_config.form_version v ON v.id = o.form_version_id JOIN vinto_config.form f ON f.id = v.form_id
                                           WHERE f.code = %s ORDER BY o.display_order""", (P126,)).fetchall()
         self.assertEqual(opts, [(p, n) for n, p in enumerate(POINTS, start=1)])

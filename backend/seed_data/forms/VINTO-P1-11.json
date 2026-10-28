@@ -6,7 +6,7 @@
   "name": "Consumo de bobinas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -83,14 +83,32 @@
   ],
   "fields": [
     {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
       "key": "observaciones",
       "label": "Observaciones",
       "value_type": "textarea",
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 1
+      "display_order": 3
     }
   ],
-  "definition_checksum": "654282edc8e7cc1254ef29c29451722e12e3588ab0b17936dd570885c8f85505"
+  "definition_checksum": "a6c2eeb7bc52e3add73c14b37fbdde5e47f093da752fe23cc3c60e890721b6a3"
 }

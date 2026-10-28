@@ -81,7 +81,7 @@ function draftOf(rows = ROWS, observaciones = "Dato de prueba") {
   let list = draft.groups.bobinas;
   while (list.length < rows.length) list = addRow(spec, list, key);
   list = list.map((r, i) => ({ rowKey: r.rowKey, cells: rowCells(rows[i]) }));
-  return { observaciones, groups: { bobinas: list } };
+  return { hora_inicio: "07:30", hora_fin: "15:45", observaciones, groups: { bobinas: list } }; // MF-11: horas generales desde la v2
 }
 
 // ---- especificación ---------------------------------------------------------------------------------------------------------------------------
@@ -135,7 +135,7 @@ test("the P1-11 values parser is strict about the group (rows, order, positions,
 test("structural validation: at least one row, coil text, a position from the catalog and three decimals (comma normalized); NO consumption, ordering, uniqueness, range, precision or rounding rule", () => {
   const ok = normalizeP111Draft(draftOf());
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.values, { observaciones: "Dato de prueba", _groups: { bobinas: ROWS } }); // "100,5" -> "100.5"; text and order intact
+  assert.deepEqual(ok.values, { hora_inicio: "07:30", hora_fin: "15:45", observaciones: "Dato de prueba", _groups: { bobinas: ROWS } }); // "100,5" -> "100.5"; text and order intact
   assert.equal("observaciones" in normalizeP111Draft(draftOf(ROWS, "   ")).values, false); // blank notes are omitted
   // two rows with the same position AND the same coil number are structurally fine; the final balance may be greater than the initial one; negatives and any precision are not judged
   const odd = [{ ...ROWS[0], saldo_inicial_kg: "10", ingreso_kg: "0", saldo_final_kg: "999999" }, { ...ROWS[0] }, { ...ROWS[0], saldo_inicial_kg: "-5", ingreso_kg: "-1,5", saldo_final_kg: "1.123456789" }];
@@ -144,12 +144,12 @@ test("structural validation: at least one row, coil text, a position from the ca
   assert.equal(accepted.values._groups.bobinas[2].saldo_final_kg, "1.123456789"); // no rounding
   assert.equal(accepted.values._groups.bobinas[2].ingreso_kg, "-1.5");
   assert.equal(accepted.values._groups.bobinas.length, 3);
-  const empty = normalizeP111Draft({ observaciones: "", groups: { bobinas: [] } });
+  const empty = normalizeP111Draft({ hora_inicio: "07:30", hora_fin: "15:45", observaciones: "", groups: { bobinas: [] } });
   assert.equal(empty.ok, false); // min_rows = 1
   assert.ok(empty.errors.some((e) => e.group === "bobinas" && e.row === null && e.message.includes("al menos 1 filas")));
   const blank = normalizeP111Draft(emptyP111Draft());
   assert.equal(blank.ok, false);
-  assert.equal(blank.errors.length, 5); // the one empty row misses its five required cells
+  assert.equal(blank.errors.length, 5 + 2); // the one empty row misses its five required cells, plus the two required general hours (MF-11)
   const mark = (key, value) => { const d = draftOf([ROWS[0], ROWS[1]]); d.groups.bobinas = d.groups.bobinas.map((r, i) => (i === 1 ? { rowKey: r.rowKey, cells: { ...r.cells, [key]: value } } : r)); return normalizeP111Draft(d); };
   for (const [key, value] of [["posicion", "no_aplica"], ["posicion", ""], ["saldo_inicial_kg", "abc"], ["ingreso_kg", "1e3"], ["saldo_final_kg", "12."], ["numero_bobina", "   "]]) {
     const result = mark(key, value);
@@ -184,7 +184,7 @@ test("the payload carries only the agreed values: observaciones and _groups.bobi
   const payload = buildP111Payload(ID, ASSIGNMENT, DEVICE, check.values);
   assert.deepEqual(Object.keys(payload).sort(), ["assignment_id", "capture_id", "device_key", "form_code", "values"]);
   assert.equal(payload.form_code, "VINTO-P1-11");
-  assert.deepEqual(Object.keys(payload.values).sort(), ["_groups", "observaciones"]);
+  assert.deepEqual(Object.keys(payload.values).sort(), ["_groups", "hora_fin", "hora_inicio", "observaciones"]);
   assert.deepEqual(Object.keys(payload.values._groups), ["bobinas"]);
   for (const row of payload.values._groups.bobinas) assert.deepEqual(Object.keys(row).sort(), ["ingreso_kg", "numero_bobina", "posicion", "saldo_final_kg", "saldo_inicial_kg"]);
   assert.equal(/rowKey|row_number|group_row|consumo|saldo_disponible|merma|peso_total|numero_pallet|bobbin_id|operador|turno|maquina|fecha/.test(JSON.stringify(payload.values)), false);
@@ -316,7 +316,7 @@ test("component: the mandatory advisory, ONE initial row with its five declared 
   for (const note of PENDING_NOTES) assert.ok(plain.includes(note.label) && plain.includes(note.pending), note.key);
   assert.equal((markup.match(/data-row="/g) ?? []).length, 1); // one row, not three
   assert.equal((markup.match(/<select/g) ?? []).length, 1);
-  assert.equal((markup.match(/<input/g) ?? []).length, 4);
+  assert.equal((markup.match(/<input/g) ?? []).length, 4 + 2); // the two general hours (MF-11)
   assert.equal((markup.match(/<textarea/g) ?? []).length, 1);
   assert.equal(plain.includes("No aplica"), false); // no «no_aplica» option
   assert.equal(/Consumo calculado|Consumo \d|Total |Suma|Diferencia|Balance/.test(plain.replace(ADVISORY, "")), false); // nothing computed is shown
@@ -333,7 +333,7 @@ test("component: a pending attempt shows ALL its rows in order, locks fields and
   assert.ok(markup.indexOf("BOBINA-FICTICIA-001") < markup.indexOf("BOBINA-FICTICIA-002") && markup.indexOf("BOBINA-FICTICIA-002") < markup.indexOf("BOBINA-FICTICIA-003"));
   assert.match(markup, /value="100,5"/); // the typed draft is restored as typed
   assert.ok(plain.includes("Reintentar envío") && plain.includes("No se pudo confirmar el envío."));
-  assert.equal(disabledCount(markup, "input"), 12);
+  assert.equal(disabledCount(markup, "input"), 12 + 2);
   assert.equal(disabledCount(markup, "select"), 3);
   assert.equal(disabledCount(markup, "textarea"), 1);
   const buttons = markup.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? [];
