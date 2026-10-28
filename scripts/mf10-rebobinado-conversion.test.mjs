@@ -83,15 +83,15 @@ test("P1-12: «Formato» es texto libre y se conserva exactamente (4*12, 4X12, 4
   const { P112, P112_FIELDS } = ui;
   const formato = P112_FIELDS.find((f) => f.key === "formato");
   assert.deepEqual({ ...formato }, { key: "formato", label: "Formato", kind: "text", required: true });
-  assert.equal(P112_FIELDS.length, 20);
-  const draft = Object.fromEntries(P112_FIELDS.map((f) => [f.key, "x"]));
+  assert.equal(P112_FIELDS.length, 22, "20 campos de MF-10 más las dos horas generales de MF-11");
+  const draft = Object.fromEntries(P112_FIELDS.map((f) => [f.key, f.kind === "time" ? "07:30" : "x"]));
   for (const typed of ["4*12", "4X12", "4x12", "4.12", "4,12", "12 x 4"]) assert.equal(P112.normalizeDraft({ ...draft, formato: typed }).values.formato, typed, "sin normalizar mayúsculas, símbolos ni coma");
   assert.match(P112.normalizeDraft({ ...draft, formato: "  " }).errors.join(" "), /Formato: es obligatorio/);
   const html = screen(ui.CONVERSION_CANDIDATES.p112, "GAMBINI");
   assert.ok(textOf(html).includes("Formato *"));
   const envelope = (version, values) => ({ id: "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b", status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: ui.P1_12_CODE, version_number: version, name: "x" },
     machine: { code: "GAMBINI", name: "Gambini" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", assignment: { id: "a" }, work_order: { id: "w", number: "OT-1" }, line: { id: "l", line_code: "L1", pv_reference: "PV-1", article: { code: "A1", description: "d" } }, values });
-  const base = Object.fromEntries(P112_FIELDS.map((f) => [f.key, "x"]));
+  const base = Object.fromEntries(P112_FIELDS.filter((f) => f.kind !== "time").map((f) => [f.key, "x"])); // v1 y v2: sin horas (MF-11 las añade en la v3)
   assert.equal(P112.parseCapture(envelope(1, { ...base, formato: "4.12" }))?.values.formato, "4.12", "la captura histórica con formato decimal se lee sin conversión");
   assert.equal(P112.parseCapture(envelope(2, { ...base, formato: "4*12" }))?.values.formato, "4*12");
 });
@@ -117,9 +117,9 @@ test("MF-10 no toca TVC/ETL ni el resto del código: el seed solo trae las cinco
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-07": 2, "VINTO-P1-10": 2, "VINTO-P1-12": 2, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
+  const expected = { "VINTO-P1-07": 2, "VINTO-P1-10": 2, "VINTO-P1-12": 3, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
-  assert.equal(versions["VINTO-P1-11"], 1, "P1-11 no cambia");
-  assert.equal(versions["VINTO-P1-13"], 1, "P1-13 no cambia");
-  assert.equal(versions["VINTO-P1-16"], 1, "P1-16 no cambia");
+  assert.equal(versions["VINTO-P1-11"], 2, "P1-11 recibe sus horas en MF-11");
+  assert.equal(versions["VINTO-P1-13"], 2, "P1-13 recibe sus horas en MF-11");
+  assert.equal(versions["VINTO-P1-16"], 2, "P1-16 recibe sus horas en MF-11");
 });

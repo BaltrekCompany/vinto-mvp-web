@@ -6,7 +6,7 @@
   "name": "Registro de control de merma",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -23,13 +23,31 @@
   "groups": [],
   "fields": [
     {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
       "key": "numero_correlativo",
       "label": "Número correlativo",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 1
+      "display_order": 3
     },
     {
       "key": "hoja_doble_kg",
@@ -38,7 +56,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 2
+      "display_order": 4
     },
     {
       "key": "servilleta_kg",
@@ -47,7 +65,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 3
+      "display_order": 5
     },
     {
       "key": "toalla_kg",
@@ -56,7 +74,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 4
+      "display_order": 6
     },
     {
       "key": "carton_kg",
@@ -65,7 +83,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 7
     },
     {
       "key": "hoja_simple_kg",
@@ -74,7 +92,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 6
+      "display_order": 8
     },
     {
       "key": "plastico_kg",
@@ -83,7 +101,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
+      "display_order": 9
     },
     {
       "key": "observacion",
@@ -92,8 +110,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 8
+      "display_order": 10
     }
   ],
-  "definition_checksum": "0c7b45c32cb27bc2b6429a60ecffa6388b6ba7c50c6b6bb0033b214bfbd8696f"
+  "definition_checksum": "29d771cc1e1bb38edaee3302081562eeb69b5ffefd635576953851a0362cf496"
 }

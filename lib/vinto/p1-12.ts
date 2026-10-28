@@ -106,6 +106,8 @@ export const reconcileP112 = (captureId: string, deps: P112SubmitDeps): Promise<
 // maquina, merma_maquina, merma_maquina_kg, firma_operador, firma_encargada); calculados excluidos (empaque/subempaque/bolsa/segundas/asas
 // _saldo_final, merma_logs, merma_cola, total_produccion): sin fórmula aprobada, no se calculan ni se aceptan del cliente.
 export const P112_FIELDS: readonly FieldSpec[] = [
+    { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 3 }, // MF-11 (MD_Ejec 48): horas GENERALES de producción, no las del pallet de la hipótesis anterior
+    { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 3 },
     { key: "empaque_saldo_inicial", label: "Empaque saldo inicial", kind: "text", required: true },
     { key: "empaque_solicitado", label: "Empaque solicitado", kind: "text", required: true },
     { key: "empaque_utilizado", label: "Empaque utilizado", kind: "text", required: true },
@@ -131,6 +133,7 @@ export const P112 = defineCandidateForm(P1_12_CODE, P112_FIELDS);
 
 export const P112_AUTOMATIC = ["Fecha", "Operador", "Turno", "Grupo", "Máquina", "Merma de máquina", "Merma de máquina (kg)", "Firma del operador", "Firma de la encargada"] as const;
 export const P112_PENDING: readonly { label: string; pending: string }[] = [
+    { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 3; no son la hora de registro del sistema ni las de un pallet, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
     { label: "Saldos finales y mermas", pending: "8 campos calculados de la definición legacy (saldos finales de empaque/subempaque/bolsa/segundas/asas, merma de logs, merma de cola, producción total): sin fórmula aprobada, no se calculan ni se aceptan del cliente." },
     { label: "Firma", pending: "La definición legacy declara firma del operador y firma de la encargada; sin mecanismo de firma en el modelo central, no se simulan." },
 ];

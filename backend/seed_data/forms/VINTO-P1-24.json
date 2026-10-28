@@ -6,7 +6,7 @@
   "name": "Propiedades físicas en húmedo",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 3,
+  "version_number": 4,
   "machines": [
     "MP1",
     "MP3"
@@ -15,7 +15,7 @@
   "fields": [
     {
       "key": "crepado",
-      "label": "Crepado",
+      "label": "Crepado (%)",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -122,5 +122,5 @@
       "display_order": 12
     }
   ],
-  "definition_checksum": "94a56a1adc6a868dcf1d176d544b748f3a2f11fd2b2e2052810f786f58b43fb2"
+  "definition_checksum": "f189115d1db674fa944cce5b07610e23c709ec06a20cddcfcc7bd815c101c4e5"
 }

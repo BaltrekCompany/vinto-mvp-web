@@ -64,7 +64,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.equal(P125_FIELDS.length, 13);
   assert.equal(P124_FIELDS.length, 10);
   const u24 = defOf("form_24_propiedades_fisicas_en_humedo").fields;
-  assert.deepEqual(P124_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["gramaje", u24.find((f) => f.key === "gramaje").unit], ["tiempo_de_curado_condicion", u24.find((f) => f.key === "tiempo_de_curado_condicion").unit]]);
+  assert.deepEqual(P124_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["crepado", "%"], ["gramaje", u24.find((f) => f.key === "gramaje").unit], ["tiempo_de_curado_condicion", u24.find((f) => f.key === "tiempo_de_curado_condicion").unit]]);
 });
 
 test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin cambios y promedios aprobados", () => {
@@ -83,7 +83,7 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
       assert.equal(labelFor(f), f.label);
     }
   }
-  assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal húmeda – Comando", "Resistencia longitudinal húmeda – Medio", "Resistencia longitudinal húmeda – Transversal", "Resistencia transversal húmeda – Comando", "Resistencia transversal húmeda – Medio", "Resistencia transversal húmeda – Transversal"]);
+  assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Crepado (%)", "Resistencia longitudinal húmeda – Comando", "Resistencia longitudinal húmeda – Medio", "Resistencia longitudinal húmeda – Transversal", "Resistencia transversal húmeda – Comando", "Resistencia transversal húmeda – Medio", "Resistencia transversal húmeda – Transversal"]);
   assert.deepEqual(P125_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal – Comando kgf", "Resistencia longitudinal – Medio kgf", "Resistencia longitudinal – Transversal kgf", "Resistencia longitudinal húmeda – Comando kgf", "Resistencia longitudinal húmeda – Medio kgf", "Resistencia longitudinal húmeda – Transversal kgf"]);
   assert.deepEqual(P124_CALCULATED_FIELDS.map((f) => f.key), ["promedio_longitudinal_humedo", "promedio_transversal_humedo"]);
   assert.deepEqual(P125_CALCULATED_FIELDS.map((f) => f.key), ["promedio_resistencia_longitudinal_kgf", "promedio_resistencia_longitudinal_humeda_kgf"]);

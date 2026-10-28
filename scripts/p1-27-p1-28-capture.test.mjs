@@ -23,7 +23,7 @@ const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
 const fill = (fields) => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "7,25" : f.key === "numero_de_bobina" ? "12" : f.kind === "textarea" ? " nota " : "texto 1,250"]));
 const CASES = [
-  { name: "P1-27", id: "form_27_analisis_de_agua_para_caldero", form: P127, formCode: P1_27_CODE, fields: P127_FIELDS, counts: [23, 3, 1], context: "machine" },
+  { name: "P1-27", id: "form_27_analisis_de_agua_para_caldero", form: P127, formCode: P1_27_CODE, fields: P127_FIELDS, counts: [23, 3, 1], context: "machine", added: ["alcalinidad_total"] }, // MF-11: «alcalinidad_total» es un campo manual NUEVO de la versión 2 (la clave calculada de la definición legacy sigue sin digitarse)
   { name: "P1-28", id: "form_28_registro_de_bobinas_rechazadas", form: P128, formCode: P1_28_CODE, fields: P128_FIELDS, counts: [7, 6, 0], context: "bobbin" },
 ];
 const base = (formCode, values, extra = {}) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
@@ -39,12 +39,14 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], c.counts, c.name);
     assert.equal(legacy.fields.length, c.counts[0] + c.counts[1] + c.counts[2]);
     const m = legacy.fields.filter(isManual);
-    assert.equal(c.fields.length, c.counts[0]);
-    assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(c.fields.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
-    assert.deepEqual(c.fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
-    assert.deepEqual(c.fields.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
-    for (const f of c.fields) assert.equal(f.suffix, m.find((x) => x.key === f.key).unit ?? undefined, `${c.name}: ${f.key} unidad`);
+    const kept = c.fields.filter((f) => !(c.added ?? []).includes(f.key)); // los añadidos por versiones posteriores se comprueban aparte
+    assert.equal(kept.length, c.counts[0]);
+    assert.equal(c.fields.length, c.counts[0] + (c.added ?? []).length);
+    assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
+    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
+    for (const f of kept) assert.equal(f.suffix, m.find((x) => x.key === f.key).unit ?? undefined, `${c.name}: ${f.key} unidad`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(c.fields.some((x) => x.key === f.key), false, `${c.name}: ${f.key} no se digita`);
     assert.equal(c.form.context, c.context);
   }
@@ -52,6 +54,9 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.deepEqual([...P127_CALCULATED], ["Purga caldero alcalinidad total"]);
   assert.deepEqual(defOf("form_28_registro_de_bobinas_rechazadas").fields.filter((f) => f.source === "automatic").map((f) => f.key), ["fecha", "hora", "maquina", "operador", "responsable_de_calidad", "visto_bueno_produccion"]);
   assert.equal(P127_FIELDS.filter((f) => f.suffix).length, 0, "P1-27 no declara unidades: no se inventa ninguna");
+  const alk = P127_FIELDS.find((f) => f.key === "alcalinidad_total"); // MF-11 (MD_Ejec 35)
+  assert.deepEqual({ ...alk }, { key: "alcalinidad_total", label: "Alcalinidad total", kind: "decimal", required: false, sinceVersion: 2 }, "decimal digitado, opcional, SIN unidad");
+  assert.equal(defOf("form_27_analisis_de_agua_para_caldero").fields.some((f) => f.key === "alcalinidad_total"), false, "no existe en la definición legacy: no hay colisión con el campo calculado");
   assert.deepEqual(P128_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["peso_rechazado", "kg"]]);
 });
 
@@ -69,27 +74,27 @@ test("sólidos disueltos, conductividad, cloruros y calibración son TEXTO aunqu
   assert.equal(check.ok, true);
   assert.equal(check.values.ablandador_solidos_disueltos, "texto 1,250", "el texto conserva su coma");
   assert.equal(check.values.ablandador_ph, "7.25");
-  assert.equal(Object.keys(check.values).length, 23, "los 22 obligatorios + observaciones (llena aquí): exactamente los 23 campos del contrato");
+  assert.equal(Object.keys(check.values).length, 24, "los 22 obligatorios + alcalinidad total (opcional) + observaciones (llenas aquí): exactamente los 24 campos del contrato");
 });
 
-test("P1-27 conserva los 23 campos en cada captura: ni la máquina elegida ni nada los oculta o divide el contrato", () => {
+test("P1-27 conserva los 24 campos en cada captura: ni la máquina elegida ni nada los oculta o divide el contrato", () => {
   for (const machine of ["MP1", "MP3"]) {
     const { attempt } = P127.createAttempt(fill(P127_FIELDS), machine, DEVICE, () => UUID);
-    assert.equal(Object.keys(attempt.payload.values).length, 23, machine);
+    assert.equal(Object.keys(attempt.payload.values).length, 24, machine);
     assert.deepEqual(Object.keys(attempt.payload.values), P127_FIELDS.map((f) => f.key), machine);
     assert.equal(attempt.payload.machine_code, machine);
   }
   const screens = code("components/vinto/candidate-form-capture.tsx") + code("lib/vinto/quality-candidates.ts") + code("components/vinto/quality-machine-controls.tsx");
   assert.equal(/condensado_mp[13]|machine\.code === "MP|filter\(.*mp1|filter\(.*mp3/i.test(screens), false, "ningún código filtra campos por máquina");
-  assert.match(P127_PENDING.map((p) => p.pending).join(" "), /se conservan los 23 campos aunque elijas una máquina; no se ocultan ni se dividen/);
+  assert.match(P127_PENDING.map((p) => p.pending).join(" "), /se conservan los 24 campos aunque elijas una máquina; no se ocultan ni se dividen/);
 });
 
 test("las secciones de P1-27 son solo visuales: cada campo manual una vez, en el orden del contrato, con los grupos pedidos", () => {
   const keys = P127_SECTIONS.flatMap((s) => s.keys);
   assert.deepEqual(keys, P127_FIELDS.map((f) => f.key));
-  assert.equal(new Set(keys).size, 23);
+  assert.equal(new Set(keys).size, 24);
   assert.deepEqual(P127_SECTIONS.map((s) => s.title), ["Ablandador", "Agua de alimentación", "Purga de caldero", "Condensado MP1", "Condensado MP3", "Calibración y observaciones"]);
-  assert.deepEqual(P127_SECTIONS.map((s) => s.keys.length), [4, 4, 5, 4, 4, 2]);
+  assert.deepEqual(P127_SECTIONS.map((s) => s.keys.length), [4, 4, 6, 4, 4, 2], "Alcalinidad total va en Purga de caldero");
   assert.deepEqual(Object.keys(P127.emptyDraft()), P127_FIELDS.map((f) => f.key), "el borrador y el payload conservan las claves individuales");
   assert.match(code("components/vinto/candidate-form-capture.tsx"), /candidate\.sections/);
   assert.equal(code("lib/vinto/quality-candidates.ts").includes("sections: P127_SECTIONS"), true);
@@ -103,7 +108,8 @@ test("el borrador valida estructuralmente y NO calcula la alcalinidad, ni genera
     for (const key of ["purga_caldero_alcalinidad_total", "fecha", "hora", "turno", "maquina", "responsable", "operador", "responsable_de_calidad", "visto_bueno_produccion", "estado", "decision", "aprobado"]) assert.equal(key in check.values, false, `${c.name}: ${key}`);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) {
       for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: bad }).errors.join(" "), /debe ser un número decimal/, `${c.name} ${f.key} ${bad}`);
-      assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
+      if (f.required) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
+      else assert.equal(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).ok, true, `${f.key}: opcional, vacío se acepta y no se guarda`);
     }
     assert.equal(c.form.normalizeDraft(c.form.emptyDraft()).errors.length, c.fields.filter((f) => f.required).length);
   }

@@ -7,7 +7,7 @@ import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import { addRow, canAddRow, canRemoveRow, errorsFor, removeRow, setCell, type GroupFieldSpec, type GroupSpec, type RowError } from "@/lib/vinto/capture-groups";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
-import { ADVISORY, P111_GROUPS, PENDING_NOTES, createP111Attempt, emptyP111Draft, submitP111Attempt, type P111Attempt, type P111Capture, type P111Draft, type P111SubmitDeps } from "@/lib/vinto/p1-11";
+import { ADVISORY, P111_GROUPS, P111_HOUR_FIELDS, PENDING_NOTES, createP111Attempt, emptyP111Draft, submitP111Attempt, type P111Attempt, type P111Capture, type P111Draft, type P111SubmitDeps } from "@/lib/vinto/p1-11";
 import { getP111, submitP111 } from "@/lib/vinto/p1-11-api";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
@@ -98,6 +98,9 @@ export function P111CaptureForm({ context, online, attempt, setAttempt, back, on
             {PENDING_NOTES.map(note => <div key={note.key}><ContextValue label={note.label} value="— pendiente —"/><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
         </div>
         {user && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="session">Sesión iniciada como <b>{user.display_name}</b>. Es solo la identificación del usuario autenticado: no es una firma ni un grupo.</p>}
+        <CaptureSection title="Horas de producción" hint="Hora local de planta (HH:MM), digitada. No es la hora de registro del sistema ni se calcula la duración.">
+            {P111_HOUR_FIELDS.map(field => <TextField key={field.key} label={field.label} required type="time" disabled={locked} value={draft[field.key]} onChange={v => setDraft(old => ({ ...old, [field.key]: v }))}/>)}
+        </CaptureSection>
         <RepeatableGroup key={spec.code} title={spec.label} hint="Una fila por bobina declarada, en el orden en que se capturan. Se pueden repetir posiciones y números; no hay máximo funcional definido (solo el límite técnico del sistema). La unidad «kg» es una etiqueta de la hipótesis legacy."
             rows={rows.map((r, i) => ({ key: r.rowKey, errors: errorsFor(errors, spec.code, i + 1) }))} minRows={spec.minRows} maxRows={spec.maxRows} canAdd={canAddRow(spec, rows)} canRemove={canRemoveRow(spec, rows)}
             disabled={locked} groupErrors={errorsFor(errors, spec.code, null)} onAdd={() => updateGroup(spec, r => addRow(spec, r))} onRemove={i => updateGroup(spec, r => removeRow(spec, r, r[i].rowKey))}

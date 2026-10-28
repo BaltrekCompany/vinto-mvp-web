@@ -58,8 +58,9 @@ export function P113History({ resource, refresh }: { resource: Resource<P113Capt
 
 // Las bobinas se muestran TAL CUAL se declararon y en el orden capturado: sin sumas, sin totales y sin ninguna columna de consumo (no es un libro de existencias).
 export function P111History({ resource, refresh }: { resource: Resource<P111Capture[]>; refresh: () => void }) {
-    return <Shell title="Consumo de bobinas (P1-11) · registros centrales" note="Ficha candidata (hipótesis de prueba): los números de bobina y los saldos son declaraciones. No es un libro de existencias: no hay consumo, totales ni inventario." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Bobinas declaradas (en orden)", "Observaciones", "Rev."]}>
+    return <Shell title="Consumo de bobinas (P1-11) · registros centrales" note="Ficha candidata (hipótesis de prueba): los números de bobina y los saldos son declaraciones. No es un libro de existencias: no hay consumo, totales ni inventario." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Hora inicio", "Hora fin", "Bobinas declaradas (en orden)", "Observaciones", "Rev."]}>
         {resource.status === "ready" && resource.data.map(c => <tr key={c.id} className="border-b last:border-0" data-capture={c.id}>{common(c)}
+            <td className="px-2 py-2">{c.values.hora_inicio ? shortHour(c.values.hora_inicio) : ""}</td><td className="px-2 py-2">{c.values.hora_fin ? shortHour(c.values.hora_fin) : ""}</td>
             <td className="px-2 py-2"><ol className="space-y-1" data-rows={c.values._groups.bobinas.length}>{c.values._groups.bobinas.map((row, index) => <li key={index} data-row={index + 1}>{index + 1}. {row.numero_bobina} · {positionLabel(row.posicion)} · inicial {row.saldo_inicial_kg} · ingreso {row.ingreso_kg} · final {row.saldo_final_kg} (declarados)</li>)}</ol></td>
             <td className="px-2 py-2">{c.values.observaciones ?? ""}</td><td className="px-2 py-2">{c.revision}</td></tr>)}
     </Shell>;

@@ -35,18 +35,21 @@ test("los contratos son los campos manuales de las definiciones legacy salvo los
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [manual, automatic, calculated], id);
     assert.equal(legacy.fields.length, manual + automatic + calculated);
     const m = legacy.fields.filter(isManual).filter((f) => f.key !== "volumen_desplazado"); // MF-08 (MD_Ejec 31): P1-22 v2 sin «Volumen desplazado»
-    assert.deepEqual(fields.map((f) => f.key), m.map((f) => f.key), `${id}: claves y orden`);
-    assert.deepEqual(fields.map((f) => f.label), m.map((f) => f.label), `${id}: etiquetas`);
-    assert.deepEqual(fields.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${id}: obligatoriedad`);
-    assert.deepEqual(fields.map((f) => f.kind), m.map((f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : f.key === "punto_de_muestreo" ? "select" : "text")), `${id}: tipos (MF-08: el punto de muestreo de P1-26 es una lista)`);
+    const kept = fields.filter((f) => f.key !== "absorcion_de_humedad"); // MF-11 (MD_Ejec 33): P1-26 v3 añade «Absorción de humedad» (se comprueba abajo)
+    assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${id}: claves y orden`);
+    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${id}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${id}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.kind), m.map((f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : f.key === "punto_de_muestreo" ? "select" : "text")), `${id}: tipos (MF-08: el punto de muestreo de P1-26 es una lista)`);
     for (const f of legacy.fields.filter((x) => !isManual(x))) assert.equal(fields.some((x) => x.key === f.key), false, `${id}: ${f.key} no se digita`);
   }
   assert.deepEqual(P122_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "grado_de_refinacion_sr", "amperaje"]);
   assert.deepEqual(P122_LEGACY_FIELDS.map((f) => f.key), ["volumen_desplazado"], "el valor retirado sigue legible en las capturas de la versión 1");
-  assert.deepEqual(P126_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "masa_seca"]);
+  assert.deepEqual(P126_FIELDS.filter((f) => f.kind === "decimal").map((f) => f.key), ["masa_humeda", "masa_seca", "absorcion_de_humedad"]);
+  assert.deepEqual({ ...P126_FIELDS.find((f) => f.key === "absorcion_de_humedad") }, { key: "absorcion_de_humedad", label: "Absorción de humedad", kind: "decimal", required: false, suffix: "%", sinceVersion: 3 }, "decimal digitado, opcional, unidad visible %");
+  assert.equal(P126_FIELDS.findIndex((f) => f.key === "absorcion_de_humedad"), P126_FIELDS.findIndex((f) => f.key === "masa_seca") + 1);
   assert.equal(defOf("form_22_grado_de_refinacion_schopper").fields.find((f) => f.key === "amperaje").unit, "A"); // única unidad declarada: se conserva como sufijo, no se añade ninguna
   assert.equal(P122_FIELDS.find((f) => f.key === "amperaje").suffix, "A");
-  assert.equal(P122_FIELDS.filter((f) => f.suffix).length + P126_FIELDS.filter((f) => f.suffix).length, 1, "ninguna otra unidad inventada");
+  assert.equal(P122_FIELDS.filter((f) => f.suffix).length + P126_FIELDS.filter((f) => f.suffix).length, 2, "solo la A del amperaje y el % de la absorción de humedad (MF-11): ninguna otra unidad inventada");
   assert.deepEqual(defOf("form_26_medicion_de_secos").allowedMachineIds, ["por_definir"]); // brecha de alcance de máquinas documentada abajo
   assert.deepEqual(P126_CALCULATED_FIELDS.map((f) => f.key), ["porcentaje_cantidad_de_seco"]);
   assert.deepEqual([...P126_SAMPLING_POINTS], ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]);
@@ -70,9 +73,10 @@ test("el borrador valida los decimales estructuralmente y NO calcula porcentajes
   assert.deepEqual(b.values, { punto_de_muestreo: "Fieltro I", masa_humeda: "100.50", masa_seca: "3.25", observaciones: "nota" });
   for (const key of ["porcentaje_de_secos", "hora", "fecha", "maquina", "responsable", "total"]) assert.equal(key in a.values || key in b.values, false, key);
   assert.equal(b.values.masa_seca, "3.25"); // las masas se guardan tal cual: nada derivado de ellas
-  for (const [, form, , draft, fields] of CASES) for (const key of fields.filter((f) => f.kind === "decimal").map((f) => f.key)) {
+  for (const [, form, , draft, fields] of CASES) for (const { key, required } of fields.filter((f) => f.kind === "decimal")) {
     for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(form.normalizeDraft({ ...draft, [key]: bad }).errors.join(" "), /debe ser un número decimal/, `${key} ${bad}`);
-    assert.match(form.normalizeDraft({ ...draft, [key]: " " }).errors.join(" "), /es obligatorio/, key);
+    if (required) assert.match(form.normalizeDraft({ ...draft, [key]: " " }).errors.join(" "), /es obligatorio/, key);
+    else assert.equal(key in form.normalizeDraft({ ...draft, [key]: " " }).values, false, `${key}: opcional, vacío no se envía`);
     assert.equal(form.normalizeDraft({ ...draft, [key]: "-1,5" }).values[key], "-1.5", "sin rangos inventados");
   }
   assert.equal(P122.normalizeDraft(P122.emptyDraft()).errors.length, 4);

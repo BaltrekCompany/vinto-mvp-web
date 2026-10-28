@@ -100,7 +100,7 @@
     },
     {
       "path": "lib/vinto/p1-24.ts",
-      "sha256": "ff2328dc02febc0438bf43dc1543c2fa7c2bf49444986e5cd67b693c293bd843",
+      "sha256": "5821ff8f4cb80096eec23ab97730d30051ab976b88d6455ea1d92f92caf767fd",
       "scope": "candidate-fields:VINTO-P1-24"
     },
     {
@@ -110,12 +110,12 @@
     },
     {
       "path": "lib/vinto/p1-26.ts",
-      "sha256": "29e3f7c6e7fcc9131124ccafcf37a85505fde5b3e2a28624e16315537d671c5f",
+      "sha256": "aed6dfa8f823cf79a6090a320b2c7f1372b1638d94037bddb72214d97d934528",
       "scope": "candidate-fields:VINTO-P1-26"
     },
     {
       "path": "lib/vinto/p1-27.ts",
-      "sha256": "96ef5b2009d07d96100656e0d64f46497e0a4e2954d23640c2a07bae427101ba",
+      "sha256": "14ca76ef6f5215fb188ae33e1d3de3bec3ca5af22001455ba716a6cac6cfe7b8",
       "scope": "candidate-fields:VINTO-P1-27"
     },
     {
@@ -145,22 +145,22 @@
     },
     {
       "path": "lib/vinto/p1-12.ts",
-      "sha256": "ca0ef80750b00ce9de93929bb62212c4e34e28cff697b04a24d9db3885e6bcd4",
+      "sha256": "043af23b49e72b8c5f9e37aaa666b469a132c0bf579c2c13fdb26317f8ca86dd",
       "scope": "candidate-fields:VINTO-P1-12"
     },
     {
       "path": "lib/vinto/p1-13.ts",
-      "sha256": "65419ea9d51c6c389f9ec1895f8cffa6014da96c4c9f5beefb56868c6a398d23",
+      "sha256": "6be5ac8d55aee07a057cbb07b067928b86919279f85d0ee5b1ce33a6da607723",
       "scope": "candidate-fields:VINTO-P1-13"
     },
     {
       "path": "lib/vinto/p1-16.ts",
-      "sha256": "5dd949d09b2c7399653c3fd5397d956a9ad0dc2f158a7678e7355b5246367147",
+      "sha256": "f2965d55f00b5ca0a5e3559d224fa07ebaf94f8ea59e8d8a24a02f8daf6d1d56",
       "scope": "candidate-fields:VINTO-P1-16"
     },
     {
       "path": "lib/vinto/p1-11.ts",
-      "sha256": "41d040b13bfde3e59ea3d5162cea963d6ca12def5479ac5b66e3b229c26a82a5",
+      "sha256": "e7f81be3d35c2b8347a331c46cb4afaa73cd34f66782452e79dbde204c034ca0",
       "scope": "candidate-fields:VINTO-P1-11"
     },
     {
@@ -222,23 +222,23 @@
     },
     {
       "path": "forms/VINTO-P1-11.json",
-      "sha256": "21c29213210119d4538a17e7a5668d30d1f552a3288d6518d95c1c1ed0a8ab04",
-      "bytes": 2362
+      "sha256": "a1f9ce69a366673219b77e3a00867e0d40ca67211837c05fdae86ccdd1a19cf4",
+      "bytes": 2744
     },
     {
       "path": "forms/VINTO-P1-12.json",
-      "sha256": "7234bd7ca45c8adc45fc8eef3cf4d36b0c01b68e5cf0684551e0dd86a61a38cd",
-      "bytes": 4639
+      "sha256": "08272a474ff126317ae3ba45aa115d80e8c4bcd2f318c10a82598c3f9846460e",
+      "bytes": 5023
     },
     {
       "path": "forms/VINTO-P1-13.json",
-      "sha256": "636a0c776a7133002b196e4ba9decd74f0c1cb9e454a4f0a7e954afed043f1c4",
-      "bytes": 4258
+      "sha256": "260b975ea52de0e0e1b44292d9718c73079526b3988e652371c3bf789ae93f2a",
+      "bytes": 4642
     },
     {
       "path": "forms/VINTO-P1-16.json",
-      "sha256": "a0d8e916005b7e9bffb6239728d06f3c4d1858f9e19cc0afbf48e4f9a8f19b3d",
-      "bytes": 2141
+      "sha256": "a8cf9c43e39db5b8d2f8105af2169f8c59e1523342f432fffb3376a038befc6e",
+      "bytes": 2524
     },
     {
       "path": "forms/VINTO-P1-18.json",
@@ -267,8 +267,8 @@
     },
     {
       "path": "forms/VINTO-P1-24.json",
-      "sha256": "a40a4e53546fed094c6fc2336df635a5187f96530ffceb7f02a0c8a1300142fd",
-      "bytes": 3272
+      "sha256": "af440a82a7fcb42eb7e855e2b4672efc701f9945a822a7916a2c4f8c357a3bf2",
+      "bytes": 3276
     },
     {
       "path": "forms/VINTO-P1-25.json",
@@ -277,13 +277,13 @@
     },
     {
       "path": "forms/VINTO-P1-26.json",
-      "sha256": "5d3e7521e2630ce3e0dac9add67da128fad505c3dd84f6506d9081c55f6176cc",
-      "bytes": 2239
+      "sha256": "7a12897a12a2dc74f5532dfc2214033bc9807bb34c970b2a9a230f5e8c8123b5",
+      "bytes": 2456
     },
     {
       "path": "forms/VINTO-P1-27.json",
-      "sha256": "3f5d13370e8de3211351e4b5d7b0e9abcad9f455073cd8c73db3563e5b204edc",
-      "bytes": 5601
+      "sha256": "1238e1cd5ee714bcbb824ab8b66a9279611d3ffb197babf9eeedcd4e237d4678",
+      "bytes": 5812
     },
     {
       "path": "forms/VINTO-P1-28.json",
@@ -356,7 +356,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 25,
-    "form_fields": 462,
+    "form_fields": 472,
     "form_options": 14,
     "form_groups": 3
   },

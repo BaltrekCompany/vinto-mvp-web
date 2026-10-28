@@ -151,8 +151,8 @@ class Base(q2.BobbinBase):
 
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
-        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 3, P125: 3})
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-12", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 3), ("VINTO-P1-25", 3), ("VINTO-P1-26", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)],
+        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 4, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)],
                          "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2; MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
@@ -324,7 +324,7 @@ class P124P125Tests(Base):
             reply = await self.submit(bobbin["id"], self.body_of(code, {**self.values(code), **cases[code]}))
             self.assertEqual(reply.status, 201, (code, reply.text))
             capture = reply.json()["capture"]
-            self.assertEqual(capture["form"]["version_number"], 3)
+            self.assertEqual(capture["form"]["version_number"], FORMS[code]["version_number"])
             for key, value in expected[code].items():
                 self.assertEqual(capture["values"][key], value, (code, key))
                 self.assertEqual(self.stored(capture["id"])[key], ("decimal", value))
@@ -381,11 +381,11 @@ class P124P125Tests(Base):
             for key in MEANS[code]:
                 self.assertNotIn(key, old_capture["values"], "no se inventan promedios para registros históricos")
             new = await self.submit(bobbin["id"], self.body_of(code, self.values(code)))
-            self.assertEqual(new.json()["capture"]["form"]["version_number"], 3)
+            self.assertEqual(new.json()["capture"]["form"]["version_number"], FORMS[code]["version_number"])
             for item in (old_capture, new.json()["capture"]):
                 got = await self.read(f"/api/quality/captures/{item['id']}")
                 self.assertEqual((got.status, got.json()["values"]), (200, item["values"]))
-            self.assertEqual({c["form"]["version_number"] for c in (await self.read(f"/api/quality/bobbins/{bobbin['id']}/captures?form_code={code}")).json()}, {2, 3})
+            self.assertEqual({c["form"]["version_number"] for c in (await self.read(f"/api/quality/bobbins/{bobbin['id']}/captures?form_code={code}")).json()}, {2, FORMS[code]["version_number"]})
             self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id = %s", (old_capture["id"],)), len(self.values(code)), "la captura histórica queda tal cual")
 
     async def test_retry_is_idempotent_for_version_3(self):
@@ -478,10 +478,10 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual((result.mode, result.conflicts), ("applied", []))
         self.assertEqual(self.snapshot(old_where), old, "las versiones anteriores y sus campos quedan idénticos")
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
-        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (3, "published")]), (P125, [(1, "published"), (2, "published"), (3, "published")])):
+        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (4, "published")]), (P125, [(1, "published"), (2, "published"), (3, "published")])):
             self.assertEqual(self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall(), expected)
         sources = self.connection.execute("""SELECT f.code, d.source, count(*) FROM vinto_config.field_definition d JOIN vinto_config.form_version v ON v.id = d.form_version_id JOIN vinto_config.form f ON f.id = v.form_id
-                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',3),('VINTO-P1-25',3)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
+                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',4),('VINTO-P1-25',3)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
         self.assertEqual(sources, [(P121, "calculated", 4), (P121, "manual", 82), (P124, "calculated", 2), (P124, "manual", 10), (P125, "calculated", 2), (P125, "manual", 13)])
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")

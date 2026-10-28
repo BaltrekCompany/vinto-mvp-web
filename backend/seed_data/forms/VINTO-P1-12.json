@@ -6,7 +6,7 @@
   "name": "Producción diaria de papel higiénico",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -15,13 +15,31 @@
   "groups": [],
   "fields": [
     {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
       "key": "empaque_saldo_inicial",
       "label": "Empaque saldo inicial",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 1
+      "display_order": 3
     },
     {
       "key": "empaque_solicitado",
@@ -30,7 +48,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 2
+      "display_order": 4
     },
     {
       "key": "empaque_utilizado",
@@ -39,7 +57,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 3
+      "display_order": 5
     },
     {
       "key": "subempaque_saldo_inicial",
@@ -48,7 +66,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 4
+      "display_order": 6
     },
     {
       "key": "subempaque_solicitado",
@@ -57,7 +75,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 7
     },
     {
       "key": "subempaque_utilizado",
@@ -66,7 +84,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 6
+      "display_order": 8
     },
     {
       "key": "bolsa_saldo_inicial",
@@ -75,7 +93,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
+      "display_order": 9
     },
     {
       "key": "bolsa_solicitado",
@@ -84,7 +102,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 8
+      "display_order": 10
     },
     {
       "key": "bolsa_utilizado",
@@ -93,7 +111,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 9
+      "display_order": 11
     },
     {
       "key": "segundas_saldo_inicial",
@@ -102,7 +120,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 10
+      "display_order": 12
     },
     {
       "key": "segundas_solicitado",
@@ -111,7 +129,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 11
+      "display_order": 13
     },
     {
       "key": "segundas_utilizado",
@@ -120,7 +138,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 12
+      "display_order": 14
     },
     {
       "key": "asas_saldo_inicial",
@@ -129,7 +147,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 13
+      "display_order": 15
     },
     {
       "key": "asas_solicitado",
@@ -138,7 +156,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 14
+      "display_order": 16
     },
     {
       "key": "asas_utilizado",
@@ -147,7 +165,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 15
+      "display_order": 17
     },
     {
       "key": "codigo_producto",
@@ -156,7 +174,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 16
+      "display_order": 18
     },
     {
       "key": "producto",
@@ -165,7 +183,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 17
+      "display_order": 19
     },
     {
       "key": "formato",
@@ -174,7 +192,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 18
+      "display_order": 20
     },
     {
       "key": "cantidad_producida_jabas",
@@ -183,7 +201,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 19
+      "display_order": 21
     },
     {
       "key": "cantidad_producida_segundas",
@@ -192,8 +210,8 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 20
+      "display_order": 22
     }
   ],
-  "definition_checksum": "877c6af9609397875780d723376e327e22266bada68b1874c236d29f7d6c374b"
+  "definition_checksum": "ff81c53718a53d25b6f39aeec06d03eb5ae2075a06209d1a71ab4f8126b4d9d7"
 }

@@ -6,7 +6,7 @@
   "name": "Análisis de agua para caldero",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -131,13 +131,22 @@
       "display_order": 13
     },
     {
+      "key": "alcalinidad_total",
+      "label": "Alcalinidad total",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 14
+    },
+    {
       "key": "condensado_mp1_ph",
       "label": "Condensado MP1 pH",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 14
+      "display_order": 15
     },
     {
       "key": "condensado_mp1_dureza",
@@ -146,7 +155,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 15
+      "display_order": 16
     },
     {
       "key": "condensado_mp1_solidos_disueltos",
@@ -155,7 +164,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 16
+      "display_order": 17
     },
     {
       "key": "condensado_mp1_conductividad",
@@ -164,7 +173,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 17
+      "display_order": 18
     },
     {
       "key": "condensado_mp3_ph",
@@ -173,7 +182,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 18
+      "display_order": 19
     },
     {
       "key": "condensado_mp3_dureza",
@@ -182,7 +191,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 19
+      "display_order": 20
     },
     {
       "key": "condensado_mp3_solidos_disueltos",
@@ -191,7 +200,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 20
+      "display_order": 21
     },
     {
       "key": "condensado_mp3_conductividad",
@@ -200,7 +209,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 21
+      "display_order": 22
     },
     {
       "key": "calibracion_equipo_multiparametro",
@@ -209,7 +218,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 22
+      "display_order": 23
     },
     {
       "key": "observaciones",
@@ -218,8 +227,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 23
+      "display_order": 24
     }
   ],
-  "definition_checksum": "cf4eaf301403f804a079799422b7e2fcce5314d5e0caecf2bef58212377f91ba"
+  "definition_checksum": "a4c1b49dbf0ff8758f678fc6773fbe47ee8b9663f075c35e6376958dbe165235"
 }

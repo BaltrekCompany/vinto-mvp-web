@@ -21,5 +21,5 @@ export const QUALITY_CANDIDATES: Record<QualityCandidateScreen, QualityCandidate
     p126: make({ code: P1_26_CODE, form: P126, kicker: "Calidad · control por máquina", title: "Medición de secos", automatic: P126_AUTOMATIC, pending: P126_PENDING, preview: previewP126,
         historyNote: "Control por máquina (sin bobina ni OT): las masas se muestran tal como se digitaron; el % de cantidad de seco lo calcula el sistema al guardar (desde la versión 2)." }, machineCandidateApi(P126)),
     p127: make({ code: P1_27_CODE, form: P127, kicker: "Calidad · control por máquina", title: "Análisis de agua para caldero", automatic: P127_AUTOMATIC, pending: P127_PENDING, calculated: P127_CALCULATED, sections: P127_SECTIONS,
-        historyNote: "Control candidato por máquina (sin bobina ni OT): contrato completo de 23 campos (incluye condensado MP1 y MP3); valores tal como se digitaron; la alcalinidad total no se calcula y la hora es la de registro." }, machineCandidateApi(P127)),
+        historyNote: "Control candidato por máquina (sin bobina ni OT): contrato completo de 24 campos (incluye condensado MP1 y MP3 y, desde la versión 2, Alcalinidad total digitada); valores tal como se digitaron; la alcalinidad total no se calcula y la hora es la de registro." }, machineCandidateApi(P127)),
 };

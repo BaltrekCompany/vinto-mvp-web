@@ -25,7 +25,7 @@ const wet = (direction: "longitudinal" | "transversal", position: keyof typeof P
     renamedAt: { version: 3, previous: `Resistencia ${direction} húmeda ${position}` },
 });
 export const P124_FIELDS: readonly FieldSpec[] = [
-    { key: "crepado", label: "Crepado", kind: "decimal", required: true },
+    { key: "crepado", label: "Crepado (%)", kind: "decimal", required: true, suffix: "%", renamedAt: { version: 4, previous: "Crepado" } }, // MF-11 (MD_Ejec 51): solo etiqueta y unidad visual; sin rango ni conversión de valores
     { key: "gramaje", label: "Gramaje", kind: "decimal", required: true, suffix: "g/m²" },
     wet("longitudinal", "centro"),
     wet("longitudinal", "medio"),

@@ -10,7 +10,9 @@
 // MF-08 · versión 2 (MD_Ejec 32 y 40): «Punto de muestreo» pasa a lista desplegable OBLIGATORIA con seis opciones cerradas (texto exacto = valor guardado; sin texto libre en capturas nuevas) y se añade «% Cantidad de seco»,
 // CALCULADO por el backend: masa seca / masa húmeda × 100, dos decimales, solo lectura. Las dos masas son los campos `masa_seca` y `masa_humeda` de este mismo formulario (decimales, sin unidad declarada en ninguno).
 // Con masa húmeda 0 no hay resultado: el campo no se guarda ni se muestra (nunca se inventa un valor). La versión 1 (punto de muestreo en texto libre) y sus capturas se conservan y no se recalculan. «Absorción de
-// humedad» (MD_Ejec 33) NO se incluye: sigue pendiente de confirmación funcional.
+// humedad» (MD_Ejec 33) NO se incluye en la v2.
+// MF-11 · versión 3 (MD_Ejec 33): se añade «Absorción de humedad» (decimal DIGITADO, opcional, unidad visible %). No se calcula, no tiene rango ni límite y no altera «% Cantidad de seco». Las capturas v1 y v2 no lo traen
+// y se leen sin él (nunca se les inventa un valor). La unidad % es solo visual (no está en el catálogo de unidades del seed).
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 import { percentTwoDecimals } from "./quality-averages.ts";
 
@@ -20,6 +22,7 @@ export const P126_FIELDS: readonly FieldSpec[] = [
     { key: "punto_de_muestreo", label: "Punto de muestreo", kind: "select", required: true, options: P126_SAMPLING_POINTS, optionsSinceVersion: 2 },
     { key: "masa_humeda", label: "Masa húmeda", kind: "decimal", required: true },
     { key: "masa_seca", label: "Masa seca", kind: "decimal", required: true },
+    { key: "absorcion_de_humedad", label: "Absorción de humedad", kind: "decimal", required: false, suffix: "%", sinceVersion: 3 },
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
 ];
 // Calculado por el backend al guardar (solo lectura, desde la versión 2): las capturas anteriores no lo traen y no se recalculan.

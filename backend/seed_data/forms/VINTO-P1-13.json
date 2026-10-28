@@ -6,7 +6,7 @@
   "name": "Producción diaria de servilletas y especiales",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "OMET_I",
     "OMET_II",
@@ -20,13 +20,31 @@
   "groups": [],
   "fields": [
     {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
       "key": "saldo_inicial",
       "label": "Saldo inicial",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 1
+      "display_order": 3
     },
     {
       "key": "numero_bobina_consumida",
@@ -35,7 +53,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 2
+      "display_order": 4
     },
     {
       "key": "peso_bobina_consumida",
@@ -44,7 +62,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 3
+      "display_order": 5
     },
     {
       "key": "formato_bobina_consumida",
@@ -53,7 +71,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 4
+      "display_order": 6
     },
     {
       "key": "observacion",
@@ -62,7 +80,7 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 5
+      "display_order": 7
     },
     {
       "key": "codigo_producto",
@@ -71,7 +89,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 6
+      "display_order": 8
     },
     {
       "key": "producto",
@@ -80,7 +98,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 7
+      "display_order": 9
     },
     {
       "key": "formato_producto",
@@ -89,7 +107,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 8
+      "display_order": 10
     },
     {
       "key": "cantidad_producida",
@@ -98,7 +116,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 9
+      "display_order": 11
     },
     {
       "key": "empaque_saldo_inicial",
@@ -107,7 +125,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 10
+      "display_order": 12
     },
     {
       "key": "empaque_solicitado",
@@ -116,7 +134,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 11
+      "display_order": 13
     },
     {
       "key": "empaque_utilizado",
@@ -125,7 +143,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 12
+      "display_order": 14
     },
     {
       "key": "insumo_codigo",
@@ -134,7 +152,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 13
+      "display_order": 15
     },
     {
       "key": "insumo_nombre",
@@ -143,7 +161,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 14
+      "display_order": 16
     },
     {
       "key": "insumo_saldo_inicial",
@@ -152,7 +170,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 15
+      "display_order": 17
     },
     {
       "key": "insumo_solicitado",
@@ -161,7 +179,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 16
+      "display_order": 18
     },
     {
       "key": "insumo_utilizado",
@@ -170,7 +188,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 17
+      "display_order": 19
     },
     {
       "key": "observaciones",
@@ -179,8 +197,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 18
+      "display_order": 20
     }
   ],
-  "definition_checksum": "f72044d5cb8bb81114caba1f4703fad46b9d73e710a1487626b80d1502ebe1a1"
+  "definition_checksum": "ab88bc0d76166e6859155c3f1486b717351be456693025fa03cf4529a69496e1"
 }
