@@ -147,7 +147,7 @@ class ConfigurationAndAvailabilityTests(Base):
         reply = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
         offered = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] for m in s["machines"]}
         bobinas_forms = sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
-        self.assertEqual({k: v for k, v in offered.items() if k in ("MP1", "MP3")}, {"MP1": bobinas_forms, "MP3": bobinas_forms})
+        self.assertEqual({k: v for k, v in offered.items() if k in ("MP1", "MP3")}, {"MP1": [c for c in bobinas_forms if c not in ("VINTO-P1-05", "VINTO-P1-31")], "MP3": bobinas_forms}, "MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3")
         for codes in offered.values():
             self.assertNotIn(P122_CODE, codes)
             self.assertNotIn(P126_CODE, codes)

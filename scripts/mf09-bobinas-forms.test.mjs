@@ -53,31 +53,34 @@ const CONTEXT = { assignmentId: "44444444-4444-4444-8444-444444444444", workOrde
   productCode: "M1-1024", productName: "BOBINA 1024", machine: "MP3", shift: "Día", date: "2026-10-06" };
 const RETIRED = ["presion_cocedores", "nivel_tanque_h_20_aguas", "nivel_tanque_h_20_aguas_2", "nivel_tanque_h_20_accionamientos", "opertado", "produccion", "presion_pope", "apertura_campana", "presion_regaderas", "limpieza_sala_de_control", "limpieza_mezzanine"];
 const RETIRED_LABELS = ["Presión cocedores", "Nivel tanque H-20 aguas", "Nivel tanque H-20 aguas 2", "Nivel tanque H-20 accionamientos", "Opertado", "Producción", "Presión pope", "Apertura campana", "Presión regaderas", "Limpieza sala de control", "Limpieza mezzanine"];
+// MF-12A (versión 4): los seis campos que retira y los dos que sustituye por claves nuevas, solo legibles en el historial
+const MF12A_LEGACY = ["apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro"];
+const MF12A_LEGACY_LABELS = ["Apertura purga prensa", "Presión aceite guía tela", "Presión aceite lubricación", "Vacío tela", "Rodillos químicos", "Vacío prensa", "Vacío pope", "Vacío fieltro"];
 const textOf = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 const count = (html, text) => html.split(text).length - 1;
 const p101 = () => server.renderToStaticMarkup(React.createElement(ui.CandidateFormCapture, { candidate: ui.BOBINAS_CANDIDATES.p101, context: CONTEXT, online: true, attempt: null, setAttempt: noop, back: noop, onAssignmentChanged: noop, onSessionLost: noop }));
 
-test("P1-01 v3: los 11 campos aprobados ya no se muestran, no hay encabezado «Presión cocedores» ni secciones vacías y los demás campos siguen", () => {
+test("P1-01 (v3 y v4): los 11 campos de MF-09 siguen sin mostrarse, no hay encabezado «Presión cocedores» ni secciones vacías y los demás campos siguen", () => {
   const html = p101(), text = textOf(html);
   for (const label of RETIRED_LABELS) {
     assert.equal(text.includes(`${label} *`), false, `${label}: no se muestra como campo`);
   }
   assert.equal(text.includes("Presión cocedores"), false, "ni como campo ni como encabezado");
-  // cada sección (h2) tiene al menos un campo; 7 secciones, 73 campos (72 de texto/decimal/hora + ninguno textarea)
+  // cada sección (h2) tiene al menos un campo; 7 secciones, 70 campos desde MF-12A (v4)
   const sections = html.split("<h2").slice(1).map((chunk) => chunk.split("</h2>")[0].replace(/<[^>]+>/g, "").replace(/^[^>]*>/, ""));
-  assert.equal(count(html, "<input"), 73, "73 campos digitables");
+  assert.equal(count(html, "<input"), 70, "70 campos digitables (v4)");
   for (const title of ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]) assert.ok(text.includes(title), title);
   assert.ok(sections.length >= 7);
   for (const chunk of html.split('class="border-b p-6"').slice(1)) assert.ok(chunk.includes("<input"), "una sección sin campos");
   // campos vecinos que NO se retiran (aunque aparezcan marcados en otras imágenes del Excel)
-  for (const keep of ["Nivel tanque T-30 aguas *", "Nivel tanque T-30 aguas 2 *", "Nivel tanque T-30 accionamientos *", "Apertura purga prensa *", "Presión aceite guía tela *", "Presión aceite lubricación *", "Vacío tela *", "Rodillos químicos *", "Limpieza *", "Limpieza escalera *", "Limpieza lado transmisión *", "Novedades *", "Consistencia *", "Ángulo caja *", "Nivel tanque PIT *"]) assert.ok(text.includes(keep), keep);
+  for (const keep of ["Nivel tanque T-30 aguas *", "Nivel tanque T-30 aguas 2 *", "Nivel tanque T-30 accionamientos *", "Limpieza *", "Limpieza escalera *", "Limpieza lado transmisión *", "Novedades *", "Consistencia *", "Ángulo caja *", "Nivel tanque PIT *"]) assert.ok(text.includes(keep), keep);
 });
 
-test("P1-01 v3: la definición declara exactamente los 11 retirados como solo lectura y ningún campo de captura los repite", () => {
-  assert.equal(ui.P101_FIELDS.length, 73);
-  assert.deepEqual(ui.P101_LEGACY_FIELDS.map((f) => f.key).sort(), [...RETIRED].sort());
-  assert.equal(ui.P101_FIELDS.some((f) => RETIRED.includes(f.key)), false);
-  assert.equal(ui.P101_SECTIONS.flatMap((s) => s.keys).some((k) => RETIRED.includes(k)), false);
+test("P1-01: la definición declara como solo lectura los 11 de MF-09 y los 8 de MF-12A y ningún campo de captura los repite", () => {
+  assert.equal(ui.P101_FIELDS.length, 70);
+  assert.deepEqual(ui.P101_LEGACY_FIELDS.map((f) => f.key).sort(), [...RETIRED, ...MF12A_LEGACY].sort());
+  assert.equal(ui.P101_FIELDS.some((f) => [...RETIRED, ...MF12A_LEGACY].includes(f.key)), false);
+  assert.equal(ui.P101_SECTIONS.flatMap((s) => s.keys).some((k) => [...RETIRED, ...MF12A_LEGACY].includes(k)), false);
   assert.equal(ui.P101_SECTIONS.every((s) => s.keys.length > 0), true);
 });
 
@@ -94,10 +97,10 @@ test("historial de P1-01: la versión 2 conserva los 11 valores retirados como �
   assert.ok(parsed.every(Boolean), "ambas versiones se leen");
   const html = server.renderToStaticMarkup(React.createElement(ui.CandidateHistory, { candidate: ui.BOBINAS_CANDIDATES.p101, resource: { status: "ready", data: parsed, refreshing: false }, refresh: noop }));
   const text = textOf(html);
-  for (const label of RETIRED_LABELS) assert.ok(text.includes(`${label} (versión anterior)`), label);
+  for (const label of [...RETIRED_LABELS, ...MF12A_LEGACY_LABELS]) assert.ok(text.includes(`${label} (versión anterior)`), label);
   const [newer, older] = [html.split('data-capture="c3"')[1].split('data-capture="c2"')[0], html.split('data-capture="c2"')[1]];
-  assert.equal(count(older, "77.5"), 6, "los 6 decimales retirados de la captura v2 se conservan");
-  assert.equal(count(older, "valor histórico"), 5, "los 5 textos retirados de la captura v2 se conservan");
+  assert.equal(count(older, "77.5"), 12, "los 12 decimales retirados (6 de MF-09 y 6 de MF-12A) de la captura anterior se conservan");
+  assert.equal(count(older, "valor histórico"), 7, "los 7 textos retirados (5 de MF-09 y 2 de MF-12A) de la captura anterior se conservan");
   assert.equal(newer.includes("77.5") || newer.includes("valor histórico"), false, "la captura v3 no tiene esos valores");
 });
 

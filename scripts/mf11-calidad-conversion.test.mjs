@@ -288,5 +288,5 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
   assert.equal(versions["VINTO-P1-25"], 3);
-  assert.equal(manifest.counts.form_fields, 472);
+  assert.equal(manifest.counts.form_fields, 469, "472 de MF-11 menos los 3 que quita P1-01 v4 (MF-12A: 73 → 70)");
 });

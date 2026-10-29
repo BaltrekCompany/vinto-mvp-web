@@ -9,9 +9,11 @@ Se verifica contra PostgreSQL REAL (base efímera *_test) con los formularios RE
 import contextlib
 import dataclasses
 import io
+import json
 import secrets
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -37,8 +39,12 @@ except ModuleNotFoundError:
 P101, P106 = "VINTO-P1-01", "VINTO-P1-06"
 RETIRED = ["presion_cocedores", "nivel_tanque_h_20_aguas", "nivel_tanque_h_20_aguas_2", "nivel_tanque_h_20_accionamientos", "opertado", "produccion", "presion_pope", "apertura_campana",
            "presion_regaderas", "limpieza_sala_de_control", "limpieza_mezzanine"]
-BUNDLE = load_bundle()
+# MF-12A: el bundle vigente trae P1-01 v4; estas pruebas son las de MF-09, así que reproducen el bundle de ENTONCES (P1-01 v3, copia fiel de la definición de producción) con el resto de formularios vigentes.
+V3 = json.loads((Path(__file__).with_name("mf12a_p101_v3.json")).read_text(encoding="utf-8"))
+_REAL = load_bundle()
+BUNDLE = dataclasses.replace(_REAL, forms=tuple(V3 if f["code"] == "VINTO-P1-01" else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
+_REAL_VERSIONS = {f["code"]: f["version_number"] for f in _REAL.forms}  # versiones del bundle REAL (MF-12A: P1-01 v4)
 ARTICLE = sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == "MP3")[0]
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
@@ -74,6 +80,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         for name in ("JEFATURA", "SUPERVISION", "OPERACION"):
             password = "pw-" + secrets.token_urlsafe(18)
             cls.users[name] = (create_user(cls.connection, username=f"mf09.{name.lower()}", display_name=name.title(), profile_code=name, password=password, sectors=("BOBINAS",)), password)
+        cls.install_v3_as_current()
         cls.current = {code: cls.version(code, FORMS[code]["version_number"]) for code in (P101, P106)}
         cls.old = {}
         cls.install_old(P101, 2, [(f["key"], f["label"], f["value_type"], f["required"]) for f in v2_fields()], {})
@@ -89,6 +96,19 @@ class Base(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def version(cls, code, number):
         return cls.connection.execute("SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()[0]
+
+    @classmethod
+    def install_v3_as_current(cls):
+        """MF-12A: la plantilla trae P1-01 v4; aquí se publica la v3 de producción (73 campos) y se retira la v4 en la base efímera, de modo que el backend elige la v3 como en MF-09."""
+        c = cls.connection
+        v4 = cls.version(P101, _REAL_VERSIONS[P101])
+        form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (v4,)).fetchone()
+        v3 = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,3,%s,%s,%s,%s) RETURNING id", (form_id, name, area, workflow, V3["definition_checksum"])).fetchone()[0]
+        for f in V3["fields"]:
+            c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,'manual',%s,%s)", (v3, f["key"], f["label"], f["value_type"], f["required"], f["display_order"]))
+        c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (v3, v4))
+        c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (v3,))
+        c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (v4,))
 
     @classmethod
     def install_old(cls, code, number, fields, options):
@@ -149,7 +169,7 @@ class DefinitionTests(Base):
     async def test_bundle_versions_and_scope(self):
         self.assertEqual((FORMS[P101]["version_number"], FORMS[P106]["version_number"]), (3, 2))
         self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1),
-                         [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)], "ningún otro formulario cambia")
+                         [("VINTO-P1-01", 3), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)], "ningún otro formulario cambia")
         for code in (P101, P106):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
             self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.current[code],)), "published")

@@ -24,13 +24,21 @@ const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : f.type === "time" ? "time" : "text");
 // MF-09: los 11 campos que retira la versión 3 de P1-01 (lista aprobada de MD_Ejec 10, 12, 13 y 15)
 const MF09_RETIRED = ["presion_cocedores", "nivel_tanque_h_20_aguas", "nivel_tanque_h_20_aguas_2", "nivel_tanque_h_20_accionamientos", "opertado", "produccion", "presion_pope", "apertura_campana", "presion_regaderas", "limpieza_sala_de_control", "limpieza_mezzanine"];
+// MF-12A (versión 4 de P1-01, MD_Ejec 9 y 14): sale lo que sigue de la captura (pasa a solo lectura en el historial); los dos campos sustituidos tienen CLAVE NUEVA y tres campos de texto opcionales entran junto a Dosificación Release.
+const MF12A_OUT = ["apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela", "vacio_prensa", "vacio_fieltro"]; // rojos y azules cuyo concepto ya existe
+const MF12A_LEGACY = [...MF12A_OUT, "rodillos_quimicos", "vacio_pope"];
+const synth = (key, label, type, required) => ({ key, label, type, source: "manual", required, unit: null });
+const MF12A_REPLACE = { rodillos_quimicos: synth("boquillas_quimicos", "Boquillas químicos", "text", true), vacio_pope: synth("velocidad_pope", "Velocidad pope", "decimal", true) };
+const MF12A_ADDED = [synth("frecuencia_release", "Frecuencia Release", "text", false), synth("dosificacion_coating", "Dosificación Coating", "text", false), synth("frecuencia_coating", "Frecuencia Coating", "text", false)];
+// contrato esperado: la definición legacy sin lo retirado, con los sustitutos en su posición y los campos nuevos tras «Dosificación Release»
+const expectedManual = (legacy, c) => legacy.fields.filter(isManual).flatMap((f) => [...(c.replace?.[f.key] ? [c.replace[f.key]] : (c.removed ?? []).includes(f.key) ? [] : [f]), ...(c.insertAfter?.[f.key] ?? [])]);
 const TIME_KEYS = ["hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza"];
 const fill = (fields) => Object.fromEntries(fields.map((f, i) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "time" ? ["06:30", "14:45", "22:10"][i % 3] : f.kind === "textarea" ? " nota " : "texto 12,5"]));
 const CASES = [
   { name: "P1-02", id: "form_2_parametros_de_operacion_de_maquina", form: P102, formCode: P1_02_CODE, fields: P102_FIELDS, sections: P102_SECTIONS, pending: P102_PENDING, counts: [48, 4], machines: ["mp1"], screen: "p102", machine: "MP1" },
-  { name: "P1-01", id: "form_1_operacion_e_inspeccion_de_maquina", form: P101, formCode: P1_01_CODE, fields: P101_FIELDS, sections: P101_SECTIONS, pending: P101_PENDING, counts: [86, 7], removed: ["producto_gramaje_crepado", "nivel_tanque_t_20", ...MF09_RETIRED], machines: ["mp3"], screen: "p101", machine: "MP3" },
+  { name: "P1-01", id: "form_1_operacion_e_inspeccion_de_maquina", form: P101, formCode: P1_01_CODE, fields: P101_FIELDS, sections: P101_SECTIONS, pending: P101_PENDING, counts: [86, 7], removed: ["producto_gramaje_crepado", "nivel_tanque_t_20", ...MF09_RETIRED, ...MF12A_OUT], replace: MF12A_REPLACE, insertAfter: { dosificacion_release: MF12A_ADDED }, machines: ["mp3"], screen: "p101", machine: "MP3" },
 ];
-const envelope = (formCode, values) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: 1, name: "x" },
+const envelope = (formCode, values, version = 1) => ({ id: UUID, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: formCode, version_number: version, name: "x" },
   machine: { code: "MP3", name: "MP3" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", assignment: { id: ASSIGNMENT }, work_order: { id: UUID, number: "OT-1" },
   line: { id: UUID, line_code: "L1", pv_reference: "PV-1", article: { code: "A1", description: "d" } }, values });
 
@@ -43,8 +51,9 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     assert.deepEqual([legacy.fields.filter(isManual).length, legacy.fields.filter((f) => f.source === "automatic").length, legacy.fields.filter((f) => f.source === "calculated").length], [...c.counts, 0], c.name);
     assert.equal(legacy.fields.length, c.counts[0] + c.counts[1]);
     // MF-09: la versión 3 retira además los 11 campos aprobados (73 en total). MF-05: la versión 2 de P1-01 retira dos campos de la definición legacy; todo lo demás (claves, orden, tipos, obligatoriedad, unidades) sigue idéntico.
-    const m = legacy.fields.filter(isManual).filter((f) => !(c.removed ?? []).includes(f.key));
-    assert.equal(c.fields.length, c.counts[0] - (c.removed ?? []).length);
+    const m = expectedManual(legacy, c);
+    assert.equal(c.fields.length, m.length);
+    if (c.name === "P1-01") assert.equal(c.fields.length, 70, "MF-12A: 86 de la legacy - 2 (MF-05) - 11 (MF-09) - 6 y 2 sustituidos (MF-12A) + 3 nuevos");
     assert.deepEqual(c.fields.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
     // MF-02/MF-03/MF-05: textos visibles aprobados que difieren de la definición legacy; la clave consistencia_h_4 no cambia.
     const LABEL_OVERRIDES = { "P1-01": { consistencia_h_4: "Consistencia", angulo_labio: "Ángulo caja", nivel_tanque_p17: "Nivel tanque PIT" } };
@@ -171,11 +180,12 @@ test("el payload es de contexto «asignación»: cerrado, sin máquina ni bobina
 test("el parser exige asignación, OT y línea, su formulario y valores estrictos; ignora lo que no es del contrato", () => {
   for (const c of CASES) {
     const values = c.form.normalizeDraft(fill(c.fields)).values;
-    const parsed = c.form.parseCapture(envelope(c.formCode, values));
+    const current = c.formCode === P1_01_CODE ? 4 : 1; // MF-12A: los campos obligatorios nuevos de P1-01 se exigen desde la versión 4
+    const parsed = c.form.parseCapture(envelope(c.formCode, values, current));
     assert.deepEqual(parsed?.values, values, c.name);
     assert.equal(parsed?.assignment?.id, ASSIGNMENT);
     for (const other of ["VINTO-P1-10", c.formCode === P1_02_CODE ? P1_01_CODE : P1_02_CODE]) assert.equal(c.form.parseCapture(envelope(other, values)), null, `${c.name}: ${other}`);
-    for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; assert.equal(c.form.parseCapture(envelope(c.formCode, m)), null, `falta ${f.key}`); }
+    for (const f of c.fields.filter((x) => x.required)) { const m = { ...values }; delete m[f.key]; assert.equal(c.form.parseCapture(envelope(c.formCode, m, current)), null, `falta ${f.key}`); }
     assert.deepEqual(c.form.parseCapture(envelope(c.formCode, { ...values, hora: "07:00", velocidad_maquina: "9", firma_operador: "x", total: "1" }))?.values, values, "un campo ajeno que llegara se ignora");
     assert.equal(c.form.parseCapture(envelope(c.formCode, { ...values, [c.fields.find((f) => f.kind === "decimal").key]: "abc" })), null);
     assert.equal(c.form.parseList([envelope(c.formCode, values)])?.length, 1);
@@ -258,7 +268,7 @@ test("alcance: política, sectores y seed intactos, sin migraciones nuevas, sin 
 test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, tipo y unidad", () => {
   const f = P101_FIELDS.find((x) => x.key === "consistencia_h_4");
   assert.deepEqual({ ...f }, { key: "consistencia_h_4", label: "Consistencia", kind: "decimal", required: true, suffix: "%" });
-  assert.equal(P101_FIELDS.length, 73);
+  assert.equal(P101_FIELDS.length, 70);
   assert.equal(P101_FIELDS.some((x) => x.label.includes("H-4")), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "nivel_tanque_h_3").label, "Nivel tanque H-3");
 });
@@ -266,7 +276,7 @@ test("MF-02: P1-01 muestra «Consistencia» con la misma clave, obligatoriedad, 
 test("MF-03: P1-01 muestra «Ángulo caja» con la misma clave, obligatoriedad, tipo y sección", () => {
   const f = P101_FIELDS.find((x) => x.key === "angulo_labio");
   assert.deepEqual({ ...f }, { key: "angulo_labio", label: "Ángulo caja", kind: "text", required: true });
-  assert.equal(P101_FIELDS.length, 73);
+  assert.equal(P101_FIELDS.length, 70);
   assert.equal(P101_FIELDS.some((x) => x.label === "Ángulo labio"), false);
   assert.equal(P101_FIELDS.find((x) => x.key === "apertura_labio").label, "Apertura labio");
   assert.ok(P101_SECTIONS.some((s) => s.keys.includes("angulo_labio")));
@@ -274,10 +284,11 @@ test("MF-03: P1-01 muestra «Ángulo caja» con la misma clave, obligatoriedad, 
 
 test("MF-04: la sección «Químicos» conserva sus campos, orden y claves", () => {
   const sec = P101_SECTIONS.find((x) => x.title === "Químicos");
-  assert.deepEqual(sec.keys.slice(0, 4), ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro"]);
+  assert.deepEqual(sec.keys.slice(0, 5), ["dosificacion_release", "frecuencia_release", "dosificacion_coating", "frecuencia_coating", "dosificacion_fosfato"], "MF-12A: Release y Coating con sus frecuencias, juntos al inicio de Químicos");
+  assert.deepEqual(sec.keys.slice(5, 8), ["dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1"], "el resto de Químicos conserva su orden");
   assert.equal(P101_SECTIONS.some((x) => x.title === "Dosificaciones y accionamientos"), false);
-  assert.equal(P101_SECTIONS.reduce((n, x) => n + x.keys.length, 0), 73);
-  assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, 73);
+  assert.equal(P101_SECTIONS.reduce((n, x) => n + x.keys.length, 0), 70);
+  assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, 70);
 });
 
 test("MF-05: P1-01 v2 retira «Producto / gramaje / crepado» y «Nivel tanque T-20», muestra «Nivel tanque PIT» y fusiona «Tela, chorro y labio» en la sección anterior", () => {
@@ -301,7 +312,7 @@ test("MF-05: P1-01 v2 retira «Producto / gramaje / crepado» y «Nivel tanque T
   const draft = fill(P101_FIELDS);
   const attempt = P101.createAttempt(draft, ASSIGNMENT, DEVICE);
   assert.equal(attempt.ok, true);
-  assert.equal(Object.keys(attempt.attempt.payload.values).length, 73);
+  assert.equal(Object.keys(attempt.attempt.payload.values).length, 70);
   assert.equal("producto_gramaje_crepado" in attempt.attempt.payload.values || "nivel_tanque_t_20" in attempt.attempt.payload.values, false);
 });
 
@@ -311,7 +322,7 @@ test("MF-05: el historial de la versión 1 sigue legible (las claves retiradas s
   for (const values of [v1, v2]) {
     const parsed = P101.parseCapture(envelope(P1_01_CODE, values));
     assert.ok(parsed, "la captura se interpreta");
-    assert.equal(Object.keys(parsed.values).length, 73);
+    assert.equal(Object.keys(parsed.values).length, 70);
     assert.equal("nivel_tanque_t_20" in parsed.values, false);
   }
   const list = P101.parseList([envelope(P1_01_CODE, v1), envelope(P1_01_CODE, v2)]);
@@ -327,25 +338,25 @@ test("MF-09: P1-01 v3 retira exactamente los 11 campos aprobados, sin encabezado
     assert.equal(Object.keys(P101.emptyDraft()).includes(gone), false, gone);
     assert.ok(P101_LEGACY_FIELDS.some((f) => f.key === gone), `${gone}: sigue legible en el historial`);
   }
-  assert.deepEqual(P101_LEGACY_FIELDS.map((f) => f.key).sort(), [...MF09_RETIRED].sort(), "ni uno más ni uno menos");
+  assert.deepEqual(P101_LEGACY_FIELDS.map((f) => f.key).sort(), [...MF09_RETIRED, ...MF12A_LEGACY].sort(), "ni uno más ni uno menos (los 11 de MF-09 y los 8 de MF-12A)");
   assert.equal(P101_LEGACY_FIELDS.every((f) => f.required === false), true);
   // no se retira ningún campo adicional, aunque aparezca en otras imágenes del Excel
-  for (const stay of ["nivel_tanque_t_30_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_t_30_accionamientos", "apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro", "limpieza", "limpieza_escalera", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras"]) assert.ok(keys.includes(stay), stay);
+  for (const stay of ["nivel_tanque_t_30_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_t_30_accionamientos", "limpieza", "limpieza_escalera", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras"]) assert.ok(keys.includes(stay), stay);
   // sin encabezados vacíos ni «Presión cocedores» como encabezado; cada campo en una sola sección
   assert.equal(P101_SECTIONS.every((s) => s.keys.length > 0 && s.keys.every((k) => keys.includes(k))), true);
   assert.equal(P101_SECTIONS.some((s) => /cocedores/i.test(s.title)), false);
   assert.equal(new Set(P101_SECTIONS.flatMap((x) => x.keys)).size, keys.length);
   assert.deepEqual(P101_SECTIONS.map((s) => s.title), ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]);
   // los demás campos mantienen etiqueta, tipo, obligatoriedad y orden relativo
-  const legacy = defOf("form_1_operacion_e_inspeccion_de_maquina").fields.filter(isManual).filter((f) => !["producto_gramaje_crepado", "nivel_tanque_t_20", ...MF09_RETIRED].includes(f.key));
+  const legacy = expectedManual(defOf("form_1_operacion_e_inspeccion_de_maquina"), CASES[1]);
   assert.deepEqual(keys, legacy.map((f) => f.key));
-  assert.equal(P101_FIELDS.every((f) => f.required), true);
+  assert.deepEqual(P101_FIELDS.filter((f) => !f.required).map((f) => f.key), ["frecuencia_release", "dosificacion_coating", "frecuencia_coating"], "MF-12A: solo los tres campos nuevos son opcionales");
   // una captura v3 se interpreta; una v2 (con los 11 valores) también y los conserva
   const v3 = Object.fromEntries(Object.entries(P101.normalizeDraft(fill(P101_FIELDS)).values).map(([k, v]) => [k, TIME_KEYS.includes(k) ? `${v}:00` : v]));
   const v2 = { ...v3, ...Object.fromEntries(P101_LEGACY_FIELDS.map((f) => [f.key, f.kind === "decimal" ? "12.5" : "texto histórico"])) };
   const parsedV3 = P101.parseCapture(envelope(P1_01_CODE, v3)), parsedV2 = P101.parseCapture(envelope(P1_01_CODE, v2));
-  assert.equal(Object.keys(parsedV3.values).length, 73);
-  assert.equal(Object.keys(parsedV2.values).length, 84);
+  assert.equal(Object.keys(parsedV3.values).length, 70);
+  assert.equal(Object.keys(parsedV2.values).length, 70 + P101_LEGACY_FIELDS.length);
   for (const k of MF09_RETIRED) assert.equal(parsedV2.values[k], v2[k], `${k}: valor histórico intacto`);
   assert.equal(P101.parseCapture(envelope(P1_01_CODE, { ...v2, presion_pope: "abc" })), null, "un valor histórico corrupto no se interpreta");
   const incomplete = Object.fromEntries(Object.entries(v3).filter(([k]) => k !== "nivel_tanque_p17"));

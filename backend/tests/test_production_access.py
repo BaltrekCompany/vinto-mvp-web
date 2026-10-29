@@ -37,6 +37,7 @@ F6 = "VINTO-P1-06"
 # vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 (Bobinas) nunca los ofrecen. SHIPPED_FORMS debe
 # quedarse en el subconjunto que SÍ aplica a MP1/MP3, no en la política entera.
 SHIPPED_FORMS = sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
+MP1_FORMS = [c for c in SHIPPED_FORMS if c not in ("VINTO-P1-05", "VINTO-P1-31")]  # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3
 ARTICLE = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
 STATE = {}
 
@@ -104,7 +105,7 @@ class RealConfigurationTests(AvailabilityCase):
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         reply = await self.get(who="OPERACION")  # granted BOBINAS + the fictitious Rebobinado (ZZFIX), never the REAL REBOBINADO
         self.assertEqual(reply.status, 200)
-        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
+        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": SHIPPED_FORMS}})
         self.assertNotIn(REB_SECTOR, reply.text)  # the real REBOBINADO is operational, but never granted to this user
         self.assertNotIn('"REBOBINADO"', reply.text)
         self.assertEqual(self.codes(await self.get(who="SOLO_REBOBINADO")), {})  # only the fictitious Rebobinado granted: nothing real is operational for this user
@@ -112,7 +113,7 @@ class RealConfigurationTests(AvailabilityCase):
     async def test_401_and_scope(self):
         self.assertEqual((await call("GET", "/api/production/machines")).status, 401)
         self.assertEqual((await self.get(who="SIN_SECTOR")).json(), {"sectors": []})
-        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": SHIPPED_FORMS, "MP3": SHIPPED_FORMS}})
+        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": SHIPPED_FORMS}})
 
     async def test_the_permission_dependency_requires_at_least_one_view_permission(self):
         class Fake:

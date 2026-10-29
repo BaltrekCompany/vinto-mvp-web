@@ -10,9 +10,11 @@ efímera de la prueba, de modo que el backend vuelve a elegir la v2. La v3 se pr
 import contextlib
 import dataclasses
 import io
+import json
 import secrets
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -36,7 +38,9 @@ except ModuleNotFoundError:
 CODE = "VINTO-P1-01"
 REMOVED = ("producto_gramaje_crepado", "nivel_tanque_t_20")
 BUNDLE = load_bundle()
-FORM = next(f for f in BUNDLE.forms if f["code"] == CODE)  # versión vigente del bundle (MF-09: v3, 73 campos)
+CURRENT = next(f for f in BUNDLE.forms if f["code"] == CODE)  # versión vigente del bundle (MF-12A: v4, 70 campos)
+# MF-12A: el estado de producción entre MF-09 y MF-12A (v3, 73 campos) sale de una copia fiel de esa definición, no del bundle vigente
+FORM = json.loads((Path(__file__).with_name("mf12a_p101_v3.json")).read_text(encoding="utf-8"))
 # Los 11 campos que retiró MF-09 (orden de display en la versión 2): (orden, clave, etiqueta, tipo)
 RETIRED_BY_MF09 = [(36, "presion_cocedores", "Presión cocedores", "decimal"), (41, "nivel_tanque_h_20_aguas", "Nivel tanque H-20 aguas", "decimal"), (43, "nivel_tanque_h_20_aguas_2", "Nivel tanque H-20 aguas 2", "decimal"),
                    (45, "nivel_tanque_h_20_accionamientos", "Nivel tanque H-20 accionamientos", "decimal"), (46, "opertado", "Opertado", "text"), (47, "produccion", "Producción", "text"),
@@ -97,7 +101,7 @@ class P101VersionTests(unittest.IsolatedAsyncioTestCase):
     def install_v2(cls):
         """Estado de producción tras MF-05: v2 (84 campos) publicada; la versión vigente del bundle (v3, MF-09) se retira para que el backend elija la v2."""
         c = cls.connection
-        current = c.execute("SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (CODE, FORM["version_number"])).fetchone()[0]
+        current = c.execute("SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (CODE, CURRENT["version_number"])).fetchone()[0]
         form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (current,)).fetchone()
         v2 = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,2,%s,%s,%s,%s) RETURNING id", (form_id, name, area, workflow, "b" * 64)).fetchone()[0]
         for f in v2_fields():

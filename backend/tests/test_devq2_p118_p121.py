@@ -159,7 +159,7 @@ class P118ConfigurationTests(MachineBase):
         # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES ya incluye los candidatos reales de Bobinas; lo que
         # importa aquí es que P118_CODE (fixture sintética) NO aparece, no que la lista siga siendo solo F6.
         offered = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] for m in s["machines"]}
-        self.assertEqual(offered, {"MP1": sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"})), "MP3": sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_PRODUCTION_POLICY entero ya no aplica solo a MP1/MP3
+        self.assertEqual(offered, {"MP1": sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-06"})), "MP3": sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_PRODUCTION_POLICY entero ya no aplica solo a MP1/MP3
         for codes in offered.values():
             self.assertNotIn(P118_CODE, codes)
 

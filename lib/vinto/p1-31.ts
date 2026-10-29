@@ -1,4 +1,4 @@
-// VINTO-P1-31 «Consumo de químicos» (Bobinas MP1 / MP3): contrato técnico CANDIDATO. Los nueve campos manuales son exactamente los de la definición legacy (form_31_consumo_de_quimicos, 12 campos: 9 manuales
+// VINTO-P1-31 «Consumo de químicos» (Bobinas; MF-12A, MD_Ejec 20: la versión 2 está vinculada SOLO a MP3, la versión 1 servía a MP1 y MP3; los campos no cambian): contrato técnico CANDIDATO. Los nueve campos manuales son exactamente los de la definición legacy (form_31_consumo_de_quimicos, 12 campos: 9 manuales
 // y 3 automáticos), con sus tipos: los dos caudales son decimales y los consumos, texto. Fecha y responsables (MP1 y MP3) son automáticos: los resuelve el backend y no se digitan.
 //
 // PENDIENTE DE VINTO (no se inventa ni se calcula): catálogo de insumos y secciones (código, sección e insumo son TEXTO LIBRE), fórmula de conversión de caudal a consumo, densidades, unidades, rangos,
