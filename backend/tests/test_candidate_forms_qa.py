@@ -106,7 +106,7 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
     # ---- VINTO-P1-05 (Bobinas, contexto "assignment", vía /api/captures) ------------------------------
 
     async def test_p1_05_submitted_by_operacion_is_persisted_and_retrievable(self):
-        assignment = await self.assignment("MP1")
+        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
         capture_id = str(uuid4())
         values = {"numero_de_bobina": "B-1", "numero_codigo_de_tubete": "TB-7", "tipo_de_tubete": "carton",
                   "cantidad_utilizada": "3", "cantidad_recuperada": "1", "cantidad_devuelta": "0", "estado_del_tubete": "bueno",
@@ -123,7 +123,7 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetched.json()["values"], values)
 
     async def test_p1_05_identical_retry_is_idempotent_never_duplicated(self):
-        assignment = await self.assignment("MP1")
+        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
         capture_id = str(uuid4())
         values = {"numero_de_bobina": "B-2", "numero_codigo_de_tubete": "TB-8", "tipo_de_tubete": "plastico",
                   "cantidad_utilizada": "2", "cantidad_recuperada": "2", "cantidad_devuelta": "0", "estado_del_tubete": "regular",
@@ -139,7 +139,7 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 1, "un reintento idéntico no debe crear una segunda fila")
 
     async def test_p1_05_missing_required_field_is_rejected(self):
-        assignment = await self.assignment("MP1")
+        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
         capture_id = str(uuid4())
         values = {"numero_de_bobina": "B-3", "numero_codigo_de_tubete": "TB-9"}  # faltan 7 obligatorios
         body = {"capture_id": capture_id, "assignment_id": assignment["id"], "device_key": str(uuid4()), "form_code": "VINTO-P1-05", "values": values}

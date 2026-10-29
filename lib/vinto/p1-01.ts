@@ -11,6 +11,7 @@
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_01_CODE = "VINTO-P1-01";
+// MF-12A (versión 4): ver P101_LEGACY_FIELDS; se retiran 6 campos y se sustituyen 2 (clave nueva); se añaden frecuencia_release, dosificacion_coating y frecuencia_coating (texto libre, opcionales, sin unidad ni rango). 73 → 70 campos.
 // MF-09 (versión 3): ver P101_LEGACY_FIELDS; los 11 campos retirados ya no figuran en P101_FIELDS ni en P101_SECTIONS.
 // MF-05 (versión 2 del formulario): respecto de la definición legacy se RETIRAN «producto_gramaje_crepado» y «nivel_tanque_t_20» (ya no se piden ni se exigen) y «nivel_tanque_p17» se muestra como «Nivel tanque PIT»
 // (la clave no cambia). Las capturas de la versión 1 conservan esos dos valores en PostgreSQL; el parser ignora claves extra y no exige las retiradas, por lo que el historial sigue legible.
@@ -44,6 +45,9 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "presion_salida_colador", label: "Presión salida colador", kind: "decimal", required: true },
     { key: "apertura_purga", label: "Apertura purga", kind: "text", required: true },
     { key: "dosificacion_release", label: "Dosificación Release", kind: "text", required: true },
+    { key: "frecuencia_release", label: "Frecuencia Release", kind: "text", required: false, sinceVersion: 4 },
+    { key: "dosificacion_coating", label: "Dosificación Coating", kind: "text", required: false, sinceVersion: 4 },
+    { key: "frecuencia_coating", label: "Frecuencia Coating", kind: "text", required: false, sinceVersion: 4 },
     { key: "dosificacion_fosfato", label: "Dosificación Fosfato", kind: "text", required: true },
     { key: "dosificacion_pasiv_tela", label: "Dosificación Pasiv. tela", kind: "text", required: true },
     { key: "dosificacion_pasiv_fieltro", label: "Dosificación Pasiv. fieltro", kind: "text", required: true },
@@ -62,10 +66,7 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "presion_caldero", label: "Presión caldero", kind: "decimal", required: true },
     { key: "temperatura_lado_seco", label: "Temperatura lado seco", kind: "decimal", required: true, suffix: "°C" },
     { key: "temperatura_lado_humedo", label: "Temperatura lado húmedo", kind: "decimal", required: true, suffix: "°C" },
-    { key: "apertura_purga_prensa", label: "Apertura purga prensa", kind: "text", required: true },
     { key: "presion_aceite_alta_tela", label: "Presión aceite alta tela", kind: "decimal", required: true },
-    { key: "presion_aceite_guia_tela", label: "Presión aceite guía tela", kind: "decimal", required: true },
-    { key: "presion_aceite_lubricacion", label: "Presión aceite lubricación", kind: "decimal", required: true },
     { key: "presion_agua_prensa", label: "Presión agua prensa", kind: "decimal", required: true },
     { key: "presion_aire_prensa", label: "Presión aire prensa", kind: "decimal", required: true },
     { key: "presion_vacio_prensa", label: "Presión vacío prensa", kind: "decimal", required: true },
@@ -76,11 +77,8 @@ export const P101_FIELDS: readonly FieldSpec[] = [
     { key: "caudal_agua_sello_3", label: "Caudal agua sello 3", kind: "decimal", required: true },
     { key: "filtro_agua_prensa", label: "Filtro agua prensa", kind: "text", required: true },
     { key: "filtro_quimicos", label: "Filtro químicos", kind: "text", required: true },
-    { key: "rodillos_quimicos", label: "Rodillos químicos", kind: "text", required: true },
-    { key: "vacio_prensa", label: "Vacío prensa", kind: "decimal", required: true },
-    { key: "vacio_pope", label: "Vacío pope", kind: "decimal", required: true },
-    { key: "vacio_fieltro", label: "Vacío fieltro", kind: "decimal", required: true },
-    { key: "vacio_tela", label: "Vacío tela", kind: "decimal", required: true },
+    { key: "boquillas_quimicos", label: "Boquillas químicos", kind: "text", required: true, sinceVersion: 4 },
+    { key: "velocidad_pope", label: "Velocidad pope", kind: "decimal", required: true, sinceVersion: 4 },
     { key: "limpieza_escalera", label: "Limpieza escalera", kind: "text", required: true },
     { key: "limpieza_lado_transmision", label: "Limpieza lado transmisión", kind: "text", required: true },
     { key: "limpieza_pasos_y_escaleras", label: "Limpieza pasos y escaleras", kind: "text", required: true },
@@ -93,9 +91,9 @@ export const P101_FIELDS: readonly FieldSpec[] = [
 export const P101_SECTIONS: readonly { title: string; hint?: string; keys: readonly string[] }[] = [
     { title: "Materia prima, tanques y pulpeo", keys: ["nivel_tanque_t_30", "nivel_tanque_h_1", "nivel_tanque_h_3", "peso_balas_fibra_corta", "peso_balas_fibra_larga", "tiempo_de_pulpeo_fibra_corta", "tiempo_de_pulpeo_fibra_larga"] },
     { title: "Caudales, mezclas y consistencias", keys: ["caudal_b_4", "caudal_b_7", "mezcla_fibra_corta_fibra_larga", "nivel_tanque_h_20", "consistencia_h_4", "apertura_valvula_consistencia", "gramaje_valvula", "nivel_tanque_p17", "motor_fan_b23", "motor_fan_b23b", "nivel_tanque_t_21", "velocidad_chorro", "velocidad_tela", "error_chorro_tela", "presion_labio", "apertura_labio", "angulo_labio", "distancia", "presion_entrada_colador", "presion_salida_colador", "apertura_purga"] },
-    { title: "Químicos", keys: ["dosificacion_release", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_t_30_accionamientos"] },
+    { title: "Químicos", keys: ["dosificacion_release", "frecuencia_release", "dosificacion_coating", "frecuencia_coating", "dosificacion_fosfato", "dosificacion_pasiv_tela", "dosificacion_pasiv_fieltro", "bomba_ba1", "bomba_ba2", "bomba_ba3", "cambio", "crepado", "limpieza", "nivel_tanque_t_30_aguas", "nivel_tanque_t_30_aguas_2", "nivel_tanque_t_30_accionamientos"] },
     { title: "Secador, presiones y temperaturas", keys: ["velocidad_fieltro", "velocidad_secador", "presion_cilindro", "presion_caldero", "temperatura_lado_seco", "temperatura_lado_humedo"] },
-    { title: "Prensa, aceite, vacío y filtros", keys: ["apertura_purga_prensa", "presion_aceite_alta_tela", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "presion_agua_prensa", "presion_aire_prensa", "presion_vacio_prensa", "presion_fuelle_comando", "presion_fuelle_transmision", "caudal_agua_sello_1", "caudal_agua_sello_2", "caudal_agua_sello_3", "filtro_agua_prensa", "filtro_quimicos", "rodillos_quimicos", "vacio_prensa", "vacio_pope", "vacio_fieltro", "vacio_tela"] },
+    { title: "Prensa, aceite, vacío y filtros", keys: ["presion_aceite_alta_tela", "presion_agua_prensa", "presion_aire_prensa", "presion_vacio_prensa", "presion_fuelle_comando", "presion_fuelle_transmision", "caudal_agua_sello_1", "caudal_agua_sello_2", "caudal_agua_sello_3", "filtro_agua_prensa", "filtro_quimicos", "boquillas_quimicos", "velocidad_pope"] },
     { title: "Limpieza y cambios de cuchillas", keys: ["limpieza_escalera", "limpieza_lado_transmision", "limpieza_pasos_y_escaleras", "hora_cambio_cuchilla_de_cambio", "hora_cambio_cuchilla_de_crepado", "hora_cambio_cuchilla_de_limpieza"] },
     { title: "Novedades", keys: ["novedades"] },
 ];
@@ -113,6 +111,15 @@ export const P101_LEGACY_FIELDS: readonly FieldSpec[] = [
     { key: "presion_regaderas", label: "Presión regaderas", kind: "decimal", required: false },
     { key: "limpieza_sala_de_control", label: "Limpieza sala de control", kind: "text", required: false },
     { key: "limpieza_mezzanine", label: "Limpieza mezzanine", kind: "text", required: false },
+    // MF-12A (versión 4, MD_Ejec 14): los cuatro campos rojos se retiran; «Rodillos químicos» y «Vacío pope» se sustituyen por campos nuevos (claves nuevas: no se reinterpreta su histórico) y «Vacío prensa» y «Vacío fieltro» se retiran porque la velocidad ya existe.
+    { key: "apertura_purga_prensa", label: "Apertura purga prensa", kind: "text", required: false },
+    { key: "presion_aceite_guia_tela", label: "Presión aceite guía tela", kind: "decimal", required: false },
+    { key: "presion_aceite_lubricacion", label: "Presión aceite lubricación", kind: "decimal", required: false },
+    { key: "vacio_tela", label: "Vacío tela", kind: "decimal", required: false },
+    { key: "rodillos_quimicos", label: "Rodillos químicos", kind: "text", required: false },
+    { key: "vacio_prensa", label: "Vacío prensa", kind: "decimal", required: false },
+    { key: "vacio_pope", label: "Vacío pope", kind: "decimal", required: false },
+    { key: "vacio_fieltro", label: "Vacío fieltro", kind: "decimal", required: false },
 ];
 export const P101 = defineCandidateForm(P1_01_CODE, P101_FIELDS, { legacy: P101_LEGACY_FIELDS });
 export const P101_AUTOMATIC = ["Nombre del operador (usuario autenticado, informativo; no es una firma)", "Fecha (fecha operativa de la asignación)", "Turno (el de la asignación)"] as const;
@@ -121,5 +128,6 @@ export const P101_PENDING: readonly { label: string; pending: string }[] = [
     { label: "Automáticos sin fuente", pending: "Velocidad de máquina, firma del operador y revisado no tienen fuente aprobada: no se generan. No hay lectura de PLC ni sensores, firma electrónica ni revisión de supervisión; el usuario autenticado es solo informativo." },
     { label: "Horas de cambio de cuchilla", pending: "Las tres son horas MANUALES obligatorias (HH:MM) y se guardan como hora real. La hora de registro del servidor no es la hora de operación y no se usa en su lugar." },
     { label: "Tipos de los campos", pending: "Los pesos de balas, tiempos de pulpeo, aperturas, dosificaciones, bombas, filtros, limpiezas y demás campos declarados texto se guardan tal como se digitan, sin convertirlos a número; se conserva la clave `opertado` de la definición." },
+    { label: "Release y Coating", pending: "Dosificación y frecuencia de Release y de Coating son texto libre (la dosificación de Release ya existía; las demás son opcionales desde la versión 4): sin unidad, rango ni cálculo, y sin relación con P1-31 ni con el catálogo de químicos." },
     { label: "Rangos y reglas", pending: "Sin rangos, límites, valores estándar, frecuencia de toma, validaciones cruzadas ni catálogos aprobados; nada se calcula." },
 ];

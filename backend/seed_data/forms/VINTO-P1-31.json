@@ -6,9 +6,8 @@
   "name": "Consumo de químicos",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
-    "MP1",
     "MP3"
   ],
   "groups": [],
@@ -95,5 +94,5 @@
       "display_order": 9
     }
   ],
-  "definition_checksum": "25ee18d05f712a6aee67c062f66a7089a4ac1dcde13b40d0446010e960fa9e33"
+  "definition_checksum": "62e97c0ed8c00a3395e63d9226016a8ca29aa677b779a106806136f520329455"
 }

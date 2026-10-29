@@ -60,7 +60,7 @@
     },
     {
       "path": "lib/vinto/p1-01.ts",
-      "sha256": "38992e127d6b77c1499058719cb865cdd2cf87a08b14438d9c16791c325e1685",
+      "sha256": "95e28c8f8fcd70b5df0eea87082ed30f7800e8b5059cf71cb089e59682aa8db7",
       "scope": "candidate-fields:VINTO-P1-01"
     },
     {
@@ -75,12 +75,12 @@
     },
     {
       "path": "lib/vinto/p1-05.ts",
-      "sha256": "b1bf7a7c7ed84eb7ebd43ecc6696c8cda889d8ed29d928bcf1d4d62f84e6a105",
+      "sha256": "5ce7e5f49f893b9335664b4efa0e4083f594dec25dcb49eca4d77870d5203fbf",
       "scope": "candidate-fields:VINTO-P1-05"
     },
     {
       "path": "lib/vinto/p1-31.ts",
-      "sha256": "0cd1fcf76efc2ba5f795b49175592fab9d71d89b84e0f8a8fe04c21fc44333f5",
+      "sha256": "ec617a8d5bc808373c5b25fbe02e8489cd76580c8ff88240385f2eebe8d1c42e",
       "scope": "candidate-fields:VINTO-P1-31"
     },
     {
@@ -182,8 +182,8 @@
     },
     {
       "path": "forms/VINTO-P1-01.json",
-      "sha256": "ff94b0d37edc8e3ecb66669bdcf11d31ccd6ce236fdaa675f557560b289a5722",
-      "bytes": 15886
+      "sha256": "f537e10188b8d548c42c6ed66f811ffc10de11a2e85f601616b206cb41dc2a32",
+      "bytes": 15258
     },
     {
       "path": "forms/VINTO-P1-02.json",
@@ -202,8 +202,8 @@
     },
     {
       "path": "forms/VINTO-P1-05.json",
-      "sha256": "3e35cfad0936be06734b5161056c85a51b249eb4240cda928333519b535c562f",
-      "bytes": 2446
+      "sha256": "2808073613e9ed6a1b17000ce35b62ba7dce115dd1fadeb29c50b7937a86f32f",
+      "bytes": 2435
     },
     {
       "path": "forms/VINTO-P1-06.json",
@@ -302,8 +302,8 @@
     },
     {
       "path": "forms/VINTO-P1-31.json",
-      "sha256": "b0b7298ca1e8d88a22781847297016e1792ef23760a2cf93d4e5248305e61453",
-      "bytes": 2221
+      "sha256": "95aefa0761827946bef8c0526afea7abc659fecd21a25f8d5aff1ffc79448da7",
+      "bytes": 2210
     },
     {
       "path": "machines.json",
@@ -356,7 +356,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 25,
-    "form_fields": 472,
+    "form_fields": 469,
     "form_options": 14,
     "form_groups": 3
   },

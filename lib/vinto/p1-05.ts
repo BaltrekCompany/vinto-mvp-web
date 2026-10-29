@@ -1,4 +1,4 @@
-// VINTO-P1-05 «Registro de tubetes» (Bobinas MP1 / MP3): contrato técnico CANDIDATO. Los diez campos manuales son exactamente los de la definición legacy (form_5_registro_de_tubetes, 14 campos: 10 manuales
+// VINTO-P1-05 «Registro de tubetes» (Bobinas; MF-12A, MD_Ejec 20: la versión 2 está vinculada SOLO a MP3, la versión 1 servía a MP1 y MP3; los campos no cambian): contrato técnico CANDIDATO. Los diez campos manuales son exactamente los de la definición legacy (form_5_registro_de_tubetes, 14 campos: 10 manuales
 // y 4 automáticos); fecha, turno, máquina y responsable son automáticos: los resuelve el backend (asignación y sesión) y no se digitan. Todos los campos son texto como en la definición legacy.
 //
 // PENDIENTE DE VINTO (no se inventa): catálogo oficial de tubetes (código, tipo, estado, procedencia y destino son TEXTO LIBRE), criterios de utilización, recuperación y devolución, reglas de inventario,

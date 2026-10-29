@@ -71,9 +71,9 @@ test("sin máquina en el contexto no se muestra ninguna máquina (ni un MP3 por 
   }
 });
 
-test("los 73 campos y las 7 secciones de P1-01 v3 siguen intactos y los demás formularios no cambian de título", () => {
+test("los 70 campos (MF-12A: P1-01 v4) y las 7 secciones de P1-01 siguen y los demás formularios no cambian de título", () => {
   const html = screen("p101", ctx("MP1"));
-  assert.equal(html.split("<input").length - 1, 73);
+  assert.equal(html.split("<input").length - 1, 70);
   for (const title of ["Materia prima, tanques y pulpeo", "Caudales, mezclas y consistencias", "Químicos", "Secador, presiones y temperaturas", "Prensa, aceite, vacío y filtros", "Limpieza y cambios de cuchillas", "Novedades"]) assert.ok(textOf(html).includes(title), title);
   const { BOBINAS_CANDIDATES: c } = ui;
   assert.deepEqual([c.p101.code, c.p101.title, c.p101.kicker], ["VINTO-P1-01", "Operación e inspección de máquina", "Operación e inspección · Bobinas"], "sin máquina fija; el código técnico no cambia");

@@ -152,7 +152,7 @@ class Base(q2.BobbinBase):
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
         self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 4, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 3), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2)],
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
                          "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2; MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])

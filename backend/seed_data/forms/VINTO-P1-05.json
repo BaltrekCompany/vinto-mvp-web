@@ -6,9 +6,8 @@
   "name": "Registro de tubetes",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
-    "MP1",
     "MP3"
   ],
   "groups": [],
@@ -104,5 +103,5 @@
       "display_order": 10
     }
   ],
-  "definition_checksum": "29a53c97a3c5893d076ec005cfb1bc0d326886a083d3903a1b8684a91a599d5e"
+  "definition_checksum": "39c5965b333232a97cba4e70c9bfb9a85544862d61af754b08b0051682260a0a"
 }

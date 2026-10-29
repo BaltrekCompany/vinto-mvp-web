@@ -6,7 +6,7 @@
   "name": "Operación e inspección de máquina",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 3,
+  "version_number": 4,
   "machines": [
     "MP1",
     "MP3"
@@ -275,13 +275,40 @@
       "display_order": 29
     },
     {
+      "key": "frecuencia_release",
+      "label": "Frecuencia Release",
+      "value_type": "text",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 30
+    },
+    {
+      "key": "dosificacion_coating",
+      "label": "Dosificación Coating",
+      "value_type": "text",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 31
+    },
+    {
+      "key": "frecuencia_coating",
+      "label": "Frecuencia Coating",
+      "value_type": "text",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 32
+    },
+    {
       "key": "dosificacion_fosfato",
       "label": "Dosificación Fosfato",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 30
+      "display_order": 33
     },
     {
       "key": "dosificacion_pasiv_tela",
@@ -290,7 +317,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 31
+      "display_order": 34
     },
     {
       "key": "dosificacion_pasiv_fieltro",
@@ -299,7 +326,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 32
+      "display_order": 35
     },
     {
       "key": "bomba_ba1",
@@ -308,7 +335,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 33
+      "display_order": 36
     },
     {
       "key": "bomba_ba2",
@@ -317,7 +344,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 34
+      "display_order": 37
     },
     {
       "key": "bomba_ba3",
@@ -326,7 +353,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 35
+      "display_order": 38
     },
     {
       "key": "cambio",
@@ -335,7 +362,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 36
+      "display_order": 39
     },
     {
       "key": "crepado",
@@ -344,7 +371,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 37
+      "display_order": 40
     },
     {
       "key": "limpieza",
@@ -353,7 +380,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 38
+      "display_order": 41
     },
     {
       "key": "nivel_tanque_t_30_aguas",
@@ -362,7 +389,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 39
+      "display_order": 42
     },
     {
       "key": "nivel_tanque_t_30_aguas_2",
@@ -371,7 +398,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 40
+      "display_order": 43
     },
     {
       "key": "nivel_tanque_t_30_accionamientos",
@@ -380,7 +407,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 41
+      "display_order": 44
     },
     {
       "key": "velocidad_fieltro",
@@ -389,7 +416,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 42
+      "display_order": 45
     },
     {
       "key": "velocidad_secador",
@@ -398,7 +425,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 43
+      "display_order": 46
     },
     {
       "key": "presion_cilindro",
@@ -407,7 +434,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 44
+      "display_order": 47
     },
     {
       "key": "presion_caldero",
@@ -416,7 +443,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 45
+      "display_order": 48
     },
     {
       "key": "temperatura_lado_seco",
@@ -425,7 +452,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 46
+      "display_order": 49
     },
     {
       "key": "temperatura_lado_humedo",
@@ -434,38 +461,11 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 47
-    },
-    {
-      "key": "apertura_purga_prensa",
-      "label": "Apertura purga prensa",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 48
+      "display_order": 50
     },
     {
       "key": "presion_aceite_alta_tela",
       "label": "Presión aceite alta tela",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 49
-    },
-    {
-      "key": "presion_aceite_guia_tela",
-      "label": "Presión aceite guía tela",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 50
-    },
-    {
-      "key": "presion_aceite_lubricacion",
-      "label": "Presión aceite lubricación",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -563,8 +563,8 @@
       "display_order": 61
     },
     {
-      "key": "rodillos_quimicos",
-      "label": "Rodillos químicos",
+      "key": "boquillas_quimicos",
+      "label": "Boquillas químicos",
       "value_type": "text",
       "source": "manual",
       "required": true,
@@ -572,40 +572,13 @@
       "display_order": 62
     },
     {
-      "key": "vacio_prensa",
-      "label": "Vacío prensa",
+      "key": "velocidad_pope",
+      "label": "Velocidad pope",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 63
-    },
-    {
-      "key": "vacio_pope",
-      "label": "Vacío pope",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 64
-    },
-    {
-      "key": "vacio_fieltro",
-      "label": "Vacío fieltro",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 65
-    },
-    {
-      "key": "vacio_tela",
-      "label": "Vacío tela",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 66
     },
     {
       "key": "limpieza_escalera",
@@ -614,7 +587,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 67
+      "display_order": 64
     },
     {
       "key": "limpieza_lado_transmision",
@@ -623,7 +596,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 68
+      "display_order": 65
     },
     {
       "key": "limpieza_pasos_y_escaleras",
@@ -632,7 +605,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 69
+      "display_order": 66
     },
     {
       "key": "hora_cambio_cuchilla_de_cambio",
@@ -641,7 +614,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 70
+      "display_order": 67
     },
     {
       "key": "hora_cambio_cuchilla_de_crepado",
@@ -650,7 +623,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 71
+      "display_order": 68
     },
     {
       "key": "hora_cambio_cuchilla_de_limpieza",
@@ -659,7 +632,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 72
+      "display_order": 69
     },
     {
       "key": "novedades",
@@ -668,8 +641,8 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 73
+      "display_order": 70
     }
   ],
-  "definition_checksum": "55c0d221e8a4b5b081a3238afd7e81f447411a7964ba6cb0d4fe6db9d38b8554"
+  "definition_checksum": "8524ee3a31ea43f0e778cffd7cd566f0358ecfc3b1a6f101c7125ffecfd9f79b"
 }
