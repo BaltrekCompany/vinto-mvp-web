@@ -44,8 +44,8 @@ ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["ma
 SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 1, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 2, "VINTO-P1-10": 2, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2,
-            "VINTO-P1-16": 2, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 4, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 2, "VINTO-P1-10": 2, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2,
+            "VINTO-P1-16": 3, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 4, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 RED = ("apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela")
 BLUE_DROPPED = ("vacio_prensa", "vacio_fieltro")  # su concepto ya existe como velocidad_secador / velocidad_fieltro
@@ -119,7 +119,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(FORMS[P131]["machines"], ["MP3"])
         for code in ("VINTO-P1-02", "VINTO-P1-03", P104, "VINTO-P1-06"):
             self.assertEqual(sorted(FORMS[code]["machines"]), ["MP1", "MP3"], f"{code}: la disponibilidad no cambia")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 469)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 464)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
     def test_p1_01_v4_removes_replaces_and_adds_exactly_what_was_approved(self):
         v3 = [f["key"] for f in V3["fields"]]
@@ -324,10 +324,13 @@ class P101Tests(Base):
 
     async def test_the_rest_of_the_mp1_forms_keep_working(self):
         assignment = await self.assignment("MP1")
-        for code in (P102, P104):
-            reply, _ = await self.post(assignment, code, fill(FORMS[code]["fields"]))
-            self.assertEqual(reply.status, 201, (code, reply.text))
-            self.assertEqual(reply.json()["capture"]["form"]["version_number"], 1)
+        reply, _ = await self.post(assignment, P102, fill(FORMS[P102]["fields"]))
+        self.assertEqual(reply.status, 201, reply.text)
+        self.assertEqual(reply.json()["capture"]["form"]["version_number"], 1)
+        # P1-04 pasó a la versión 2 en MF-12B (un registro por consumo)
+        reply, _ = await self.post(assignment, P104, {"hora_consumo": "07:30", "material": "Recorte", "origen": "Máquina", "presentacion": "Fardo", "cantidad_um": 3, "peso_unitario_real": "10.5"})
+        self.assertEqual(reply.status, 201, reply.text)
+        self.assertEqual(reply.json()["capture"]["form"]["version_number"], 2)
 
 
 class AvailabilityTests(Base):

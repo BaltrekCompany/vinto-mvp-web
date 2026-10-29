@@ -11,9 +11,11 @@ Se verifica contra PostgreSQL REAL (base efímera *_test) con los formularios RE
 import contextlib
 import dataclasses
 import io
+import json
 import secrets
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -44,7 +46,10 @@ P124, P126, P127 = "VINTO-P1-24", "VINTO-P1-26", "VINTO-P1-27"
 CONVERSION = (P111, P112, P113, P116)
 QUALITY = (P124, P126, P127)
 NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
-BUNDLE = load_bundle()
+# MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
+_P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
+_REAL = load_bundle()
+BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 MACHINE = {P111: "GAMBINI", P112: "GAMBINI", P113: "OMET_I", P116: "OMET_I"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in {r["machine_code"] for r in BUNDLE.article_machines}}
@@ -53,7 +58,7 @@ DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 HOURS = {"hora_inicio": "06:30", "hora_fin": "14:45"}
 POINTS = ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 1, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 2, "VINTO-P1-10": 2, P111: 2, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 2, "VINTO-P1-10": 2, P111: 2, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
             "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 4, "VINTO-P1-25": 3, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
 # claves que cada versión NUEVA añade respecto de la anterior
 ADDED = {P111: ("hora_inicio", "hora_fin"), P112: ("hora_inicio", "hora_fin"), P113: ("hora_inicio", "hora_fin"), P116: ("hora_inicio", "hora_fin"), P126: ("absorcion_de_humedad",), P127: ("alcalinidad_total",), P124: ()}
@@ -191,7 +196,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 469)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 464)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
@@ -203,6 +208,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.connection = connect(cls.database)
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
+        cls.install_p116_v2_as_current()
         cls.current = {code: cls.version(code, NEW_VERSION[code]) for code in NEW_VERSION}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, old_spec(CONVERSION + (P126, P127))))  # las versiones anteriores, publicadas como en producción (aditivo)
@@ -217,6 +223,19 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.stop()
         cls.connection.close()
         drop_database(cls.database)
+
+    @classmethod
+    def install_p116_v2_as_current(cls):
+        """MF-12B: la plantilla trae P1-16 v3; aquí se publica la v2 de producción (con las horas) y se retira la v3 en la base efímera, de modo que el backend elige la v2 como en MF-11."""
+        c = cls.connection
+        v3 = cls.version(P116, 3)
+        form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (v3,)).fetchone()
+        v2 = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,2,%s,%s,%s,%s) RETURNING id", (form_id, name, area, workflow, _P116_V2["definition_checksum"])).fetchone()[0]
+        for f in _P116_V2["fields"]:
+            c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,'manual',%s,%s)", (v2, f["key"], f["label"], f["value_type"], f["required"], f["display_order"]))
+        c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (v2, v3))
+        c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (v2,))
+        c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (v3,))
 
     @classmethod
     def version(cls, code, number):

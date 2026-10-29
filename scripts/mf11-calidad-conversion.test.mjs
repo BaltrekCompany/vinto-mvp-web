@@ -183,7 +183,8 @@ test("historial de P1-24: la captura v3 se muestra como «Crepado» con su valor
 // ---- Conversión: horas generales de producción -------------------------------------------------------------------------------------------------------
 const CONTEXT = (machine) => ({ assignmentId: "44444444-4444-4444-8444-444444444444", workOrderId: "22222222-2222-4222-8222-222222222222", otId: "OT-2026-0001", lineId: "L1", pv: "PV-1", productCode: "M1-1024", productName: "BOBINA 1024", machine, shift: "Día", date: "2026-10-06" });
 const convScreen = (screen, machine) => server.renderToStaticMarkup(React.createElement(ui.CandidateFormCapture, { candidate: ui.CONVERSION_CANDIDATES[screen], context: CONTEXT(machine), online: true, attempt: null, setAttempt: noop, back: noop, onAssignmentChanged: noop, onSessionLost: noop }));
-const forms = () => [["p112", ui.P112, "GAMBINI", 22, 3], ["p113", ui.P113, "OMET_I", 20, 2], ["p116", ui.P116, "OMET_I", 10, 2]];
+// MF-12B: P1-16 pasó a la versión 3 (una pesada por captura); sus horas se prueban en mf12b-fibra-merma.test.mjs
+const forms = () => [["p112", ui.P112, "GAMBINI", 22, 3], ["p113", ui.P113, "OMET_I", 20, 2]];
 
 test("P1-12, P1-13 y P1-16: sección «Horas de producción» con Hora inicio y Hora fin obligatorias (campos de hora), antes de los demás campos; un único par", () => {
   for (const [screen, , machine, total] of forms()) {
@@ -284,9 +285,9 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2, "VINTO-P1-16": 2 };
+  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
   assert.equal(versions["VINTO-P1-25"], 3);
-  assert.equal(manifest.counts.form_fields, 469, "472 de MF-11 menos los 3 que quita P1-01 v4 (MF-12A: 73 → 70)");
+  assert.equal(manifest.counts.form_fields, 464, "472 de MF-11, menos 3 (MF-12A: P1-01 v4) y menos 5 (MF-12B: P1-04 v2 pasa de 9 a 7 campos y P1-16 v3 de 10 a 7)");
 });

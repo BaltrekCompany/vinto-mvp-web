@@ -169,7 +169,7 @@ class DefinitionTests(Base):
     async def test_bundle_versions_and_scope(self):
         self.assertEqual((FORMS[P101]["version_number"], FORMS[P106]["version_number"]), (3, 2))
         self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1),
-                         [("VINTO-P1-01", 3), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 2), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)], "ningún otro formulario cambia")
+                         [("VINTO-P1-01", 3), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 2), ("VINTO-P1-10", 2), ("VINTO-P1-11", 2), ("VINTO-P1-12", 3), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)], "ningún otro formulario cambia")
         for code in (P101, P106):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
             self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.current[code],)), "published")

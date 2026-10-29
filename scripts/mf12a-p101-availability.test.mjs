@@ -186,7 +186,7 @@ test("seed: solo P1-01 v4, P1-05 v2 y P1-31 v2 cambian; P1-05 y P1-31 conservan 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const forms = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) forms[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8"));
-  const expected = { "VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 1, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-24": 4, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2, "VINTO-P1-16": 2 };
+  const expected = { "VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-24": 4, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2, "VINTO-P1-16": 3 };
   for (const [code, version] of Object.entries(expected)) assert.equal(forms[code].version_number, version, code);
   assert.deepEqual(forms["VINTO-P1-05"].machines, ["MP3"]);
   assert.deepEqual(forms["VINTO-P1-31"].machines, ["MP3"]);
@@ -195,7 +195,7 @@ test("seed: solo P1-01 v4, P1-05 v2 y P1-31 v2 cambian; P1-05 y P1-31 conservan 
   assert.equal(forms["VINTO-P1-05"].fields.length, 10);
   assert.equal(forms["VINTO-P1-31"].fields.length, 9);
   assert.deepEqual(forms["VINTO-P1-01"].fields.map((f) => f.key), ui.P101_FIELDS.map((f) => f.key), "el seed y la pantalla declaran los mismos campos en el mismo orden");
-  assert.equal(manifest.counts.form_fields, 469);
+  assert.equal(manifest.counts.form_fields, 464, "MF-12B: P1-04 v2 (7 campos) y P1-16 v3 (7 campos)");
 });
 
 test("MF-12A no toca TVC/ETL, migraciones ni la política central: solo seed, definiciones y pruebas", () => {
