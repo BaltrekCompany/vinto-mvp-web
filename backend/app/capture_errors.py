@@ -16,6 +16,10 @@ class CaptureValidationError(CaptureError):
     http_status, code, public_message = 422, "CAPTURE_VALIDATION", "Los valores de la captura no son válidos"
 
 
+class CorrelativeInUseError(CaptureError):
+    http_status, code, public_message = 409, "CORRELATIVE_IN_USE", "El número correlativo ya está registrado para esta OT y máquina"
+
+
 class UnsupportedFormError(CaptureError):
     http_status, code, public_message = 422, "UNSUPPORTED_FORM", "Formulario no soportado por este endpoint"
 

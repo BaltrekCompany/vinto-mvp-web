@@ -99,8 +99,11 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         } finally { busy.current = false; setSending(false); }
     }
 
+    // MF-12B: una lista dependiente (Origen según Material) solo ofrece las opciones del valor elegido en el campo padre; si el padre cambia y el valor ya no corresponde, se vacía.
+    const optionsOf = (field: (typeof form.fields)[number]) => (field.dependsOn ? field.dependsOn.allowed[(draft[field.dependsOn.field] ?? "").trim()] ?? [] : field.options ?? []).map(o => ({ value: o, label: o }));
+    const setField = (key: string) => (x: string) => setDraft(old => { const next = { ...old, [key]: x }; for (const f of form.fields) if (f.dependsOn?.field === key && next[f.key] && !(f.dependsOn.allowed[x.trim()] ?? []).includes(next[f.key])) next[f.key] = ""; return next; });
     const renderField = (field: (typeof form.fields)[number]) => field.kind === "select"
-        ? <ChoiceField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} options={(field.options ?? []).map(o => ({ value: o, label: o }))}/>
+        ? <ChoiceField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={setField(field.key)} options={optionsOf(field)}/>
         : field.kind === "textarea"
         ? <TextAreaField key={field.key} label={field.label} required={field.required} disabled={locked} value={draft[field.key] ?? ""} onChange={set(field.key)} hint={candidate.hints?.[field.key]}/>
         : <TextField key={field.key} label={field.label} required={field.required} disabled={locked || field.key === codeField} value={draft[field.key] ?? ""} onChange={set(field.key)}
@@ -154,6 +157,9 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         {table && renderCalculated()}
         {groups.map(group => <CaptureSection key={group.title} title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>)}
         {!table && renderCalculated()}
+        {candidate.derived && <div className="border-b bg-slate-50 p-6" data-section="derived">
+            <h2 className="font-black">Valores calculados en pantalla (no se guardan)</h2>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">{candidate.derived.map(d => { const value = d.compute(draft); return <div key={d.key} data-derived={d.key}><dt className="text-xs font-semibold text-slate-600">{d.label}</dt><dd className="mt-0.5 font-bold tabular-nums">{value ? `${value}${d.suffix ? ` ${d.suffix}` : ""}` : "—"}</dd></div>; })}</dl></div>}
         <CaptureNotice text={notice}/>
         {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
             <p className="font-black">{saved.message}</p>

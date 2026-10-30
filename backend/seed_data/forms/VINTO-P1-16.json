@@ -6,7 +6,7 @@
   "name": "Registro de control de merma",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -50,58 +50,80 @@
       "display_order": 3
     },
     {
-      "key": "hoja_doble_kg",
-      "label": "Hoja doble kg",
+      "key": "tipo_merma",
+      "label": "Tipo de merma",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
+      "options": [
+        {
+          "option_key": "Hoja doble",
+          "label": "Hoja doble",
+          "display_order": 1
+        },
+        {
+          "option_key": "Hoja simple",
+          "label": "Hoja simple",
+          "display_order": 2
+        },
+        {
+          "option_key": "Servilleta",
+          "label": "Servilleta",
+          "display_order": 3
+        },
+        {
+          "option_key": "Toalla",
+          "label": "Toalla",
+          "display_order": 4
+        },
+        {
+          "option_key": "Cartón",
+          "label": "Cartón",
+          "display_order": 5
+        },
+        {
+          "option_key": "Plástico",
+          "label": "Plástico",
+          "display_order": 6
+        }
+      ],
       "display_order": 4
     },
     {
-      "key": "servilleta_kg",
-      "label": "Servilleta kg",
+      "key": "origen_merma",
+      "label": "Origen de la merma",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
+      "options": [
+        {
+          "option_key": "Logs",
+          "label": "Logs",
+          "display_order": 1
+        },
+        {
+          "option_key": "Cola",
+          "label": "Cola",
+          "display_order": 2
+        },
+        {
+          "option_key": "Máquina",
+          "label": "Máquina",
+          "display_order": 3
+        }
+      ],
       "display_order": 5
     },
     {
-      "key": "toalla_kg",
-      "label": "Toalla kg",
-      "value_type": "text",
+      "key": "peso_merma_kg",
+      "label": "Peso real",
+      "value_type": "decimal",
       "source": "manual",
       "required": true,
-      "unit": null,
+      "unit": "KG",
       "display_order": 6
-    },
-    {
-      "key": "carton_kg",
-      "label": "Cartón kg",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 7
-    },
-    {
-      "key": "hoja_simple_kg",
-      "label": "Hoja simple kg",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 8
-    },
-    {
-      "key": "plastico_kg",
-      "label": "Plástico kg",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 9
     },
     {
       "key": "observacion",
@@ -110,8 +132,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 10
+      "display_order": 7
     }
   ],
-  "definition_checksum": "29d771cc1e1bb38edaee3302081562eeb69b5ffefd635576953851a0362cf496"
+  "definition_checksum": "4bfc8c6cd192227af146850cdc6c1233686641548d18d7c9da3b6cc27e96feee"
 }

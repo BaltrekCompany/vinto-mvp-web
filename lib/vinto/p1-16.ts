@@ -98,24 +98,37 @@ export const submitP116Attempt = (attempt: P116Attempt, deps: P116SubmitDeps): P
 export const reconcileP116 = (captureId: string, deps: P116SubmitDeps): Promise<P116SubmitOutcome> => reconcileOf(captureId, deps);
 
 // ---- CLOUD-DEP G.12-C4-FINAL25: contrato REAL (8 campos manuales de la definición legacy, en su orden) -----------------------------------
+// MF-12B (versión 3, MD_Ejec 44): UNA PESADA POR CAPTURA, como en el MVP anterior (WasteCapture): tipo y origen de merma en listas desplegables (textos literales, los mismos del MVP) y peso real decimal en kg. Se
+// conservan el número correlativo (manual, sin numeración automática; único por OT + máquina en el backend), la observación y las horas generales de MF-11. Las seis cantidades en texto de las versiones 1 y 2 pasan a «versión anterior»
+// (solo lectura): sus capturas no se convierten en pesadas.
+export const P116_V3 = 3;
+export const P116_TIPO_OPTIONS = ["Hoja doble", "Hoja simple", "Servilleta", "Toalla", "Cartón", "Plástico"] as const;
+export const P116_ORIGEN_OPTIONS = ["Logs", "Cola", "Máquina"] as const;
 // Fuente única: form-definitions.ts / form_16_registro_de_control_de_merma. Automáticos excluidos (fecha, turno, grupo, operador, maquina);
 // calculado excluido (total_merma_kg): sin fórmula aprobada, no se calcula ni se acepta del cliente.
 export const P116_FIELDS: readonly FieldSpec[] = [
     { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 2 }, // MF-11 (MD_Ejec 48): horas GENERALES del registro
     { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 2 },
     { key: "numero_correlativo", label: "Número correlativo", kind: "text", required: true },
-    { key: "hoja_doble_kg", label: "Hoja doble kg", kind: "text", required: true },
-    { key: "servilleta_kg", label: "Servilleta kg", kind: "text", required: true },
-    { key: "toalla_kg", label: "Toalla kg", kind: "text", required: true },
-    { key: "carton_kg", label: "Cartón kg", kind: "text", required: true },
-    { key: "hoja_simple_kg", label: "Hoja simple kg", kind: "text", required: true },
-    { key: "plastico_kg", label: "Plástico kg", kind: "text", required: true },
+    { key: "tipo_merma", label: "Tipo de merma", kind: "select", required: true, options: P116_TIPO_OPTIONS, sinceVersion: P116_V3 },
+    { key: "origen_merma", label: "Origen de la merma", kind: "select", required: true, options: P116_ORIGEN_OPTIONS, sinceVersion: P116_V3 },
+    { key: "peso_merma_kg", label: "Peso real", kind: "decimal", required: true, suffix: "kg", sinceVersion: P116_V3 },
     { key: "observacion", label: "Observación", kind: "textarea", required: false },
 ];
-export const P116 = defineCandidateForm(P1_16_CODE, P116_FIELDS);
+// Versiones 1 y 2 (retiradas): solo lectura para el historial, nunca se digitan ni se envían.
+export const P116_LEGACY_FIELDS: readonly FieldSpec[] = [
+    { key: "hoja_doble_kg", label: "Hoja doble kg", kind: "text", required: false },
+    { key: "servilleta_kg", label: "Servilleta kg", kind: "text", required: false },
+    { key: "toalla_kg", label: "Toalla kg", kind: "text", required: false },
+    { key: "carton_kg", label: "Cartón kg", kind: "text", required: false },
+    { key: "hoja_simple_kg", label: "Hoja simple kg", kind: "text", required: false },
+    { key: "plastico_kg", label: "Plástico kg", kind: "text", required: false },
+];
+export const P116 = defineCandidateForm(P1_16_CODE, P116_FIELDS, { legacy: P116_LEGACY_FIELDS });
 
 export const P116_AUTOMATIC = ["Fecha", "Turno", "Grupo", "Operador", "Máquina"] as const;
 export const P116_PENDING: readonly { label: string; pending: string }[] = [
     { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no son la hora de registro del sistema, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
+    { label: "Una pesada por captura", pending: "Desde la versión 3 cada captura es UNA pesada (tipo, origen y peso real en kg); para registrar otra se envía otra captura. El número correlativo se digita a mano (no hay numeración automática) y NO puede repetirse en la misma OT y máquina; entre OT o máquinas distintas sí puede repetirse." },
     { label: "Merma total", pending: "total_merma_kg es un campo calculado de la definición legacy, sin fórmula aprobada: no se calcula ni se acepta del cliente." },
 ];

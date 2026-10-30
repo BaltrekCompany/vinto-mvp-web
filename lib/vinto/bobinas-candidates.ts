@@ -4,8 +4,9 @@
 // Ninguna de estas pantallas está operativa por sí misma: se ofrecen solo si el backend publica el formulario para la máquina (GET /api/production/machines) y la sesión puede capturar.
 import { candidateApi } from "./candidate-form-api.ts";
 import type { CandidateForm } from "./candidate-form.ts";
+import type { CandidateScreen } from "./candidate-screen.ts";
 import { BOBINAS_CANDIDATE_SCREENS, type BobinasCandidateScreen } from "./bobinas-offers.ts";
-import { P104, P104_AUTOMATIC, P104_CALCULATED, P104_PENDING, P104_UNRESOLVED_AUTOMATIC, P1_04_CODE } from "./p1-04.ts";
+import { P104, P104_AUTOMATIC, P104_DERIVED, P104_PENDING, P1_04_CODE } from "./p1-04.ts";
 import { P101, P101_AUTOMATIC, P101_PENDING, P101_SECTIONS, P101_UNRESOLVED_AUTOMATIC, P1_01_CODE } from "./p1-01.ts";
 import { P102, P102_AUTOMATIC, P102_PENDING, P102_SECTIONS, P102_UNRESOLVED_AUTOMATIC, P1_02_CODE } from "./p1-02.ts";
 import { P105, P105_AUTOMATIC, P105_PENDING, P1_05_CODE } from "./p1-05.ts";
@@ -22,6 +23,7 @@ export type BobinasCandidate = {
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
     sections?: readonly { title: string; hint?: string; keys: readonly string[] }[]; // agrupación SOLO visual (cada campo en una sección)
+    derived?: CandidateScreen["derived"]; // MF-12B: valores derivados solo para mostrar (P1-04: subtotal)
     titleFor?: (machine: string | undefined) => { kicker: string; title: string }; // MF-09A: ver CandidateScreen
     historyNote: string;
 };
@@ -30,8 +32,8 @@ export type BobinasCandidate = {
 const machineTitles = (kicker: string, title: string) => (machine: string | undefined) => { const m = machine?.trim(); return m ? { kicker: `${kicker} ${m}`, title: `${title} ${m}` } : { kicker, title }; };
 
 export const BOBINAS_CANDIDATES = {
-    p104: { code: P1_04_CODE, form: P104, api: candidateApi(P104), kicker: "Fibra · Bobinas", title: "Registro de consumo de fibra", automatic: P104_AUTOMATIC, pending: P104_PENDING, unresolved: P104_UNRESOLVED_AUTOMATIC, calculated: P104_CALCULATED,
-        historyNote: "Ficha candidata construida desde la definición original (no desde la pantalla legacy): sin horas ni totales; los valores se muestran tal como se digitaron." },
+    p104: { code: P1_04_CODE, form: P104, api: candidateApi(P104), kicker: "Fibra · Bobinas", title: "Registro de consumo de fibra", automatic: P104_AUTOMATIC, pending: P104_PENDING, derived: P104_DERIVED,
+        historyNote: "Un registro por consumo (desde la versión 2); el subtotal (cantidad × peso unitario) se calcula aquí solo para mostrarlo y no está guardado. Las capturas de la versión 1 muestran sus campos como «versión anterior»." },
     p105: { code: P1_05_CODE, form: P105, api: candidateApi(P105), kicker: "Tubetes · Bobinas", title: "Registro de tubetes", automatic: P105_AUTOMATIC, pending: P105_PENDING,
         historyNote: "Ficha candidata: registros guardados en PostgreSQL. Catálogo de tubetes, cantidades y asociación con la bobina pendientes de VINTO." },
     p131: { code: P1_31_CODE, form: P131, api: candidateApi(P131), kicker: "Químicos · Bobinas", title: "Consumo de químicos", automatic: P131_AUTOMATIC, pending: P131_PENDING,

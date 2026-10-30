@@ -6,7 +6,7 @@
   "name": "Registro de consumo de fibra",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -14,76 +14,119 @@
   "groups": [],
   "fields": [
     {
-      "key": "fibra_corta_detalle",
-      "label": "Fibra corta - detalle",
-      "value_type": "text",
+      "key": "hora_consumo",
+      "label": "Hora de consumo",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 1
     },
     {
-      "key": "fibra_larga_detalle",
-      "label": "Fibra larga - detalle",
+      "key": "material",
+      "label": "Material",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
+      "options": [
+        {
+          "option_key": "Fibra larga",
+          "label": "Fibra larga",
+          "display_order": 1
+        },
+        {
+          "option_key": "Fibra corta",
+          "label": "Fibra corta",
+          "display_order": 2
+        },
+        {
+          "option_key": "Recorte",
+          "label": "Recorte",
+          "display_order": 3
+        }
+      ],
       "display_order": 2
     },
     {
-      "key": "recorte_ph",
-      "label": "Recorte PH",
-      "value_type": "decimal",
+      "key": "origen",
+      "label": "Origen",
+      "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
+      "options": [
+        {
+          "option_key": "Laja",
+          "label": "Laja",
+          "display_order": 1
+        },
+        {
+          "option_key": "Susano",
+          "label": "Susano",
+          "display_order": 2
+        },
+        {
+          "option_key": "Dorado",
+          "label": "Dorado",
+          "display_order": 3
+        },
+        {
+          "option_key": "Cóndor",
+          "label": "Cóndor",
+          "display_order": 4
+        },
+        {
+          "option_key": "Sauce Rancho",
+          "label": "Sauce Rancho",
+          "display_order": 5
+        },
+        {
+          "option_key": "Máquina",
+          "label": "Máquina",
+          "display_order": 6
+        }
+      ],
       "display_order": 3
     },
     {
-      "key": "recorte_servilleta",
-      "label": "Recorte servilleta",
+      "key": "presentacion",
+      "label": "Presentación",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
+      "options": [
+        {
+          "option_key": "Caja",
+          "label": "Caja",
+          "display_order": 1
+        },
+        {
+          "option_key": "Fardo",
+          "label": "Fardo",
+          "display_order": 2
+        }
+      ],
       "display_order": 4
     },
     {
-      "key": "recorte_toalla",
-      "label": "Recorte toalla",
-      "value_type": "text",
+      "key": "cantidad_um",
+      "label": "Cantidad de UM",
+      "value_type": "integer",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 5
     },
     {
-      "key": "materia_prima_ph",
-      "label": "Materia prima PH",
+      "key": "peso_unitario_real",
+      "label": "Peso unitario real",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
-      "unit": null,
+      "unit": "KG",
       "display_order": 6
-    },
-    {
-      "key": "materia_prima_servilleta",
-      "label": "Materia prima servilleta",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 7
-    },
-    {
-      "key": "materia_prima_toalla",
-      "label": "Materia prima toalla",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 8
     },
     {
       "key": "observaciones",
@@ -92,8 +135,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 9
+      "display_order": 7
     }
   ],
-  "definition_checksum": "b0bbce06b662f3149ae571316a76795b603a39974f5fb6c83a517f8c0cbba3a0"
+  "definition_checksum": "d316f6d7184806a1c2b1a0aa0fd18baab596a74d3bb1dfffa85f4320cd791420"
 }

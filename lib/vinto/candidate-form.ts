@@ -23,7 +23,10 @@ export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer" | "
 // `renamedAt` (MF-07): el campo cambió de etiqueta en esa versión; las capturas de versiones anteriores se muestran con la etiqueta `previous` (la clave técnica no cambia). Ver `labelFor`.
 // `select` (MF-08): lista desplegable de opciones CERRADAS (`options`, el texto exacto es el valor guardado). Desde `optionsSinceVersion` (por defecto, siempre) solo se aceptan esas opciones; las capturas de versiones
 // anteriores, que eran texto libre, se leen tal cual (cualquier texto no vacío).
-export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string }; options?: readonly string[]; optionsSinceVersion?: number };
+// `dependsOn` (MF-12B): un `select` cuyas opciones permitidas dependen del valor elegido en OTRO campo `select` (p. ej. Origen según Material): `allowed[valorDelPadre]` son las opciones válidas. `options` sigue siendo la lista completa;
+// la pantalla filtra y `normalizeDraft` rechaza una combinación inválida. El backend aplica la misma regla en las versiones nuevas (backend/app/dependent_options.py).
+export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string }; options?: readonly string[]; optionsSinceVersion?: number; dependsOn?: { field: string; allowed: Readonly<Record<string, readonly string[]>> } };
+const labelOfField = (fields: readonly FieldSpec[], key: string): string => fields.find((f) => f.key === key)?.label ?? key;
 export const labelFor = (field: FieldSpec, version?: number): string => field.renamedAt && version !== undefined && version < field.renamedAt.version ? field.renamedAt.previous : field.label;
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
@@ -141,6 +144,7 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
             if (field.kind === "decimal" && !isDecimalText(text)) { errors.push(`${field.label}: debe ser un número decimal (por ejemplo 12.5).`); continue; }
             if (field.kind === "time" && !isTimeText(text)) { errors.push(`${field.label}: debe ser una hora válida HH:MM (por ejemplo 07:30).`); continue; }
             if (field.kind === "select" && !field.options?.includes(text)) { errors.push(`${field.label}: elige una de las opciones de la lista.`); continue; }
+            if (field.kind === "select" && field.dependsOn && !field.dependsOn.allowed[(draft[field.dependsOn.field] ?? "").trim()]?.includes(text)) { errors.push(`${field.label}: no corresponde a lo elegido en ${labelOfField(fields, field.dependsOn.field)}.`); continue; }
             if (text.length > MAX_TEXT_LENGTH) { errors.push(`${field.label}: supera ${MAX_TEXT_LENGTH} caracteres.`); continue; }
             values[field.key] = text;
         }

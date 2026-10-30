@@ -33,6 +33,6 @@ export const CONVERSION_CANDIDATES: Record<ConversionCandidateScreen, Conversion
         sections: withHours(P113_FIELDS, "Bobina, producto, empaque e insumo"),
         historyNote: "Ficha candidata construida desde los 18 campos manuales de la definición legacy más las horas de inicio y fin (desde la versión 2): los valores se muestran tal como se digitaron; sin mermas ni saldos finales calculados." },
     p116: { code: P1_16_CODE, form: P116, api: candidateApi(P116), kicker: "Control de merma · Conversión", title: "Registro de control de merma", automatic: P116_AUTOMATIC, pending: P116_PENDING,
-        sections: withHours(P116_FIELDS, "Mermas por tipo"),
-        historyNote: "Ficha candidata construida desde los 8 campos manuales de la definición legacy más las horas de inicio y fin (desde la versión 2): los valores se muestran tal como se digitaron; sin merma total calculada." },
+        sections: withHours(P116_FIELDS, "Pesada de merma"),
+        historyNote: "Una pesada por registro (desde la versión 3: tipo, origen y peso real en kg) con las horas generales de la versión 2; las capturas de las versiones 1 y 2 muestran sus seis cantidades como «versión anterior» y no se convierten en pesadas." },
 };

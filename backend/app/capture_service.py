@@ -25,10 +25,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 
+from app import capture_uniqueness, dependent_options
 from app.assignments.errors import AssignmentNotFoundError
 from app.assignments.service import _machine_lock
 from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, CaptureIdempotencyConflictError, CaptureNotFoundError,
-                                CaptureValidationError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError,
+                                CaptureValidationError, CorrelativeInUseError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError,
                                 UnsupportedFormDefinitionError, UnsupportedFormError)
 from app.shifts import resolve_shift
 from app.sectors import scoped_sector_codes
@@ -380,9 +381,30 @@ def _prepare_content(connection, form_version_id, values):
     (validate_values, sin `_groups`: un `_groups` enviado a un formulario sin grupos es un campo desconocido, como cualquier otro)."""
     fields = load_fields(connection, form_version_id, allow_groups=True)
     groups = load_groups(connection, form_version_id)
-    if not groups:
-        return fields, groups, validate_values(fields, values)
-    return fields, groups, validate_form_values(fields, groups, values)
+    clean = validate_values(fields, values) if not groups else validate_form_values(fields, groups, values)
+    _check_dependent_options(connection, form_version_id, clean)
+    return fields, groups, clean
+
+
+def _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean) -> None:
+    """MF-12B: unicidad de «numero_correlativo» por OT + máquina en P1-16 v3+ (ver capture_uniqueness). Otros formularios o versiones: sin efecto."""
+    if form_code not in capture_uniqueness.RULES:
+        return
+    number = connection.execute("SELECT version_number FROM vinto_config.form_version WHERE id = %s", (form_version_id,)).fetchone()[0]
+    if not capture_uniqueness.applies(form_code, number):
+        return
+    value = clean.get(capture_uniqueness.RULES[form_code][1])
+    if value is not None and capture_uniqueness.is_taken(connection, form_code, machine_id, capture_uniqueness.work_order_of(connection, assignment_id), value):
+        raise CorrelativeInUseError()
+
+
+def _check_dependent_options(connection, form_version_id, clean) -> None:
+    """MF-12B: listas dependientes de las versiones que las declaran (hoy VINTO-P1-04 v2+); cualquier otro formulario o versión queda exactamente como antes."""
+    row = connection.execute("SELECT f.code, v.version_number FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE v.id = %s", (form_version_id,)).fetchone()
+    if row is not None and row[0] in dependent_options.RULES:
+        problems = dependent_options.check(row[0], row[1], clean)
+        if problems:
+            raise CaptureValidationError("; ".join(problems))
 
 
 def _serialize_values(values: dict) -> dict:
@@ -576,6 +598,7 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
 
         form_version_id = published_form_version(connection, form_code, machine_id)
         fields, groups, clean = _prepare_content(connection, form_version_id, values)
+        _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean)  # MF-12B: con el lock de la máquina ya tomado, en esta misma transacción
 
         connection.execute(
             """INSERT INTO vinto_txn.capture (id, form_version_id, machine_id, shift_schedule_id, device_id, assignment_id, operating_date, captured_at, status)
