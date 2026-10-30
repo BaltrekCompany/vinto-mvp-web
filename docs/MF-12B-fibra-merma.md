@@ -13,7 +13,8 @@ Atender, con versionado aditivo y sin tocar capturas históricas, las observacio
 | ID | Decisión | Aplicación |
 |---|---|---|
 | **D3** | P1-04: hora de consumo obligatoria, cantidad entera, todo obligatorio salvo observaciones. | Tal cual (§4). |
-| **D4** | P1-16: una pesada por registro; correlativo manual; horas generales de MF-11 sin cálculo de duración, UTC ni orden. | Tal cual (§5 y §8). Sin unicidad impuesta (ver §8). |
+| **D4** | P1-16: una pesada por registro; correlativo manual; horas generales de MF-11 sin cálculo de duración, UTC ni orden. | Tal cual (§5). |
+| **D8** | El correlativo de P1-16 v3 es **único por OT + máquina** (manual, obligatorio, sin numeración automática; sin fecha ni turno en el ámbito; entre OT o máquinas distintas puede repetirse). | §8. |
 | **D5** | Los valores de las listas se guardan como **texto literal**, no como claves técnicas. | `option_key` = texto visible; los valores guardados son «Fibra larga», «Hoja doble», etc. |
 | **D6** | La relación Material–Origen y Material–Presentación se valida en pantalla **y en el backend**, solo en la versión nueva. | §6. |
 | **D7** | Subtotal = Cantidad de UM × Peso unitario real (kg), **dos decimales**, precisión exacta, no editable y no persistido. | §7. |
@@ -37,7 +38,7 @@ Atender, con versionado aditivo y sin tocar capturas históricas, las observacio
 | Campo (clave) | Tipo | Obligatorio | Detalle |
 |---|---|---|---|
 | `hora_inicio`, `hora_fin` | hora HH:MM | Sí | horas generales de MF-11, sin cambios |
-| `numero_correlativo` | texto | Sí | **manual** (sin numeración automática) |
+| `numero_correlativo` | texto | Sí | **manual**, único por **OT + máquina** (§8) |
 | `tipo_merma` | lista | Sí | Hoja doble · Hoja simple · Servilleta · Toalla · Cartón · Plástico |
 | `origen_merma` | lista | Sí | Logs · Cola · Máquina |
 | `peso_merma_kg` | decimal, kg | Sí | sin rango |
@@ -66,10 +67,25 @@ Atender, con versionado aditivo y sin tocar capturas históricas, las observacio
 - **Garantías:** no es editable; no es un campo del formulario; no viaja en el payload; el backend lo rechazaría como campo desconocido; no se persiste.
 - **Contrato del backend:** sin cambios para esta parte.
 
-## 8. Correlativo de P1-16
-- **Qué existe:** `numero_correlativo` es un campo de **texto manual obligatorio** (ya desde v1). No hay numeración automática ni un correlativo de servidor para P1-16 (el correlativo de bobinas de P1-03 es otro mecanismo: `vinto_txn.bobbin_sequence`, por máquina y gestión).
-- **Unicidad:** garantizar «distinto para cada registro» exigiría consultar `capture_detail` de todas las capturas y un bloqueo para evitar carreras, **y definir el ámbito** (¿por máquina?, ¿OT?, ¿fecha?, ¿global?). Ese ámbito **no está aprobado**; por eso **no se implementó ninguna restricción**. El correlativo se guarda tal como se digita (dos capturas pueden repetirlo; hay una prueba que lo documenta) y la pantalla lo advierte.
-- **Riesgo:** duplicados por error de digitación. **Pregunta para VINTO:** ¿en qué ámbito debe ser único (máquina, OT, día, global) y cómo debe avisarse el conflicto?
+## 8. Correlativo de P1-16: único por OT + máquina
+**Regla (D8).** El correlativo sigue siendo manual y obligatorio. Dos capturas distintas de P1-16 v3 de la **misma OT y la misma máquina** no pueden compartirlo (409 `CORRELATIVE_IN_USE`, sin dejar filas). Entre OT o máquinas distintas se permite repetirlo. No hay numeración automática y **no entran la fecha ni el turno**. La OT y la máquina salen de la **asignación central** (nunca de lo que envía el cliente). Se aplica solo a capturas **nuevas de la v3**: P1-16 v1 y v2 no se evalúan ni se reinterpretan, y un correlativo histórico no bloquea a la v3.
+
+**Inspección previa (lo que existe).**
+- OT, máquina y correlativo: la captura guarda `machine_id` y su `assignment_id`; la OT sale de la asignación (`assignment → work_order_line → work_order_version → work_order`); el correlativo es un valor de texto en `capture_detail` (campo `numero_correlativo`). Estados: la captura nace `draft` y pasa a `submitted` en la misma transacción.
+- Una OT pertenece a **una sola máquina** (`work_order.machine_id`) y el trigger `validate_assignment` impide una asignación de otra máquina: hoy «la misma OT con otra máquina» **no se puede crear**; el ámbito igualmente incluye la máquina (prueba directa de la función).
+- Reintentos: el mismo `capture_id` se resuelve **antes** de llegar al control (idempotencia). No existe ninguna operación que cambie los valores de una captura confirmada (no hay revisiones que editen el correlativo).
+- Concurrencia: la conexión es autocommit con transacciones explícitas en READ COMMITTED, y `submit_production_capture` toma, **antes de validar**, un `pg_advisory_xact_lock` de la **máquina** de la asignación (el mismo que usan `activate` y `finish`), que se mantiene hasta el COMMIT.
+
+**Mecanismo implementado (sin migraciones, tablas, índices, triggers ni privilegios nuevos).** `backend/app/capture_uniqueness.py` + una llamada en `capture_service`: con el lock de la máquina ya tomado y en la **misma transacción** que el INSERT, se consulta si existe una captura **confirmada** (`submitted`/`closed`) de P1-16 v3 o posterior con la misma máquina, la misma OT y el mismo texto de correlativo. La comparación es **exacta tras la normalización del motor** (sin espacios en los extremos; «10 A» y «10 a» son distintos; «010» ≠ «10»).
+
+**Por qué es seguro ante la carrera y una consulta previa por sí sola no lo sería.** Dos solicitudes de la misma máquina (y por tanto del mismo ámbito OT + máquina) nunca ejecutan el control a la vez: la segunda espera al COMMIT de la primera y su consulta ya ve la fila. Se comprobó con un experimento descartable: **sin el lock de máquina, 4 solicitudes simultáneas con el mismo correlativo crearon 13 duplicados en 6 rondas**; con el lock, **exactamente un registro por ronda** (prueba incluida).
+
+**Límites que debes conocer.**
+1. **No es una restricción declarativa de la base**: la garantía vale para todo camino que cree capturas de producción por `submit_production_capture` (el único que crea P1-16) y toma el lock de máquina. Una inserción directa por SQL, o una ruta futura que no tome ese lock, no quedaría cubierta.
+2. Una restricción declarativa (índice único) **no es posible con el esquema actual**: el valor está en `capture_detail` y la OT y la máquina en otras tablas; habría que desnormalizar columnas y/o añadir un trigger y un índice, es decir, **migración y cambios en la base que no están autorizados**. Se deja como propuesta opcional, no implementada.
+3. Las solicitudes de una misma máquina se serializan un instante (ya ocurría con todas las capturas de producción).
+
+**Respuesta al usuario.** El rechazo es `409 CORRELATIVE_IN_USE` con el mensaje «El número correlativo ya está registrado para esta OT y máquina» (no devuelve el valor); la pantalla muestra «Ese número correlativo ya está registrado para esta OT y máquina. Escribe otro número.» y desbloquea el formulario.
 
 ## 9. Comparación con el MVP anterior
 **P1-04.** El componente `Fiber` de `app/page.tsx` antes de INT-02A (commit `7516e09^`) registraba por consumo: hora de consumo, material, origen, presentación, cantidad de UM, peso unitario real y un subtotal calculado (`cantidad × peso`, mostrado con `toFixed(2)`). Sus catálogos coinciden **exactamente** con los de la decisión:
@@ -99,13 +115,13 @@ Atender, con versionado aditivo y sin tocar capturas históricas, las observacio
 ## 11. Pruebas y resultados
 | Suite | Resultado |
 |---|---|
-| Backend nuevo `test_mf12b_fibra_merma` (PostgreSQL efímero, formularios reales; 23 pruebas) | **OK** |
-| Frontend nuevo `scripts/mf12b-fibra-merma.test.mjs` (8 pruebas) y `p1-04-capture` reescrito (9 pruebas; la única que falla es el «alcance: …» que ya falla en `main`) | **OK** |
+| Backend nuevo `test_mf12b_fibra_merma` (PostgreSQL efímero, formularios reales; **28 pruebas**, incluida la concurrencia) | **OK** |
+| Frontend nuevo `scripts/mf12b-fibra-merma.test.mjs` (9 pruebas) y `p1-04-capture` reescrito (9 pruebas; la única que falla es el «alcance: …» que ya falla en `main`) | **OK** |
 | Backend: cada módulo `test_*.py` por separado | cada módulo por separado en `vinto-test-py`: **todos OK** salvo `test_db_guard` (3 fallos) y `test_capture_count_authorization` (1), que **fallan igual en `main`** (verificado en MF-12A con los cambios en espera; sin relación con esta entrega). La primera pasada mostró fallos en `test_mf07`, `test_mf08`, `test_mf09`, `test_mf11` y `test_mf12a` por los cambios intencionales (versiones y conteos del bundle, P1-04 y P1-16); se adaptaron (`test_mf11` reproduce P1-16 v2 con una copia fiel de la definición de producción, `backend/tests/mf12b_p116_v2.json`) y pasan. También se actualizaron los conteos de `test_seed_bundle`, `test_bundle_validation` (huella) y `test_import_reference` (464 campos, 34 opciones, 1946 registros) |
-| Frontend suite completa | `node --test scripts/*.test.mjs`: **790 pruebas, 768 OK y 22 fallos con los mismos nombres que `main`** (baseline: 773 pruebas, 751 OK, 22 fallos). Adaptadas: `mf10`, `mf11`, `mf12a` (versiones y conteos) y `p1-04-capture` (reescrita para la v2) |
+| Frontend suite completa | `node --test scripts/*.test.mjs`: **791 pruebas, 769 OK y 22 fallos con los mismos nombres que `main`** (baseline: 773 pruebas, 751 OK, 22 fallos). Adaptadas: `mf10`, `mf11`, `mf12a` (versiones y conteos) y `p1-04-capture` (reescrita para la v2) |
 | `tsc --noEmit` / ESLint | sin errores |
 
-Cubierto: P1-04 (las 7 combinaciones material–origen y las 6 material–presentación válidas aceptadas; todas las inválidas rechazadas por el backend sin dejar filas; listas cerradas y sensibles a mayúsculas; hora, entero y decimal; obligatorios; una captura por consumo; reintento idempotente; el subtotal rechazado como campo; v1 legible y sin las reglas nuevas; autorización sin cambios) y P1-16 (las 18 combinaciones tipo × origen, obligatorios, listas cerradas, peso decimal, horas de MF-11, correlativo manual y repetible, seis cantidades antiguas rechazadas en v3, v1/v2 legibles y no convertidas, las 11 máquinas, autorización).
+Cubierto: P1-04 (las 7 combinaciones material–origen y las 6 material–presentación válidas aceptadas; todas las inválidas rechazadas por el backend sin dejar filas; listas cerradas y sensibles a mayúsculas; hora, entero y decimal; obligatorios; una captura por consumo; reintento idempotente; el subtotal rechazado como campo; v1 legible y sin las reglas nuevas; autorización sin cambios) y P1-16 (las 18 combinaciones tipo × origen, obligatorios, listas cerradas, peso decimal, horas de MF-11, unicidad del correlativo por OT + máquina (primera aceptada; duplicada rechazada; otra OT con la misma máquina aceptada; correlativos distintos aceptados; misma OT desde otra asignación rechazada; reintento idempotente intacto; **4 solicitudes simultáneas → exactamente una creada**; v1/v2 sin reinterpretar), seis cantidades antiguas rechazadas en v3, v1/v2 legibles y no convertidas, las 11 máquinas, autorización).
 
 ## 12. Importación simulada (dry-run esperado)
 Sobre una base efímera con el estado de producción previo (todo el bundle vigente con P1-04 v1 y P1-16 v2) el importador informa exactamente:
@@ -124,14 +140,14 @@ Segunda importación idempotente. Total de registros del bundle en una base vac�
 ## 13. Riesgos
 | Riesgo | Medida |
 |---|---|
-| **Cambio de código de backend** (a diferencia de MF-12A): un gancho nuevo en la validación central. | Solo actúa en P1-04 v2+; el resto de formularios y versiones queda igual (prueba); `activate` reinicia el backend. |
+| **Cambio de código de backend** (a diferencia de MF-12A): dos ganchos nuevos en la creación de capturas (listas dependientes de P1-04 v2+ y unicidad del correlativo de P1-16 v3+). | Cada gancho solo actúa en su formulario y versión; el resto queda igual (pruebas); `activate` reinicia el backend. |
 | Entre importar y activar, el frontend/backend anterior no acepta las versiones nuevas (v2/v3 publicadas, claves nuevas). | Importar y activar de inmediato (patrón MF-05 a MF-12A); P1-04 y P1-16 no crean bobinas ni afectan genealogía. |
-| Correlativo manual repetible (§8). | Advertencia en pantalla y pregunta a VINTO; sin restricciones inventadas. |
+| La unicidad del correlativo no es una restricción declarativa de la base (§8). | Garantía transaccional con el lock de máquina existente (probada bajo concurrencia); un índice único exigiría migración y no está autorizado. |
 | Combinaciones por API directa en P1-04 v1. | No aplica: la v1 no tiene esos campos. |
 | Subtotal no consultable en reportes. | Consecuencia de la decisión de no persistirlo. |
 
 ## 14. Exclusiones
-Observaciones 5 y 11 (P1-01), tanques, secciones, MF-12A, permisos, otras máquinas y formularios, numeración automática, unicidad del correlativo, inventario y genealogía, TVC/ETL, Monday y los Excel.
+Observaciones 5 y 11 (P1-01), tanques, secciones, MF-12A, permisos, otras máquinas y formularios, numeración automática, unicidad declarativa en la base (índice), inventario y genealogía, TVC/ETL, Monday y los Excel.
 
 ## 15. Procedimiento de despliegue propuesto (NO ejecutado)
 Solo con autorización expresa, como en MF-05 a MF-12A: preflight (versión activa, servicios, borradores, capturas, sin despliegues concurrentes); respaldo `backup.sh create-and-verify` con restauración aislada; artefacto de frontend desde el SHA del merge con checksum y arranque aislado; instalación sin activar; **dry-run** esperando exactamente las cifras del §12 (si difiere, detenerse); importación aditiva como `vinto-mvp`; **activación inmediata** con `deploy/mvp` (reinicia backend y frontend: esta entrega sí cambia código de backend); healthcheck; verificación de las dos versiones publicadas, sus vínculos y opciones, del historial intacto, del rechazo de combinaciones inválidas y de que `vinto-web`/TVC/ETL no se tocaron. Rollback de código con el procedimiento oficial; retirar las versiones nuevas o restaurar datos requiere autorización expresa.
@@ -146,5 +162,5 @@ Solo con autorización expresa, como en MF-05 a MF-12A: preflight (versión acti
 **P1-16 (QA.OPERACION, p. ej. Gambini, Sincro II/III y las máquinas de servilletas).**
 6. Campos: Hora inicio *, Hora fin *, Número correlativo *, Tipo de merma * (6 opciones), Origen de la merma * (Logs, Cola, Máquina), Peso real * (kg) y Observación opcional; ya no aparecen las seis cantidades.
 7. Registrar una pesada por cada captura; probar 00:00, 23:59 y fin anterior a inicio (se guarda sin avisos de orden); peso con coma o texto (texto se rechaza).
-8. Repetir un correlativo: se acepta (no hay unicidad impuesta); la pantalla lo advierte.
+8. Registrar una pesada con el correlativo 10 en una OT y repetir el 10 en la **misma OT**: se rechaza con «Ese número correlativo ya está registrado para esta OT y máquina»; con 11 se acepta; repetir el 10 en **otra OT** (misma máquina) se acepta.
 9. Historial: las capturas v1 y v2 muestran sus seis cantidades como «versión anterior» y las horas solo desde v2; las v3, tipo, origen y peso.

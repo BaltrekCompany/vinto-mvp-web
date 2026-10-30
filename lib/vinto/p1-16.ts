@@ -99,7 +99,7 @@ export const reconcileP116 = (captureId: string, deps: P116SubmitDeps): Promise<
 
 // ---- CLOUD-DEP G.12-C4-FINAL25: contrato REAL (8 campos manuales de la definición legacy, en su orden) -----------------------------------
 // MF-12B (versión 3, MD_Ejec 44): UNA PESADA POR CAPTURA, como en el MVP anterior (WasteCapture): tipo y origen de merma en listas desplegables (textos literales, los mismos del MVP) y peso real decimal en kg. Se
-// conservan el número correlativo (manual: sin numeración automática ni unicidad impuesta), la observación y las horas generales de MF-11. Las seis cantidades en texto de las versiones 1 y 2 pasan a «versión anterior»
+// conservan el número correlativo (manual, sin numeración automática; único por OT + máquina en el backend), la observación y las horas generales de MF-11. Las seis cantidades en texto de las versiones 1 y 2 pasan a «versión anterior»
 // (solo lectura): sus capturas no se convierten en pesadas.
 export const P116_V3 = 3;
 export const P116_TIPO_OPTIONS = ["Hoja doble", "Hoja simple", "Servilleta", "Toalla", "Cartón", "Plástico"] as const;
@@ -129,6 +129,6 @@ export const P116 = defineCandidateForm(P1_16_CODE, P116_FIELDS, { legacy: P116_
 export const P116_AUTOMATIC = ["Fecha", "Turno", "Grupo", "Operador", "Máquina"] as const;
 export const P116_PENDING: readonly { label: string; pending: string }[] = [
     { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no son la hora de registro del sistema, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
-    { label: "Una pesada por captura", pending: "Desde la versión 3 cada captura es UNA pesada (tipo, origen y peso real en kg); para registrar otra se envía otra captura. El número correlativo se digita a mano: no hay numeración automática ni se comprueba que sea distinto entre registros (ámbito de unicidad pendiente de VINTO)." },
+    { label: "Una pesada por captura", pending: "Desde la versión 3 cada captura es UNA pesada (tipo, origen y peso real en kg); para registrar otra se envía otra captura. El número correlativo se digita a mano (no hay numeración automática) y NO puede repetirse en la misma OT y máquina; entre OT o máquinas distintas sí puede repetirse." },
     { label: "Merma total", pending: "total_merma_kg es un campo calculado de la definición legacy, sin fórmula aprobada: no se calcula ni se acepta del cliente." },
 ];

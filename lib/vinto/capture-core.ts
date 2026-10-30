@@ -124,6 +124,7 @@ export function rejectionFor(status: number, code?: string): { reason: RejectRea
         if (code === "ASSIGNMENT_STALE") return { reason: "stale", message: SUBMIT_MESSAGES.stale };
         if (code === "ASSIGNMENT_NOT_ACTIVE") return { reason: "not_active", message: SUBMIT_MESSAGES.notActive };
         if (code === "CAPTURE_IDEMPOTENCY_CONFLICT") return { reason: "idempotency", message: SUBMIT_MESSAGES.idempotency };
+        if (code === "CORRELATIVE_IN_USE") return { reason: "conflict", message: "Ese número correlativo ya está registrado para esta OT y máquina. Escribe otro número." }; // MF-12B (P1-16 v3)
         return { reason: "conflict", message: SUBMIT_MESSAGES.conflict };
     }
     return null;

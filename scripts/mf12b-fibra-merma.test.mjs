@@ -10,6 +10,8 @@ import { pathToFileURL } from "node:url";
 
 import { build } from "vite";
 
+import { rejectionFor } from "../lib/vinto/capture-core.ts";
+
 const root = resolve(import.meta.dirname, "..").split(String.fromCharCode(92)).join("/");
 const workDir = join(root, `.tmp-mf12b-${process.pid}`);
 const aliasPlugin = {
@@ -129,7 +131,7 @@ test("P1-16 v3: una pesada por captura con tipo (6 opciones), origen (3), peso r
   assert.deepEqual(optionsOf(html, "Origen de la merma *").map((o) => o[1]), ["Seleccionar…", "Logs", "Cola", "Máquina"]);
   assert.ok(text.indexOf("Hora inicio *") < text.indexOf("Número correlativo *"), "las horas abren el formulario");
   assert.equal(/Hoja doble kg|Servilleta kg|Toalla kg|Cartón kg|Hoja simple kg|Plástico kg/.test(text), false, "las seis cantidades de las versiones 1 y 2 ya no se piden");
-  assert.match(text, /no hay numeración automática ni se comprueba que sea distinto/, "el riesgo del correlativo manual es visible");
+  assert.match(text, /NO puede repetirse en la misma OT y máquina/, "la regla del correlativo es visible");
   assert.equal(ui.P116.emptyDraft().peso_merma_kg, "");
 });
 
@@ -149,7 +151,7 @@ test("P1-16 v3: validación estructural (listas cerradas, peso decimal, correlat
   }
   const { attempt } = ui.P116.createAttempt(P116_DRAFT, ASSIGNMENT, DEVICE, () => "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b");
   for (const key of ["hoja_doble_kg", "servilleta_kg", "toalla_kg", "carton_kg", "hoja_simple_kg", "plastico_kg", "total_merma_kg"]) assert.equal(key in attempt.payload.values, false, key);
-  assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, numero_correlativo: "M-0001" }).ok, true, "el correlativo se acepta tal como se digita (sin unicidad impuesta aquí)");
+  assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, numero_correlativo: "M-0001" }).ok, true, "el correlativo se acepta tal como se digita; la unicidad por OT + máquina la decide el backend");
 });
 
 test("historial de P1-16: v1 y v2 conservan sus seis cantidades como «versión anterior» y v3 muestra tipo, origen y peso; las antiguas no se convierten en pesadas", () => {
@@ -172,6 +174,15 @@ test("historial de P1-16: v1 y v2 conservan sus seis cantidades como «versión 
   }
   assert.equal(c2("Hora inicio"), "06:30:00");
   assert.equal(c1("Hora inicio"), "", "la v1 no tiene horas");
+});
+
+test("un correlativo repetido en la misma OT y máquina (409 CORRELATIVE_IN_USE) se informa con un mensaje claro y el resto de rechazos no cambia", () => {
+  const out = rejectionFor(409, "CORRELATIVE_IN_USE");
+  assert.deepEqual([out.reason, /correlativo ya está registrado para esta OT y máquina/.test(out.message)], ["conflict", true]);
+  assert.equal(rejectionFor(409, "CAPTURE_IDEMPOTENCY_CONFLICT").reason, "idempotency");
+  assert.equal(rejectionFor(409, "ASSIGNMENT_STALE").reason, "stale");
+  assert.equal(rejectionFor(409, "FORM_NOT_AVAILABLE").reason, "conflict");
+  assert.equal(rejectionFor(422).reason, "invalid");
 });
 
 test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las demás versiones de MF-12A no cambian", () => {

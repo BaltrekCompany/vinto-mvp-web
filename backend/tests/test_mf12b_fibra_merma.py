@@ -7,9 +7,11 @@
 
 Se verifica contra PostgreSQL REAL (base efímera *_test) con los formularios REALES del bundle; las versiones anteriores (P1-04 v1, P1-16 v2) se instalan aquí como están en producción y siguen publicadas, intactas y legibles."""
 
+import asyncio
 import contextlib
 import dataclasses
 import io
+import itertools
 import json
 import secrets
 import unittest
@@ -21,7 +23,7 @@ from uuid import uuid4
 from pydantic import SecretStr
 
 from app import capture_service as _capture_service
-from app import dependent_options
+from app import capture_uniqueness, dependent_options
 from app.assignments import service as _assignments_service
 from app.auth.service import create_user
 from app.config import settings
@@ -73,8 +75,12 @@ def v104(**extra):
     return {"hora_consumo": "07:30", "material": "Fibra larga", "origen": "Laja", "presentacion": "Caja", "cantidad_um": 12, "peso_unitario_real": "25.5", **extra}
 
 
+_SEQUENCE = itertools.count(1)
+
+
 def v116(**extra):
-    return {"hora_inicio": "06:30", "hora_fin": "14:45", "numero_correlativo": "M-0001", "tipo_merma": "Hoja doble", "origen_merma": "Logs", "peso_merma_kg": "12.5", **extra}
+    """Una pesada válida; el correlativo por defecto es NUEVO en cada llamada (desde MF-12B no puede repetirse en la misma OT y máquina)."""
+    return {"hora_inicio": "06:30", "hora_fin": "14:45", "numero_correlativo": f"M-{next(_SEQUENCE):05d}", "tipo_merma": "Hoja doble", "origen_merma": "Logs", "peso_merma_kg": "12.5", **extra}
 
 
 def without(values, *keys):
@@ -409,18 +415,112 @@ class P116Tests(Base):
             self.assertEqual(capture["operating_date"], "2026-10-06", "la fecha operativa no se deduce de las horas")
         self.assertEqual(self.count(assignment), n + 4)
 
-    async def test_the_correlative_stays_manual_and_no_uniqueness_is_imposed(self):
+    async def test_the_correlative_stays_manual_and_required(self):
         assignment = await self.assignment("GAMBINI")
-        first, _ = await self.post(assignment, P116, v116(numero_correlativo="REPETIDO-1"))
-        second, _ = await self.post(assignment, P116, v116(numero_correlativo="REPETIDO-1", tipo_merma="Cartón"))
-        self.assertEqual((first.status, second.status), (201, 201), "sin ámbito de unicidad aprobado, el correlativo se guarda tal como se digita")
-        self.assertEqual(self.stored(first.json()["capture"]["id"])["numero_correlativo"], ("text", "REPETIDO-1"))
-        self.assertEqual(self.stored(second.json()["capture"]["id"])["numero_correlativo"], ("text", "REPETIDO-1"))
-        reply, _ = await self.post(assignment, P116, v116(numero_correlativo=""))
-        self.assertEqual(reply.status, 422, "pero sí es obligatorio")
-        reply, _ = await self.post(assignment, P116, v116(numero_correlativo="   "))
-        self.assertEqual(reply.status, 422)
+        for empty in ("", "   ", None):
+            reply, _ = await self.post(assignment, P116, v116(numero_correlativo=empty))
+            self.assertEqual(reply.status, 422, repr(empty))
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.field_definition WHERE form_version_id = %s AND (key LIKE '%%correlativo%%') AND source <> 'manual'", (self.new[P116],)), 0, "no hay numeración automática")
+        reply, _ = await self.post(assignment, P116, v116(numero_correlativo="  10  "))
+        self.assertEqual(reply.status, 201)
+        self.assertEqual(self.stored(reply.json()["capture"]["id"])["numero_correlativo"], ("text", "10"), "se guarda tal como lo normaliza el motor (sin espacios en los extremos)")
+
+    def correlative_rows(self, work_order_id, machine, value):
+        return self.scalar(
+            """SELECT count(*) FROM vinto_txn.capture c JOIN vinto_txn.assignment a ON a.id = c.assignment_id JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
+               JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id JOIN vinto_master.machine m ON m.id = c.machine_id JOIN vinto_txn.capture_detail d ON d.capture_id = c.id
+               JOIN vinto_config.field_definition fd ON fd.id = d.field_definition_id JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
+               WHERE v.work_order_id = %s AND m.code = %s AND fd.key = 'numero_correlativo' AND d.value_text = %s AND fv.version_number = 3""", (work_order_id, machine, value))
+
+    def order_of(self, assignment):
+        return self.scalar("SELECT v.work_order_id FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id WHERE a.id = %s", (assignment["id"],))
+
+    async def test_the_correlative_is_unique_per_order_and_machine(self):
+        a = await self.assignment("GAMBINI")
+        ot_a = self.order_of(a)
+        first, _ = await self.post(a, P116, v116(numero_correlativo="10"))
+        self.assertEqual(first.status, 201, first.text)  # 1) OT-A, máquina-A, correlativo 10: aceptada
+        second, _ = await self.post(a, P116, v116(numero_correlativo="10", tipo_merma="Cartón", peso_merma_kg="3"))
+        self.assertEqual(second.status, 409, second.text)  # 2) otra captura distinta, misma OT, máquina y correlativo: rechazada
+        self.assertEqual(second.json()["code"], "CORRELATIVE_IN_USE")
+        self.assertEqual(self.correlative_rows(ot_a, "GAMBINI", "10"), 1, "el rechazo no dejó filas")
+        self.assertEqual(self.count(a), 1)
+        for other in ("11", "12", "010", "10 A", "10 a"):  # 5) correlativos diferentes en la misma OT y máquina: aceptados (coincidencia exacta)
+            reply, _ = await self.post(a, P116, v116(numero_correlativo=other))
+            self.assertEqual(reply.status, 201, other)
+        # el mismo número también se rechaza desde otra asignación de LA MISMA OT (la unicidad es por OT, no por asignación)
+        self.connection.execute("UPDATE vinto_txn.assignment SET status='finished', finished_at=clock_timestamp() WHERE status='active'")
+        order = self.connection.execute("SELECT v.work_order_id, l.id FROM vinto_txn.work_order_line l JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id WHERE v.work_order_id = %s", (ot_a,)).fetchone()
+        again = await call("POST", "/api/assignments/activate", cookie=await self.cookie("SUPERVISION"), json_body={"work_order_id": str(order[0]), "baseline_line_id": str(order[1])})
+        self.assertEqual(again.status, 201, again.text)
+        a2 = again.json()["assignment"]
+        self.assertEqual(self.order_of(a2), ot_a)
+        dup, _ = await self.post(a2, P116, v116(numero_correlativo="10"))
+        self.assertEqual(dup.status, 409, "misma OT y máquina, otra asignación: sigue rechazado")
+        # 4) misma máquina y correlativo, OT diferente: aceptada
+        b = await self.assignment("GAMBINI")
+        self.assertNotEqual(self.order_of(b), ot_a)
+        reply, _ = await self.post(b, P116, v116(numero_correlativo="10"))
+        self.assertEqual(reply.status, 201, reply.text)
+        reply, _ = await self.post(b, P116, v116(numero_correlativo="10"))  # esa OT queda protegida por su propio ámbito
+        self.assertEqual(reply.status, 409)
+
+    async def test_machine_is_part_of_the_scope_and_an_order_cannot_span_two_machines_today(self):
+        a = await self.assignment("GAMBINI")
+        ot_a = self.order_of(a)
+        self.assertEqual((await self.post(a, P116, v116(numero_correlativo="77")))[0].status, 201)
+        other_machine = self.scalar("SELECT id FROM vinto_master.machine WHERE code = 'SINCRO_II'")
+        gambini = self.scalar("SELECT id FROM vinto_master.machine WHERE code = 'GAMBINI'")
+        # 3) misma OT y correlativo, máquina diferente: hoy una OT pertenece a UNA sola máquina y una asignación no puede ser de otra (trigger validate_assignment): ese caso no se puede crear
+        line = self.scalar("SELECT l.id FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id WHERE a.id = %s", (a["id"],))
+        shift = self.scalar("SELECT shift_schedule_id FROM vinto_txn.assignment WHERE id = %s", (a["id"],))
+        self.connection.execute("UPDATE vinto_txn.assignment SET status='finished', finished_at=clock_timestamp() WHERE status='active'")
+        with self.assertRaises(Exception):
+            with self.connection.transaction():
+                self.connection.execute("INSERT INTO vinto_txn.assignment (work_order_line_id, machine_id, shift_schedule_id, operating_date, status) VALUES (%s,%s,%s,'2026-10-06','active')", (line, other_machine, shift))
+        # el ámbito sí incluye la máquina: la misma OT con otra máquina no choca; con la suya, sí
+        self.assertTrue(capture_uniqueness.is_taken(self.connection, P116, gambini, ot_a, "77"))
+        self.assertFalse(capture_uniqueness.is_taken(self.connection, P116, other_machine, ot_a, "77"))
+        self.assertFalse(capture_uniqueness.is_taken(self.connection, P116, gambini, ot_a, "78"))
+
+    async def test_idempotent_retry_keeps_its_behaviour_and_is_not_a_duplicate(self):
+        a = await self.assignment("OMET_I")
+        first, body = await self.post(a, P116, v116(numero_correlativo="55"))
+        self.assertEqual(first.status, 201)
+        again = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
+        self.assertEqual((again.status, again.json()["capture"]["id"]), (200, first.json()["capture"]["id"]), "el reintento del MISMO capture_id no choca con su propio correlativo")
+        self.assertEqual(self.count(a), 1)
+        conflict = await call("POST", "/api/captures", json_body={**body, "values": v116(numero_correlativo="56")}, cookie=await self.cookie("OPERACION"))
+        self.assertEqual((conflict.status, conflict.json()["code"]), (409, "CAPTURE_IDEMPOTENCY_CONFLICT"), "mismo capture_id con otros valores: el conflicto de idempotencia de siempre")
+        dup, _ = await self.post(a, P116, v116(numero_correlativo="55"))  # un capture_id NUEVO con el mismo correlativo sí es un duplicado
+        self.assertEqual((dup.status, dup.json()["code"]), (409, "CORRELATIVE_IN_USE"))
+
+    async def test_concurrent_requests_create_exactly_one_record(self):
+        a = await self.assignment("SINCRO_III")
+        ot = self.order_of(a)
+        cookie = await self.cookie("OPERACION")
+        for round_ in range(4):
+            number = f"C-{round_}"
+            bodies = [{"capture_id": str(uuid4()), "form_code": P116, "assignment_id": a["id"], "device_key": str(uuid4()), "values": v116(numero_correlativo=number, tipo_merma=TIPOS[i])} for i in range(4)]
+            replies = await asyncio.gather(*[call("POST", "/api/captures", json_body=b, cookie=cookie) for b in bodies])
+            statuses = sorted(r.status for r in replies)
+            self.assertEqual(statuses, [201, 409, 409, 409], (round_, statuses))
+            self.assertEqual({r.json()["code"] for r in replies if r.status == 409}, {"CORRELATIVE_IN_USE"})
+            self.assertEqual(self.correlative_rows(ot, "SINCRO_III", number), 1, "exactamente un registro")
+        bodies = [{"capture_id": str(uuid4()), "form_code": P116, "assignment_id": a["id"], "device_key": str(uuid4()), "values": v116(numero_correlativo=f"D-{i}")} for i in range(4)]
+        replies = await asyncio.gather(*[call("POST", "/api/captures", json_body=b, cookie=cookie) for b in bodies])  # correlativos distintos en paralelo: todas se aceptan
+        self.assertEqual([r.status for r in replies], [201] * 4)
+
+    async def test_the_rule_applies_only_to_v3_and_never_reinterprets_history(self):
+        a = await self.assignment("GAMBINI")
+        v2 = {"hora_inicio": "06:30", "hora_fin": "14:45", "numero_correlativo": "H-1", **{k: "1" for k in SIX}}
+        one, _ = await self.post(a, P116, v2, old=True)
+        two, _ = await self.post(a, P116, v2, old=True)
+        self.assertEqual((one.status, two.status), (201, 201), "la v2 conserva su comportamiento: el mismo correlativo se acepta")
+        new, _ = await self.post(a, P116, v116(numero_correlativo="H-1"))
+        self.assertEqual(new.status, 201, "un correlativo histórico (v2) no bloquea a la v3: no se reinterpreta")
+        dup, _ = await self.post(a, P116, v116(numero_correlativo="H-1"))
+        self.assertEqual(dup.status, 409, "pero dos v3 sí chocan")
 
     async def test_old_versions_stay_readable_and_are_not_converted_into_weighings(self):
         assignment = await self.assignment("GAMBINI")
