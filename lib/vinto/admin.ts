@@ -14,8 +14,8 @@ export const ADMIN_USERS_MAX = 500;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECTOR_CODE = /^[A-Z][A-Z0-9_]{0,31}$/;
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
+export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+export const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 
 // ---- validadores (devuelven una copia limpia o null; nunca confían en la forma) ---------------------------------------------------
 
@@ -90,7 +90,9 @@ export function parseSectorChange(payload: unknown): SectorChange | null {
 
 // ---- fallos -----------------------------------------------------------------------------------------------------------------------
 
-export type AdminFailureKind = "session" | "forbidden" | "origin" | "user_not_found" | "sector_not_found" | "not_found" | "unsupported" | "sector_inactive" | "invalid" | "unavailable";
+// MF-13-01C.3: machine_not_found, form_not_found y pair_not_offered (409) pertenecen a las concesiones máquina-formulario.
+export type AdminFailureKind = "session" | "forbidden" | "origin" | "user_not_found" | "sector_not_found" | "machine_not_found" | "form_not_found" | "not_found" | "unsupported" | "sector_inactive"
+    | "pair_not_offered" | "invalid" | "unavailable";
 export type AdminFailure = { ok: false; kind: AdminFailureKind; status: number; code?: string };
 export type AdminResult<T> = { ok: true; data: T; status: number } | AdminFailure;
 
@@ -100,7 +102,8 @@ const CODE = /^[A-Z][A-Z_]{0,63}$/;
 export function failureKind(status: number, code?: string): AdminFailureKind {
     if (status === 401) return "session"; // sesión vencida o ausente
     if (status === 403) return code === "ORIGIN_NOT_ALLOWED" ? "origin" : "forbidden"; // falta de permiso: nunca se atribuye a sesión vencida
-    if (status === 404) return code === "USER_NOT_FOUND" ? "user_not_found" : code === "SECTOR_NOT_FOUND" ? "sector_not_found" : "not_found";
+    if (status === 404) return code === "USER_NOT_FOUND" ? "user_not_found" : code === "SECTOR_NOT_FOUND" ? "sector_not_found" : code === "MACHINE_NOT_FOUND" ? "machine_not_found" : code === "FORM_NOT_FOUND" ? "form_not_found" : "not_found";
+    if (status === 409) return code === "PAIR_NOT_OFFERED" ? "pair_not_offered" : "invalid"; // el par máquina-formulario no se ofrece hoy; cualquier otro conflicto es una solicitud inválida
     if (status === 415) return "unsupported";
     if (status === 422) return code === "SECTOR_INACTIVE" ? "sector_inactive" : "invalid";
     return "unavailable"; // 0 (red), 5xx, 503 y cualquier otro estado: no se asume nada sobre el estado central
@@ -112,6 +115,9 @@ export const FAILURE_MESSAGES: Record<AdminFailureKind, string> = {
     origin: "Esta dirección no está autorizada para administrar. Abre VINTO desde la dirección habitual.",
     user_not_found: "El usuario ya no existe.",
     sector_not_found: "El sector no existe en el catálogo central.",
+    machine_not_found: "La máquina ya no existe en el catálogo central. Se vuelve a consultar el catálogo.",
+    form_not_found: "El formulario ya no existe en el catálogo central. Se vuelve a consultar el catálogo.",
+    pair_not_offered: "El formulario no se ofrece hoy a esa máquina (formulario, máquina o sector inactivos, o su versión publicada vigente no la vincula). No se concedió nada: se vuelve a consultar el catálogo.",
     not_found: "El registro ya no existe.",
     unsupported: "El servidor rechazó el formato de la solicitud. Recarga la página e inténtalo de nuevo.",
     sector_inactive: "El sector está inactivo y no admite nuevas concesiones.",
@@ -130,8 +136,12 @@ export type AdminClient = {
     changeSector: (operation: ChangeOperation, userId: string, sectorCode: string, signal?: AbortSignal) => Promise<AdminResult<SectorChange>>;
 };
 
-export function createAdminClient(baseUrl: () => string, fetchImpl: FetchLike): AdminClient {
-    async function request<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null): Promise<AdminResult<T>> {
+export type AdminRequest = <T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null) => Promise<AdminResult<T>>;
+
+// Petición administrativa única (cookie de sesión HttpOnly, sin caché, sin Origin, errores mapeados): la usan el cliente de sectores y el de concesiones máquina-formulario
+// (lib/vinto/admin-grants.ts), de modo que la autenticación y el mapeo de fallos no se duplican.
+export function createAdminRequester(baseUrl: () => string, fetchImpl: FetchLike): AdminRequest {
+    return async function request<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null): Promise<AdminResult<T>> {
         let response: Response;
         try {
             response = await fetchImpl(`${baseUrl()}${path}`, {
@@ -154,7 +164,11 @@ export function createAdminClient(baseUrl: () => string, fetchImpl: FetchLike): 
         }
         const data = parse(payload);
         return data === null ? { ok: false, kind: "unavailable", status: response.status } : { ok: true, data, status: response.status };
-    }
+    };
+}
+
+export function createAdminClient(baseUrl: () => string, fetchImpl: FetchLike): AdminClient {
+    const request = createAdminRequester(baseUrl, fetchImpl);
     const invalid = (): AdminResult<never> => ({ ok: false, kind: "invalid", status: 0 }); // identificadores mal formados: ni siquiera se envía la petición
     return {
         listUsers: (signal) => request(`/api/admin/users?limit=${ADMIN_USERS_MAX}`, { signal }, parseAdminUsers),

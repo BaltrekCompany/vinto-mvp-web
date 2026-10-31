@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { adminApi } from "@/lib/vinto/admin-api";
+import { adminApi, grantsApi } from "@/lib/vinto/admin-api";
 import {
     CLOSED, createChangeController, deriveResource, loadResource,
     type AdminResource, type AdminResult, type ChangeController, type ChangeState, type ChangeTarget, type SectorChange, type StoredResource,
 } from "@/lib/vinto/admin";
+import {
+    GRANT_CLOSED, createGrantChangeController,
+    type GrantChange, type GrantChangeController, type GrantChangeState, type GrantTarget,
+} from "@/lib/vinto/admin-grants";
 
 // Recurso administrativo con estados idle | loading | ready | error. La clave incluye la sesión (id del usuario) y el usuario seleccionado: al cambiarla se cancela la
 // petición anterior (AbortController) y el resultado viejo deja de aplicar (la vista pasa a "loading"), de modo que nunca se muestran datos de otra sesión u otro usuario.
@@ -38,6 +42,23 @@ export function useSectorChange(onSettled: (result: AdminResult<SectorChange>) =
         return () => { created.dispose(); controller.current = null; };
     }, []);
     const open = useCallback((target: ChangeTarget) => controller.current?.open(target), []);
+    const close = useCallback(() => controller.current?.close(), []);
+    const confirm = useCallback(() => controller.current?.confirm() ?? Promise.resolve(), []);
+    return { state, open, close, confirm };
+}
+
+// Concesión / revocación de un formulario de una máquina: ver createGrantChangeController. Este hook solo espeja su estado en React y lo libera al desmontar.
+export function useGrantChange(onSettled: (result: AdminResult<GrantChange>, target: GrantTarget) => void) {
+    const [state, setState] = useState<GrantChangeState>(GRANT_CLOSED);
+    const settled = useRef(onSettled);
+    const controller = useRef<GrantChangeController | null>(null);
+    useEffect(() => { settled.current = onSettled; });
+    useEffect(() => {
+        const created = createGrantChangeController(grantsApi, setState, (result, target) => settled.current(result, target));
+        controller.current = created;
+        return () => { created.dispose(); controller.current = null; };
+    }, []);
+    const open = useCallback((target: GrantTarget) => controller.current?.open(target), []);
     const close = useCallback(() => controller.current?.close(), []);
     const confirm = useCallback(() => controller.current?.confirm() ?? Promise.resolve(), []);
     return { state, open, close, confirm };
