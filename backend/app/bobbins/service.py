@@ -9,7 +9,9 @@ CENTRAL con vinto_txn.management_start_year). Código visible = número ("1", "2
 INSERT .. ON CONFLICT DO UPDATE sobre vinto_txn.bobbin_sequence dentro de la misma transacción: un fallo posterior
 revierte también el incremento y un reintento idempotente (mismo capture_id) no toca el contador.
 
-Orden de locks (igual que F6): capture_id -> máquina (advisory) -> asignación (FOR SHARE) -> device_key -> fila del contador.
+Orden de locks (igual que F6): capture_id -> [autorización efectiva, MF-13-01D.2B, solo con la compuerta en observe/enforce: usuario, perfiles, máquina+sector y
+concesión, FOR SHARE hasta el COMMIT] -> máquina (advisory) -> asignación (FOR SHARE) -> device_key -> fila del contador. La autorización se resuelve ANTES de
+reservar ningún número: una solicitud denegada no toca el contador, el dispositivo, la captura, la bobina ni quality_release.
 """
 
 import uuid
@@ -145,8 +147,11 @@ def _insert_quality_release(connection, bobbin_id) -> None:
     connection.execute("INSERT INTO vinto_txn.quality_release (bobbin_id, status) VALUES (%s, 'pending')", (bobbin_id,))
 
 
-def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id, device_key, values, request_id=None, sectors) -> BobbinResult:
-    """Registra una bobina F3 de forma atómica e idempotente (capture.id = capture_id del cliente)."""
+def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id, device_key, values, request_id=None, sectors, gate=None) -> BobbinResult:
+    """Registra una bobina F3 de forma atómica e idempotente (capture.id = capture_id del cliente).
+
+    `gate` (MF-13-01D.2B, app/authz/capture_gate.py): None = comportamiento anterior. El formulario autorizado es siempre FORM_CODE (constante del backend); la máquina sale de la
+    asignación en PostgreSQL (bobina nueva, confirmada bajo el bloqueo de máquina) o de la captura persistida (reintento)."""
     capture_id = cs._uuid(capture_id, CaptureValidationError)
     assignment_id = cs._uuid(assignment_id, AssignmentNotFoundError)
     device_key = str(cs._uuid(device_key, CaptureValidationError))
@@ -159,12 +164,21 @@ def submit_bobbin_production(connection, *, actor_id, capture_id, assignment_id,
                FROM vinto_txn.capture c JOIN vinto_config.form_version fv ON fv.id = c.form_version_id JOIN vinto_config.form f ON f.id = fv.form_id
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
+            if gate is not None:
+                gate.check_existing(connection, capture_id, existing[5])  # reintento: se re-autoriza el par PERSISTIDO (un capture_id de otra operación no obtiene acceso)
             if cs._existing_matches(connection, existing, actor_id=actor_id, form_code=FORM_CODE, assignment_id=assignment_id,
                                     device_key=device_key, values=values):
                 return _result(connection, capture_id, created=False, sectors=sectors)
             raise CaptureIdempotencyConflictError()
 
+        authorized_machine = None
+        if gate is not None:
+            head_machine_id, head_machine_code = cs.resolve_assignment_machine(connection, assignment_id, sectors)
+            authorized_machine = gate.check_new(connection, head_machine_id, head_machine_code, FORM_CODE)  # antes del bloqueo de máquina y de cualquier escritura o número
+
         context = cs.lock_active_assignment(connection, assignment_id, sectors)
+        if gate is not None:
+            gate.confirm_context(authorized_machine, context.machine_id)
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         form_version_id = cs.published_form_version(connection, FORM_CODE, context.machine_id)
         fields = cs.load_fields(connection, form_version_id)

@@ -1,6 +1,7 @@
-"""Compuerta de la autorización efectiva en POST /api/captures (MF-13-01D.2A). Única ruta conectada al motor; el resto de operaciones no la usa.
+"""Compuerta de la autorización efectiva para operaciones de captura. Conectada a POST /api/captures (MF-13-01D.2A, `authz_central_captures_mode`) y a POST /api/bobbins
+(F3, MF-13-01D.2B, `authz_bobbin_production_mode`); cada operación tiene su propia configuración y una no activa la otra. Calidad aún no la usa.
 
-Modos (configuración exclusiva del servidor, `settings.authz_central_captures_mode`; el valor inicial es `off`):
+Modos (configuración exclusiva del servidor; el valor inicial de cada operación es `off`):
   off      el router no construye la compuerta: el flujo es exactamente el anterior.
   observe  evalúa SIN bloqueos y dentro de un savepoint, registra la decisión y NUNCA cambia datos ni respuesta (cualquier fallo del motor se registra y se ignora).
   enforce  exige la autorización con `authz.require(lock=True)` en la MISMA transacción que registra la captura: 403/404 si se deniega, 503 si no se puede decidir.
@@ -23,24 +24,26 @@ from app.authz.policies import Operation
 
 logger = logging.getLogger("vinto.authz")
 OFF, OBSERVE, ENFORCE = "off", "observe", "enforce"
-OPERATION = Operation.PRODUCTION_CAPTURE
+OPERATION = Operation.PRODUCTION_CAPTURE  # operación de la captura central (valor por defecto)
 
 
-def gate_for(user: AuthenticatedUser, mode: str, request_id: str):
+def gate_for(user: AuthenticatedUser, mode: str, request_id: str, operation: Operation = OPERATION):
     """None en modo `off` (comportamiento anterior); la compuerta en `observe`/`enforce`. Un modo desconocido es un error de configuración: falla cerrado."""
     if mode == OFF:
         return None
     if mode not in (OBSERVE, ENFORCE):
         raise AuthorizationUnavailable("INVALID_MODE")
-    return CentralCaptureGate(user, mode, request_id)
+    return OperationGate(user, mode, request_id, operation)
 
 
-class CentralCaptureGate:
-    def __init__(self, user: AuthenticatedUser, mode: str, request_id: str):
-        self.user, self.mode, self.request_id = user, mode, request_id
+class OperationGate:
+    """Compuerta de UNA operación (`operation` fija la política del motor: el cliente no la elige). El formulario lo aporta el servicio desde su constante funcional."""
+
+    def __init__(self, user: AuthenticatedUser, mode: str, request_id: str, operation: Operation = OPERATION):
+        self.user, self.mode, self.request_id, self.operation = user, mode, request_id, operation
 
     def _log(self, level, outcome, reason):
-        logger.log(level, "authz mode=%s operation=%s outcome=%s reason=%s request_id=%s", self.mode, OPERATION.value, outcome, reason, self.request_id)
+        logger.log(level, "authz mode=%s operation=%s outcome=%s reason=%s request_id=%s", self.mode, self.operation.value, outcome, reason, self.request_id)
 
     def check_existing(self, connection, capture_id, stored_form_code) -> None:
         """Reintento de una captura ya guardada: el par (máquina, formulario) sale de los datos persistidos, no del reintento. Una asignación ya terminada no importa aquí."""
@@ -71,7 +74,7 @@ class CentralCaptureGate:
     def _decide(self, connection, machine_code, form_code) -> None:
         if self.mode == ENFORCE:
             try:
-                decision = require(connection, self.user, OPERATION, machine_code, form_code, lock=True)
+                decision = require(connection, self.user, self.operation, machine_code, form_code, lock=True)
             except (AuthorizationDenied, ResourceNotFound) as error:
                 self._log(logging.WARNING, error.decision.kind, error.decision.reason)
                 raise
@@ -82,7 +85,14 @@ class CentralCaptureGate:
             return
         try:  # observe: sin bloqueos, en un savepoint (un fallo SQL no aborta la transacción de la captura) y sin que nada pueda alterar la respuesta
             with connection.transaction():
-                decision = authorize(connection, self.user, OPERATION, machine_code, form_code, lock=False)
+                decision = authorize(connection, self.user, self.operation, machine_code, form_code, lock=False)
             self._log(logging.INFO if decision.allowed else logging.WARNING, "would_" + decision.kind if not decision.allowed else "allowed", decision.reason)
         except Exception as error:  # noqa: BLE001 — observar nunca debe romper la captura
             self._log(logging.ERROR, "observe_error", getattr(error, "cause", type(error).__name__))
+
+
+class CentralCaptureGate(OperationGate):
+    """Compuerta de POST /api/captures (PRODUCTION_CAPTURE)."""
+
+    def __init__(self, user: AuthenticatedUser, mode: str, request_id: str):
+        super().__init__(user, mode, request_id, Operation.PRODUCTION_CAPTURE)
