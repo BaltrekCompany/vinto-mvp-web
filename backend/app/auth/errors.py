@@ -76,4 +76,4 @@ class FormNotFoundError(AuthError):
 
 
 class FormNotLinkedToMachineError(AuthError):
-    """El formulario no tiene ninguna versión publicada vinculada a la máquina: no se concede un par que el catálogo no ofrece."""
+    """El par (máquina, formulario) no se ofrece hoy: formulario, máquina o sector inactivos, o la versión publicada más reciente no está vinculada a la máquina."""
