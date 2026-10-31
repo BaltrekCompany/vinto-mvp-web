@@ -385,6 +385,9 @@ Infraestructura de persistencia **sin efecto en ningún endpoint**: la política
 - **API administrativa de consulta (MF-13-01C.1)**: `GET /api/admin/catalog`, `/catalog/forms`, `/users/{id}`, `/users/{id}/grants` y `/users/{id}/grants/history` (solo lectura, `user.manage`, `no-store`). Distinguen
   *publicado* (versión vigente), *ofrecido* (la versión vigente vincula el par; lo que exige `grant_machine_form`), *habilitado para captura* (política en código + sector operativo) y *concedido*. Sin escrituras y sin activar la autorización
   efectiva. Contratos y pendientes (Calidad en Rebobinado): `docs/MF-13-01C1-api-admin-consulta-concesiones.md`.
+- **API administrativa de alta y baja (MF-13-01C.2)**: `POST /api/admin/users/{id}/grants/grant` y `/grants/revoke` con `{machine_code, form_code}` (cuerpo estricto, `user.manage`, Origin y `application/json` obligatorios, `no-store`).
+  El actor es la sesión y el `request_id` lo genera el servidor; reutiliza `grant_machine_form`/`revoke_machine_form`. Idempotente, con historial y auditoría. **Todavía no autoriza nada**: ninguna captura, orden, bobina ni liberación consulta las concesiones.
+  Contrato, errores, reglas y análisis de la escritura directa de `vinto_app`: `docs/MF-13-01C2-api-admin-conceder-revocar.md`.
 - **Privilegios**: la migración incluye su `GRANT SELECT, INSERT, UPDATE ... TO vinto_app` solo si ese rol existe (nunca `DELETE`), según `migrations/README.md`.
 - **Despliegue y reversión**: el código actual **no necesita** la tabla, así que la 0007 puede aplicarse antes o después (`migrate.py --check`, respaldo, `migrate.py`).
   Revertir = no aplicar la 0007 o restaurar el respaldo previo: ninguna migración se reescribe (checksum). Si la 0007 ya se aplicó y no se usa, la tabla vacía es inerte;

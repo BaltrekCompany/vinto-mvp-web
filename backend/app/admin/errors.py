@@ -25,3 +25,18 @@ class OriginNotAllowed(AdminError):
 
 class UnsupportedMediaType(AdminError):
     http_status, code, public_message = 415, "UNSUPPORTED_MEDIA_TYPE", "El cuerpo debe ser application/json"
+
+
+class MachineNotFound(AdminError):
+    http_status, code, public_message = 404, "MACHINE_NOT_FOUND", "Máquina no encontrada"
+
+
+class FormNotFound(AdminError):
+    http_status, code, public_message = 404, "FORM_NOT_FOUND", "Formulario no encontrado"
+
+
+class PairNotOffered(AdminError):
+    """El par (máquina, formulario) no se ofrece hoy: no se concede. Revocar un par así sí se permite (la concesión inerte debe poder retirarse)."""
+
+    http_status, code = 409, "PAIR_NOT_OFFERED"
+    public_message = "El formulario no se ofrece hoy para esa máquina: formulario, máquina o sector inactivos, o la versión publicada vigente no la vincula"

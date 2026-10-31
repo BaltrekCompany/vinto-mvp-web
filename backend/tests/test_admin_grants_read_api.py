@@ -155,7 +155,10 @@ class AccessTests(Base):
     async def test_there_is_no_write_route_for_grants_or_the_catalog(self):
         routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods)
         writes = [(m, p) for m, p in routes if m != "GET"]
-        self.assertEqual(writes, [("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")], "solo las dos escrituras de sectores que ya existían")
+        # MF-13-01C.2 añade únicamente los dos POST de concesiones máquina-formulario; la lectura (catálogo, detalle, concesiones, historial) sigue sin escrituras
+        self.assertEqual(writes, [("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"),
+                                  ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
+        self.assertFalse([p for _, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or p == "/api/admin/users/{user_id}"], "las rutas de lectura siguen siendo solo GET")
         uid, before = self.target(), self.snapshot()
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             for path in self.paths(uid):
