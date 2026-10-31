@@ -177,8 +177,12 @@ def _existing_matches(connection, existing, *, actor_id, machine_id, form_code, 
     return incoming == cs._stored_values(connection, capture_id)
 
 
-def submit_machine_capture(connection, *, actor_id, machine_code, capture_id, form_code, device_key, values, request_id=None, sectors) -> MachineCaptureResult:
-    """Crea y envía un control de Calidad de una máquina, de forma atómica e idempotente (capture.id = capture_id del cliente)."""
+def submit_machine_capture(connection, *, actor_id, machine_code, capture_id, form_code, device_key, values, request_id=None, sectors, gate=None) -> MachineCaptureResult:
+    """Crea y envía un control de Calidad de una máquina, de forma atómica e idempotente (capture.id = capture_id del cliente).
+
+    `gate` (MF-13-01D.2C.2, app/authz/capture_gate.py): None = comportamiento anterior. Con compuerta, la autorización efectiva se evalúa en esta transacción, DESPUÉS de resolver y validar la
+    máquina de la ruta contra PostgreSQL (404 / fuera de alcance primero) y ANTES de resolver el turno, el dispositivo o escribir nada: un reintento se autoriza con el par PERSISTIDO; una captura
+    nueva, con la máquina de la ruta y el formulario ya validado por `MACHINE_QUALITY_FORM_CODES`. Tras tomar los bloqueos se reconfirma que la máquina y su sector siguen siendo los autorizados."""
     capture_id = cs._uuid(capture_id, CaptureValidationError)
     device_key = str(cs._uuid(device_key, CaptureValidationError))
     if not isinstance(form_code, str) or not form_code.strip():
@@ -195,13 +199,23 @@ def submit_machine_capture(connection, *, actor_id, machine_code, capture_id, fo
                FROM vinto_txn.capture c JOIN vinto_config.form_version fv ON fv.id = c.form_version_id JOIN vinto_config.form f ON f.id = fv.form_id
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
+            if gate is not None:
+                gate.check_existing(connection, capture_id, existing[7])  # reintento: se re-autoriza el par PERSISTIDO (existing[7] = código del formulario guardado)
             if _existing_matches(connection, existing, actor_id=actor_id, machine_id=machine_id, form_code=form_code, device_key=device_key, values=values):
                 return MachineCaptureResult(get_machine_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
+        authorized_machine = None
+        if gate is not None:
+            authorized_machine = gate.check_new(connection, machine_id, machine_code.strip(), form_code)  # antes del turno, del dispositivo y de cualquier escritura
+
         now = cs._now(connection)  # reloj de PostgreSQL: hora de REGISTRO
         shift = resolve_shift(connection, now, sector_id=sector_id)  # SHIFT_NOT_CONFIGURED / SHIFT_AMBIGUOUS siguen su manejo seguro
         device_id = cs._resolve_device(connection, device_key, machine_id)
+        if gate is not None:  # con los bloqueos ya tomados, la máquina y su sector definitivos deben ser los autorizados (un cambio de sector alteraría el turno resuelto)
+            definitive_machine, definitive_sector = _machine(connection, machine_code, sectors)
+            gate.confirm_context(authorized_machine, definitive_machine)
+            gate.confirm_context(sector_id, definitive_sector)
         form_version_id = cs.published_form_version(connection, form_code, machine_id, area=QUALITY_AREA)  # FormNotAvailableError si no está publicado / vinculado
         fields, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-08); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION; un calculado enviado: 422
 
