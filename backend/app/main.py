@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.admin.errors import AdminError
+from app.authz.errors import AuthorizationError, public_response
 from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.config import settings
@@ -44,6 +45,13 @@ UNAVAILABLE = UNAVAILABLE_BODY
 @app.exception_handler(DatabaseUnavailable)
 async def database_unavailable_handler(request: Request, error: DatabaseUnavailable):
     return JSONResponse(status_code=503, content=UNAVAILABLE)
+
+
+@app.exception_handler(AuthorizationError)
+async def authorization_error_handler(request: Request, error: AuthorizationError):
+    """MF-13-01D.2A: 403/404/503 fijos del motor de autorización, sin razón interna, SQL ni identificadores (la razón va solo al registro del servidor)."""
+    status, body = public_response(error)
+    return JSONResponse(status_code=status, content=body)
 
 
 @app.exception_handler(AdminError)

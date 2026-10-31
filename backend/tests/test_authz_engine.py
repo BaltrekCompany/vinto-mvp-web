@@ -97,10 +97,11 @@ class ShapeTests(unittest.TestCase):
         self.assertNotIn("KEY SHARE", literals)
         self.assertIn("FOR SHARE", literals)
 
-    def test_the_engine_is_not_wired_to_any_endpoint_or_service_yet(self):
-        consumers = [str(path.relative_to(BACKEND)).replace("\\", "/") for path in (BACKEND / "app").rglob("*.py")
+    def test_the_engine_is_wired_only_to_post_captures(self):
+        consumers = [str(path.relative_to(BACKEND)).replace("\\", "/") for path in sorted((BACKEND / "app").rglob("*.py"))
                      if "app/authz" not in str(path).replace("\\", "/") and re.search(r"\bapp\.authz\b|\bfrom app import authz\b", path.read_text(encoding="utf-8"))]
-        self.assertEqual(consumers, [])
+        # MF-13-01D.2A: solo POST /api/captures (captures.py) y el manejador de errores del motor (main.py); F3, Calidad y el resto siguen sin usarlo
+        self.assertEqual(consumers, ["app/captures.py", "app/main.py"])
 
     def test_the_locked_tables_are_exactly_those_vinto_app_may_lock(self):
         """Deriva de roles/03_table_grants.sql: lo que el motor bloquea tiene UPDATE para vinto_app; user_sector y vinto_config no lo tienen y por eso NO se bloquean."""
