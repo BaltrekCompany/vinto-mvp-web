@@ -142,9 +142,10 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(QualityCaptureIn.model_config.get("extra"), "forbid")
         self.assertNotIn("machine_code", QualityCaptureIn.model_fields)
 
-    def test_machine_level_quality_is_not_wired(self):
-        self.assertNotIn("app.authz", (BACKEND / "app/quality/machine_router.py").read_text(encoding="utf-8"))
-        self.assertNotIn("gate", (BACKEND / "app/quality/machine_capture_service.py").read_text(encoding="utf-8").split("def submit")[0].lower().replace("aggregate", ""))
+    def test_machine_level_quality_has_its_own_mode_and_never_reads_this_one(self):
+        machine_router = (BACKEND / "app/quality/machine_router.py").read_text(encoding="utf-8")  # MF-13-01D.2C.2: Calidad por máquina se conectó con su propia configuración
+        self.assertIn("settings.authz_quality_machine_captures_mode", machine_router)
+        self.assertNotIn("authz_quality_bobbin_captures_mode", machine_router)
 
 
 # ---- 2. política viva y hallazgo de los candidatos ---------------------------------------------------------------------------------------------------

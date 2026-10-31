@@ -97,11 +97,11 @@ class ShapeTests(unittest.TestCase):
         self.assertNotIn("KEY SHARE", literals)
         self.assertIn("FOR SHARE", literals)
 
-    def test_the_engine_is_wired_only_to_captures_bobbins_and_quality_by_bobbin(self):
+    def test_the_engine_is_wired_only_to_the_four_capture_routes(self):
         consumers = [str(path.relative_to(BACKEND)).replace("\\", "/") for path in sorted((BACKEND / "app").rglob("*.py"))
                      if "app/authz" not in str(path).replace("\\", "/") and re.search(r"\bapp\.authz\b|\bfrom app import authz\b", path.read_text(encoding="utf-8"))]
-        # MF-13-01D.2A/2B/2C.1: POST /api/captures, POST /api/bobbins, POST /api/quality/bobbins/{id}/captures y el manejador de errores (main.py); Calidad por máquina y el resto siguen sin usarlo
-        self.assertEqual(consumers, ["app/bobbins/router.py", "app/captures.py", "app/main.py", "app/quality/router.py"])
+        # MF-13-01D.2A/2B/2C.1/2C.2: las cuatro rutas de captura (central, F3, Calidad por bobina y por máquina) y el manejador de errores (main.py); el resto no lo usa
+        self.assertEqual(consumers, ["app/bobbins/router.py", "app/captures.py", "app/main.py", "app/quality/machine_router.py", "app/quality/router.py"])
 
     def test_the_locked_tables_are_exactly_those_vinto_app_may_lock(self):
         """Deriva de roles/03_table_grants.sql: lo que el motor bloquea tiene UPDATE para vinto_app; user_sector y vinto_config no lo tienen y por eso NO se bloquean."""

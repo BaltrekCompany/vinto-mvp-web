@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, Query, Response
 from app.auth.dependencies import require_permission
 from app.auth.permissions import QUALITY_CAPTURE
 from app.auth.service import AuthenticatedUser
+from app.authz.capture_gate import gate_for
+from app.authz.policies import Operation
+from app.config import settings
 from app.database import get_connection
 from app.production_access import ProductionMachinesOut
 from app.quality import machine_capture_service as service
@@ -33,8 +36,11 @@ def machine_forms(user: AuthenticatedUser = Depends(require_permission(QUALITY_C
 @router.post("/machines/{machine_code}/captures", response_model=MachineCaptureResultOut, responses={201: {"description": "Control creado"}, **_ERRORS})
 def submit_machine_capture(machine_code: str, body: MachineCaptureIn, response: Response, user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id)."""
+    request_id = str(uuid.uuid4())
+    # MF-13-01D.2C.2: la autorización efectiva de Calidad por máquina depende SOLO de su propio modo de servidor (por defecto off = comportamiento anterior); el cliente no puede cambiarlo.
+    gate = gate_for(user, settings.authz_quality_machine_captures_mode, request_id, Operation.QUALITY_MACHINE_CAPTURE)
     result = service.submit_machine_capture(connection, actor_id=user.user_id, machine_code=machine_code, capture_id=body.capture_id, form_code=body.form_code,
-                                            device_key=body.device_key, values=body.values, request_id=str(uuid.uuid4()), sectors=user.sectors)
+                                            device_key=body.device_key, values=body.values, request_id=request_id, sectors=user.sectors, gate=gate)
     response.status_code = 201 if result.created else 200
     return machine_capture_result_out(result)
 
