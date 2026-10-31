@@ -360,6 +360,26 @@ una petición es `sectores operativos (app/sectors.py) ∩ sectores concedidos a
   --check`, luego `migrate.py`) **antes o a la vez** que el backend nuevo; con el backend nuevo y sin la 0006 las lecturas de sesión fallan. No desplegar uno sin lo otro.
 - **Altas**: `create_user(..., sectors=("BOBINAS",))` / `python create_user.py ... --sector BOBINAS` (repetible); sin `--sector` el usuario no accede a ningún sector.
   `app.auth.grants.grant_sector / revoke_sector` son idempotentes y quedan auditados. No hay endpoint HTTP de administración todavía.
+
+## Concesiones por usuario, máquina y formulario (MF-13-01B.1)
+
+Infraestructura de persistencia **sin efecto en ningún endpoint**: la política todavía no se aplica a Producción ni a Calidad. Una concesión solo acotará *dónde* y
+*con qué formulario* trabaja un usuario que ya tiene el permiso de su perfil y el sector; no concede nada por sí sola.
+
+- **Persistencia**: `vinto_master.user_machine_form_grant`, migración aditiva `0007_user_machine_form_grants.sql` (sin datos: nadie recibe ni pierde acceso al aplicarla).
+  Una fila por `(user_id, machine_id, form_id)`; el formulario se referencia por `vinto_config.form` (no por versión), así que una versión nueva no exige conceder de
+  nuevo y el catálogo no se modifica. El mismo formulario en dos máquinas son dos concesiones independientes (VINTO-P1-01 en MP1 y en MP3).
+- **Unicidad e historial**: índice único parcial sobre las concesiones **activas** (`revoked_at IS NULL`). Revocar fija `revoked_at` y `revoked_by` y conserva la fila;
+  volver a conceder crea una fila **nueva**. Un trigger rechaza `DELETE`, `TRUNCATE`, cambiar usuario/máquina/formulario y modificar una revocación ya hecha (23514).
+  Todo `INSERT`/`UPDATE` queda en `vinto_audit.audit_event` con actor, `request_id` y motivo.
+- **Servicio**: `app/auth/machine_form_grants.py` (`grant_machine_form`, `revoke_machine_form`, `has_active_machine_form_grant`, `machine_form_grants_for_user`). Idempotente
+  y seguro ante concurrencia (lo arbitra la base de datos con `ON CONFLICT`, sin leer antes). `actor_id` es obligatorio. Solo se concede un par que el catálogo ofrece
+  (versión **publicada** del formulario vinculada a la máquina). Ningún módulo de `app/` lo importa todavía (lo comprueba un test).
+- **Sin autorización implícita**: sin fila activa no hay concesión; conceder un sector o un perfil nunca crea una de estas filas, ni al revés.
+- **Privilegios**: la migración incluye su `GRANT SELECT, INSERT, UPDATE ... TO vinto_app` solo si ese rol existe (nunca `DELETE`), según `migrations/README.md`.
+- **Despliegue y reversión**: el código actual **no necesita** la tabla, así que la 0007 puede aplicarse antes o después (`migrate.py --check`, respaldo, `migrate.py`).
+  Revertir = no aplicar la 0007 o restaurar el respaldo previo: ninguna migración se reescribe (checksum). Si la 0007 ya se aplicó y no se usa, la tabla vacía es inerte;
+  quitarla exigiría una migración nueva y se decide aparte.
 - **Por máquina (futuro)**: se añadiría una tabla `user_machine` que solo *restringe* dentro de los sectores ya concedidos; no requiere cambiar `user_sector`.
 
 `GET /api/captures/count` sigue sin exigir sesión (hallazgo previo, **no** modificado aquí porque cambiaría un contrato consumido por el frontend). Debe quedar

@@ -48,6 +48,7 @@ PINNED_MIGRATIONS = [
     ("0004_bobbin_production.sql", "2346215c46fad1dc6c036f225a43a5a7a9251c21e892f1bfdf7ea7872b77f631"),
     ("0005_quality_capture_bobbin.sql", "abf8b6fb9d678bc44de2260a05e7852b6df34659f2ebbb75a8bb64cabc5b1422"),
     ("0006_user_sector_grants.sql", "98057f5b94236aa843f82ffc9ba4105266ea4f516abe861208a50664eb51ac9a"),  # M1-C1: additive table for sector grants
+    ("0007_user_machine_form_grants.sql", "7772dca038902319afb04ab54139a13b0314141b73ae271ad31d3d3017704acc"),  # MF-13-01B.1: additive table for per-machine, per-form grants
 ]
 
 
