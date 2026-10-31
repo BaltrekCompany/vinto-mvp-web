@@ -65,3 +65,15 @@ class LastAdministratorError(AuthError):
 
 class SectorNotFoundError(AuthError):
     """El sector no existe."""
+
+
+class MachineNotFoundError(AuthError):
+    """La máquina no existe."""
+
+
+class FormNotFoundError(AuthError):
+    """El formulario no existe."""
+
+
+class FormNotLinkedToMachineError(AuthError):
+    """El formulario no tiene ninguna versión publicada vinculada a la máquina: no se concede un par que el catálogo no ofrece."""
