@@ -50,8 +50,10 @@ class Settings(BaseSettings):
     authz_central_captures_mode: Literal["off", "observe", "enforce"] = "off"
     # MF-13-01D.2B: ídem para POST /api/bobbins (F3, Operation.BOBBIN_PRODUCTION). Configuración INDEPENDIENTE: ninguna activa la otra. Variable AUTHZ_BOBBIN_PRODUCTION_MODE.
     authz_bobbin_production_mode: Literal["off", "observe", "enforce"] = "off"
+    # MF-13-01D.2C.1: ídem para POST /api/quality/bobbins/{id}/captures (Calidad por bobina, Operation.QUALITY_BOBBIN_CAPTURE). Independiente de las otras dos. Variable AUTHZ_QUALITY_BOBBIN_CAPTURES_MODE.
+    authz_quality_bobbin_captures_mode: Literal["off", "observe", "enforce"] = "off"
 
-    @field_validator("authz_central_captures_mode", "authz_bobbin_production_mode", mode="before")
+    @field_validator("authz_central_captures_mode", "authz_bobbin_production_mode", "authz_quality_bobbin_captures_mode", mode="before")
     @classmethod
     def _normalize_authz_mode(cls, value):
         return value.strip().lower() if isinstance(value, str) else value

@@ -10,6 +10,9 @@ from fastapi import APIRouter, Depends, Query, Response
 from app.auth.dependencies import require_permission
 from app.auth.permissions import QUALITY_CAPTURE
 from app.auth.service import AuthenticatedUser
+from app.authz.capture_gate import gate_for
+from app.authz.policies import Operation
+from app.config import settings
 from app.database import get_connection
 from app.quality import capture_service, service
 from app.quality.capture_schemas import QualityCaptureIn, QualityCaptureOut, QualityCaptureResultOut, quality_capture_out, quality_capture_result_out
@@ -48,9 +51,12 @@ _CAPTURE_ERRORS = {
 def submit_quality_capture(bobbin_id: str, body: QualityCaptureIn, response: Response,
                            user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id). No toca quality_release."""
+    request_id = str(uuid.uuid4())
+    # MF-13-01D.2C.1: la autorización efectiva de Calidad por bobina depende SOLO de su propio modo de servidor (por defecto off = comportamiento anterior); el cliente no puede cambiarlo.
+    gate = gate_for(user, settings.authz_quality_bobbin_captures_mode, request_id, Operation.QUALITY_BOBBIN_CAPTURE)
     result = capture_service.submit_quality_capture(
         connection, actor_id=user.user_id, bobbin_id=bobbin_id, capture_id=body.capture_id, form_code=body.form_code,
-        device_key=body.device_key, values=body.values, request_id=str(uuid.uuid4()), sectors=user.sectors)
+        device_key=body.device_key, values=body.values, request_id=request_id, sectors=user.sectors, gate=gate)
     response.status_code = 201 if result.created else 200
     return quality_capture_result_out(result)
 
