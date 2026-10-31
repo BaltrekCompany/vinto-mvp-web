@@ -378,7 +378,7 @@ test("wiring of the confirmation dialog: it cannot be dismissed while sending, t
   assert.match(consoleSource, /users\.refresh\(\); detail\.refresh\(\)/, "the central state is re-read after every response");
   assert.match(consoleSource, /result\.kind === "session"\) \{ onSessionLost\(\)/);
   assert.match(consoleSource, /result\.kind === "forbidden" \|\| result\.kind === "origin"\)\) setChangeFailure\(result\.kind\)/);
-  assert.match(consoleSource, /deriveAccess\(\[users\.view, catalog\.view, detail\.view\], changeFailure\)/, "users, catalogue and detail all feed the access block");
+  assert.match(consoleSource, /deriveAccess\(\[users\.view, catalog\.view, detail\.view, machines\.view, forms\.view, userDetail\.view, grants\.view, history\.view\], changeFailure\)/, "users, catalogue and detail all feed the access block");
   assert.match(parts, /state\.failure\.kind === "origin" \? BLOCK_TITLES\.origin/, "the failed-operation dialog names an unauthorised origin correctly");
 });
 
