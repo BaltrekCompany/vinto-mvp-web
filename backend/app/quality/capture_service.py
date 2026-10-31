@@ -6,7 +6,8 @@ asignación activa, ni resolve_shift, ni lock_active_assignment, ni el turno/fec
 su asignación esté terminada. Solo captured_at es el instante real del ensayo (reloj de PostgreSQL).
 
 Una captura es UNA transacción:
-  lock(capture_id) -> contexto de auditoría -> idempotencia -> Bobina + contexto histórico -> dispositivo -> versión publicada del
+  lock(capture_id) -> contexto de auditoría -> idempotencia -> Bobina + contexto histórico -> [autorización efectiva, MF-13-01D.2C.1, solo con la compuerta en
+  observe/enforce: usuario, perfiles, máquina+sector y concesión, FOR SHARE hasta el COMMIT] -> dispositivo -> versión publicada del
   formulario (area quality, habilitada para la máquina de la Bobina) -> validación de valores -> INSERT capture (draft, bobbin_id)
   -> INSERT capture_detail tipados -> UPDATE draft->submitted (revision 1).
 
@@ -304,8 +305,11 @@ def _insert_capture(connection, *, capture_id, form_version_id, context: _Bobbin
         (capture_id, form_version_id, context.machine_id, context.shift_schedule_id, device_id, context.assignment_id, context.operating_date, context.bobbin_id))
 
 
-def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_code, device_key, values, request_id=None, sectors) -> QualityCaptureResult:
-    """Crea y envía una captura de Calidad de una Bobina, de forma atómica e idempotente (capture.id = capture_id del cliente)."""
+def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_code, device_key, values, request_id=None, sectors, gate=None) -> QualityCaptureResult:
+    """Crea y envía una captura de Calidad de una Bobina, de forma atómica e idempotente (capture.id = capture_id del cliente).
+
+    `gate` (MF-13-01D.2C.1, app/authz/capture_gate.py): None = comportamiento anterior. La máquina que se autoriza sale de la BOBINA persistida (captura nueva, reconfirmada tras tomar el
+    bloqueo del dispositivo) o de la captura persistida (reintento); el formulario ya pasó la política positiva del servidor (`_allowed`). No interviene en ninguna regla de Calidad ni toca quality_release."""
     bobbin_id = cs._uuid(bobbin_id, BobbinNotFoundError)
     capture_id = cs._uuid(capture_id, CaptureValidationError)
     device_key = str(cs._uuid(device_key, CaptureValidationError))
@@ -322,12 +326,20 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
                FROM vinto_txn.capture c JOIN vinto_config.form_version fv ON fv.id = c.form_version_id JOIN vinto_config.form f ON f.id = fv.form_id
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
+            if gate is not None:
+                gate.check_existing(connection, capture_id, existing[5])  # reintento: se re-autoriza el par PERSISTIDO (existing[5] = código del formulario guardado)
             if _existing_matches(connection, existing, actor_id=actor_id, bobbin_id=bobbin_id, form_code=form_code, device_key=device_key, values=values):
                 return QualityCaptureResult(get_quality_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
         context = _bobbin_context(connection, bobbin_id, sectors)
+        authorized_machine = None
+        if gate is not None:
+            machine_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (context.machine_id,)).fetchone()[0]
+            authorized_machine = gate.check_new(connection, context.machine_id, machine_code, form_code)  # antes del dispositivo y de cualquier escritura
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
+        if gate is not None:  # con los bloqueos ya tomados, la bobina y su máquina definitivas deben ser las autorizadas
+            gate.confirm_context(authorized_machine, _bobbin_context(connection, bobbin_id, sectors).machine_id)
         form_version_id = cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA)
         fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
         _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
