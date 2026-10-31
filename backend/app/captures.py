@@ -12,7 +12,9 @@ from app import capture_service
 from app.auth.dependencies import require_permission
 from app.auth.permissions import CATALOG_READ, PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
+from app.authz.capture_gate import gate_for
 from app.capture_schemas import CaptureIn, CaptureOut, CaptureResultOut, capture_out, result_out
+from app.config import settings
 from app.database import get_connection
 from app.sectors import FRONT_SECTOR_CODES, scoped_sector_codes
 
@@ -66,10 +68,11 @@ def capture_count(front: Front, user: AuthenticatedUser = Depends(require_permis
 
 _CAPTURE_ERRORS = {
     401: {"description": "No autenticado"},
-    403: {"description": "Permiso insuficiente (production.capture)"},
+    403: {"description": "Permiso insuficiente (production.capture) o acceso no autorizado a la máquina y el formulario (modo enforce)"},
     404: {"description": "Asignación o captura inexistente"},
     409: {"description": "Estado, contexto o idempotencia en conflicto"},
     422: {"description": "Valores inválidos"},
+    503: {"description": "Autorización no disponible (modo enforce)"},
 }
 
 
@@ -77,9 +80,12 @@ _CAPTURE_ERRORS = {
 def submit_capture(body: CaptureIn, response: Response, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)),
                    connection=Depends(get_connection)):
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id)."""
+    request_id = str(uuid.uuid4())
+    # MF-13-01D.2A: la autorización efectiva depende SOLO del modo configurado en el servidor (por defecto off = comportamiento anterior); el cliente no puede cambiarlo.
+    gate = gate_for(user, settings.authz_central_captures_mode, request_id)
     result = capture_service.submit_production_capture(
         connection, actor_id=user.user_id, capture_id=body.capture_id, form_code=body.form_code, assignment_id=body.assignment_id,
-        device_key=body.device_key, values=body.values, request_id=str(uuid.uuid4()), sectors=user.sectors)
+        device_key=body.device_key, values=body.values, request_id=request_id, sectors=user.sectors, gate=gate)
     response.status_code = 201 if result.created else 200
     return result_out(result)
 

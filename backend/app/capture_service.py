@@ -13,8 +13,10 @@ Una captura es UNA transacción:
 Por 0003 la primera presentación termina en revision = 1. Un fallo en cualquier punto (incluida la validación diferida
 de obligatorios al COMMIT) revierte todo, también el dispositivo creado.
 
-Orden de locks (sin interbloqueos): capture_id -> máquina (advisory, compartido con assignments) -> asignación (FOR SHARE) ->
-device_key. activate toma OT -> máquina -> asignación y finish máquina -> asignación; la captura nunca toma la OT.
+Orden de locks (sin interbloqueos): capture_id -> [autorización efectiva, MF-13-01D.2A, solo con la compuerta en observe/enforce: usuario, perfiles,
+máquina+sector y concesión, FOR SHARE hasta el COMMIT] -> máquina (advisory, compartido con assignments) -> asignación (FOR SHARE) -> device_key.
+activate toma OT -> máquina -> asignación y finish máquina -> asignación; la captura nunca toma la OT. Ningún flujo que tome el lock de máquina modifica
+las filas de autorización (usuario, perfiles, máquina, sector, concesión) mientras lo mantiene, así que la autorización antepuesta no puede cerrar un ciclo.
 """
 
 import hashlib
@@ -525,6 +527,18 @@ class ActiveContext:
     now: datetime
 
 
+def resolve_assignment_machine(connection, assignment_id, sectors):
+    """(id, código) de la máquina de la asignación según PostgreSQL, sin bloqueos y con el mismo alcance de sectores que `lock_active_assignment`.
+
+    La máquina que se autoriza nunca la aporta el cliente. AssignmentNotFoundError si la asignación no existe o no es visible (misma semántica que el flujo normal)."""
+    head = connection.execute(
+        """SELECT m.id, m.code FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
+           JOIN vinto_master.sector s ON s.id = m.sector_id WHERE a.id = %s AND s.code = ANY(%s)""", (assignment_id, list(scoped_sector_codes(sectors)))).fetchone()
+    if head is None:
+        raise AssignmentNotFoundError()
+    return head
+
+
 def lock_active_assignment(connection, assignment_id, sectors) -> ActiveContext:
     """Toma el lock de máquina y valida que la asignación siga activa y vigente para el turno/fecha actuales.
 
@@ -568,11 +582,14 @@ def published_form_version(connection, form_code: str, machine_id, *, area: str 
     return version[0]
 
 
-def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None, sectors) -> CaptureResult:
+def submit_production_capture(connection, *, actor_id, capture_id, form_code, assignment_id, device_key, values, request_id=None, sectors, gate=None) -> CaptureResult:
     """Crea y envía una captura de producción de forma atómica e idempotente (capture.id = capture_id del cliente).
 
     `form_code` debe estar en la política CENTRAL_FORM_CODES; el resto (área production, versión publicada, máquina de la asignación, sector
-    operativo ∩ concedido) lo exige este mismo flujo para cualquier formulario."""
+    operativo ∩ concedido) lo exige este mismo flujo para cualquier formulario.
+
+    `gate` (MF-13-01D.2A, app/authz/capture_gate.py): None = comportamiento anterior. Con compuerta, la autorización efectiva se evalúa dentro de esta transacción: para un reintento,
+    sobre el par persistido de la captura; para una captura nueva, sobre la máquina de la asignación, confirmada después bajo el bloqueo de máquina."""
     if not is_central_form(form_code):
         raise UnsupportedFormError("Formulario no habilitado para captura central")
     capture_id = _uuid(capture_id, CaptureValidationError)
@@ -587,11 +604,20 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
                FROM vinto_txn.capture c JOIN vinto_config.form_version fv ON fv.id = c.form_version_id JOIN vinto_config.form f ON f.id = fv.form_id
                JOIN vinto_master.device d ON d.id = c.device_id WHERE c.id = %s""", (capture_id,)).fetchone()
         if existing is not None:
+            if gate is not None:
+                gate.check_existing(connection, capture_id, existing[5])  # el reintento vuelve a autorizarse con el par persistido (existing[5] = código del formulario guardado)
             if _existing_matches(connection, existing, actor_id=actor_id, form_code=form_code, assignment_id=assignment_id, device_key=device_key, values=values):
                 return CaptureResult(get_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
+        authorized_machine = None
+        if gate is not None:
+            machine_id, machine_code = resolve_assignment_machine(connection, assignment_id, sectors)
+            authorized_machine = gate.check_new(connection, machine_id, machine_code, form_code)  # antes del bloqueo de máquina: orden global capture_id → autorización → máquina
+
         context = lock_active_assignment(connection, assignment_id, sectors)
+        if gate is not None:
+            gate.confirm_context(authorized_machine, context.machine_id)
         machine_id, schedule_id, operating_date, now = context.machine_id, context.shift_schedule_id, context.operating_date, context.now
 
         device_id = _resolve_device(connection, device_key, machine_id)

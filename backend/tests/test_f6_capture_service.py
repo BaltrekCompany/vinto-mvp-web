@@ -157,7 +157,7 @@ class ContextTests(CaptureCase):
 
     def test_the_client_cannot_provide_the_form_version_or_any_derived_field(self):
         parameters = set(inspect.signature(capture_service.submit_production_capture).parameters)
-        self.assertEqual(parameters, {"connection", "actor_id", "capture_id", "form_code", "assignment_id", "device_key", "values", "request_id", "sectors"})  # sectors: authorization scope supplied by the router from the session, never by the client
+        self.assertEqual(parameters, {"connection", "actor_id", "capture_id", "form_code", "assignment_id", "device_key", "values", "request_id", "sectors", "gate"})  # sectors: authorization scope supplied by the router from the session, never by the client; gate (MF-13-01D.2A): server-built authorization gate or None, never from the client
 
     def test_only_f6_is_enabled(self):
         _, assignment = self.assignment()
