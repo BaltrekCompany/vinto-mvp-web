@@ -8,10 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.admin import catalog, grants_read, service
+from app.admin import catalog, grants_read, grants_write, service
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
-from app.admin.schemas import (CatalogOut, FormsCatalogOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut, UserDetailOut, UserGrantsOut,
-                               UserSectorsOut)
+from app.admin.schemas import (CatalogOut, FormsCatalogOut, GrantChangeIn, GrantChangeOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut,
+                               UserDetailOut, UserGrantsOut, UserSectorsOut)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -115,3 +115,23 @@ def get_user_grants_history(user_id: UUID, response: Response, limit: int = Quer
     """Historial completo (activas y revocadas), de la más reciente a la más antigua, con quién concedió y quién revocó."""
     response.headers.update(NO_STORE)
     return grants_read.user_grants(connection, user_id, include_revoked=True, limit=limit)
+
+
+# ---- MF-13-01C.2: conceder y revocar el acceso a un formulario de una máquina. Mismas defensas que los POST de sector (Origin, application/json, user.manage, no-store). ------------------
+# El actor es la sesión autenticada y el request_id lo genera el servidor: el cuerpo solo admite machine_code y form_code. NO activa ninguna autorización efectiva.
+_WRITE_ERRORS = {**_ERRORS, 404: {"description": "Usuario, máquina o formulario inexistente"}, 409: {"description": "El par máquina-formulario no se ofrece hoy (solo al conceder)"},
+                 415: {"description": "El cuerpo debe ser application/json"}}
+
+
+@router.post("/users/{user_id}/grants/grant", response_model=GrantChangeOut, responses=_WRITE_ERRORS, dependencies=[Depends(trusted_origin), Depends(json_body)])
+def grant_form(user_id: UUID, body: GrantChangeIn, response: Response, user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Concede (idempotente) el acceso del usuario a UN formulario de UNA máquina. No toca otras máquinas ni otros formularios ni concede perfiles o sectores."""
+    response.headers.update(NO_STORE)
+    return grants_write.change_machine_form_grant(connection, operation="grant", user_id=user_id, machine_code=body.machine_code, form_code=body.form_code, actor_id=user.user_id)
+
+
+@router.post("/users/{user_id}/grants/revoke", response_model=GrantChangeOut, responses=_WRITE_ERRORS, dependencies=[Depends(trusted_origin), Depends(json_body)])
+def revoke_form(user_id: UUID, body: GrantChangeIn, response: Response, user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Revoca (idempotente) esa concesión conservando el historial. Se permite también sobre un par que ya no se ofrece, para poder retirar una concesión inerte."""
+    response.headers.update(NO_STORE)
+    return grants_write.change_machine_form_grant(connection, operation="revoke", user_id=user_id, machine_code=body.machine_code, form_code=body.form_code, actor_id=user.user_id)

@@ -174,3 +174,37 @@ class UserGrantsOut(BaseModel):
     total: int  # filas que existen para la consulta (activas, o todas en el historial)
     truncated: bool  # `limit` recortó la respuesta
     grants: list[GrantOut]
+
+
+# ---- MF-13-01C.2: conceder y revocar el acceso a un formulario de una máquina ----------------------------------------------------------------------------------------------
+
+class GrantChangeIn(BaseModel):
+    """Únicos campos admitidos. Cualquier otro (actor_id, revoked_by, request_id, permisos, perfiles, user_id…) es 422: el actor sale de la sesión, el usuario de la ruta y el
+    request_id lo genera el servidor. Los códigos se validan por FORMA aquí y por EXISTENCIA contra PostgreSQL (404); no hay listas de máquinas ni de formularios en el código."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    machine_code: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z0-9][A-Z0-9_]{0,63}$")
+    form_code: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z][A-Z0-9_-]{0,63}$")
+
+
+class GrantChangeContextOut(BaseModel):
+    """Contexto informativo del usuario. NO cambia las reglas existentes: conceder no exige que el usuario esté activo ni que tenga el sector; solo se informa."""
+
+    user_active: bool
+    sector_code: str | None  # sector de la máquina
+    sector_granted: bool  # el usuario tiene concedido ese sector (user_sector)
+    sector_operational: bool
+
+
+class GrantChangeOut(BaseModel):
+    user_id: UUID
+    machine_code: str
+    form_code: str
+    operation: Literal["grant", "revoke"]
+    changed: bool  # False = ya estaba así: no se escribió ni se auditó nada
+    active: bool  # ¿queda una concesión activa de esa terna tras la operación?
+    request_id: str | None  # id de auditoría del cambio efectivo (None si no hubo cambio)
+    grant: GrantOut | None  # la fila más reciente de la terna (activa, o la última revocada); None si nunca existió
+    catalog: GrantCatalogStatusOut  # publicado / ofrecido / habilitado para captura AHORA
+    context: GrantChangeContextOut
