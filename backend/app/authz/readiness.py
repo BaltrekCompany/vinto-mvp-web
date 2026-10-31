@@ -25,7 +25,7 @@ JOIN vinto_master.sector s ON s.id = us.sector_id AND s.active
 JOIN vinto_master.machine m ON m.sector_id = s.id AND m.active
 JOIN vinto_config.form f ON f.code = ANY(%(forms)s) AND f.active
 JOIN vinto_config.form_version fv ON fv.form_id = f.id AND fv.status = 'published' AND fv.area = %(area)s
- AND fv.version_number = (SELECT max(x.version_number) FROM vinto_config.form_version x WHERE x.form_id = f.id AND x.status = 'published' AND x.area = %(area)s)
+ AND fv.version_number = (SELECT max(x.version_number) FROM vinto_config.form_version x WHERE x.form_id = f.id AND x.status = 'published')  -- la vigente de CUALQUIER área, como el motor y el catálogo
 JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = fv.id AND fvm.machine_id = m.id
 LEFT JOIN vinto_master.user_machine_form_grant g ON g.user_id = u.id AND g.machine_id = m.id AND g.form_id = f.id AND g.revoked_at IS NULL
 WHERE u.active

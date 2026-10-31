@@ -6,7 +6,8 @@ Una operación funcional queda AUTORIZADA únicamente si se cumplen A LA VEZ:
   3. sector de la máquina activo, operativo (app/sectors.py) y concedido al usuario (la concesión de una máquina NUNCA concede el sector);
   4. máquina y formulario activos;
   5. la política de la ruta admite el formulario (app/authz/policies.py);
-  6. versión publicada VIGENTE del formulario (en el área de la política) vinculada a la máquina; un vínculo solo histórico no cuenta;
+  6. versión publicada VIGENTE del formulario —la de número más alto de CUALQUIER área, como la ve el catálogo y exige el servicio de concesiones— cuya área es la de la política y que
+     está vinculada a la máquina; un vínculo solo histórico, o una versión vigente de otra área, no cuenta (MF-13-01D.1.1);
   7. concesión ACTIVA de la terna exacta (usuario, máquina, formulario).
 No hay permisos implícitos: cualquier duda es una denegación, y un fallo de infraestructura (tabla ausente, privilegio, bloqueo, tiempo, red) levanta AuthorizationUnavailable —NUNCA se
 interpreta como acceso concedido—.
@@ -60,6 +61,7 @@ R_USER_INACTIVE, R_PERMISSION_MISSING = "USER_INACTIVE", "PERMISSION_MISSING"
 R_SECTOR_INACTIVE, R_SECTOR_NOT_OPERATIONAL, R_SECTOR_NOT_GRANTED = "SECTOR_INACTIVE", "SECTOR_NOT_OPERATIONAL", "SECTOR_NOT_GRANTED"
 R_MACHINE_INACTIVE, R_FORM_INACTIVE = "MACHINE_INACTIVE", "FORM_INACTIVE"
 R_POLICY_DOES_NOT_ADMIT_FORM, R_NO_EFFECTIVE_VERSION, R_PAIR_NOT_OFFERED = "POLICY_DOES_NOT_ADMIT_FORM", "NO_EFFECTIVE_VERSION", "PAIR_NOT_OFFERED"
+R_EFFECTIVE_VERSION_OTHER_AREA = "EFFECTIVE_VERSION_OTHER_AREA"
 R_GRANT_MISSING = "GRANT_MISSING"
 
 
@@ -160,10 +162,12 @@ def _evaluate(connection, user_id, policy: OperationPolicy, machine_code, form_c
         return deny(R_POLICY_DOES_NOT_ADMIT_FORM)
     # 6 · versión publicada vigente vinculada a la máquina (SIN bloqueo, mismo motivo; solo el importador de referencias escribe aquí)
     version = connection.execute(
-        "SELECT fv.id, fv.version_number FROM vinto_config.form_version fv WHERE fv.form_id = %s AND fv.status = 'published' AND fv.area = %s ORDER BY fv.version_number DESC LIMIT 1",
-        (form_id, policy.area)).fetchone()
+        "SELECT fv.id, fv.version_number, fv.area FROM vinto_config.form_version fv WHERE fv.form_id = %s AND fv.status = 'published' ORDER BY fv.version_number DESC LIMIT 1",
+        (form_id,)).fetchone()
     if version is None:
         return deny(R_NO_EFFECTIVE_VERSION)
+    if version[2] != policy.area:
+        return deny(R_EFFECTIVE_VERSION_OTHER_AREA)  # la vigente es de otra área: el catálogo ya no ofrece este par para esta ruta (una versión anterior del área no lo revive)
     linked = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s", (version[0], machine_id)).fetchone()
     if linked is None:
         return deny(R_PAIR_NOT_OFFERED)  # un vínculo que solo existe en una versión histórica no cuenta
