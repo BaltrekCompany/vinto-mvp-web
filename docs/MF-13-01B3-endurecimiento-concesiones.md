@@ -37,7 +37,7 @@ Auditoría de `user_machine_form_grant` y de sus triggers de 0007 (`a_guard`, `i
 La 0008 solo hace `CREATE OR REPLACE FUNCTION vinto_audit.guard_user_machine_form_grant()` y `CREATE TRIGGER a_guard_insert`. **No cambia tablas, columnas, restricciones, índices, privilegios ni filas**: lo que ya esté
 guardado queda idéntico (una prueba lo verifica sobre una base en 0007 con filas activas y revocadas). Se mantienen `DELETE`/`TRUNCATE` rechazados, identidad inmutable, concesión, revocación, idempotencia, concurrencia y auditoría.
 
-SQL directo sin actor en sesión sigue funcionando (scripts de administración), pero ya no puede atribuir una fila a otra persona: los sellos quedan en NULL.
+SQL directo sin actor en sesión sigue funcionando para altas (los sellos quedan en NULL). **Corrección (MF-13-01B.4):** para *revocaciones* eso no era cierto en la 0008 (un UPDATE sin actor podía nombrar a cualquier `revoked_by`); desde la 0009 la revocación exige el actor de la sesión (`docs/MF-13-01B4-atribucion-revocaciones.md`).
 
 ## 4. Evidencia de la reproducción previa (base aislada, antes de corregir)
 Sondas sobre 0007: concesión de P1-05 en MP1 con la v1 como único vínculo → aceptada; con formulario inactivo → aceptada; con máquina inactiva → aceptada; `INSERT` con `created_by` ajeno → aceptado; revocación con
