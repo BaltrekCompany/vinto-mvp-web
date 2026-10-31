@@ -82,7 +82,8 @@ class MigrationShapeTests(unittest.TestCase):
                     self.assertNotIn("grant_machine_form", text.replace("machine_form_grants_for_user", ""), path.name)  # los consumidores de lectura solo LEEN: nunca importan conceder ni revocar
         # MF-13-01C.1: la vista administrativa de solo lectura; MF-13-01C.2: el único módulo que llama a conceder/revocar es la API administrativa (grants_write.py).
         # Sigue sin estar conectada a capturas, disponibilidad ni a la autorización efectiva.
-        self.assertEqual(consumers, ["app/admin/grants_read.py", "app/admin/grants_write.py"])
+        # MF-13-01D.1: el motor de autorización (app/authz) y su informe de preparación SOLO LEEN la tabla y siguen sin estar conectados a ningún endpoint (lo fija test_authz_engine).
+        self.assertEqual(consumers, ["app/admin/grants_read.py", "app/admin/grants_write.py", "app/authz/engine.py", "app/authz/readiness.py"])
 
     def test_the_rbac_matrix_is_untouched(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)

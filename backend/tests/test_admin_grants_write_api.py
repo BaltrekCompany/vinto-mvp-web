@@ -497,8 +497,8 @@ class UnavailabilityAndBoundaryTests(Base):
         app_dir = Path(__file__).resolve().parent.parent / "app"
         consumers = sorted(str(p.relative_to(app_dir)).replace("\\", "/") for p in app_dir.rglob("*.py")
                            if "__pycache__" not in p.parts and ("machine_form_grant" in p.read_text(encoding="utf-8") or "user_machine_form_grant" in p.read_text(encoding="utf-8")))
-        self.assertEqual(consumers, ["admin/grants_read.py", "admin/grants_write.py", "admin/router.py", "auth/machine_form_grants.py"],
-                         "solo la administración (lectura, escritura y su router) y el propio módulo conocen las concesiones: ni capturas, ni órdenes, ni bobinas, ni Calidad las consultan todavía")
+        self.assertEqual(consumers, ["admin/grants_read.py", "admin/grants_write.py", "admin/router.py", "auth/machine_form_grants.py", "authz/engine.py", "authz/readiness.py"],
+                         "solo la administración (lectura, escritura y su router), el propio módulo y el motor de solo lectura app/authz (MF-13-01D.1, sin conectar) conocen las concesiones: ni capturas, ni órdenes, ni bobinas, ni Calidad las consultan todavía")
 
     async def test_only_the_admin_write_module_imports_the_write_functions(self):
         from pathlib import Path
