@@ -376,6 +376,10 @@ Infraestructura de persistencia **sin efecto en ningún endpoint**: la política
   y seguro ante concurrencia (lo arbitra la base de datos con `ON CONFLICT`, sin leer antes). `actor_id` es obligatorio. Solo se concede un par que el catálogo ofrece
   (versión **publicada** del formulario vinculada a la máquina). Ningún módulo de `app/` lo importa todavía (lo comprueba un test).
 - **Sin autorización implícita**: sin fila activa no hay concesión; conceder un sector o un perfil nunca crea una de estas filas, ni al revés.
+- **Endurecimiento (MF-13-01B.3, migración `0008_user_machine_form_grant_integrity.sql`)**: solo se concede un par que el catálogo **ofrece hoy**, con el mismo criterio que
+  `production_access` (formulario activo, máquina y sector activos, versión publicada **más reciente** vinculada). Una fila revocada queda congelada, una fila activa solo cambia
+  al revocarse, `revoked_at` es la hora del servidor, `revoked_by` es el actor de la sesión y `created_by`/`updated_by` no se pueden falsificar. La 0008 no cambia filas ni
+  privilegios. Detalle y análisis de impacto: `docs/MF-13-01B3-endurecimiento-concesiones.md`.
 - **Privilegios**: la migración incluye su `GRANT SELECT, INSERT, UPDATE ... TO vinto_app` solo si ese rol existe (nunca `DELETE`), según `migrations/README.md`.
 - **Despliegue y reversión**: el código actual **no necesita** la tabla, así que la 0007 puede aplicarse antes o después (`migrate.py --check`, respaldo, `migrate.py`).
   Revertir = no aplicar la 0007 o restaurar el respaldo previo: ninguna migración se reescribe (checksum). Si la 0007 ya se aplicó y no se usa, la tabla vacía es inerte;

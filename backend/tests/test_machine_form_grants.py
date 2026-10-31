@@ -54,10 +54,10 @@ class MigrationShapeTests(unittest.TestCase):
     def sql(self):
         return "\n".join(line for line in MIGRATION.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("--"))
 
-    def test_it_is_the_seventh_and_last_migration(self):
+    def test_it_is_the_seventh_migration_and_nothing_before_it_moves(self):
         migrations = read_migrations()
         self.assertEqual(migrations[6].filename, "0007_user_machine_form_grants.sql")
-        self.assertEqual(len(migrations), 7)
+        self.assertGreaterEqual(len(migrations), 7)  # MF-13-01B.3 adds 0008 after it; 0007 itself is never edited (its checksum is pinned in test_sector_scope)
 
     def test_it_is_additive_it_only_creates_and_touches_nothing_else(self):
         sql = self.sql()
@@ -112,7 +112,7 @@ class MigrationOverExistingDataTests(unittest.TestCase):
             self.assertIsNone(connection.execute("SELECT to_regclass('vinto_master.user_machine_form_grant')").fetchone()[0])
             with contextlib.redirect_stdout(io.StringIO()):
                 apply_migrations(connection, migrations)
-            self.assertEqual([row[0] for row in applied_migrations(connection)], list(range(1, 8)))
+            self.assertEqual([row[0] for row in applied_migrations(connection)], list(range(1, len(migrations) + 1)))
             validate_history(migrations, applied_migrations(connection))  # checksums recorded match the files
             self.assertEqual(self.snapshot(connection), before)  # no grant, user, profile, link or audit row was added, changed or removed
             self.assertEqual(sector_codes_for_user(connection, user.user_id), sectors_before)
@@ -174,7 +174,7 @@ class IntegrityTests(DatabaseCase):
         self.assertIn("WHERE (revoked_at IS NULL)", index)
         triggers = {row[0] for row in self.connection.execute(
             "SELECT tgname FROM pg_trigger WHERE tgrelid = 'vinto_master.user_machine_form_grant'::regclass AND NOT tgisinternal").fetchall()}
-        self.assertEqual(triggers, {"a_guard", "immutable_truncate", "z_touch", "audit_changes"})
+        self.assertEqual(triggers, {"a_guard", "a_guard_insert", "immutable_truncate", "z_touch", "audit_changes"})  # a_guard_insert: MF-13-01B.3 (migración 0008)
 
     def test_a_second_active_grant_of_the_same_triple_is_rejected_but_another_machine_or_form_is_not(self):
         user = self.new_user()

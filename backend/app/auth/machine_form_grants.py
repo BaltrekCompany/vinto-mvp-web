@@ -58,6 +58,26 @@ def _lookup(connection, user_id, machine_code, form_code):
     return user_id, machine[0], form[0]
 
 
+def _require_offered(connection, form_id, machine_id, machine_code, form_code) -> None:
+    """Solo se concede un par que el catálogo OFRECE hoy, con el mismo criterio que `production_access.production_machines`: formulario activo, máquina y su
+    sector activos, y la versión PUBLICADA MÁS RECIENTE del formulario vinculada a la máquina. Un vínculo que solo existe en una versión publicada anterior (p. ej. P1-05 v1
+    en MP1 tras la v2 solo para MP3) NO cuenta: esa máquina ya no ofrece el formulario. Las versiones históricas no se tocan; una concesión ya guardada cuyo par deja de
+    ofrecerse queda inerte y se puede revocar (revocar no exige que el par siga ofrecido)."""
+    form_active, machine_active, sector_active, linked = connection.execute(
+        """SELECT f.active, m.active, s.active,
+                  EXISTS (SELECT 1 FROM (SELECT fv.id FROM vinto_config.form_version fv WHERE fv.form_id = f.id AND fv.status = 'published'
+                                         ORDER BY fv.version_number DESC LIMIT 1) latest
+                          JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = latest.id AND fvm.machine_id = m.id)
+           FROM vinto_config.form f, vinto_master.machine m JOIN vinto_master.sector s ON s.id = m.sector_id
+           WHERE f.id = %s AND m.id = %s""", (form_id, machine_id)).fetchone()
+    if not form_active:
+        raise FormNotLinkedToMachineError(f"El formulario {form_code!r} está inactivo")
+    if not (machine_active and sector_active):
+        raise FormNotLinkedToMachineError(f"La máquina {machine_code!r} o su sector está inactivo")
+    if not linked:
+        raise FormNotLinkedToMachineError(f"La versión publicada vigente de {form_code!r} no está vinculada a la máquina {machine_code!r}")
+
+
 def _context(connection, actor_id, request_id, reason):
     connection.execute("SELECT set_config('vinto.actor_id', %s, true)", (str(actor_id),))
     connection.execute("SELECT set_config('vinto.request_id', %s, true)", (request_id or f"machine_form_grant:{uuid.uuid4()}",))
@@ -67,17 +87,13 @@ def _context(connection, actor_id, request_id, reason):
 def grant_machine_form(connection, *, user_id, machine_code, form_code, actor_id, request_id=None) -> bool:
     """Concede el formulario en la máquina al usuario. Idempotente: True si creó la concesión, False si ya había una activa (nunca duplica).
 
-    `actor_id` es obligatorio: toda concesión queda atribuida. Solo se concede un par que el catálogo ofrece (alguna versión PUBLICADA del
-    formulario vinculada a la máquina); un par inexistente se rechaza en vez de guardar una concesión que nunca podría usarse.
+    `actor_id` es obligatorio: toda concesión queda atribuida. Solo se concede un par que el catálogo ofrece HOY (ver `_require_offered`: formulario, máquina y sector
+    activos y versión publicada más reciente vinculada); un par que no se ofrece se rechaza en vez de guardar una concesión que no podría usarse.
     """
     actor_id = _user_id(actor_id)
     with connection.transaction():
         user_id, machine_id, form_id = _lookup(connection, user_id, machine_code, form_code)
-        linked = connection.execute(
-            """SELECT 1 FROM vinto_config.form_version fv JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = fv.id
-               WHERE fv.form_id = %s AND fv.status = 'published' AND fvm.machine_id = %s LIMIT 1""", (form_id, machine_id)).fetchone()
-        if linked is None:
-            raise FormNotLinkedToMachineError(f"El formulario {form_code!r} no está publicado para la máquina {machine_code!r}")
+        _require_offered(connection, form_id, machine_id, machine_code, form_code)
         _context(connection, actor_id, request_id, "machine form grant")
         row = connection.execute(
             """INSERT INTO vinto_master.user_machine_form_grant (user_id, machine_id, form_id) VALUES (%s,%s,%s)
