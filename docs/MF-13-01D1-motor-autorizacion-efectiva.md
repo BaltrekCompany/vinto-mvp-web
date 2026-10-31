@@ -15,7 +15,7 @@ Una operación queda autorizada **solo si se cumplen todas a la vez**:
 | 3 | Sector de la máquina activo, operativo y **concedido al usuario** | `sector.active`, `is_operational_sector`, `user_sector` |
 | 4 | Máquina y formulario activos | `machine.active`, `form.active` |
 | 5 | La política de **esa ruta** admite el formulario | `policies.py` (conjuntos disjuntos) |
-| 6 | Versión publicada **vigente** (del área de la ruta) vinculada a la máquina | `form_version` (mayor `version_number` publicada) + `form_version_machine`; un vínculo solo histórico no cuenta |
+| 6 | Versión publicada **vigente** (mayor `version_number` publicada de cualquier área, como el catálogo), **del área de la ruta** y vinculada a la máquina | `form_version` + `form_version_machine`; un vínculo solo histórico o una vigente de otra área no cuenta (corregido en MF-13-01D.1.1: `docs/MF-13-01D11-conciliacion-version-efectiva.md`) |
 | 7 | Concesión **activa** de la terna exacta (usuario, máquina, formulario) | `user_machine_form_grant` con `revoked_at IS NULL` |
 
 Semántica de seguridad (cubierta por pruebas):

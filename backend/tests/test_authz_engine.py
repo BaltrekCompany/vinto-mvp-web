@@ -251,10 +251,15 @@ class DecisionTests(DatabaseCase):
         with self.mutated("UPDATE vinto_master.sector SET code = 'LEGACY_X' WHERE code = 'BOBINAS'"):
             self.assertDenied(user, "SECTOR_NOT_OPERATIONAL")
 
-    def test_a_form_without_an_effective_published_version_in_the_area_is_denied(self):
+    def test_a_form_without_a_published_version_is_denied(self):
+        user = self.operator()
+        with self.mutated(f"UPDATE vinto_config.form_version SET status = 'retired' WHERE form_id = (SELECT id FROM vinto_config.form WHERE code = '{P101}')"):
+            self.assertDenied(user, "NO_EFFECTIVE_VERSION")
+
+    def test_an_effective_version_of_another_area_denies_the_route(self):
         user = self.operator()
         with self.mutated(f"UPDATE vinto_config.form_version SET area = 'quality' WHERE form_id = (SELECT id FROM vinto_config.form WHERE code = '{P101}')"):
-            self.assertDenied(user, "NO_EFFECTIVE_VERSION")
+            self.assertDenied(user, "EFFECTIVE_VERSION_OTHER_AREA")  # MF-13-01D.1.1: la equivalencia completa con el catálogo está en test_authz_version_equivalence
 
     def test_an_active_grant_whose_pair_is_no_longer_offered_authorises_nothing(self):
         user = self.operator()
