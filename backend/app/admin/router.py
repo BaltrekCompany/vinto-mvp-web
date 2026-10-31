@@ -8,9 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.admin import service
+from app.admin import catalog, grants_read, service
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
-from app.admin.schemas import SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut, UserSectorsOut
+from app.admin.schemas import (CatalogOut, FormsCatalogOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut, UserDetailOut, UserGrantsOut,
+                               UserSectorsOut)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -76,3 +77,41 @@ def revoke(user_id: UUID, body: SectorChangeIn, response: Response, user: Authen
     """Revoca el sector (idempotente). Efectivo en la siguiente petición autenticada del usuario, incluso con sesiones abiertas."""
     response.headers.update(NO_STORE)
     return service.change_grant(connection, operation="revoke", user_id=user_id, sector_code=body.sector_code, actor_id=user.user_id)
+
+
+# ---- MF-13-01C.1: consulta (solo GET) del catálogo y de las concesiones máquina-formulario. Mismo permiso user.manage y mismas sesiones; sin escrituras. ------------------------------
+
+@router.get("/catalog", response_model=CatalogOut, responses=_ERRORS)
+def get_catalog(response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Sectores, máquinas y formularios que la versión publicada vigente vincula a cada máquina, con áreas, versión efectiva y estado (publicado, ofrecido, habilitado para captura)."""
+    response.headers.update(NO_STORE)
+    return catalog.catalog_tree(connection)
+
+
+@router.get("/catalog/forms", response_model=FormsCatalogOut, responses=_ERRORS)
+def get_catalog_forms(response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Formularios con su versión publicada vigente y las máquinas que esa versión vincula; incluye los que no tienen versión publicada."""
+    response.headers.update(NO_STORE)
+    return catalog.catalog_forms(connection)
+
+
+@router.get("/users/{user_id}", response_model=UserDetailOut, responses=_ERRORS)
+def get_user(user_id: UUID, response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Perfil(es), permisos derivados y sectores concedidos de un usuario."""
+    response.headers.update(NO_STORE)
+    return grants_read.user_detail(connection, user_id)
+
+
+@router.get("/users/{user_id}/grants", response_model=UserGrantsOut, responses=_ERRORS)
+def get_user_grants(user_id: UUID, response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Concesiones ACTIVAS del usuario por máquina y formulario (MP1 y MP3 son filas distintas), con el estado actual de cada par en el catálogo."""
+    response.headers.update(NO_STORE)
+    return grants_read.user_grants(connection, user_id)
+
+
+@router.get("/users/{user_id}/grants/history", response_model=UserGrantsOut, responses=_ERRORS)
+def get_user_grants_history(user_id: UUID, response: Response, limit: int = Query(default=grants_read.DEFAULT_HISTORY_LIMIT, ge=1, le=grants_read.MAX_HISTORY_LIMIT),
+                            _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_connection)):
+    """Historial completo (activas y revocadas), de la más reciente a la más antigua, con quién concedió y quién revocó."""
+    response.headers.update(NO_STORE)
+    return grants_read.user_grants(connection, user_id, include_revoked=True, limit=limit)

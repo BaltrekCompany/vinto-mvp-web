@@ -119,7 +119,7 @@ class StaticScopeTests(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_every_sector_filter_in_sql_is_fed_by_the_accessor(self):
-        filtered = [(p, text) for p, text in app_sources() if p.name != "sectors.py" and re.search(r"s\.code\s*=\s*ANY\(%s\)", text)]
+        filtered = [(p, text) for p, text in app_sources() if p.name != "sectors.py" and "admin" not in p.parts and re.search(r"s\.code\s*=\s*ANY\(%s\)", text)]  # MF-13-01C.1: la administración (user.manage) lee el catálogo completo, no un alcance de usuario
         self.assertGreaterEqual(len(filtered), 6)  # work_orders, assignments, capture_service, bobbins, quality (x2)
         for path, text in filtered:
             self.assertIn("scoped_sector_codes(", text, str(path.relative_to(APP)))  # M1-C1: the accessor is the user-scoped one
