@@ -117,7 +117,7 @@ test("MF-10 no toca TVC/ETL ni el resto del código: el seed solo trae las cinco
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-07": 2, "VINTO-P1-10": 2, "VINTO-P1-12": 3, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
+  const expected = { "VINTO-P1-07": 2, "VINTO-P1-10": 3, "VINTO-P1-12": 3, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-11"], 2, "P1-11 recibe sus horas en MF-11");
   assert.equal(versions["VINTO-P1-13"], 2, "P1-13 recibe sus horas en MF-11");

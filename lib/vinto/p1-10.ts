@@ -24,7 +24,7 @@ export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no
 
 export const CONTEXT_NOTES: Readonly<Record<string, { origin: string; pending: string }>> = {
     fecha: { origin: "Se toma del contexto de la asignación (no se digita).", pending: "Por confirmar: fecha operativa o fecha calendario de la captura." },
-    maquina: { origin: "Se toma de la máquina de la asignación (no se elige).", pending: "Por confirmar: qué máquinas pueden usar P1-10 (la definición dice «todas las rebobinadoras» pero lista solo COPASA)." },
+    maquina: { origin: "Se toma de la máquina de la asignación (no se elige).", pending: "Confirmado (MF-13-01B.2): P1-10 está disponible en Beloit, Over, Copasa, Perichun y Tubetera; el backend habilita la máquina de la asignación." },
     responsable: { origin: "Sin regla definida.", pending: "Por confirmar: no se asume que el responsable sea el operador que captura." },
     firma: { origin: "Sin mecanismo definido.", pending: "Por definir: no existe firma digital en el sistema y no se simula una." },
 };

@@ -68,7 +68,8 @@ class ApprovedBundleTests(unittest.TestCase):
         # Bobinas) sí creció. Esta prueba sigue siendo el guardián: cualquier cambio FUTURO no
         # revisado volverá a hacerla fallar, exactamente como debe.
         # MF-05: P1-01 pasa a la versión 2 (84 campos); checksum recalculado con load_bundle().source_checksum, nunca a mano.
-        self.assertEqual(BUNDLE.source_checksum, "f8a83ece83ad593f7dbf8af3d34843beee811bbdd70a23e43e8409c1a8150fd0")
+        # MF-13-01B.2: P1-10 pasa a la versión 3 (cinco máquinas de Rebobinado; mismos campos); checksum recalculado con load_bundle().source_checksum.
+        self.assertEqual(BUNDLE.source_checksum, "075a15abdda68a054494221dab1e7212264d498329688a1c66e9490b514262d6")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
         self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])

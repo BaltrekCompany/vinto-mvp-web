@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_10_registro_de_fardos",
+  "code": "VINTO-P1-10",
+  "legacy_number": 10,
+  "name": "Registro de fardos",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 2,
+  "machines": [
+    "COPASA"
+  ],
+  "groups": [],
+  "fields": [
+    {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "peso_fardo",
+      "label": "Peso fardo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 3
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 4
+    }
+  ],
+  "definition_checksum": "e35676ab3f9c430ef46f040174330365516d23ecd167b38e7809bae10695ee89"
+}

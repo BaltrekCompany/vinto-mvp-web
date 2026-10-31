@@ -140,7 +140,7 @@
     },
     {
       "path": "lib/vinto/p1-10.ts",
-      "sha256": "0183d9da805dd86b00df91beb564b887c505f69d57bc843d8bc9dc13cf0f7c35",
+      "sha256": "5814adb560791b852de9869bc9e0e95b08a44f9f6805f7953803e0f4d9ccce20",
       "scope": "candidate-fields:VINTO-P1-10 (campos a mano desde parseValues, sin FieldSpec[] exportado)"
     },
     {
@@ -217,8 +217,8 @@
     },
     {
       "path": "forms/VINTO-P1-10.json",
-      "sha256": "c71d154f527aa7ec269fdb154cb1c2d57883bead240a87841c4f183a60bac7de",
-      "bytes": 1174
+      "sha256": "76196bcf30a5b241d398a4b60dfae5ca57384726c75ea699024ed1376ef070eb",
+      "bytes": 1232
     },
     {
       "path": "forms/VINTO-P1-11.json",
