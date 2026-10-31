@@ -77,8 +77,10 @@ class MigrationShapeTests(unittest.TestCase):
         for path in (BACKEND / "app").rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             if path.name != "machine_form_grants.py" and (TABLE in text or "machine_form_grants" in text):
-                consumers.append(str(path.relative_to(BACKEND)))
-        self.assertEqual(consumers, [])  # not wired to any endpoint, dependency or availability query
+                consumers.append(str(path.relative_to(BACKEND)).replace("\\", "/"))
+                self.assertNotIn("grant_machine_form", text.replace("machine_form_grants_for_user", ""), path.name)  # los consumidores solo LEEN: nunca importan conceder ni revocar
+        # MF-13-01C.1: la única lectura permitida es la vista administrativa de solo lectura; sigue sin estar conectada a capturas, disponibilidad ni a la autorización efectiva
+        self.assertEqual(consumers, ["app/admin/grants_read.py"])
 
     def test_the_rbac_matrix_is_untouched(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)
