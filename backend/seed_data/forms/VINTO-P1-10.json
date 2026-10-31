@@ -6,9 +6,13 @@
   "name": "Registro de fardos",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
-    "COPASA"
+    "BELOIT",
+    "OVER",
+    "COPASA",
+    "PERICHUN",
+    "TUBETERA"
   ],
   "groups": [],
   "fields": [
@@ -49,5 +53,5 @@
       "display_order": 4
     }
   ],
-  "definition_checksum": "e35676ab3f9c430ef46f040174330365516d23ecd167b38e7809bae10695ee89"
+  "definition_checksum": "8649ed4241903579baec4b7575bac6ea3f2ac2d2c2426da0c4ea2f143686da21"
 }

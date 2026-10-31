@@ -1,7 +1,7 @@
 """MF-10: versión 2 de VINTO-P1-07, P1-10, P1-29, P1-30 (Rebobinado) y P1-12 (Conversión).
 
   - P1-07 (MD_Ejec 23 y 47): nombre «Registro de producción de bobinas rebobinadas» + «hora_inicio» y «hora_fin» (time, obligatorias).
-  - P1-10 (MD_Ejec 24 y 47): sin «codigo_numero_de_producto» ni «numero_de_fardo» (sin correlativo) + horas. Sigue vinculado solo a COPASA.
+  - P1-10 (MD_Ejec 24 y 47): sin «codigo_numero_de_producto» ni «numero_de_fardo» (sin correlativo) + horas. Sigue vinculado solo a COPASA (MF-13-01B.2 lo amplía a las cinco rebobinadoras en la v3).
   - P1-29 (MD_Ejec 30 y 47): sin «peso_fardo» ni «peso_kg_por_formato»; «formato_tipo_de_tubete» = «Formato de tubete»; espesor en MM; diámetros interno y externo de TEXTO; + horas.
   - P1-30 (MD_Ejec 34 y 47): sin gramaje, resistencias ni número MRP; + «lote» (texto, obligatorio) donde estaba la resistencia longitudinal; + horas.
   - P1-12 (MD_Ejec 43): «formato» pasa de decimal a TEXTO libre (4*12, 4X12, 4x12, 4.12).
@@ -12,9 +12,11 @@ Se verifica contra PostgreSQL REAL (base efímera *_test) con los formularios RE
 import contextlib
 import dataclasses
 import io
+import json
 import secrets
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -38,7 +40,9 @@ except ModuleNotFoundError:
 P107, P110, P112, P129, P130 = "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-12", "VINTO-P1-29", "VINTO-P1-30"
 CODES = (P107, P110, P112, P129, P130)
 BUNDLE = load_bundle()
-FORMS = {f["code"]: f for f in BUNDLE.forms}
+V2_P110 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(encoding="utf-8"))  # MF-13-01B.2: la v3 de P1-10 solo amplía las máquinas; estas pruebas son las de MF-10 (v2, solo COPASA)
+BUNDLE_MF10 = dataclasses.replace(BUNDLE, forms=tuple(V2_P110 if f["code"] == "VINTO-P1-10" else f for f in BUNDLE.forms))
+FORMS = {f["code"]: f for f in BUNDLE_MF10.forms}
 FORMS[P112] = {**FORMS[P112], "version_number": 2, "fields": [f for f in FORMS[P112]["fields"] if f["key"] not in ("hora_inicio", "hora_fin")]}  # MF-11: la v3 añade las horas; aquí se prueba la v2 de MF-10
 MACHINE = {P107: "COPASA", P110: "COPASA", P112: "GAMBINI", P129: "TUBETERA", P130: "PERICHUN"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in set(MACHINE.values()) | {"OVER", "BELOIT", "SINCRO_II", "SINCRO_III"}}
@@ -113,14 +117,14 @@ def numbered(fields):
 def variant(checksum, spec):
     """El bundle vigente con algunas formularios sustituidos por una versión anterior: {código: (versión, campos, grupos, nombre)}."""
     forms = []
-    for form in BUNDLE.forms:
+    for form in BUNDLE_MF10.forms:
         if form["code"] in spec:
             number, fields, groups, name = spec[form["code"]]
             built = [{**g, "fields": numbered(g["fields"])} for g in groups]
             form = {**form, "version_number": number, "name": name or form["name"], "fields": numbered(fields), "groups": built}
             form["definition_checksum"] = compute_definition_checksum(form)
         forms.append(form)
-    return dataclasses.replace(BUNDLE, source_checksum=checksum, forms=tuple(forms))
+    return dataclasses.replace(BUNDLE_MF10, source_checksum=checksum, forms=tuple(forms))
 
 
 def v1_spec():
@@ -160,6 +164,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
         restore_previous(cls.connection, P112, 3, ("hora_inicio", "hora_fin"))
+        restore_previous(cls.connection, P110, 3, ())  # MF-13-01B.2: P1-10 v3 (cinco máquinas, mismos campos) -> la v2 de MF-10
         cls.current = {code: cls.version(code, 2) for code in CODES}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, v1_spec()))  # las versiones 1 históricas, publicadas como en producción (aditivo)
@@ -355,8 +360,9 @@ class P110Tests(Base, HoursCommon):
         self.assertEqual((capture["line"]["article"]["code"], capture["work_order"]["number"], capture["machine"]["code"]), (ARTICLE["COPASA"], assignment["work_order"]["number"], "COPASA"))
         self.assertNotIn("codigo_numero_de_producto", capture["values"])
 
-    async def test_only_copasa_can_use_p1_10(self):
-        for machine in ("OVER", "BELOIT"):
+    async def test_p1_10_is_not_offered_outside_rebobinado(self):
+        # MF-13-01B.2: la v3 amplía P1-10 a las cinco rebobinadoras (ver test_mf13_p110_rebobinado_machines.py); aquí queda la parte de MF-10 que sigue vigente.
+        for machine in ("GAMBINI",):
             assignment = await self.assignment(machine)
             reply = await self.post(assignment, P110, values_for(P110))
             self.assertIn(reply.status, (409, 422), (machine, reply.text))
@@ -515,7 +521,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         other_where = f"f.code NOT IN ({codes})"
         old, other = self.snapshot(old_where), self.snapshot(other_where)
         self.assertEqual((len(old[0]), len(old[1])), (5, 36 + 4 + 10 + (6 + 2 + 9) + 20))
-        dry = reference.dry_run(self.connection, BUNDLE)
+        dry = reference.dry_run(self.connection, BUNDLE_MF10)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 5)
         self.assertEqual(dry.counts["field"]["create"], 38 + 4 + 17 + 9 + 22)  # P1-12 llega como v3 (MF-11): 22 campos
@@ -523,7 +529,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual(dry.counts["field_group"]["create"], 2)
         self.assertEqual(dry.counts["option"]["create"], 0)
         self.assertEqual(self.snapshot(old_where), old, "el dry-run no escribe")
-        result = reference.apply(self.connection, BUNDLE)
+        result = reference.apply(self.connection, BUNDLE_MF10)
         self.assertEqual((result.mode, result.conflicts), ("applied", []))
         self.assertEqual(self.snapshot(old_where), old, "las versiones 1 y sus campos quedan idénticos")
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
@@ -532,7 +538,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
                              [(1, "published"), (3 if code == P112 else 2, "published")], code)
         names = dict(self.connection.execute("SELECT v.version_number, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s", (P107,)).fetchall())
         self.assertEqual(names, {1: OLD_P107_NAME, 2: NEW_P107_NAME})
-        again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
+        again = reference.apply(self.connection, dataclasses.replace(BUNDLE_MF10, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")
 
 
