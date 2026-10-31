@@ -48,8 +48,10 @@ class Settings(BaseSettings):
     #   enforce  exige la autorización efectiva: 403/404 si se deniega, 503 si no se puede decidir
     # Un valor no reconocido impide arrancar (falla cerrado, nunca "off" silencioso).
     authz_central_captures_mode: Literal["off", "observe", "enforce"] = "off"
+    # MF-13-01D.2B: ídem para POST /api/bobbins (F3, Operation.BOBBIN_PRODUCTION). Configuración INDEPENDIENTE: ninguna activa la otra. Variable AUTHZ_BOBBIN_PRODUCTION_MODE.
+    authz_bobbin_production_mode: Literal["off", "observe", "enforce"] = "off"
 
-    @field_validator("authz_central_captures_mode", mode="before")
+    @field_validator("authz_central_captures_mode", "authz_bobbin_production_mode", mode="before")
     @classmethod
     def _normalize_authz_mode(cls, value):
         return value.strip().lower() if isinstance(value, str) else value
