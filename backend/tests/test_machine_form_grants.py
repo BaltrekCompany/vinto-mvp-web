@@ -154,6 +154,12 @@ class DatabaseCase(unittest.TestCase):
     def ids(self, machine, form):
         return (self.scalar("SELECT id FROM vinto_master.machine WHERE code = %s", (machine,)), self.scalar("SELECT id FROM vinto_config.form WHERE code = %s", (form,)))
 
+    def raw_revoke(self, grant_id):
+        """Revocación directa como la hace un operador: con el actor de la sesión (desde la 0009 una revocación sin actor se rechaza)."""
+        with self.connection.transaction():
+            self.connection.execute("SELECT set_config('vinto.actor_id', %s, true)", (str(self.admin),))
+            self.connection.execute("UPDATE vinto_master.user_machine_form_grant SET revoked_at = clock_timestamp(), revoked_by = %s WHERE id = %s", (self.admin, grant_id))
+
     def raw_insert(self, user_id, machine="MP1", form=P101):
         machine_id, form_id = self.ids(machine, form)
         return self.connection.execute("INSERT INTO vinto_master.user_machine_form_grant (user_id, machine_id, form_id) VALUES (%s,%s,%s) RETURNING id",
@@ -188,7 +194,7 @@ class IntegrityTests(DatabaseCase):
     def test_after_a_revocation_the_same_triple_can_be_granted_again_as_a_new_row(self):
         user = self.new_user()
         first = self.raw_insert(user)
-        self.connection.execute("UPDATE vinto_master.user_machine_form_grant SET revoked_at = clock_timestamp(), revoked_by = %s WHERE id = %s", (self.admin, first))
+        self.raw_revoke(first)
         second = self.raw_insert(user)
         self.assertNotEqual(first, second)
         self.assertEqual(self.rows(user), 2)
@@ -219,7 +225,7 @@ class IntegrityTests(DatabaseCase):
                             ("UPDATE vinto_master.user_machine_form_grant SET form_id = %s WHERE id = %s", (form_id, grant_id))):
             with self.assertRaises(psycopg.errors.CheckViolation, msg=sql), self.connection.transaction():
                 self.connection.execute(sql, params)
-        self.connection.execute("UPDATE vinto_master.user_machine_form_grant SET revoked_at = clock_timestamp(), revoked_by = %s WHERE id = %s", (self.admin, grant_id))
+        self.raw_revoke(grant_id)
         for sql in ("UPDATE vinto_master.user_machine_form_grant SET revoked_at = NULL, revoked_by = NULL WHERE id = %s",  # a revocation is final
                     "UPDATE vinto_master.user_machine_form_grant SET revoked_by = created_by WHERE id = %s"):
             with self.assertRaises(psycopg.errors.CheckViolation, msg=sql), self.connection.transaction():

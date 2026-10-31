@@ -380,6 +380,8 @@ Infraestructura de persistencia **sin efecto en ningún endpoint**: la política
   `production_access` (formulario activo, máquina y sector activos, versión publicada **más reciente** vinculada). Una fila revocada queda congelada, una fila activa solo cambia
   al revocarse, `revoked_at` es la hora del servidor, `revoked_by` es el actor de la sesión y `created_by`/`updated_by` no se pueden falsificar. La 0008 no cambia filas ni
   privilegios. Detalle y análisis de impacto: `docs/MF-13-01B3-endurecimiento-concesiones.md`.
+- **Atribución de revocaciones (MF-13-01B.4, migración `0009_user_machine_form_grant_revocation_actor.sql`)**: una revocación debe llevar el actor de la sesión (`vinto.actor_id`) y `revoked_by` debe ser ese actor;
+  un UPDATE directo sin actor ya no puede nombrar a otro usuario. El actor lo escribe el cliente (límite de PostgreSQL): la evidencia es la auditoría. Procedimiento manual y consulta de revisión en `docs/MF-13-01B4-atribucion-revocaciones.md`.
 - **Privilegios**: la migración incluye su `GRANT SELECT, INSERT, UPDATE ... TO vinto_app` solo si ese rol existe (nunca `DELETE`), según `migrations/README.md`.
 - **Despliegue y reversión**: el código actual **no necesita** la tabla, así que la 0007 puede aplicarse antes o después (`migrate.py --check`, respaldo, `migrate.py`).
   Revertir = no aplicar la 0007 o restaurar el respaldo previo: ninguna migración se reescribe (checksum). Si la 0007 ya se aplicó y no se usa, la tabla vacía es inerte;
