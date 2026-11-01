@@ -72,7 +72,11 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
 5. `docker/docker-compose.postgres.yml` — lo levanta `deploy.sh postgres-up`.
 6. `backend/roles/*.sql` (del repositorio principal, no de esta carpeta) — los ejecuta
    `deploy.sh postgres-roles`/`postgres-grants` en el orden de `backend/roles/README.md`,
-   **omitiendo `00b_create_test_admin_role.sql`**.
+   **omitiendo `00b_create_test_admin_role.sql`**. `postgres-grants` incluye una guarda de solo lectura
+   (MF-13-01D.3B.1): si `vinto_app` ya perdió `INSERT`/`UPDATE` de tabla sobre `profile`, `machine` o
+   `sector`, se detiene SIN ejecutar ningún `GRANT` (ejecutar `03` restauraría esos privilegios) y
+   explica el procedimiento; si D.3B.1 no está aplicado, la fase es idéntica a la anterior. Nunca
+   aplica `03b` ni su reversión.
 7. `systemd/*.service` — los instala `deploy.sh systemd-install`; referencian `current/`, nunca
    una ruta de release fija.
 8. `nginx/vinto-mvp.conf.template` — **paso separado y posterior** (Fase 5 de CLOUD-DEP-02A); no se

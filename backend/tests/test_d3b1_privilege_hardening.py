@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 import psycopg
@@ -21,6 +22,9 @@ from app.auth.service import create_user, deactivate_user, reactivate_user
 from app.auth.sessions import InvalidSessionError, login_with_session, resolve_session, revoke_session
 from app.authz import authorize
 from app.authz.policies import Operation
+from app.config import settings
+from app.db_guard import UnsafeDatabaseError, resolve_role_url
+from pydantic import SecretStr
 from app.ephemeral_db import build_reference_template, connect, create_database, drop_database
 
 try:
@@ -313,7 +317,6 @@ class ApplicationFlowsTests(D3B1Case):
 
     async def test_sector_revocation_still_waits_for_business_captures(self):
         self.harden()
-        from unittest.mock import patch
         from app import capture_service as cs
         from app.auth.grants import grant_sector
         for op in sync.OPERATIONS:
@@ -369,6 +372,11 @@ class ReferenceImportTests(unittest.TestCase):
                 conn.execute(statement)
             run(conn, sql_statements(APPLY, app=app_role))
             self.assertEqual(d3b.matrix(conn, app_role, TABLES), {t: "S;u=(updated_at)" for t in TABLES})
+            conn.execute(f"SET ROLE {app_role}")  # el fallback silencioso a vinto_app: la importación real NO puede ejecutarse
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                reference.apply(conn, load_bundle())
+            self.assertEqual(conn.execute("SELECT count(*) FROM vinto_master.sector").fetchone()[0], 0)  # sin importación parcial
+            conn.execute("RESET ROLE")
             conn.execute(f"SET ROLE {reference_role}")
             result = reference.apply(conn, load_bundle())  # importación REAL de profile, machine y sector con el rol de referencia, sobre un catálogo vacío y ya endurecido
             conn.execute("RESET ROLE")
@@ -377,6 +385,43 @@ class ReferenceImportTests(unittest.TestCase):
             conn.execute("DROP OWNED BY " + app_role)
             conn.execute("DROP OWNED BY " + reference_role)
         self.assertIsNotNone(result)
+
+
+class ReferenceConnectionReadinessTests(unittest.TestCase):
+    """Antes de D.3B.1 la conexión que escribe referencias debe ser vinto_reference (REFERENCE_DATABASE_URL / REFERENCE_TEST_DATABASE_URL).
+    Una URL ausente que cae a vinto_app (DATABASE_URL / TEST_DATABASE_URL) NO es un despliegue listo. import_reference.py no cambia en este PR."""
+
+    APP, REFERENCE = "postgresql://app-account@h/db", "postgresql://reference-account@h/db"  # URLs sintéticas, sin secretos
+
+    def resolve(self, mode, reference, app, label="REFERENCE_DATABASE_URL"):
+        with patch.object(settings, "pg_privilege_mode", mode):
+            return resolve_role_url(SecretStr(reference) if reference else None, SecretStr(app), label=label)
+
+    def test_legacy_mode_without_the_reference_url_silently_falls_back_to_the_application_account(self):
+        resolved = self.resolve("legacy", None, self.APP)
+        self.assertEqual(resolved, self.APP)  # caracterización: es exactamente el escenario que D.3B.1 rompe
+        self.assertNotEqual(resolved, self.REFERENCE)
+
+    def test_a_dedicated_reference_url_is_honoured_in_both_modes(self):
+        for mode in ("legacy", "hardened"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.resolve(mode, self.REFERENCE, self.APP), self.REFERENCE)
+
+    def test_hardened_mode_refuses_to_fall_back_and_does_not_leak_either_url(self):
+        for reference in (None, ""):
+            with self.subTest(reference=reference):
+                with self.assertRaises(UnsafeDatabaseError) as raised:
+                    self.resolve("hardened", reference, self.APP)
+                self.assertNotIn(self.APP, str(raised.exception))
+                self.assertIn("REFERENCE_DATABASE_URL", str(raised.exception))
+        with self.assertRaises(UnsafeDatabaseError):
+            self.resolve("hardened", None, self.APP, label="REFERENCE_TEST_DATABASE_URL")
+
+    def test_the_importer_still_resolves_its_connection_through_the_unchanged_helper(self):
+        text = (BACKEND / "import_reference.py").read_text(encoding="utf-8")
+        self.assertIn('resolve_role_url(settings.reference_database_url, settings.database_url, label="REFERENCE_DATABASE_URL")', text)
+        self.assertIn('resolve_role_url(settings.reference_test_database_url, settings.test_database_url,', text)
+        self.assertIn('label="REFERENCE_TEST_DATABASE_URL"', text)
 
 
 # ---- 15/16. guardas del script, reversión y reaprovisionamiento ----------------------------------------------------------------------------------------------------
@@ -481,6 +526,12 @@ class RollbackTests(D3B1Case):
             self.assertEqual(d3b.matrix(self.connection, self.business, TABLES), {t: "SIU" for t in TABLES})
 
 
+def deploy_guard_query(role):
+    """La consulta de solo lectura de deploy.sh::assert_d3b1_not_silently_reverted_by_03, con el nombre de rol sustituido."""
+    match = re.search(r'pg_run_sql_inline vinto_migrator "\$migrator_pw" vinto_piloto \\\n\s+"(SELECT count\(\*\).+?;)"\)"; then', DEPLOY.read_text(encoding="utf-8"), re.S)
+    return re.sub(r"\bvinto_app\b", role, match.group(1))
+
+
 class ReprovisioningDriftTests(D3B1Case):
     async def test_rerunning_03_alone_reintroduces_the_privileges_and_the_verification_query_detects_it(self):
         self.assertFalse(any(row["d3b1_compliant"] for row in self.drift_report().values()))  # antes de adoptar: no cumple
@@ -495,6 +546,21 @@ class ReprovisioningDriftTests(D3B1Case):
         self.assertFalse(any(row["d3b1_compliant"] for row in drifted.values()))
         self.assertTrue(all(row["app_insert_tabla"] and row["app_update_tabla"] for row in drifted.values()))
         self.assertNotEqual(self.try_as(self.business, "INSERT INTO vinto_master.sector DEFAULT VALUES"), "privilege")  # el privilegio retirado volvió
+
+    async def test_the_deploy_guard_query_counts_hardened_tables_in_each_state(self):
+        """El SQL que deploy.sh ejecuta ANTES de los GRANT: 0 sin endurecer (despliegue heredado), 3 endurecido, 1 parcial, 0 si el rol no existe."""
+        count = lambda role=None: self.connection.execute(deploy_guard_query(role or self.business)).fetchone()[0]
+        self.assertEqual(count(), 0)
+        self.harden()
+        self.assertEqual(count(), 3)
+        self.connection.execute(f"GRANT INSERT, UPDATE ON vinto_master.sector TO {self.business}")
+        self.assertEqual(count(), 2)
+        self.connection.execute(f"GRANT INSERT, UPDATE ON vinto_master.machine, vinto_master.profile TO {self.business}")
+        self.assertEqual(count(), 0)
+        self.connection.execute(f"REVOKE UPDATE ON vinto_master.machine FROM {self.business}")  # solo UPDATE retirado también cuenta
+        self.assertEqual(count(), 1)
+        self.assertEqual(count(f"d3b1_absent_{uuid4().hex[:6]}"), 0)
+        self.assertTrue(str(self.connection.execute(deploy_guard_query(self.business)).fetchone()[0]).isdigit())
 
     async def test_the_documented_procedure_03_then_03b_is_convergent_and_repeatable(self):
         for _ in range(2):
@@ -555,9 +621,40 @@ class ProvisioningFilesTests(unittest.TestCase):
         self.assertIn("03_table_grants", steps)
         if "03b_d3b1_restrict_catalog_writes" in steps:
             self.assertEqual(steps[steps.index("03_table_grants") + 1], "03b_d3b1_restrict_catalog_writes")
-        text = DEPLOY.read_text(encoding="utf-8")
-        self.assertNotIn("ROLLBACK_D3B1", text)  # la reversión nunca la ejecuta el despliegue
-        self.assertNotIn("proposals/", text)
+        # la reversión, 03b y las propuestas nunca las ejecuta el despliegue: ninguna llamada pg_run_sql_* (la guarda solo las NOMBRA en su mensaje de ayuda)
+        executing = [line for line in DEPLOY.read_text(encoding="utf-8").splitlines() if "pg_run_sql_" in line and not line.lstrip().startswith("#")]
+        self.assertTrue(executing)
+        for line in executing:
+            self.assertNotRegex(line, r"(?i)03b|rollback|proposals")
+        self.assertIn("assert_d3b1_not_silently_reverted_by_03", DEPLOY.read_text(encoding="utf-8"))
+
+
+class Postgres17WorkflowTests(unittest.TestCase):
+    """El flujo de GitHub Actions que valida en PostgreSQL 17: sin secretos, sin VPS, solo lectura y con comprobación de versión (no se ejecuta aquí)."""
+
+    WORKFLOW = BACKEND.parent / ".github/workflows/d3b1-postgres17.yml"
+
+    def code(self):
+        return "\n".join(line for line in self.WORKFLOW.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
+
+    def test_it_runs_the_d3b1_tests_against_a_postgres_17_service_and_fails_on_any_other_version(self):
+        code = self.code()
+        self.assertRegex(code, r"(?m)image:\s*postgres:17\s*$")
+        self.assertNotRegex(code, r"postgres:(1[0-6]|18|latest)")
+        self.assertIn("170000 <= number < 180000", code)
+        for target in ("tests.test_d3b1_privilege_hardening", "tests.test_grants_hardening_design", "test_postgres_grants_d3b1_guard.sh"):
+            self.assertIn(target, code)
+
+    def test_it_has_no_secrets_no_deployment_and_only_read_permissions(self):
+        code = self.code()
+        self.assertNotIn("secrets.", code)
+        self.assertRegex(code, r"permissions:\s*\n\s+contents: read")
+        self.assertNotRegex(code, r"(?i)\b(ssh|scp|rsync|vps|systemctl|docker login|aws |gcloud )")
+        for line in code.splitlines():
+            if "deploy.sh" in line:  # solo como nombre de paso o filtro de rutas; nunca ejecutado
+                self.assertRegex(line.strip(), r'^(- name:|- "deploy/mvp/scripts/deploy\.sh"$)')
+        self.assertNotRegex(code, r"(?i)contents:\s*write|id-token|pull_request_target")
+        self.assertIn("persist-credentials: false", code)
 
 
 if __name__ == "__main__":
