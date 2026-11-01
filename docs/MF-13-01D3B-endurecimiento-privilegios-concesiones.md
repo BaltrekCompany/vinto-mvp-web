@@ -127,6 +127,8 @@ Con el rol de negocio propuesto: E1–E7 y E9 pasan de «permitido» a **42501**
 
 **Qué se movió respecto a la primera versión:** `SELECT` sobre `credential` (el hash), `UPDATE` por columna sobre `user`, `user_profile` y `user_machine_form_grant`, y toda revocación sobre `user_sector`, `session`, `auth_event` pasan de D.3B.1 a D.3B.4.
 
+**Estado de D.3B.2:** implementada en MF-13-01D.3B.2 (`docs/MF-13-01D3B2-integracion-rol-identidad.md`): `IDENTITY_DATABASE_URL` opcional, login/logout/administración/CLI con la conexión de identidad, revalidación del actor dentro de la transacción y scripts `00c`/`03c`/`ROLLBACK_D3B2`. No revoca nada a `vinto_app` y no está aplicada en ningún entorno persistente. D.3B.3 y D.3B.4 se completan en el release único (`docs/MF-13-PLAN-release-unico.md`).
+
 **Estado de D.3B.1:** implementada en MF-13-01D.3B.1 (`backend/roles/03b_d3b1_restrict_catalog_writes.sql`, `backend/roles/rollback/ROLLBACK_D3B1.sql`; detalle, matriz y evidencia en `docs/MF-13-01D3B1-endurecimiento-inicial-privilegios.md`). No está adoptada en ningún entorno persistente. Las demás fases siguen sin implementar.
 
 ### 7.3 Matriz de revocaciones (fuente de la prueba de orden)
@@ -157,7 +159,7 @@ Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se
 | `app/auth/router.py::logout` | `open_connection()` directo dentro del handler | `open_identity_connection()` en el mismo lugar, para seguir borrando la cookie aunque la conexión falle | identidad |
 | `app/auth/dependencies.py::current_user` (resolución de sesiones) | `Depends(get_connection)` → `resolve_session` | **sin cambio**: `resolve_session` solo lee columnas de la credencial y actualiza `last_seen_at` | negocio |
 | `app/admin/router.py` (todas las rutas, lecturas incluidas) | `Depends(get_connection)` | `Depends(get_identity_connection)`; la autorización `require_permission(USER_MANAGE)` sigue resolviendo la sesión con el rol de negocio | identidad |
-| `app/admin/service.py`, `app/admin/grants_write.py` | reciben la conexión del router | sin cambio de código: heredan la conexión de identidad | identidad |
+| `app/admin/service.py`, `app/admin/grants_write.py` | reciben la conexión del router | heredan la conexión de identidad; además revalidan al actor (`app/admin/actor.py`) dentro de la transacción de la escritura | identidad |
 | `app/auth/service.py` (`create_user`, `authenticate`, `deactivate_user`, `reactivate_user`) | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/grants.py`, `app/auth/machine_form_grants.py` | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/sessions.py` (`login_with_session`, `create_session`, `revoke_session`; `resolve_session` es de negocio) | reciben la conexión del llamador | sin cambio de código | identidad / negocio |

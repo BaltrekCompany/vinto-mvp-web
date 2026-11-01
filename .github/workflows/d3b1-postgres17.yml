@@ -14,6 +14,9 @@ on:
     paths:
       - "backend/roles/**"
       - "backend/tests/test_d3b1_privilege_hardening.py"
+      - "backend/tests/test_d3b2_identity_role.py"
+      - "backend/app/database.py"
+      - "backend/app/admin/**"
       - "backend/tests/test_grants_hardening_design.py"
       - "backend/tests/roles_e2e.py"
       - "deploy/mvp/scripts/deploy.sh"
@@ -77,9 +80,9 @@ jobs:
           assert 170000 <= number < 180000, f"se esperaba PostgreSQL 17.x, el servidor es {number}"
           PY
 
-      - name: Pruebas de privilegios D.3B.1 y MF-13-01D.3B (PostgreSQL 17)
+      - name: Pruebas de privilegios D.3B.1, D.3B.2 y MF-13-01D.3B (PostgreSQL 17)
         working-directory: backend
-        run: python -B -m unittest tests.test_d3b1_privilege_hardening tests.test_grants_hardening_design -v
+        run: python -B -m unittest tests.test_d3b1_privilege_hardening tests.test_d3b2_identity_role tests.test_grants_hardening_design -v
 
       - name: Guarda de deploy.sh (postgres-grants), sin Docker ni PostgreSQL reales
         run: bash deploy/mvp/scripts/tests/test_postgres_grants_d3b1_guard.sh

@@ -12,7 +12,7 @@ from app.auth.schemas import LoginRequest, SessionOut, user_out
 from app.auth.service import AuthenticatedUser
 from app.auth.sessions import login_with_session, revoke_session
 from app.config import settings
-from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, get_connection, logger, open_connection
+from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, get_identity_connection, logger, open_identity_connection
 
 router = APIRouter(prefix="/api/auth", tags=["Autenticación"])
 
@@ -26,7 +26,7 @@ def cookie_options() -> dict:
 
 
 @router.post("/login", response_model=SessionOut, responses={401: {"description": "Credenciales inválidas"}, 503: {"description": "PostgreSQL no disponible"}})
-def login(body: LoginRequest, response: Response, connection=Depends(get_connection)):
+def login(body: LoginRequest, response: Response, connection=Depends(get_identity_connection)):
     """Credenciales inexistentes, incorrectas, cuenta bloqueada o usuario inactivo dan el MISMO 401 y el mismo cuerpo
     (sin Retry-After): la respuesta no revela el estado de la cuenta."""
     try:
@@ -60,13 +60,13 @@ def logout(request: Request):
     reply: Response = Response(status_code=204, headers=NO_STORE)
     if token:
         try:
-            connection = open_connection()
+            connection = open_identity_connection()
             try:
                 revoke_session(connection, token, request_id=str(uuid.uuid4()))
             finally:
                 connection.close()
         except (DatabaseUnavailable, psycopg.Error) as error:
-            if isinstance(error, psycopg.Error):  # open_connection ya registra sus propios fallos
+            if isinstance(error, psycopg.Error):  # open_identity_connection ya registra sus propios fallos
                 logger.warning("PostgreSQL: error durante logout (%s)", type(error).__name__)
             reply = JSONResponse(status_code=503, content=UNAVAILABLE_BODY, headers=NO_STORE)
     reply.delete_cookie(**cookie_options())

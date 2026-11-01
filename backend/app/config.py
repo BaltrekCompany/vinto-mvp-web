@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     reference_database_url: SecretStr | None = None
     reference_test_database_url: SecretStr | None = None
     test_admin_database_url: SecretStr | None = None
+    # MF-13-01D.3B.2: conexión del rol de IDENTIDAD (login, logout, administración de usuarios y concesiones, CLI). OPCIONAL: ausente o vacía = comportamiento anterior
+    # (esas rutas usan database_url). Presente = esas rutas usan SOLO esta URL y, si falla, no hay retroceso silencioso a database_url (ver app/database.py).
+    identity_database_url: SecretStr | None = None
+    identity_test_database_url: SecretStr | None = None
     # PG54-04: señal explícita de endurecimiento, NUNCA "hardened" por defecto (no se activa en este PR).
     # "legacy" (por defecto): comportamiento actual, con fallback silencioso a database_url/test_database_url
     # cuando una URL de identidad específica no está configurada — igual que antes de CLOUD-01B-2.

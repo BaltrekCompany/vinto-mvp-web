@@ -11,6 +11,7 @@ import uuid
 
 from app.admin.errors import SectorInactive, SectorNotFound, UserNotFound
 from app.auth.errors import SectorNotFoundError, UserNotFoundError
+from app.admin.actor import require_actor_authorized
 from app.auth.grants import grant_sector, revoke_sector
 from app.sectors import KNOWN_SECTOR_CODES, is_operational_sector
 
@@ -78,7 +79,9 @@ def change_grant(connection, *, operation, user_id, sector_code, actor_id) -> di
     request_id = f"admin-sector-{operation}:{uuid.uuid4()}"  # generado por el servidor; el cliente no puede fijarlo ni fijar el actor
     try:
         action = grant_sector if operation == "grant" else revoke_sector
-        changed = action(connection, user_id=user_id, sector_code=sector_code, actor_id=actor_id, request_id=request_id)
+        with connection.transaction():  # el actor se revalida y la escritura se confirma en la MISMA transacción (ver app/admin/actor.py)
+            require_actor_authorized(connection, actor_id)
+            changed = action(connection, user_id=user_id, sector_code=sector_code, actor_id=actor_id, request_id=request_id)
     except UserNotFoundError:
         raise UserNotFound() from None
     except SectorNotFoundError:

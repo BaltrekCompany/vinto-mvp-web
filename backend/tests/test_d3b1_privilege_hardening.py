@@ -60,9 +60,10 @@ def tearDownModule():
 
 def sql_statements(path, **roles):
     """Sentencias de un script SQL real, sin comentarios de línea completa ni meta-comandos de psql, con los nombres de rol sustituidos
-    (app= para vinto_app, reference= para vinto_reference, migrator= para vinto_migrator)."""
+    (app= para vinto_app, reference= para vinto_reference, migrator= para vinto_migrator, identity= para vinto_identity)."""
     text = "\n".join(line for line in path.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith(("--", "\\")))
-    for placeholder, name in (("vinto_app", roles.get("app")), ("vinto_reference", roles.get("reference")), ("vinto_migrator", roles.get("migrator"))):
+    for placeholder, name in (("vinto_app", roles.get("app")), ("vinto_reference", roles.get("reference")), ("vinto_migrator", roles.get("migrator")),
+                              ("vinto_identity", roles.get("identity"))):
         if name:
             text = re.sub(rf"\b{placeholder}\b", name, text)
     return d3b.split_sql(text)

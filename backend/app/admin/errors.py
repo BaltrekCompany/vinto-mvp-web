@@ -19,6 +19,11 @@ class SectorInactive(AdminError):
     http_status, code, public_message = 422, "SECTOR_INACTIVE", "El sector está inactivo y no admite nuevas concesiones"
 
 
+class ActorNotAuthorized(AdminError):
+    """El administrador perdió el permiso (desactivado o sin perfil con user.manage) entre la comprobación de la petición y la escritura: no se escribe nada."""
+    http_status, code, public_message = 403, "ACTOR_NOT_AUTHORIZED", "Permiso insuficiente"
+
+
 class OriginNotAllowed(AdminError):
     http_status, code, public_message = 403, "ORIGIN_NOT_ALLOWED", "Origen no autorizado"
 
