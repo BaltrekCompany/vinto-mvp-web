@@ -109,7 +109,11 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
     async def post(self, body, who="OPERACION", at=DAY):
         with patch.object(_capture_service, "_now", return_value=at):
-            return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie(who))
+            return await self._send(body, who)
+
+    async def _send(self, body, who="OPERACION"):
+        """La petición SIN parchear el reloj: las pruebas concurrentes la lanzan dentro de UN solo parche (varios parches superpuestos restauran un mock; QA-REG.1)."""
+        return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie(who))
 
     async def get(self, path, who="OPERACION"):
         return await call("GET", path, cookie=await self.cookie(who))
@@ -261,7 +265,8 @@ class WriteTests(Base):
     async def test_concurrency_identical_posts_create_one_capture(self):
         _, assignment = await self.assignment()
         body = self.payload(assignment)
-        replies = await asyncio.gather(*[self.post(body) for _ in range(5)])
+        with patch.object(_capture_service, "_now", return_value=DAY):  # UN solo parche para todo el lote: se restaura exactamente al salir, incluso ante excepciones o cancelación
+            replies = await asyncio.gather(*[self._send(body) for _ in range(5)])  # las cinco peticiones siguen siendo concurrentes
         self.assertEqual(sorted(r.status for r in replies), [200, 200, 200, 200, 201])
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id = %s", (body["capture_id"],)), len(P104_VALUES))
 
