@@ -17,8 +17,8 @@ Estado: **planificación; no autoriza ningún despliegue ni ningún cambio en la
 | MF-13-01D.3A | Sincronización de la revocación de sectores con las capturas | Fusionado |
 | MF-13-01D.3B.1 | `vinto_app` pierde `INSERT`/`UPDATE` de tabla sobre `profile`, `machine`, `sector` (script, rollback, guarda de `postgres-grants`) | Fusionado (PR #99). No aplicado en la VPS |
 | MF-13-01D.3B.2 | Rol de identidad: `IDENTITY_DATABASE_URL`, login/logout/administración/CLI con la conexión de identidad, revalidación del actor, scripts `00c`/`03c`/rollback | Fusionado (PR #100). No aplicado en la VPS |
-| **MF-13-01D.3B.3** | Puerta de verificación con ambos roles (login, logout, sesiones, administración, concesiones, auditoría y las cuatro capturas) | **Automatizada en este PR** (`docs/MF-13-01D3B3-D3B4-puerta-y-corte.md`): la aprobación es válida con la evidencia de PostgreSQL 17 (CI). **Se repite sobre la instalación en el punto de control C5 del release** |
-| **MF-13-01D.3B.4** | Corte: `vinto_app` pierde el DML de identidad (`03d` y `ROLLBACK_D3B4`, con guardas y reversión) | **Scripts preparados y probados en este PR. NO ejecutado.** El corte real exige una aprobación independiente (punto C6) durante el release único, con D.3B.3 aprobada |
+| **MF-13-01D.3B.3** | Puerta de verificación con ambos roles (login, logout, sesiones, administración, concesiones, auditoría y las cuatro capturas) | **Automatizada en este PR** (`docs/MF-13-01D3B3-D3B4-puerta-y-corte.md`): la aprobación es válida con la evidencia de PostgreSQL 17 (CI). **Se repite sobre la instalación en el punto previo al corte (A6 en la primera instalación, B4 en una actualización; `docs/MF-13-RELEASE-unico-procedimiento.md`)** |
+| **MF-13-01D.3B.4** | Corte: `vinto_app` pierde el DML de identidad (`03d` y `ROLLBACK_D3B4`, con guardas y reversión) | **Scripts preparados y probados en este PR. NO ejecutado.** El corte real exige una aprobación independiente (A7 / B5) durante el release único, con D.3B.3 aprobada |
 | MF-13-02 | Frontend por permisos (la interfaz se muestra y se restringe según los permisos del usuario) | Pendiente |
 | Release único | Un solo despliegue controlado en la VPS con todo lo anterior | Pendiente de autorización explícita |
 | QA manual | Aceptación sobre ese release, acceso restringido | Posterior al release |
@@ -36,15 +36,13 @@ Estado: **planificación; no autoriza ningún despliegue ni ningún cambio en la
 
 ## 4. Orden del release único (a ejecutar solo con autorización explícita)
 
-Detalle paso a paso, puntos de control y reversiones: `docs/MF-13-RELEASE-unico-procedimiento.md`.
+Detalle paso a paso, puntos de control y reversiones: `docs/MF-13-RELEASE-unico-procedimiento.md`, con dos órdenes ejecutables según el estado de la VPS: **primera instalación** (los recursos del MVP aún no existen; sin `healthcheck` ni respaldo del MVP al inicio) o **actualización** de una instalación ya aprovisionada (`healthcheck` y respaldo de partida obligatorios).
 
-1. Respaldo verificado y confirmación de TVC (`TVC_BACKUP_CONFIRMED`); ninguna fase toca TVC.
-2. Aprovisionamiento con el procedimiento existente (`postgres-roles`, `migrate`, `postgres-grants`, que falla cerrado si D.3B.1 o D.3B.4 están aplicados) y, a mano, `03b`, `00c` y `03c`, con el preflight `08_release_preflight.sql` antes de cada fase.
-3. Despliegue del código **sin** `IDENTITY_DATABASE_URL`: comprobar que nada cambió.
-4. Definir `IDENTITY_DATABASE_URL` y reiniciar: puerta D.3B.3 sobre la instalación.
-5. Corte D.3B.4 **solo con la aprobación independiente (C6)**, con ventana corta y `ROLLBACK_D3B4` a mano; `ROLLBACK_D3B4` siempre ANTES de quitar `IDENTITY_DATABASE_URL`.
-6. Frontend MF-13-02 y `healthcheck`.
-7. Entrega a QA manual restringido.
+**Primera instalación (A):** (1) `preflight` y confirmación del respaldo de TVC; (2) código **sin servicios** (`user-and-dirs` … `activate`); (3) PostgreSQL del MVP: `postgres-up` → `postgres-bootstrap-db` → `postgres-roles` → `migrate`, y entonces el primer preflight `08`; (4) `postgres-grants`, D.3B.1 (`03b`), importación de referencias y primer respaldo del MVP; (5) `systemd-install` y primer `healthcheck`; (6) D.3B.2 (`00c`, `03c`, `IDENTITY_DATABASE_URL`); (7) puerta D.3B.3 y respaldo previo al corte; (8) **aprobación independiente** y corte D.3B.4; (9) frontend MF-13-02 y comparación de TVC; (10) QA manual restringido.
+
+**Actualización (B):** (1) `preflight`, respaldo de TVC y del MVP, `healthcheck` de partida y preflight `08`; (2) código nuevo sin la variable; (3) D.3B.1; (4) D.3B.2; (5) puerta D.3B.3 y respaldo previo al corte; (6) **aprobación independiente** y corte D.3B.4; (7) frontend y comparación de TVC; (8) QA manual restringido.
+
+En ambos, `ROLLBACK_D3B4` siempre se ejecuta ANTES de quitar `IDENTITY_DATABASE_URL`, y ninguna fase toca TVC.
 
 Puntos de reversión: quitar `IDENTITY_DATABASE_URL` (solo antes del corte), `ROLLBACK_D3B4` y luego quitar la variable (después del corte), `rollback.sh version <sha>` del despliegue. Orden prohibido: quitar la variable con el corte aplicado.
 

@@ -151,6 +151,84 @@ class ReportTests(unittest.TestCase):
 
 
 # ---- scripts del corte: archivos ---------------------------------------------------------------------------------------------------------------------------
+RUNBOOK = BACKEND.parent / "docs/MF-13-RELEASE-unico-procedimiento.md"
+FIRST_INSTALL_ORDER = ("user-and-dirs", "preflight-build-deps", "install-node-runtime", "checkout", "python-venv", "install-frontend-artifact", "preflight-startup", "activate",
+                       "postgres-up", "postgres-bootstrap-db", "postgres-roles", "migrate", "postgres-grants", "import-reference", "import-reference-apply", "systemd-install", "healthcheck")
+
+
+def runbook_rows(heading):
+    text = RUNBOOK.read_text(encoding="utf-8")
+    start = text.index(heading)
+    end = text.find("\n## ", start + 5)
+    rows = {}
+    for line in text[start:end if end > 0 else None].splitlines():
+        if line.startswith("|") and not re.match(r"^\|[\s:|-]+\|$", line):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            key = cells[0].strip("* ")
+            if re.fullmatch(r"[AB][0-9]+", key):
+                rows[key] = cells
+    return rows
+
+
+def first_positions(text, names):
+    positions = []
+    for name in names:
+        match = re.search(rf"`{re.escape(name)}(?:[ `<])", text)
+        positions.append(match.start() if match else -1)
+    return positions
+
+
+class ReleaseProcedureOrderTests(unittest.TestCase):
+    """El procedimiento del release distingue la primera instalación (los recursos del MVP aún no existen) de la actualización, con un orden ejecutable para cada una."""
+
+    def test_the_first_installation_follows_the_real_phase_order_of_deploy_sh(self):
+        rows = runbook_rows("## 5.")
+        self.assertEqual(sorted(rows, key=lambda k: int(k[1:])), [f"A{i}" for i in range(11)])
+        steps = " ".join(rows[f"A{i}"][1] for i in range(11))
+        positions = first_positions(steps, FIRST_INSTALL_ORDER)
+        self.assertNotIn(-1, positions, dict(zip(FIRST_INSTALL_ORDER, positions)))
+        self.assertEqual(positions, sorted(positions))  # el orden de README/deploy.sh: código, luego PostgreSQL, luego roles, esquema, privilegios, servicios y salud
+        deploy = (BACKEND.parent / "deploy/mvp/scripts/deploy.sh").read_text(encoding="utf-8")
+        labels = set(re.findall(r"^  ([a-z][a-z-]+)\)", deploy, re.M))
+        self.assertTrue(set(FIRST_INSTALL_ORDER) <= labels, set(FIRST_INSTALL_ORDER) - labels)  # todas las fases nombradas existen de verdad
+
+    def test_the_first_installation_asks_for_nothing_that_does_not_exist_yet(self):
+        rows = runbook_rows("## 5.")
+        for key in ("A0", "A1"):  # aún no hay contenedor, base ni roles, ni servicios que comprobar
+            joined = " ".join(rows[key])
+            self.assertNotIn("08_release_preflight", joined, key)
+            self.assertNotIn("backup.sh", joined, key)
+        self.assertNotIn("healthcheck", rows["A1"][1] + rows["A2"][1] + rows["A3"][1])  # la primera salud es DESPUÉS de systemd-install
+        self.assertLess(" ".join(rows[f"A{i}"][1] for i in range(11)).index("`systemd-install`"), " ".join(rows[f"A{i}"][1] for i in range(11)).index("`healthcheck`"))
+        self.assertIn("08_release_preflight", " ".join(rows["A2"]))  # primer momento en que existen los roles
+        self.assertIn("TVC_BACKUP_CONFIRMED", " ".join(rows["A0"]) + " ".join(rows["A2"]))
+        self.assertIn("backup.sh create-and-verify", " ".join(rows["A3"]))  # recién entonces hay datos del MVP que respaldar
+
+    def test_the_update_requires_the_baseline_health_and_backup_before_changing_anything(self):
+        rows = runbook_rows("## 6.")
+        self.assertEqual(sorted(rows, key=lambda k: int(k[1:])), [f"B{i}" for i in range(9)])
+        b0 = " ".join(rows["B0"])
+        for required in ("backup.sh create-and-verify", "healthcheck", "08_release_preflight", "preflight", "TVC"):
+            self.assertIn(required, b0)
+        self.assertIn("checkout", rows["B1"][1])  # el código nuevo va DESPUÉS del punto de partida
+        self.assertIn("rollback.sh version", rows["B1"][3])
+
+    def test_both_scenarios_keep_the_independent_approval_the_rollback_order_and_the_tvc_protection(self):
+        for heading, cut, approval, backup_before_cut in (("## 5.", "A8", "A7", "A6"), ("## 6.", "B6", "B5", "B4")):
+            rows = runbook_rows(heading)
+            self.assertIn("aprobación independiente", " ".join(rows[approval]).lower())
+            self.assertIn("03d_d3b4_cut_identity_dml.sql", " ".join(rows[cut]))
+            self.assertIn("ANTES de tocar `IDENTITY_DATABASE_URL`", rows[cut][3])  # ROLLBACK_D3B4 antes de quitar la variable
+            self.assertIn("respaldo", " ".join(rows[backup_before_cut]).lower())  # punto de restauración previo al corte
+            self.assertLess(int(approval[1:]), int(cut[1:]))  # la aprobación va antes del corte
+            for key, cells in rows.items():
+                self.assertTrue(cells[-1].strip(), f"{key}: falta la reversión")
+        text = RUNBOOK.read_text(encoding="utf-8")
+        for required in ("Estado mixto", "postgres-vinto", "assert_container_is_ours", "TVC_BACKUP_CONFIRMED"):
+            self.assertIn(required, text)
+        self.assertIn("No existe un entorno QA persistente separado", text)
+        self.assertNotRegex(text, r"\bC[0-9]\b")  # sin restos de la numeración antigua de puntos de control
+
 
 class CutScriptFilesTests(unittest.TestCase):
     def test_the_cut_statements_are_exactly_the_approved_prototype_phase(self):
@@ -176,6 +254,17 @@ class CutScriptFilesTests(unittest.TestCase):
                     self.assertIn("lock_timeout", text)
                 self.assertIn("ON_ERROR_STOP", text)
         self.assertNotRegex("\n".join(l for l in PREFLIGHT.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("--")), r"(?i)\b(GRANT|REVOKE)\b")  # solo lectura
+
+    def test_membership_checks_never_rely_on_usage_alone(self):
+        """pg_has_role(..., 'USAGE') no ve una membresía INHERIT FALSE, SET TRUE (SET ROLE sí funciona). Cada guarda usa MEMBER; el corte además comprueba USAGE y SET de forma explícita."""
+        for path in (ROLES / "03b_d3b1_restrict_catalog_writes.sql", ROLES / "03c_d3b2_identity_role_grants.sql", PREFLIGHT):
+            code = "\n".join(l for l in path.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("--"))
+            with self.subTest(script=path.name):
+                self.assertNotIn("'USAGE'", code.replace("GRANT USAGE", ""))  # (los GRANT USAGE ON SCHEMA son privilegios de esquema, no membresías)
+                self.assertIn("'MEMBER'", code)
+        cut = "\n".join(l for l in CUT.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("--"))
+        for required in ("'MEMBER'", "'SET'", "server_version_num", "pg_auth_members", "member of other roles", "CREATEROLE"):
+            self.assertIn(required, cut)
 
     def test_the_cut_requires_the_independent_approval_and_the_rollback_does_not(self):
         self.assertIn("vinto.d3b4_approval", CUT.read_text(encoding="utf-8"))
@@ -501,6 +590,16 @@ class TwoRoleGateTests(d1.D3B1Case):
         flags = self.preflight()
         r.check("S2", "preflight tras D.3B.2: listo para el corte", flags["d3b2_privilegios_completos"] and flags["ready_for_d3b4"] and not flags["d3b4_aplicado"], flags)
         self.blocked("S2", "el corte aborta sin la aprobación independiente", lambda: self.cut(approval="yes"), r"independent approval missing")
+        if int(self.connection.execute("SHOW server_version_num").fetchone()[0]) >= 160000:
+            self.connection.execute(f"GRANT {self.identity} TO {self.business} WITH INHERIT FALSE, SET TRUE")
+            checks = self.connection.execute("SELECT pg_has_role(%(a)s, %(i)s, 'USAGE'), pg_has_role(%(a)s, %(i)s, 'MEMBER'), pg_has_role(%(a)s, %(i)s, 'SET')", {"a": self.business, "i": self.identity}).fetchone()
+            r.check("S2", "premisa: con INHERIT FALSE, SET TRUE la comprobación USAGE no ve la membresía pero MEMBER y SET sí", checks == (False, True, True), checks)
+            self.blocked("S2", "el corte aborta con una membresía INHERIT FALSE, SET TRUE de vinto_app en vinto_identity (ACL intactas)", self.cut, r"member of other roles")
+            flags = self.preflight()
+            r.check("S2", "preflight: con esa membresía no está listo para el corte", not flags["ready_for_d3b4"] and not flags["vinto_app_sin_membresias_ni_atributos_peligrosos"], flags)
+            self.connection.execute(f"REVOKE {self.identity} FROM {self.business}")
+            flags = self.preflight()
+            r.check("S2", "preflight: retirada la membresía vuelve a estar listo", flags["ready_for_d3b4"] and flags["vinto_app_sin_membresias_ni_atributos_peligrosos"], flags)
         for dedicated in (False, True):
             await self.api_matrix("S2", dedicated=dedicated)
         self.cli_matrix("S2", dedicated=True)
@@ -589,6 +688,144 @@ class TwoRoleGateTests(d1.D3B1Case):
         failed = [c for c in document["checks"] if not c["ok"]]
         self.assertEqual(document["verdict"], "APROBADA", failed)
         self.assertGreaterEqual(document["checks_total"], 60)
+
+class MembershipGuardTests(d1.D3B1Case):
+    """PostgreSQL 16+ distingue USAGE (heredar privilegios), SET (SET ROLE) y MEMBER (cualquier membresía). Una membresía `INHERIT FALSE, SET TRUE` da USAGE = false y aun así permite
+    SET ROLE: el corte debe abortar SIN modificar ninguna ACL, y el preflight debe reflejar el mismo criterio."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        if int(self.connection.execute("SHOW server_version_num").fetchone()[0]) < 160000:
+            self.skipTest("las opciones INHERIT/SET de GRANT ... TO solo existen desde PostgreSQL 16")
+        self.migrator = f"d3b3_mig_{uuid4().hex[:6]}"
+        self.connection.execute(f"CREATE ROLE {self.migrator} NOLOGIN")
+        self.addCleanup(lambda: self.connection.execute(f"DROP ROLE IF EXISTS {self.migrator}"))
+        self.apply_script(d1.APPLY)
+        self.apply_script(d2.GRANTS)
+
+    def apply_script(self, path):
+        d1.run(self.connection, d1.sql_statements(path, app=self.business, identity=self.identity, reference=self.reference, migrator=self.migrator))
+
+    def acls(self):
+        return {role: d1.acl_snapshot(self.connection, role) for role in (self.business, self.identity, self.reference, self.migrator)}
+
+    def attempt_cut(self):
+        self.connection.execute(f"SET vinto.d3b4_approval = '{APPROVAL}'")
+        try:
+            self.apply_script(CUT)
+        finally:
+            self.connection.execute("RESET vinto.d3b4_approval")
+
+    def assert_cut_blocked(self, pattern):
+        before = self.acls()
+        with self.assertRaisesRegex(psycopg.errors.RaiseException, pattern):
+            self.attempt_cut()
+        self.assertEqual(self.acls(), before)  # abortó sin modificar NINGUNA ACL
+        self.assertTrue(self.can_administer(self.business))
+
+    def preflight(self):
+        statement = next(s for s in d1.sql_statements(PREFLIGHT, app=self.business, identity=self.identity, reference=self.reference, migrator=self.migrator) if "ready_for_d3b4" in s)
+        cursor = self.connection.execute(statement)
+        return dict(zip([d.name for d in cursor.description], cursor.fetchone()))
+
+    def grant(self, role, member, options):
+        self.connection.execute(f"GRANT {role} TO {member} WITH {options}")
+
+    def new_role(self, prefix):
+        name = f"d3b3_{prefix}_{uuid4().hex[:6]}"
+        self.connection.execute(f"CREATE ROLE {name} NOLOGIN")
+        self.addCleanup(lambda: self.connection.execute(f"DROP ROLE IF EXISTS {name}"))
+        return name
+
+    async def test_the_old_usage_check_missed_this_membership_and_the_new_guard_does_not(self):
+        self.grant(self.identity, self.business, "INHERIT FALSE, SET TRUE")
+        usage, member, set_ = self.connection.execute("SELECT pg_has_role(%(a)s, %(i)s, 'USAGE'), pg_has_role(%(a)s, %(i)s, 'MEMBER'), pg_has_role(%(a)s, %(i)s, 'SET')",
+                                                      {"a": self.business, "i": self.identity}).fetchone()
+        self.assertEqual((usage, member, set_), (False, True, True))  # la premisa del defecto: USAGE no la ve
+        self.assert_cut_blocked("member of other roles")
+
+    async def test_every_kind_of_membership_of_vinto_app_blocks_the_cut_without_changing_any_acl(self):
+        other = self.new_role("other")
+        for options in ("INHERIT FALSE, SET TRUE", "INHERIT TRUE, SET FALSE", "INHERIT TRUE, SET TRUE", "ADMIN TRUE, INHERIT FALSE, SET FALSE"):
+            with self.subTest(options=options):
+                self.grant(other, self.business, options)
+                self.assert_cut_blocked("member of other roles")
+                self.connection.execute(f"REVOKE {other} FROM {self.business}")
+
+    async def test_vinto_app_that_can_assume_the_identity_the_migrator_or_an_owner_blocks_the_cut(self):
+        owner = self.new_role("owner")
+        original = self.connection.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'vinto_auth.session'::regclass").fetchone()[0]
+        self.connection.execute(f"ALTER TABLE vinto_auth.session OWNER TO {owner}")
+        self.addCleanup(lambda: self.connection.execute(f'ALTER TABLE vinto_auth.session OWNER TO "{original}"'))
+        for target in (self.identity, self.migrator, owner):
+            with self.subTest(target=target):
+                self.grant(target, self.business, "INHERIT FALSE, SET TRUE")
+                self.assert_cut_blocked("member of other roles")
+                self.connection.execute(f"REVOKE {target} FROM {self.business}")
+
+    async def test_vinto_identity_that_can_assume_vinto_app_the_migrator_or_an_owner_blocks_the_cut(self):
+        owner = self.new_role("owner")
+        original = self.connection.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'vinto_auth.session'::regclass").fetchone()[0]
+        self.connection.execute(f"ALTER TABLE vinto_auth.session OWNER TO {owner}")
+        self.addCleanup(lambda: self.connection.execute(f'ALTER TABLE vinto_auth.session OWNER TO "{original}"'))
+        for target, pattern in ((self.business, "members of each other"), (self.migrator, "can assume the role"), (owner, "owns, or can assume")):
+            with self.subTest(target=target):
+                self.grant(target, self.identity, "INHERIT FALSE, SET TRUE")
+                self.assert_cut_blocked(pattern)
+                self.connection.execute(f"REVOKE {target} FROM {self.identity}")
+
+    async def test_dangerous_attributes_of_vinto_app_block_the_cut(self):
+        for attribute in ("CREATEROLE", "CREATEDB", "BYPASSRLS", "REPLICATION"):
+            with self.subTest(attribute=attribute):
+                self.connection.execute(f"ALTER ROLE {self.business} {attribute}")
+                self.assert_cut_blocked("must not have CREATEROLE")
+                self.connection.execute(f"ALTER ROLE {self.business} NO{attribute}")
+
+    async def test_without_any_membership_the_same_cut_succeeds(self):
+        """Control positivo: la guarda no es demasiado estricta; retiradas las membresías el corte se aplica y se verifica."""
+        other = self.new_role("other")
+        self.grant(other, self.business, "INHERIT FALSE, SET TRUE")
+        self.assert_cut_blocked("member of other roles")
+        self.connection.execute(f"REVOKE {other} FROM {self.business}")
+        self.attempt_cut()
+        self.assertEqual((self.can_administer(self.business), self.can_administer(self.identity)), (False, True))
+
+    async def test_the_preflight_reflects_the_same_criterion(self):
+        baseline = self.preflight()
+        self.assertTrue(baseline["ready_for_d3b4"] and baseline["vinto_app_sin_membresias_ni_atributos_peligrosos"] and baseline["vinto_identity_sin_atributos_peligrosos"], baseline)
+        other = self.new_role("other")
+        self.grant(other, self.business, "INHERIT FALSE, SET TRUE")
+        flags = self.preflight()
+        self.assertFalse(flags["ready_for_d3b4"] or flags["vinto_app_sin_membresias_ni_atributos_peligrosos"], flags)
+        self.connection.execute(f"REVOKE {other} FROM {self.business}")
+        self.grant(self.migrator, self.identity, "INHERIT FALSE, SET TRUE")
+        flags = self.preflight()
+        self.assertFalse(flags["ready_for_d3b4"] or flags["vinto_identity_sin_atributos_peligrosos"], flags)
+        self.connection.execute(f"REVOKE {self.migrator} FROM {self.identity}")
+        owner = self.new_role("owner")
+        original = self.connection.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'vinto_master.sector'::regclass").fetchone()[0]
+        self.connection.execute(f"ALTER TABLE vinto_master.sector OWNER TO {owner}")
+        self.addCleanup(lambda: self.connection.execute(f'ALTER TABLE vinto_master.sector OWNER TO "{original}"'))
+        self.grant(owner, self.business, "INHERIT FALSE, SET TRUE")
+        flags = self.preflight()
+        self.assertFalse(flags["ready_for_d3b4"] or flags["ready_for_d3b1"] or flags["vinto_app_no_es_superusuario_ni_propietario"], flags)
+
+    async def test_the_earlier_phases_also_refuse_an_owner_reachable_only_through_set(self):
+        for script, role_key, pattern in ((d1.APPLY, "business", "member of the owner"), (d2.GRANTS, "identity", "member of the owner")):
+            with self.subTest(script=script.name):
+                owner = self.new_role("owner")
+                original = self.connection.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'vinto_master.sector'::regclass").fetchone()[0]
+                self.connection.execute(f"ALTER TABLE vinto_master.sector OWNER TO {owner}")
+                member = self.business if role_key == "business" else self.identity
+                self.grant(owner, member, "INHERIT FALSE, SET TRUE")
+                before = self.acls()
+                try:
+                    with self.assertRaisesRegex(psycopg.errors.RaiseException, pattern):
+                        self.apply_script(script)
+                    self.assertEqual(self.acls(), before)
+                finally:
+                    self.connection.execute(f"REVOKE {owner} FROM {member}")
+                    self.connection.execute(f'ALTER TABLE vinto_master.sector OWNER TO "{original}"')
 
 
 class GateRejectsAnIncorrectCutTests(d1.D3B1Case):

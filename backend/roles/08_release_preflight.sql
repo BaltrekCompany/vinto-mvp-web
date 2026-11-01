@@ -3,30 +3,37 @@
 --
 --   psql -v ON_ERROR_STOP=1 -f 08_release_preflight.sql        (sin contraseñas ni URLs en la salida)
 --
+-- Robusto ante roles inexistentes: todas las comprobaciones usan to_regrole(...) (NULL, no error) y el resumen dice «no existe» en vez de abortar.
 -- No asumir que los roles reales coinciden con los de las pruebas: este modelo de privilegios puede no estar adoptado todavía en la base del release. Cada fila del RESUMEN (último
 -- bloque) responde a una pregunta del procedimiento; cualquier valor inesperado detiene el release en ese punto de control.
 
 \set ON_ERROR_STOP on
 
 -- 1. Roles del modelo y sus atributos (esperado: ninguno superusuario/CREATEDB/CREATEROLE salvo vinto_test_admin en DEV/QA, que NO debe existir en el release).
-SELECT rolname AS rol, rolcanlogin AS login, rolsuper AS superusuario, rolcreatedb AS createdb, rolcreaterole AS createrole, rolinherit AS inherit
+SELECT rolname AS rol, rolcanlogin AS login, rolsuper AS superusuario, rolcreatedb AS createdb, rolcreaterole AS createrole, rolbypassrls AS bypassrls, rolreplication AS replicacion, rolinherit AS inherit
 FROM pg_roles WHERE rolname IN ('vinto_app', 'vinto_migrator', 'vinto_reference', 'vinto_identity', 'vinto_test_admin') ORDER BY 1;
 
--- 2. Propietario de las tablas de identidad y de catálogo (esperado: vinto_migrator en todas; ni vinto_app ni vinto_identity son propietarios ni miembros del propietario).
+-- 1b. MEMBRESÍAS de vinto_app y vinto_identity (esperado: NINGUNA fila). Cualquier membresía permite eludir las restricciones, también con INHERIT FALSE (pg_has_role(..., 'USAGE') da false pero
+-- SET ROLE funciona) o solo con ADMIN OPTION. Se lee con to_jsonb para no depender de las columnas inherit_option/set_option (solo existen desde PostgreSQL 16).
+SELECT m.member::regrole AS miembro, m.roleid::regrole AS rol_del_que_es_miembro, to_jsonb(m) ->> 'admin_option' AS admin_option, to_jsonb(m) ->> 'inherit_option' AS inherit_option,
+       to_jsonb(m) ->> 'set_option' AS set_option
+FROM pg_auth_members m WHERE m.member IN (to_regrole('vinto_app'), to_regrole('vinto_identity')) ORDER BY 1, 2;
+
+-- 2. Propietario de las tablas de identidad y de catálogo (esperado: vinto_migrator en todas; ni vinto_app ni vinto_identity son propietarios NI MIEMBROS del propietario, con ninguna opción: MEMBER).
 SELECT t.tbl AS tabla, pg_get_userbyid(c.relowner) AS propietario,
-       pg_has_role('vinto_app', c.relowner, 'USAGE') AS app_es_propietario_o_miembro,
-       CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN pg_has_role('vinto_identity', c.relowner, 'USAGE') END AS identity_es_propietario_o_miembro
+       pg_has_role(to_regrole('vinto_app'), c.relowner, 'MEMBER') AS app_es_propietario_o_miembro,
+       CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN pg_has_role(to_regrole('vinto_identity'), c.relowner, 'MEMBER') END AS identity_es_propietario_o_miembro
 FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector', 'vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector',
                   'vinto_master.user_machine_form_grant', 'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event']) AS t(tbl)
 JOIN pg_class c ON c.oid = to_regclass(t.tbl) ORDER BY 1;
 
 -- 3. Privilegios EFECTIVOS por tabla: vinto_app frente a vinto_identity (S=SELECT I=INSERT U=UPDATE D=DELETE). PUBLIC no debe tener nada sobre estas tablas.
 SELECT t.tbl AS tabla,
-       concat_ws('', CASE WHEN has_table_privilege('vinto_app', t.tbl, 'SELECT') THEN 'S' END, CASE WHEN has_table_privilege('vinto_app', t.tbl, 'INSERT') THEN 'I' END,
-                 CASE WHEN has_table_privilege('vinto_app', t.tbl, 'UPDATE') THEN 'U' END, CASE WHEN has_table_privilege('vinto_app', t.tbl, 'DELETE') THEN 'D' END) AS vinto_app,
-       CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN concat_ws('', CASE WHEN has_table_privilege('vinto_identity', t.tbl, 'SELECT') THEN 'S' END,
-                 CASE WHEN has_table_privilege('vinto_identity', t.tbl, 'INSERT') THEN 'I' END, CASE WHEN has_table_privilege('vinto_identity', t.tbl, 'UPDATE') THEN 'U' END,
-                 CASE WHEN has_table_privilege('vinto_identity', t.tbl, 'DELETE') THEN 'D' END) END AS vinto_identity,
+       concat_ws('', CASE WHEN has_table_privilege(to_regrole('vinto_app'), t.tbl, 'SELECT') THEN 'S' END, CASE WHEN has_table_privilege(to_regrole('vinto_app'), t.tbl, 'INSERT') THEN 'I' END,
+                 CASE WHEN has_table_privilege(to_regrole('vinto_app'), t.tbl, 'UPDATE') THEN 'U' END, CASE WHEN has_table_privilege(to_regrole('vinto_app'), t.tbl, 'DELETE') THEN 'D' END) AS vinto_app,
+       CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN concat_ws('', CASE WHEN has_table_privilege(to_regrole('vinto_identity'), t.tbl, 'SELECT') THEN 'S' END,
+                 CASE WHEN has_table_privilege(to_regrole('vinto_identity'), t.tbl, 'INSERT') THEN 'I' END, CASE WHEN has_table_privilege(to_regrole('vinto_identity'), t.tbl, 'UPDATE') THEN 'U' END,
+                 CASE WHEN has_table_privilege(to_regrole('vinto_identity'), t.tbl, 'DELETE') THEN 'D' END) END AS vinto_identity,
        concat_ws('', CASE WHEN has_table_privilege('public', t.tbl, 'SELECT') THEN 'S' END, CASE WHEN has_table_privilege('public', t.tbl, 'INSERT') THEN 'I' END,
                  CASE WHEN has_table_privilege('public', t.tbl, 'UPDATE') THEN 'U' END, CASE WHEN has_table_privilege('public', t.tbl, 'DELETE') THEN 'D' END) AS public
 FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector', 'vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector',
@@ -38,28 +45,39 @@ WITH
 roles AS (SELECT to_regrole('vinto_app') IS NOT NULL AS app_exists, to_regrole('vinto_identity') IS NOT NULL AS identity_exists,
                  coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = 'vinto_app'), false) AS app_super,
                  coalesce((SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = 'vinto_identity'), false) AS identity_powerful),
-owners AS (SELECT coalesce(bool_or(pg_has_role('vinto_app', c.relowner, 'USAGE')), false) AS app_owns
-           FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.user', 'vinto_auth.credential', 'vinto_auth.session']) AS t(tbl) JOIN pg_class c ON c.oid = to_regclass(t.tbl)),
-d3b1 AS (SELECT count(*) FILTER (WHERE has_table_privilege('vinto_app', t.tbl, 'SELECT') AND (NOT has_table_privilege('vinto_app', t.tbl, 'INSERT') OR NOT has_table_privilege('vinto_app', t.tbl, 'UPDATE'))) AS n
+owners AS (SELECT coalesce(bool_or(pg_has_role(to_regrole('vinto_app'), c.relowner, 'MEMBER')), false) AS app_owns,
+                   coalesce(bool_or(pg_has_role(to_regrole('vinto_identity'), c.relowner, 'MEMBER')), false) AS identity_owns
+           FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector', 'vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector',
+                             'vinto_master.user_machine_form_grant', 'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event']) AS t(tbl) JOIN pg_class c ON c.oid = to_regclass(t.tbl)),
+members AS (SELECT (SELECT count(*) FROM pg_auth_members m WHERE m.member = to_regrole('vinto_app')) AS app_memberships,
+                   -- variantes por OID: devuelven NULL (no error) si un rol no existe, sin depender del orden de evaluación de AND
+                   coalesce((SELECT bool_or(pg_has_role(to_regrole('vinto_identity'), r.oid, 'MEMBER') OR pg_has_role(to_regrole('vinto_app'), r.oid, 'MEMBER'))
+                               FROM pg_roles r WHERE r.rolname IN ('vinto_migrator', 'vinto_reference', 'vinto_test_admin')), false)
+                   OR coalesce(pg_has_role(to_regrole('vinto_app'), to_regrole('vinto_identity'), 'MEMBER') OR pg_has_role(to_regrole('vinto_identity'), to_regrole('vinto_app'), 'MEMBER'), false) AS assume_privileged,
+                   coalesce((SELECT rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication FROM pg_roles WHERE rolname = 'vinto_app'), false) AS app_dangerous_attributes),
+d3b1 AS (SELECT count(*) FILTER (WHERE has_table_privilege(to_regrole('vinto_app'), t.tbl, 'SELECT') AND (NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'INSERT') OR NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'UPDATE'))) AS n
          FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl) WHERE to_regrole('vinto_app') IS NOT NULL),
-d3b4 AS (SELECT count(*) FILTER (WHERE has_table_privilege('vinto_app', 'vinto_auth.session', 'SELECT') AND NOT has_table_privilege('vinto_app', t.tbl, 'INSERT')) AS n
+d3b4 AS (SELECT count(*) FILTER (WHERE has_table_privilege(to_regrole('vinto_app'), 'vinto_auth.session', 'SELECT') AND NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'INSERT')) AS n
          FROM unnest(ARRAY['vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector', 'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event']) AS t(tbl)
          WHERE to_regrole('vinto_app') IS NOT NULL),
-identity_ok AS (SELECT coalesce(bool_and(has_table_privilege('vinto_identity', p.relation, p.privilege)), false) AS complete
+identity_ok AS (SELECT coalesce(bool_and(has_table_privilege(to_regrole('vinto_identity'), p.relation, p.privilege)), false) AS complete
                 FROM (VALUES ('vinto_master.user', 'SELECT'), ('vinto_master.user', 'INSERT'), ('vinto_master.user', 'UPDATE'), ('vinto_master.user_profile', 'INSERT'),
                              ('vinto_master.user_machine_form_grant', 'INSERT'), ('vinto_master.user_machine_form_grant', 'UPDATE'), ('vinto_master.user_sector', 'INSERT'),
                              ('vinto_master.user_sector', 'DELETE'), ('vinto_auth.credential', 'SELECT'), ('vinto_auth.credential', 'INSERT'), ('vinto_auth.credential', 'UPDATE'),
                              ('vinto_auth.session', 'INSERT'), ('vinto_auth.session', 'UPDATE'), ('vinto_auth.auth_event', 'INSERT'), ('vinto_audit.audit_event', 'INSERT'))
                      AS p(relation, privilege) WHERE to_regrole('vinto_identity') IS NOT NULL),
-connect_ok AS (SELECT CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN has_database_privilege('vinto_identity', current_database(), 'CONNECT') ELSE false END AS ok)
+connect_ok AS (SELECT CASE WHEN to_regrole('vinto_identity') IS NOT NULL THEN has_database_privilege(to_regrole('vinto_identity'), current_database(), 'CONNECT') ELSE false END AS ok)
 SELECT roles.app_exists                                           AS vinto_app_existe,
        roles.identity_exists                                      AS vinto_identity_existe,
        NOT roles.app_super AND NOT owners.app_owns                AS vinto_app_no_es_superusuario_ni_propietario,
-       roles.identity_exists AND NOT roles.identity_powerful      AS vinto_identity_sin_atributos_peligrosos,
+       members.app_memberships = 0 AND NOT members.app_dangerous_attributes AS vinto_app_sin_membresias_ni_atributos_peligrosos,
+       roles.identity_exists AND NOT roles.identity_powerful AND NOT owners.identity_owns AND NOT members.assume_privileged AS vinto_identity_sin_atributos_peligrosos,
        d3b1.n = 3                                                 AS d3b1_aplicado,
        roles.identity_exists AND identity_ok.complete AND connect_ok.ok AS d3b2_privilegios_completos,
        d3b4.n = 6                                                 AS d3b4_aplicado,
-       roles.app_exists AND NOT roles.app_super AND NOT owners.app_owns AND d3b1.n = 0                                     AS ready_for_d3b1,
-       roles.app_exists AND NOT roles.app_super AND NOT owners.app_owns AND d3b1.n = 3 AND roles.identity_exists AND NOT roles.identity_powerful
+       roles.app_exists AND NOT roles.app_super AND NOT owners.app_owns AND members.app_memberships = 0 AND NOT members.app_dangerous_attributes
+         AND d3b1.n = 0                                                                                                    AS ready_for_d3b1,
+       roles.app_exists AND NOT roles.app_super AND NOT owners.app_owns AND members.app_memberships = 0 AND NOT members.app_dangerous_attributes
+         AND d3b1.n = 3 AND roles.identity_exists AND NOT roles.identity_powerful AND NOT owners.identity_owns AND NOT members.assume_privileged
          AND identity_ok.complete AND connect_ok.ok AND d3b4.n = 0                                                         AS ready_for_d3b4
-FROM roles, owners, d3b1, d3b4, identity_ok, connect_ok;
+FROM roles, owners, members, d3b1, d3b4, identity_ok, connect_ok;

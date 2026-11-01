@@ -22,6 +22,11 @@ DO $d3b4_guard$
 DECLARE
   missing text;
   tbl text;
+  target regrole;
+  priv text;
+  -- MEMBER cubre CUALQUIER membresía (también INHERIT FALSE, SET TRUE: pg_has_role(..., 'USAGE') da false pero SET ROLE sí funciona); USAGE y SET se comprueban además de forma
+  -- explícita para dar el motivo exacto. 'SET' solo existe desde PostgreSQL 16; MEMBER es un superconjunto, así que la guarda no depende de él.
+  privs text[] := ARRAY['MEMBER', 'USAGE'] || CASE WHEN current_setting('server_version_num')::int >= 160000 THEN ARRAY['SET'] ELSE ARRAY[]::text[] END;
 BEGIN
   IF coalesce(current_setting('vinto.d3b4_approval', true), '') <> 'CUT-IDENTITY-DML-APPROVED' THEN
     RAISE EXCEPTION 'D.3B.4 blocked: independent approval missing (set vinto.d3b4_approval; see the header of 03d_d3b4_cut_identity_dml.sql)' USING ERRCODE = 'P0001';
@@ -32,17 +37,40 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app' AND rolsuper) OR EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_identity' AND (rolsuper OR rolcreatedb OR rolcreaterole)) THEN
     RAISE EXCEPTION 'D.3B.4 blocked: vinto_app must not be a superuser and vinto_identity must not be superuser, CREATEDB or CREATEROLE' USING ERRCODE = 'P0001';
   END IF;
-  IF pg_has_role('vinto_app', 'vinto_identity', 'USAGE') OR pg_has_role('vinto_identity', 'vinto_app', 'USAGE') THEN
-    RAISE EXCEPTION 'D.3B.4 blocked: vinto_app and vinto_identity must not be members of each other' USING ERRCODE = 'P0001';
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app' AND (rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication)) THEN
+    RAISE EXCEPTION 'D.3B.4 blocked: vinto_app must not have CREATEROLE, CREATEDB, BYPASSRLS or REPLICATION (it could grant itself memberships or bypass the restrictions)' USING ERRCODE = 'P0001';
   END IF;
+  -- vinto_app no pertenece a NINGÚN rol, con ninguna opción (INHERIT, SET o solo ADMIN OPTION): cualquier membresía permite eludir las restricciones del corte.
+  IF EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = 'vinto_app'::regrole) THEN
+    RAISE EXCEPTION 'D.3B.4 blocked: vinto_app is a member of other roles (%); a membership with INHERIT, SET or ADMIN could bypass the cut',
+      (SELECT string_agg(m.roleid::regrole::text, ', ') FROM pg_auth_members m WHERE m.member = 'vinto_app'::regrole) USING ERRCODE = 'P0001';
+  END IF;
+  -- ninguno de los dos roles puede asumir al otro, ni vinto_app a los roles privilegiados del modelo (migrador, referencia, administración de pruebas)
+  FOREACH priv IN ARRAY privs LOOP
+    IF pg_has_role('vinto_app', 'vinto_identity', priv) OR pg_has_role('vinto_identity', 'vinto_app', priv) THEN
+      RAISE EXCEPTION 'D.3B.4 blocked: vinto_app and vinto_identity must not be members of each other (% membership)', priv USING ERRCODE = 'P0001';
+    END IF;
+  END LOOP;
+  FOR target IN SELECT oid::regrole FROM pg_roles WHERE rolname IN ('vinto_migrator', 'vinto_reference', 'vinto_test_admin') LOOP
+    FOREACH priv IN ARRAY privs LOOP
+      IF pg_has_role('vinto_app', target, priv) OR pg_has_role('vinto_identity', target, priv) THEN
+        RAISE EXCEPTION 'D.3B.4 blocked: vinto_app or vinto_identity can assume the role % (% membership)', target, priv USING ERRCODE = 'P0001';
+      END IF;
+    END LOOP;
+  END LOOP;
   FOREACH tbl IN ARRAY ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector', 'vinto_master."user"', 'vinto_master.user_profile', 'vinto_master.user_sector',
                              'vinto_master.user_machine_form_grant', 'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event'] LOOP
     IF to_regclass(tbl) IS NULL THEN
       RAISE EXCEPTION 'D.3B.4 blocked: table % does not exist', tbl USING ERRCODE = 'P0001';
     END IF;
-    IF pg_has_role('vinto_app', (SELECT relowner FROM pg_class WHERE oid = tbl::regclass), 'USAGE') THEN
-      RAISE EXCEPTION 'D.3B.4 blocked: vinto_app owns (or inherits the owner of) %, privileges cannot restrict an owner', tbl USING ERRCODE = 'P0001';
-    END IF;
+    FOREACH priv IN ARRAY privs LOOP
+      IF pg_has_role('vinto_app', (SELECT relowner FROM pg_class WHERE oid = tbl::regclass), priv) THEN
+        RAISE EXCEPTION 'D.3B.4 blocked: vinto_app owns, or can assume (% membership) the owner of, %: privileges cannot restrict an owner', priv, tbl USING ERRCODE = 'P0001';
+      END IF;
+      IF pg_has_role('vinto_identity', (SELECT relowner FROM pg_class WHERE oid = tbl::regclass), priv) THEN
+        RAISE EXCEPTION 'D.3B.4 blocked: vinto_identity owns, or can assume (% membership) the owner of, %', priv, tbl USING ERRCODE = 'P0001';
+      END IF;
+    END LOOP;
   END LOOP;
   IF NOT has_table_privilege('vinto_app', 'vinto_auth.session', 'SELECT') THEN
     RAISE EXCEPTION 'D.3B.4 blocked: vinto_app has no SELECT on vinto_auth.session; run 03_table_grants.sql first' USING ERRCODE = 'P0001';

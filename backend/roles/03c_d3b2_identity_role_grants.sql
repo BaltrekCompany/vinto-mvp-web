@@ -25,8 +25,8 @@ BEGIN
   IF to_regclass('vinto_auth.credential') IS NULL OR to_regclass('vinto_master.user_machine_form_grant') IS NULL THEN
     RAISE EXCEPTION 'D.3B.2 blocked: the schema is not migrated' USING ERRCODE = 'P0001';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN ('vinto_master.sector'::regclass, 'vinto_auth.credential'::regclass) AND pg_has_role('vinto_identity', c.relowner, 'USAGE')) THEN
-    RAISE EXCEPTION 'D.3B.2 blocked: vinto_identity owns (or inherits the owner of) the tables' USING ERRCODE = 'P0001';
+  IF EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN ('vinto_master.sector'::regclass, 'vinto_auth.credential'::regclass) AND pg_has_role('vinto_identity', c.relowner, 'MEMBER')) THEN  -- MEMBER cubre también INHERIT FALSE, SET TRUE
+    RAISE EXCEPTION 'D.3B.2 blocked: vinto_identity owns, or is a member of the owner of, the tables' USING ERRCODE = 'P0001';
   END IF;
 END
 $d3b2_guard$;

@@ -37,8 +37,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = tbl::regclass AND attname = 'updated_at' AND NOT attisdropped) THEN
       RAISE EXCEPTION 'D.3B.1 blocked: % has no updated_at column', tbl USING ERRCODE = 'P0001';
     END IF;
-    IF pg_has_role('vinto_app', (SELECT relowner FROM pg_class WHERE oid = tbl::regclass), 'USAGE') THEN
-      RAISE EXCEPTION 'D.3B.1 blocked: vinto_app owns (or inherits the owner of) %, privileges cannot restrict an owner', tbl USING ERRCODE = 'P0001';
+    -- MEMBER cubre cualquier membresía (también INHERIT FALSE, SET TRUE, que 'USAGE' no ve)
+    IF pg_has_role('vinto_app', (SELECT relowner FROM pg_class WHERE oid = tbl::regclass), 'MEMBER') THEN
+      RAISE EXCEPTION 'D.3B.1 blocked: vinto_app owns, or is a member of the owner of, %, privileges cannot restrict an owner', tbl USING ERRCODE = 'P0001';
     END IF;
     IF NOT has_table_privilege('vinto_app', tbl, 'SELECT') THEN
       RAISE EXCEPTION 'D.3B.1 blocked: vinto_app has no SELECT on %; run 03_table_grants.sql first', tbl USING ERRCODE = 'P0001';

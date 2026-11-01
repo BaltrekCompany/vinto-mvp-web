@@ -39,7 +39,7 @@ y ejecuta en cada estado la matriz que le corresponde:
 | El rollback completo devuelve la ACL EXACTA inicial de negocio, identidad y referencia | S6 |
 | Preflight (`08`) y consulta de deriva (`07`) coherentes con cada estado | S0–S3 |
 
-**Evidencia.** La prueba construye un informe (`contract: mf-13-01d3b3-gate/v1`) con veredicto **APROBADA/RECHAZADA**, versión de PostgreSQL y una fila por comprobación; con `D3B3_EVIDENCE_DIR` lo escribe como `d3b3-gate-evidence.json` y `.md` (sin URLs ni contraseñas; una prueba lo exige). Una excepción no controlada en cualquier paso queda registrada como fallo y el informe se escribe igualmente. **Solo es aprobación válida de la puerta (`valid_as_gate_approval`) con PostgreSQL 17**; con `D3B3_REQUIRE_PG17=1` (CI) la prueba falla en otra versión. Resultado local en 16.15: **APROBADA, 119 comprobaciones, 0 fallidas, `valid_as_gate_approval = false`**.
+**Evidencia.** La prueba construye un informe (`contract: mf-13-01d3b3-gate/v1`) con veredicto **APROBADA/RECHAZADA**, versión de PostgreSQL y una fila por comprobación; con `D3B3_EVIDENCE_DIR` lo escribe como `d3b3-gate-evidence.json` y `.md` (sin URLs ni contraseñas; una prueba lo exige). Una excepción no controlada en cualquier paso queda registrada como fallo y el informe se escribe igualmente. **Solo es aprobación válida de la puerta (`valid_as_gate_approval`) con PostgreSQL 17**; con `D3B3_REQUIRE_PG17=1` (CI) la prueba falla en otra versión. Resultado local en 16.15: **APROBADA, 123 comprobaciones (las 119 originales más 4 de membresías), 0 fallidas, `valid_as_gate_approval = false`**.
 
 **Rechazo.** Tres mutantes producen RECHAZADA: un corte que no revoca el hash, un corte que olvida `session`, y una reversión que no devuelve `INSERT` en `auth_event` (esta última por excepción registrada).
 
@@ -52,12 +52,24 @@ y ejecuta en cada estado la matriz que le corresponde:
 | Transaccional, idempotente, con guardas | `BEGIN`/`COMMIT`, `lock_timeout`, guardas y verificación final; repetirlo no cambia la ACL |
 | Prohibido revocar antes de verificar el rol de identidad | La guarda comprueba, en la misma transacción y antes de cualquier `REVOKE`, que `vinto_identity` existe, puede conectar, no es peligroso y tiene los 24 privilegios que `vinto_app` perderá. Si no, aborta sin cambios |
 | Aprobación independiente | Exige `vinto.d3b4_approval=CUT-IDENTITY-DML-APPROVED` (freno contra ejecuciones accidentales; la aprobación real es humana y queda en el acta del release). `deploy.sh` no lo ejecuta |
-| Orden de fases | Aborta si D.3B.1 no está aplicado, si `vinto_app` es superusuario o propietario, o si los roles son miembros uno del otro |
+| Orden de fases y membresías | Aborta si D.3B.1 no está aplicado; si `vinto_app` es superusuario o tiene `CREATEROLE`/`CREATEDB`/`BYPASSRLS`/`REPLICATION`; si es propietario de las tablas **o puede asumir a su propietario**; si `vinto_app` pertenece a **cualquier** rol (con `INHERIT`, con `SET` o solo con `ADMIN OPTION`); si `vinto_app` y `vinto_identity` pueden asumirse mutuamente; o si cualquiera de los dos puede asumir a `vinto_migrator`, `vinto_reference`, `vinto_test_admin` o al propietario de las tablas (ver «Membresías» más abajo) |
 | Lo estrictamente necesario para el negocio | Conserva `SELECT` de tabla sobre `user`, `user_profile`, `user_sector`, `user_machine_form_grant` y `session`; `credential` solo `user_id`, `username`, `must_change`; `UPDATE (last_seen_at)` de `session`; `INSERT` en auditoría |
 | Bloqueos del motor | `UPDATE (updated_at)` sobre `user`, `user_profile` y `user_machine_form_grant` (más `profile`, `machine`, `sector` de D.3B.1); la verificación final lo comprueba |
 | Privilegios efectivos tras el corte | La verificación final aborta (y no deja nada) si queda cualquier `INSERT`/`UPDATE`/`DELETE` de tabla, si se puede leer el hash, si falta una lectura necesaria o un bloqueo del motor, o si el rol de identidad perdió algo |
 | `ROLLBACK_D3B4` restaura el acceso **antes** de retirar `IDENTITY_DATABASE_URL` | Solo concede, no requiere aprobación, restaura la ACL exacta; con ambos roles activos se prueba que login, administración y capturas funcionan, y solo después se prueba el modo sin variable. Con el corte aplicado, quitar la variable falla (`42501`): es el orden prohibido |
 | No se ejecuta fuera de bases efímeras | Ningún flujo del repositorio lo invoca; una prueba exige que `deploy.sh` no lo nombre |
+
+### Membresías de PostgreSQL (criterio de las guardas)
+
+`pg_has_role(rol, objetivo, 'USAGE')` solo indica que el rol **hereda** los privilegios del objetivo. Una membresía `GRANT objetivo TO rol WITH INHERIT FALSE, SET TRUE` da `USAGE = false` y aun así permite `SET ROLE objetivo`; una membresía solo con `ADMIN OPTION` permite concederse otras. PostgreSQL 16+ distingue `MEMBER` (cualquier membresía), `USAGE` (herencia) y `SET`:
+
+| Membresía de `vinto_app` en `vinto_identity` | `USAGE` | `SET` | `MEMBER` |
+|----------------------------------------------|---------|-------|----------|
+| `INHERIT FALSE, SET TRUE` | false | **true** | **true** |
+| `INHERIT TRUE, SET FALSE` | true | false | true |
+| `ADMIN TRUE, INHERIT FALSE, SET FALSE` | false | false | **true** |
+
+Por eso las guardas usan `MEMBER` (superconjunto, válido en cualquier versión) y, en el corte, comprueban además `USAGE` y `SET` (este último solo si el servidor es ≥16) para dar el motivo exacto, y exigen que `vinto_app` **no pertenezca a ningún rol**. El mismo criterio está en `03b` y `03c` (propietario alcanzable solo por `SET`) y en `08_release_preflight.sql`, que además lista las membresías y no aborta si un rol no existe. Pruebas negativas con `INHERIT FALSE, SET TRUE` y las demás combinaciones: el corte aborta sin modificar ninguna ACL, el preflight deja de marcar `ready_for_d3b4`, y retiradas las membresías el mismo corte se aplica (control positivo). Mutante: volver al criterio `USAGE` hace RECHAZAR la puerta.
 
 ## 2. Reaprovisionamiento
 
@@ -66,6 +78,7 @@ y ejecuta en cada estado la matriz que le corresponde:
 ## 3. Pruebas
 
 - `test_d3b3_two_role_gate.py`: `TwoRoleGateTests` (la puerta), `CutScriptFilesTests` (coincidencia con el prototipo, transaccionalidad, solo privilegios, aprobación, README), `GateRejectsAnIncorrectCutTests` (corte con candados, nunca revoca antes de verificar, roles iguales/propietario, re-ejecutar `03` deshace el corte y se detecta, primer aprovisionamiento no se marca), `ReportTests`.
+- `MembershipGuardTests` y `ReleaseProcedureOrderTests` (ver «Membresías» y el procedimiento del release).
 - `test_postgres_grants_d3b1_guard.sh`: 14 casos de la guarda de `deploy.sh` (nada aplicado = flujo heredado; D.3B.1, D.3B.4, ambas, parcial, ilegible = falla cerrado sin SQL).
 - GitHub Actions (`.github/workflows/d3b1-postgres17.yml`): ejecuta todo lo anterior contra `postgres:17`, exige la versión y publica la evidencia como artefacto.
 
