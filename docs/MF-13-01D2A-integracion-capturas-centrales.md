@@ -83,7 +83,7 @@ Registro técnico (logger `vinto.authz`): `authz mode=… operation=production_c
 
 ## 9. Lo que NO resuelve este PR (dependencias de seguridad)
 
-1. Sincronización de la **revocación de sectores** con capturas concurrentes (`DELETE` de `user_sector` no bloqueable; propuesta: que su administración tome `FOR UPDATE` sobre la fila del usuario).
+1. ~~Sincronización de la **revocación de sectores** con capturas concurrentes~~ — **resuelto para la ruta de la aplicación en MF-13-01D.3A** (`revoke_sector` toma `FOR NO KEY UPDATE` sobre la fila del usuario; el SQL directo de un rol con privilegios queda para MF-13-01D.3B).
 2. **Endurecimiento de la escritura directa** de concesiones por `vinto_app` (INSERT/UPDATE directos sobre la tabla; propuesta en el documento de MF-13-01D.1 §7).
 3. **Integración de F3 (`/api/bobbins`) y de Calidad** (por bobina y por máquina): siguen sin motor.
 4. **Preparación de concesiones para usuarios reales** (`authz_readiness.py` mide el impacto; hoy los usuarios reales pueden no tener concesiones individuales y quedarían bloqueados en `enforce`).

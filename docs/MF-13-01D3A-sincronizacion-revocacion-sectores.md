@@ -33,7 +33,7 @@ Se **evaluó `FOR UPDATE` y se eligió `FOR NO KEY UPDATE`**:
 
 | Bloqueo del revocador | ¿Choca con el `FOR SHARE` del motor? | ¿Bloquea `FOR KEY SHARE` (comprobaciones de clave foránea de otras transacciones que referencian al usuario)? |
 |-----------------------|---------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `FOR UPDATE` | sí | **sí** (bloquearía capturas, sesiones o auditoría ajenas que solo referencian al usuario) |
+| `FOR UPDATE` (**descartado**) | sí | **sí** (bloquearía capturas, sesiones o auditoría ajenas que solo referencian al usuario) |
 | **`FOR NO KEY UPDATE`** | **sí** | **no** |
 | `FOR SHARE` / `FOR KEY SHARE` | no / no | — (no sincronizan: son compatibles con el `FOR SHARE` del motor) |
 

@@ -29,7 +29,7 @@ QUÉ SE BLOQUEA (límite de privilegios): PostgreSQL exige privilegio UPDATE par
 lo tiene en usuario, perfil, perfil-de-usuario, sector, máquina y concesión, pero NO en `user_sector` (solo SELECT/INSERT/DELETE) ni en `vinto_config.*` (solo SELECT). Pedir el bloqueo allí daría
 42501 en producción y el motor negaría TODO (503). Por eso solo se bloquean las filas que el rol puede bloquear: usuario, perfiles, máquina+sector y concesión. Riesgos residuales, documentados y
 con propuesta de endurecimiento en docs/MF-13-01D1-motor-autorizacion-efectiva.md: (a) retirar una concesión de SECTOR concurrente a una captura (DELETE de `user_sector`, no bloqueable); la
-mitigación sin tocar privilegios es que la administración de sectores tome `FOR UPDATE` sobre la fila del usuario, que choca con el `FOR SHARE` de este motor; (b) cambios del catálogo/vínculos
+RESUELTO para la ruta de la aplicación en MF-13-01D.3A: `revoke_sector` toma `FOR NO KEY UPDATE` sobre la fila del usuario, que choca con el `FOR SHARE` de este motor; (b) cambios del catálogo/vínculos
 (`vinto_config`), que solo hace el importador de referencias fuera de línea.
 
 Orden de adquisición de bloqueos (fijo, para evitar interbloqueos): usuario → perfiles del usuario → máquina y su sector → concesión (la fila más disputada, al final). Quien MODIFICA esas
