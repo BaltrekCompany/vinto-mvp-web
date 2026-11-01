@@ -2,7 +2,7 @@
 
 Estado: **implementado y probado en bases PostgreSQL efímeras. NO aplicado en ningún entorno persistente, ni ejecutado por `deploy.sh`. No revoca ningún privilegio a `vinto_app`** (eso es D.3B.4). Sin la variable nueva, el comportamiento es exactamente el anterior.
 
-Fase 2 del diseño aprobado en `docs/MF-13-01D3B-endurecimiento-privilegios-concesiones.md` (§5 y §7). Planificación general: `docs/MF-13-PLAN-release-unico.md`.
+Fase 2 del diseño aprobado en `docs/MF-13-01D3B-endurecimiento-privilegios-concesiones.md` (§5 y §7). La puerta de dos roles y el corte (fases 3 y 4) están en `docs/MF-13-01D3B3-D3B4-puerta-y-corte.md`. Planificación general: `docs/MF-13-PLAN-release-unico.md`.
 
 ## 1. Qué cambia
 

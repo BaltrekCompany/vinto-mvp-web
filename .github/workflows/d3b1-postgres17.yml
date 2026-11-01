@@ -15,6 +15,7 @@ on:
       - "backend/roles/**"
       - "backend/tests/test_d3b1_privilege_hardening.py"
       - "backend/tests/test_d3b2_identity_role.py"
+      - "backend/tests/test_d3b3_two_role_gate.py"
       - "backend/app/database.py"
       - "backend/app/admin/**"
       - "backend/tests/test_grants_hardening_design.py"
@@ -54,6 +55,8 @@ jobs:
       TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-throwaway-account-not-a-secret@127.0.0.1:5432/postgres
       DATABASE_URL: postgresql://ci_admin:ci-throwaway-account-not-a-secret@127.0.0.1:5432/vinto_ci_unused
       PYTHONDONTWRITEBYTECODE: "1"
+      D3B3_REQUIRE_PG17: "1"
+      D3B3_EVIDENCE_DIR: ${{ github.workspace }}/d3b3-evidence
     steps:
       - name: Checkout (sin credenciales persistentes)
         uses: actions/checkout@v4
@@ -80,9 +83,18 @@ jobs:
           assert 170000 <= number < 180000, f"se esperaba PostgreSQL 17.x, el servidor es {number}"
           PY
 
-      - name: Pruebas de privilegios D.3B.1, D.3B.2 y MF-13-01D.3B (PostgreSQL 17)
+      - name: Pruebas de privilegios D.3B.1, D.3B.2, puerta D.3B.3 / corte D.3B.4 y MF-13-01D.3B (PostgreSQL 17)
         working-directory: backend
-        run: python -B -m unittest tests.test_d3b1_privilege_hardening tests.test_d3b2_identity_role tests.test_grants_hardening_design -v
+        run: python -B -m unittest tests.test_d3b1_privilege_hardening tests.test_d3b2_identity_role tests.test_d3b3_two_role_gate tests.test_grants_hardening_design -v
 
       - name: Guarda de deploy.sh (postgres-grants), sin Docker ni PostgreSQL reales
         run: bash deploy/mvp/scripts/tests/test_postgres_grants_d3b1_guard.sh
+
+      - name: Evidencia de la puerta D.3B.3 (aprobación o rechazo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d3b3-gate-evidence
+          path: d3b3-evidence/
+          if-no-files-found: warn
+          retention-days: 30

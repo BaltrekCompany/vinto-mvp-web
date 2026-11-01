@@ -890,38 +890,43 @@ phase_migrate() {
   echo "Si el --check anterior muestra pendientes, ejecutar 'migrate.py --target dev' (sin --check) solo tras revisar la salida."
 }
 
-# MF-13-01D.3B.1: 03_table_grants.sql concede SELECT, INSERT, UPDATE a vinto_app sobre profile, machine y sector;
-# backend/roles/03b_d3b1_restrict_catalog_writes.sql los estrecha DESPUÉS. Si D.3B.1 ya está aplicado, ejecutar
-# 03 sola restauraría en silencio los privilegios retirados. Este guardián, de SOLO LECTURA, se ejecuta ANTES de
-# cualquier GRANT: cuenta cuántas de las 3 tablas ya no tienen INSERT o UPDATE de tabla para vinto_app.
-#   0     -> D.3B.1 no está aplicado: el despliegue sigue EXACTAMENTE igual que antes de este cambio.
-#   >= 1  -> está (total o parcialmente) aplicado: FALLA CERRADO sin ejecutar nada, indicando el procedimiento.
-#   otro  -> no se pudo determinar: también falla cerrado (nunca se asume "no aplicado").
-# NUNCA aplica 03b ni la reversión: aplicar D.3B.1 en un entorno es una decisión manual y separada.
-assert_d3b1_not_silently_reverted_by_03() {
-  local migrator_pw="$1" state
+# MF-13-01D.3B.1 / D.3B.4: 03_table_grants.sql concede a vinto_app SELECT, INSERT, UPDATE sobre profile, machine y sector (D.3B.1 se los estrecha después con 03b) y el DML de
+# identidad sobre user, user_profile, user_sector, credential, session y auth_event (D.3B.4 se lo retira con 03d). Si cualquiera de las dos fases ya está aplicada, ejecutar 03 sola
+# restauraría en silencio los privilegios retirados. Este guardián, de SOLO LECTURA, se ejecuta ANTES de cualquier GRANT y cuenta, con una sola consulta:
+#   d3b1 = tablas de D.3B.1 donde vinto_app TIENE SELECT pero ya no tiene INSERT o UPDATE de tabla
+#   d3b4 = tablas de D.3B.4 donde vinto_app ya no tiene INSERT de tabla, SIEMPRE que conserve SELECT sobre vinto_auth.session (prueba de que 03 se ejecutó alguna vez)
+# La condición «tiene SELECT» es imprescindible: en el PRIMER aprovisionamiento vinto_app aún no tiene NINGÚN privilegio y eso NO es «endurecido». Un rol inexistente da 0 0.
+#   0 0      -> ninguna fase aplicada: el despliegue sigue EXACTAMENTE igual que antes de MF-13-01D.3B.
+#   otro     -> alguna fase aplicada (total o parcialmente): FALLA CERRADO sin ejecutar nada, indicando el procedimiento.
+#   ilegible -> no se pudo determinar: también falla cerrado (nunca se asume «no aplicado»).
+# NUNCA aplica 03b, 03d ni sus reversiones: aplicar esas fases en un entorno es una decisión manual y separada.
+assert_identity_hardening_not_reverted_by_03() {
+  local migrator_pw="$1" state d3b1 d3b4
   if ! state="$(pg_run_sql_inline vinto_migrator "$migrator_pw" vinto_piloto \
-    "SELECT count(*) FROM pg_roles r CROSS JOIN unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl) WHERE r.rolname = 'vinto_app' AND (NOT has_table_privilege('vinto_app', t.tbl, 'INSERT') OR NOT has_table_privilege('vinto_app', t.tbl, 'UPDATE'));")"; then
-    echo "FALLA CERRADA: no se pudo determinar si MF-13-01D.3B.1 está aplicado en vinto_piloto (la consulta de solo lectura falló). No se ejecutó ningún GRANT." >&2
+    "SELECT (SELECT count(*) FROM unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl) WHERE has_table_privilege(to_regrole('vinto_app'), t.tbl, 'SELECT') AND (NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'INSERT') OR NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'UPDATE'))) || ' ' || (SELECT count(*) FROM unnest(ARRAY['vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector', 'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event']) AS t(tbl) WHERE has_table_privilege(to_regrole('vinto_app'), 'vinto_auth.session', 'SELECT') AND NOT has_table_privilege(to_regrole('vinto_app'), t.tbl, 'INSERT'));")"; then
+    echo "FALLA CERRADA: no se pudo determinar si MF-13-01D.3B.1 / D.3B.4 están aplicados en vinto_piloto (la consulta de solo lectura falló). No se ejecutó ningún GRANT." >&2
     exit 1
   fi
-  state="$(printf '%s' "$state" | tr -d '[:space:]')"
-  if [ "$state" = "0" ]; then
+  state="$(printf '%s' "$state" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//')"
+  if ! printf '%s' "$state" | grep -qE '^[0-9]+ [0-9]+$'; then
+    echo "FALLA CERRADA: respuesta inesperada al comprobar MF-13-01D.3B.1 / D.3B.4 en vinto_piloto. No se ejecutó ningún GRANT." >&2
+    exit 1
+  fi
+  d3b1="${state%% *}"
+  d3b4="${state##* }"
+  if [ "$d3b1" = "0" ] && [ "$d3b4" = "0" ]; then
     return 0
   fi
-  if ! printf '%s' "$state" | grep -qE '^[1-9][0-9]*$'; then
-    echo "FALLA CERRADA: respuesta inesperada al comprobar MF-13-01D.3B.1 en vinto_piloto. No se ejecutó ningún GRANT." >&2
-    exit 1
-  fi
+  echo "FALLA CERRADA: hay endurecimiento de privilegios aplicado en vinto_piloto (D.3B.1: $d3b1 de 3 tablas; D.3B.4: $d3b4 de 6 tablas)." >&2
+  echo "03_table_grants.sql restauraría esos privilegios. No se ejecutó ningún GRANT y esta fase NO aplica ni revierte ninguna fase por su cuenta." >&2
   cat >&2 <<EOF
-FALLA CERRADA: MF-13-01D.3B.1 está aplicado en vinto_piloto ($state de 3 tablas sin INSERT/UPDATE de tabla para vinto_app).
-03_table_grants.sql restauraría esos privilegios. No se ejecutó ningún GRANT y esta fase NO aplica D.3B.1 por su cuenta.
-Procedimiento correcto (backend/roles/README.md, sección 'D.3B.1'):
+Procedimiento correcto (backend/roles/README.md, secciones 'D.3B.1' y 'D.3B.4'):
   - Reaprovisionar un entorno endurecido: NO ejecutar 03 sola. Si solo hace falta 02 o 04..06, ejecutarlos a mano sin 03.
-    Si hace falta 03, ejecutar a mano 03_table_grants.sql y justo después 03b_d3b1_restrict_catalog_writes.sql, como
-    vinto_migrator, y comprobar 07_verification_queries.sql (d3b1_compliant = true en las 3 tablas).
-  - Revertir D.3B.1: ejecutar a mano backend/roles/rollback/ROLLBACK_D3B1.sql como vinto_migrator; después esta fase
-    vuelve a funcionar sin cambios.
+    Si hace falta 03, ejecutar a mano, como vinto_migrator y en este orden: 03_table_grants.sql, 03b_d3b1_restrict_catalog_writes.sql
+    y, si D.3B.4 estaba aplicado, 03d_d3b4_cut_identity_dml.sql (con su aprobación independiente), y comprobar 07_verification_queries.sql
+    (d3b1_compliant y d3b4_compliant = true).
+  - Revertir D.3B.4: ejecutar a mano backend/roles/rollback/ROLLBACK_D3B4.sql ANTES de quitar IDENTITY_DATABASE_URL.
+  - Revertir D.3B.1: ejecutar a mano backend/roles/rollback/ROLLBACK_D3B1.sql. Después esta fase vuelve a funcionar sin cambios.
 EOF
   exit 1
 }
@@ -945,7 +950,7 @@ phase_postgres_grants() {
   local migrator_url migrator_pw
   migrator_url="$(mvp_env_value "$backend_env" MIGRATOR_DATABASE_URL)"
   migrator_pw="$(password_from_pg_url "$migrator_url")"
-  assert_d3b1_not_silently_reverted_by_03 "$migrator_pw"
+  assert_identity_hardening_not_reverted_by_03 "$migrator_pw"
   for step in 02_schema_grants 03_table_grants 04_function_grants 05_no_default_privileges 06_public_and_meta_protection; do
     echo "Ejecutando $step.sql contra vinto_piloto, como vinto_migrator..."
     pg_run_sql_file vinto_migrator "$migrator_pw" vinto_piloto "$roles_dir/$step.sql"

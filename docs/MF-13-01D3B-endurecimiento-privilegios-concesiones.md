@@ -127,6 +127,8 @@ Con el rol de negocio propuesto: E1–E7 y E9 pasan de «permitido» a **42501**
 
 **Qué se movió respecto a la primera versión:** `SELECT` sobre `credential` (el hash), `UPDATE` por columna sobre `user`, `user_profile` y `user_machine_form_grant`, y toda revocación sobre `user_sector`, `session`, `auth_event` pasan de D.3B.1 a D.3B.4.
 
+**Estado de D.3B.3 y D.3B.4:** puerta de dos roles automatizada y scripts del corte preparados y probados en bases efímeras (`docs/MF-13-01D3B3-D3B4-puerta-y-corte.md`: `03d_d3b4_cut_identity_dml.sql`, `rollback/ROLLBACK_D3B4.sql`, `08_release_preflight.sql`). **El corte no se ha ejecutado en ningún entorno persistente**; su ejecución real requiere una aprobación independiente durante el release (`docs/MF-13-RELEASE-unico-procedimiento.md`).
+
 **Estado de D.3B.2:** implementada en MF-13-01D.3B.2 (`docs/MF-13-01D3B2-integracion-rol-identidad.md`): `IDENTITY_DATABASE_URL` opcional, login/logout/administración/CLI con la conexión de identidad, revalidación del actor dentro de la transacción y scripts `00c`/`03c`/`ROLLBACK_D3B2`. No revoca nada a `vinto_app` y no está aplicada en ningún entorno persistente. D.3B.3 y D.3B.4 se completan en el release único (`docs/MF-13-PLAN-release-unico.md`).
 
 **Estado de D.3B.1:** implementada en MF-13-01D.3B.1 (`backend/roles/03b_d3b1_restrict_catalog_writes.sql`, `backend/roles/rollback/ROLLBACK_D3B1.sql`; detalle, matriz y evidencia en `docs/MF-13-01D3B1-endurecimiento-inicial-privilegios.md`). No está adoptada en ningún entorno persistente. Las demás fases siguen sin implementar.
