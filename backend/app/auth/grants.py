@@ -49,10 +49,19 @@ def grant_sector(connection, *, user_id, sector_code, actor_id=None, request_id=
 
 
 def revoke_sector(connection, *, user_id, sector_code, actor_id=None, request_id=None) -> bool:
-    """Revoca la concesión. Idempotente: devuelve True solo si esta llamada la eliminó."""
+    """Revoca la concesión. Idempotente: devuelve True solo si esta llamada la eliminó.
+
+    SINCRONIZACIÓN CON LA AUTORIZACIÓN EFECTIVA (MF-13-01D.3A): antes de borrar, esta transacción toma `FOR NO KEY UPDATE` sobre la fila del USUARIO. El motor (app/authz) toma `FOR SHARE`
+    sobre esa misma fila durante toda la transacción de una captura, y ambos modos entran en conflicto: (1) una captura autorizada en curso hace esperar a la revocación hasta su COMMIT; (2) una
+    revocación en curso hace esperar a la captura, que al confirmarse la revocación relee `user_sector` y se deniega. `user_sector` no es bloqueable por `vinto_app` (sin UPDATE), pero `user` sí.
+    Se usa NO KEY UPDATE y no UPDATE porque el primero no choca con `FOR KEY SHARE`, el bloqueo que PostgreSQL toma en las comprobaciones de clave foránea de otras transacciones (capturas,
+    sesiones, auditoría que referencian al usuario): sincroniza lo necesario sin bloquearlas. Conceder (`grant_sector`) no necesita sincronizarse: añadir un sector solo puede hacer que una captura
+    concurrente se deniegue de más (falla cerrado), nunca que se permita de más. Un SQL directo de un rol con privilegios suficientes no pasa por aquí (MF-13-01D.3B).
+    """
     with connection.transaction():
         sector_id = _lookup(connection, user_id, sector_code)
         _context(connection, actor_id, request_id, "sector revoke")
+        connection.execute('SELECT 1 FROM vinto_master."user" WHERE id = %s FOR NO KEY UPDATE', (user_id,))  # orden: usuario → user_sector (el motor: usuario → perfiles → máquina+sector → concesión)
         row = connection.execute(
             "DELETE FROM vinto_master.user_sector WHERE user_id = %s AND sector_id = %s RETURNING user_id", (user_id, sector_id)).fetchone()
     return row is not None

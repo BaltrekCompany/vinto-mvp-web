@@ -87,7 +87,7 @@ Un primer diseño bloqueaba todas las tablas; con el rol real habría devuelto 5
 
 **Riesgos residuales (documentados, no resueltos aquí):**
 
-1. *Retiro de un sector concurrente a una captura* (`DELETE` de `user_sector`, no bloqueable). Mitigación sin tocar privilegios, para la integración: que la administración de sectores tome `SELECT … FROM "user" WHERE id = … FOR UPDATE` antes del DELETE; choca con el `FOR SHARE` del motor sobre la fila del usuario.
+1. *(Resuelto para la ruta de la aplicación en MF-13-01D.3A: `revoke_sector` toma `FOR NO KEY UPDATE` sobre la fila del usuario; ver `docs/MF-13-01D3A-sincronizacion-revocacion-sectores.md`. Un SQL directo de un rol con privilegios sigue fuera: MF-13-01D.3B.)* *Retiro de un sector concurrente a una captura* (`DELETE` de `user_sector`, no bloqueable). Mitigación sin tocar privilegios, para la integración: que la administración de sectores tome `SELECT … FROM "user" WHERE id = … FOR UPDATE` antes del DELETE; choca con el `FOR SHARE` del motor sobre la fila del usuario.
 2. *Cambios del catálogo o de los vínculos durante una captura*: solo los hace el importador de referencias fuera de línea. Operativamente, importar en ventana sin capturas.
 3. Los `UPDATE` de la fila de usuario (p. ej. desactivarlo) esperan hasta el fin de la captura en curso: efecto buscado, de duración breve.
 
