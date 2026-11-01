@@ -9,6 +9,7 @@ backend/roles/proposals/D3B_split_identity_role.sql: un rol de NEGOCIO sin DML s
 Los tests no cambian ningún privilegio real: los roles son temporales y se eliminan al terminar.
 """
 
+import ast
 import hashlib
 import re
 import threading
@@ -63,9 +64,56 @@ def baseline_statements(role):
     return [s.replace("vinto_app", role) for s in [schema, function, grants_0007] + statements]
 
 
+FORWARD_PHASES = ("D3B1", "D3B2", "D3B4")
+
+
+def split_sql(text):
+    """Separa sentencias por ';' respetando los bloques $tag$...$tag$ (la guarda del corte es un DO)."""
+    statements, buffer, position, tag = [], [], 0, None
+    while position < len(text):
+        if tag:
+            if text.startswith(tag, position):
+                buffer.append(tag)
+                position += len(tag)
+                tag = None
+                continue
+        else:
+            opening = re.match(r"\$\w*\$", text[position:])
+            if opening:
+                tag = opening.group(0)
+                buffer.append(tag)
+                position += len(tag)
+                continue
+            if text[position] == ";":
+                statements.append("".join(buffer))
+                buffer, position = [], position + 1
+                continue
+        buffer.append(text[position])
+        position += 1
+    statements.append("".join(buffer))
+    return [s.strip() for s in statements if s.strip()]
+
+
+def proposal_phases():
+    """Sentencias del prototipo por fase (marcadores «-- @phase NOMBRE»); los comentarios se descartan."""
+    phases, current = {}, None
+    for line in PROPOSAL.read_text(encoding="utf-8").splitlines():
+        marker = re.match(r"-- @phase (\w+)\s*$", line)
+        if marker:
+            current = marker.group(1)
+            phases[current] = []
+        elif current and not line.lstrip().startswith("--"):
+            phases[current].append(re.sub(r"\s+--.*$", "", line))
+    return {name: split_sql("\n".join(lines)) for name, lines in phases.items()}
+
+
+def phase_statements(names, business, identity):
+    phases = proposal_phases()
+    return [s.replace("__BUSINESS__", business).replace("__IDENTITY__", identity) for name in names for s in phases[name]]
+
+
 def proposal_statements(business, identity):
-    text = "\n".join(l for l in PROPOSAL.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("--"))
-    return [s.replace("__BUSINESS__", business).replace("__IDENTITY__", identity) for s in text.split(";") if s.strip()]
+    return phase_statements(FORWARD_PHASES, business, identity)
 
 
 def matrix(connection, role, tables=SENSITIVE):
@@ -88,7 +136,23 @@ def matrix(connection, role, tables=SENSITIVE):
     return result
 
 
+def identity_flow(app, admin):
+    """Flujo completo de autenticación y administración que hoy ejecuta la aplicación: crear usuario, conceder/revocar máquina-formulario y sector, login y resolución de sesión."""
+    created = create_user(app, username=f"idn.{uuid4().hex[:8]}", display_name="Nuevo", profile_code="OPERACION", password="pw-" + uuid4().hex, sectors=("BOBINAS",))
+    assert grant_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=admin)
+    assert not grant_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=admin)  # idempotente
+    assert revoke_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=admin)
+    assert grant_sector(app, user_id=created.user_id, sector_code="REBOBINADO", actor_id=admin)
+    assert revoke_sector(app, user_id=created.user_id, sector_code="REBOBINADO", actor_id=admin)
+    password = "pw-" + uuid4().hex
+    other = create_user(app, username=f"idn2.{uuid4().hex[:8]}", display_name="Otro", profile_code="CALIDAD", password=password, sectors=("BOBINAS",))
+    user, session = login_with_session(app, other.username, password)
+    assert user.user_id == other.user_id and resolve_session(app, session.raw_token).user_id == other.user_id
+
+
 class RolesCase(sync.SyncCase):
+    FORWARD = FORWARD_PHASES  # fases del prototipo aplicadas al montar el caso; las pruebas de transición las aplican una a una
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         suffix = uuid4().hex[:6]
@@ -98,12 +162,28 @@ class RolesCase(sync.SyncCase):
             self.addCleanup(lambda r=role: (self.connection.execute(f"DROP OWNED BY {r}"), self.connection.execute(f"DROP ROLE IF EXISTS {r}")))
         for statement in baseline_statements(self.current) + baseline_statements(self.business):
             self.connection.execute(statement)
-        for statement in proposal_statements(self.business, self.identity):
+        for statement in phase_statements(self.FORWARD, self.business, self.identity):
             self.connection.execute(statement)
         self.victim = self.operator
         self.params = {"op": self.operator, "admin": self.admin, "sec": self.scalar("SELECT id FROM vinto_master.sector WHERE code = 'REBOBINADO'"),
                        "mp1": self.scalar("SELECT id FROM vinto_master.machine WHERE code = 'MP1'"), "form": self.scalar("SELECT id FROM vinto_config.form WHERE code = 'VINTO-P1-05'"),
                        "pa": self.scalar("SELECT id FROM vinto_master.profile WHERE code = 'DATA_BALTREK'"), "hash": hashlib.sha256(b"attacker-token").hexdigest()}
+
+    def apply(self, *phases, business=None, identity=None):
+        for statement in phase_statements(phases, business or self.business, identity or self.identity):
+            self.connection.execute(statement)
+
+    def can_administer(self, role):
+        """True si el rol ejecuta el flujo completo de autenticación y administración; False si el único fallo es de privilegio."""
+        app = connect(self.database)
+        try:
+            app.execute(f"SET ROLE {role}")
+            identity_flow(app, self.admin)
+            return True
+        except psycopg.errors.InsufficientPrivilege:
+            return False
+        finally:
+            app.close()
 
     ATTACKS = {
         "grant": "INSERT INTO vinto_master.user_machine_form_grant (user_id, machine_id, form_id) VALUES (%(op)s,%(mp1)s,%(form)s)",
@@ -305,17 +385,7 @@ class IdentityRoleTests(RolesCase):
         app = connect(self.database)
         self.addCleanup(app.close)
         app.execute(f"SET ROLE {self.identity}")
-        created = create_user(app, username=f"idn.{uuid4().hex[:8]}", display_name="Nuevo", profile_code="OPERACION", password="pw-" + uuid4().hex, sectors=("BOBINAS",))
-        self.assertTrue(grant_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=self.admin))
-        self.assertFalse(grant_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=self.admin))  # idempotente
-        self.assertTrue(revoke_machine_form(app, user_id=created.user_id, machine_code="MP1", form_code="VINTO-P1-06", actor_id=self.admin))
-        self.assertTrue(grant_sector(app, user_id=created.user_id, sector_code="REBOBINADO", actor_id=self.admin))
-        self.assertTrue(revoke_sector(app, user_id=created.user_id, sector_code="REBOBINADO", actor_id=self.admin))
-        password = "pw-" + uuid4().hex
-        other = create_user(app, username=f"idn2.{uuid4().hex[:8]}", display_name="Otro", profile_code="CALIDAD", password=password, sectors=("BOBINAS",))
-        user, session = login_with_session(app, other.username, password)
-        self.assertEqual(user.user_id, other.user_id)
-        self.assertEqual(resolve_session(app, session.raw_token).user_id, other.user_id)
+        identity_flow(app, self.admin)
 
 
 # ---- 5. plantilla de endurecimiento de funciones SECURITY DEFINER (por si una fase posterior las adopta) ----------------------------------------------------------
@@ -369,6 +439,236 @@ class SecurityDefinerTemplateTests(RolesCase):
         """Límite documentado: lo que el rol fije (vinto.actor_id) o pase por parámetro no demuestra quién es el administrador. Con rol compartido, la defensa real es NO darle al rol de negocio el DML ni la ejecución."""
         self.assertEqual(self.try_as(self.business, "SELECT set_config('vinto.actor_id', %(admin)s::text, true)", claim_admin=False), "allowed")  # fijar la variable es libre…
         self.assertEqual(self.try_as(self.business, "INSERT INTO vinto_master.user_machine_form_grant (user_id, machine_id, form_id, created_by) VALUES (%(op)s,%(mp1)s,%(form)s,%(admin)s)"), "privilege")  # …pero sin privilegio no sirve de nada
+
+
+# ---- 6. fases: lo que D.3B.1 puede revocar sin cambios de código, transiciones y reversión ------------------------------------------------------------------------------
+
+class PhaseD3B1Tests(RolesCase):
+    """D.3B.1 retira SOLO privilegios sin consumidores. El rol de negocio sigue siendo el ÚNICO rol (no existe aún el de identidad): login, administración y capturas deben seguir funcionando con el código actual."""
+
+    FORWARD = ("D3B1",)
+
+    async def test_it_only_changes_profile_machine_and_sector(self):
+        before, after = matrix(self.connection, self.current), matrix(self.connection, self.business)
+        changed = {table for table in before if before[table] != after[table]}
+        self.assertEqual(changed, {"vinto_master.profile", "vinto_master.machine", "vinto_master.sector"})
+        for table in changed:
+            self.assertEqual(after[table], "S;u=(updated_at)")
+        self.assertEqual(after["vinto_auth.credential"], "SIU")  # el hash sigue legible: login lo necesita hasta D.3B.4
+
+    async def test_the_single_role_still_runs_authentication_administration_and_the_four_captures(self):
+        self.assertTrue(self.can_administer(self.business))
+        for op in sync.OPERATIONS:
+            with self.subTest(operation=op):
+                user, run, _ = await self.target(op)
+                results = []
+                thread = self.threaded(run, results, role=self.business)
+                thread.start()
+                thread.join(60)
+                self.assertTrue(results and getattr(results[0], "created", False), (op, results))
+
+    async def test_it_does_not_yet_protect_against_escalation_only_against_profile_and_machine_writes(self):
+        results = {name: self.try_as(self.business, sql) for name, sql in self.ATTACKS.items()}
+        self.assertEqual({name for name, outcome in results.items() if outcome == "privilege"}, {"profile_active", "machine_update"})
+        self.assertEqual({name for name, outcome in results.items() if outcome == "allowed"}, set(self.ATTACKS) - {"profile_active", "machine_update"})
+
+
+class PhaseTransitionTests(RolesCase):
+    """Cada estado intermedio del despliegue y de la reversión conserva al menos un rol que administra usuarios; el corte y la reversión están probados."""
+
+    FORWARD = ()
+
+    def administrators(self):
+        return {"business": self.can_administer(self.business), "identity": self.can_administer(self.identity)}
+
+    async def test_no_intermediate_state_leaves_nobody_able_to_administer(self):
+        expected = [
+            ("D3B1", {"business": True, "identity": False}),
+            ("D3B2", {"business": True, "identity": True}),  # aditivo: ambos roles administran; aquí se puede desplegar y verificar el código
+            ("D3B4", {"business": False, "identity": True}),  # corte: solo identidad
+            ("ROLLBACK_D3B4", {"business": True, "identity": True}),  # reversión de privilegios: vuelve a poder el negocio ANTES de tocar la conexión
+            ("ROLLBACK_D3B1", {"business": True, "identity": True}),
+        ]
+        for phase, administrators in expected:
+            with self.subTest(after=phase):
+                self.apply(phase)
+                self.assertEqual(self.administrators(), administrators)
+                self.assertTrue(any(administrators.values()))
+
+    async def test_the_full_rollback_restores_the_current_business_privileges_and_the_single_role_connection_works(self):
+        before = matrix(self.connection, self.current)
+        self.apply("D3B1", "D3B2", "D3B4")
+        self.assertNotEqual(matrix(self.connection, self.business), before)
+        self.apply("ROLLBACK_D3B4", "ROLLBACK_D3B1")
+        self.assertEqual(matrix(self.connection, self.business), before)  # misma matriz que el rol actual
+        self.assertEqual({name: self.try_as(self.business, sql) for name, sql in self.ATTACKS.items()},
+                         {name: self.try_as(self.current, sql) for name, sql in self.ATTACKS.items()})
+        self.assertTrue(self.can_administer(self.business))  # rol único (IDENTITY_DATABASE_URL eliminada): login y administración operan
+
+    async def test_the_cut_aborts_without_changes_when_the_identity_role_does_not_have_its_privileges_yet(self):
+        self.apply("D3B1")
+        before = matrix(self.connection, self.business)
+        with self.assertRaisesRegex(psycopg.errors.RaiseException, "identity role lacks"):
+            self.apply("D3B4")
+        self.assertEqual(matrix(self.connection, self.business), before)
+        self.assertTrue(self.can_administer(self.business))
+
+    async def test_a_plan_that_cuts_before_the_identity_role_exists_is_blocked_by_the_script_itself(self):
+        before = matrix(self.connection, self.business)
+        with self.assertRaises(psycopg.errors.RaiseException):
+            self.apply("D3B4", "D3B2", "D3B1")  # orden invertido: el corte va primero
+        self.assertEqual(matrix(self.connection, self.business), before)
+
+    async def test_the_cut_aborts_when_both_roles_are_the_same_role(self):
+        before = matrix(self.connection, self.business)
+        with self.assertRaisesRegex(psycopg.errors.RaiseException, "same role"):
+            self.apply("D3B4", identity=self.business)
+        self.assertEqual(matrix(self.connection, self.business), before)
+
+
+# ---- 7. guarda del orden del plan: ninguna revocación antes de migrar sus consumidores ------------------------------------------------------------------------------
+
+DOC = BACKEND.parent / "docs/MF-13-01D3B-endurecimiento-privilegios-concesiones.md"
+PHASE_ORDER = ("D.3B.1", "D.3B.2", "D.3B.3", "D.3B.4", "D.3B.5")
+REVOKING_PHASES = ("D.3B.1", "D.3B.4", "D.3B.5")  # D.3B.2 solo concede y D.3B.3 solo verifica
+SQL_PHASE = {"D3B1": "D.3B.1", "D3B4": "D.3B.4"}
+IDENTITY_ENTRY_POINTS = ("login_with_session", "revoke_session", "create_session", "authenticate", "create_user", "deactivate_user", "reactivate_user", "grant_sector",
+                         "revoke_sector", "grant_machine_form", "revoke_machine_form", "resolve_session")
+
+
+def doc_section(prefix):
+    text = DOC.read_text(encoding="utf-8")
+    start = text.index(prefix)
+    following = [m.start() for m in re.finditer(r"^#{2,3} ", text[start + len(prefix):], re.M)]
+    return text[start:start + len(prefix) + following[0]] if following else text[start:]
+
+
+def table_rows(section):
+    rows = []
+    for line in section.splitlines():
+        if line.startswith("|") and not re.match(r"^\|[\s:|-]+\|$", line):
+            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+    return rows[1:]  # sin la cabecera
+
+
+def revocation_plan():
+    plan = []
+    for cells in table_rows(doc_section("### 7.3")):
+        plan.append({"table": re.search(r"`([^`]+)`", cells[0]).group(1).replace('"', ""), "privileges": cells[0].split("`")[2], "revoked": cells[1],
+                     "consumers": re.findall(r"`([^`]+)`", cells[2]), "migrated": cells[3]})
+    return plan
+
+
+def plan_violations(plan):
+    """Una revocación solo es válida si se ejecuta en una fase que revoca y TODOS sus consumidores migraron en una fase estrictamente anterior."""
+    violations = []
+    for row in plan:
+        name = f"{row['table']} ({row['revoked']})"
+        if row["revoked"] not in REVOKING_PHASES:
+            violations.append(f"{name}: la fase no puede revocar")
+        elif row["consumers"]:
+            if row["migrated"] not in PHASE_ORDER:
+                violations.append(f"{name}: tiene consumidores sin fase de migración")
+            elif PHASE_ORDER.index(row["migrated"]) >= PHASE_ORDER.index(row["revoked"]):
+                violations.append(f"{name}: se revoca antes (o a la vez) que se migran sus consumidores ({row['migrated']})")
+    return violations
+
+
+def revoked_tables(statements):
+    tables = set()
+    for statement in statements:
+        match = re.match(r"REVOKE\s+(.+?)\s+ON\s+(.+?)\s+FROM\s", statement, re.S | re.I)
+        if match:
+            tables |= {name.strip().replace('"', "") for name in match.group(2).split(",")}
+    return tables
+
+
+class PhaseOrderGuardTests(unittest.TestCase):
+    """Detecta una planificación donde los privilegios se revocan antes de migrar sus consumidores (y un documento que se aparte del código o del script)."""
+
+    def test_the_documented_plan_never_revokes_before_its_consumers_migrate(self):
+        plan = revocation_plan()
+        self.assertGreaterEqual(len(plan), 11)
+        self.assertEqual(plan_violations(plan), [])
+
+    def test_the_guard_detects_a_plan_that_revokes_before_migrating(self):
+        plan = revocation_plan()
+        early = [dict(row, revoked="D.3B.1") if row["table"] == "vinto_auth.credential" else row for row in plan]  # la planificación original: el hash se revocaba en D.3B.1
+        violations = plan_violations(early)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all("vinto_auth.credential" in v and "antes" in v for v in violations))
+        simultaneous = [dict(row, revoked="D.3B.2") if row["table"] == "vinto_master.user_sector" else row for row in plan]
+        self.assertTrue(any("no puede revocar" in v for v in plan_violations(simultaneous)))  # D.3B.2 integra el código: no revoca
+        same_phase = [dict(row, migrated="D.3B.4") if row["table"] == "vinto_auth.session" else row for row in plan]
+        self.assertTrue(any("antes (o a la vez)" in v for v in plan_violations(same_phase)))
+        unmigrated = [dict(row, migrated="—") if row["table"] == "vinto_auth.auth_event" else row for row in plan]
+        self.assertTrue(any("sin fase de migración" in v for v in plan_violations(unmigrated)))
+
+    def test_the_plan_matches_the_sql_prototype_phase_by_phase(self):
+        phases, plan = proposal_phases(), revocation_plan()
+        for sql_phase, doc_phase in SQL_PHASE.items():
+            with self.subTest(phase=sql_phase):
+                self.assertEqual(revoked_tables(phases[sql_phase]), {row["table"] for row in plan if row["revoked"] == doc_phase})
+        for sql_phase in ("D3B2", "ROLLBACK_D3B4", "ROLLBACK_D3B1"):
+            with self.subTest(phase=sql_phase):
+                self.assertEqual(revoked_tables(phases[sql_phase]), set())  # solo conceden
+                self.assertFalse(any(s.upper().startswith("REVOKE") for s in phases[sql_phase]))
+        self.assertEqual([m.group(1) for m in re.finditer(r"^REVOKE\s+(.+?)\s+ON\s", " ".join(phases["D3B1"]), re.M | re.I)], ["INSERT, UPDATE"])
+
+    def test_the_plan_matches_the_real_writers_of_each_table(self):
+        plan = revocation_plan()
+        for row in plan:
+            with self.subTest(table=row["table"], phase=row["revoked"]):
+                writers = WriteInventoryTests.EXPECTED.get(row["table"])
+                if row["revoked"] == "D.3B.1":
+                    self.assertIsNone(writers)  # sin consumidores de escritura en el código
+                    self.assertEqual(row["consumers"], [])
+                else:
+                    expected = {module for modules in writers.values() for module in modules}
+                    self.assertTrue(expected <= set(row["consumers"]), (expected, row["consumers"]))
+                for module in row["consumers"]:
+                    self.assertTrue((BACKEND / module).is_file(), module)
+        credential_readers = {str(path.relative_to(BACKEND)).replace("\\", "/") for path in (BACKEND / "app").rglob("*.py")
+                              if "password_hash" in path.read_text(encoding="utf-8") and re.search(r"(?:FROM|JOIN)\s+vinto_auth\.credential", path.read_text(encoding="utf-8"))}
+        select_row = next(row for row in plan if row["table"] == "vinto_auth.credential" and "SELECT" in row["privileges"])
+        self.assertTrue(credential_readers and credential_readers <= set(select_row["consumers"]), credential_readers)
+
+    def test_the_d3b2_inventory_names_every_current_caller_of_the_identity_functions(self):
+        section = doc_section("### 7.4")
+        # referencia real en el código (AST), no solo llamada ni mención en un docstring: admin/service.py las elige con `action = grant_sector if … else revoke_sector`
+        def references(path):
+            names = set()
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Name):
+                    names.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    names.add(node.attr)
+                elif isinstance(node, ast.ImportFrom):
+                    names.update(alias.name for alias in node.names)
+            return names & set(IDENTITY_ENTRY_POINTS)
+        callers = set()
+        for path in list((BACKEND / "app").rglob("*.py")) + sorted(BACKEND.glob("*.py")):
+            relative = str(path.relative_to(BACKEND)).replace("\\", "/")
+            if "/seed/" in relative or relative in ("migrate.py", "prepare_test_db.py", "import_reference.py", "authz_readiness.py", "candidate_report.py"):
+                continue
+            if references(path):
+                callers.add(relative)
+        self.assertTrue({"app/auth/router.py", "app/auth/dependencies.py", "app/admin/service.py", "manage_user.py", "create_user.py"} <= callers, callers)
+        for relative in sorted(callers | {"app/admin/router.py"}):
+            with self.subTest(consumer=relative):
+                self.assertIn(f"`{relative}", section)
+        for required in ("login", "logout", "resolve_session", "IDENTITY_DATABASE_URL", "app/admin/router.py", "manage_user.py", "create_user.py"):
+            self.assertIn(required, section)
+
+    def test_the_documented_transition_and_rollback_keep_access_in_every_step(self):
+        transition = doc_section("### 7.5")
+        self.assertRegex(transition, r"ausente o vac[ií]a.*comportamiento existente")
+        self.assertIn("sin retroceso silencioso", transition)
+        self.assertIn("el corte queda prohibido si falta cualquiera", transition)
+        rollback = doc_section("### 7.6")
+        self.assertLess(rollback.index("ROLLBACK_D3B4"), rollback.index("quitar `IDENTITY_DATABASE_URL`"))  # privilegios primero, conexión después
+        self.assertIn("Prohibido", rollback)
+        self.assertIn("No retirar privilegios al rol de identidad", rollback)
 
 
 if __name__ == "__main__":

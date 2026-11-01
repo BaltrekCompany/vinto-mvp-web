@@ -2,7 +2,9 @@
 
 Estado: **auditoría, modelo de amenazas, diseño y prueba de viabilidad en PostgreSQL 17 aislado. Este PR NO cambia ningún privilegio real, no añade migraciones, no toca la VPS ni datos.** El motivo es un hallazgo que cambia el alcance (§1): el diseño debe aprobarse antes de ejecutar cambios extensos en servicios y despliegue.
 
-Artefactos: `backend/roles/proposals/D3B_split_identity_role.sql` (prototipo, **no** lo ejecuta ningún despliegue) y `backend/tests/test_grants_hardening_design.py` (matrices, exposición actual, viabilidad, plantilla `SECURITY DEFINER`, inventario de escrituras).
+Artefactos: `backend/roles/proposals/D3B_split_identity_role.sql` (prototipo por fases, **no** lo ejecuta ningún despliegue) y `backend/tests/test_grants_hardening_design.py` (matrices, exposición actual, viabilidad, plantilla `SECURITY DEFINER`, inventario de escrituras, transiciones entre fases y guardas del orden del plan).
+
+**Alcance de la protección propuesta.** Cubre **SQL arbitrario ejecutado con las credenciales del rol de negocio** (p. ej. una inyección en un endpoint de capturas, órdenes o lecturas): ese rol dejaría de poder concederse permisos, perfiles, sesiones o contraseñas. **No cubre** un compromiso del proceso completo de la aplicación (ejecución de código), que posee también la credencial del rol de identidad, ni una inyección en un endpoint de autenticación o administración (§3, A2 y A3).
 
 ## 1. Hallazgo central
 
@@ -69,6 +71,8 @@ O4 es la única que cambia lo que A1 puede hacer, y puede **combinarse** con O2/
 
 `backend/roles/proposals/D3B_split_identity_role.sql` (prototipo verificado):
 
+El diseño se aplica **por fases** (§7): primero lo que no tiene consumidores, después la integración del rol de identidad y, solo con ambos roles verificados, el corte.
+
 - **Rol de negocio** (hoy `vinto_app`): `REVOKE INSERT, UPDATE, DELETE` sobre `user`, `user_profile`, `profile`, `user_sector`, `user_machine_form_grant`, `credential`, `session`, `auth_event`; `REVOKE INSERT, UPDATE` sobre `machine`, `sector` (la aplicación no las escribe). Conserva el `SELECT` y recibe **privilegios por columna** mínimos: `SELECT (user_id, username, must_change)` sobre `credential` (el hash deja de ser legible), `UPDATE (last_seen_at)` sobre `session` (renovar actividad) y `UPDATE (updated_at)` sobre las filas que el motor bloquea.
 - **Rol de identidad** (nuevo): `SELECT` de lectura y el DML actual sobre `user`, `user_profile`, `user_machine_form_grant`, `user_sector`, `credential`, `session`, `auth_event`, más `UPDATE` de las columnas de `profile` que usa la administración.
 
@@ -96,17 +100,110 @@ Con el rol de negocio propuesto: E1–E7 y E9 pasan de «permitido» a **42501**
 
 ## 7. Plan por fases (PR pequeños; nada se ejecuta sin aprobar este diseño)
 
-| Fase | Contenido | Riesgo de despliegue |
-|------|-----------|----------------------|
-| **D.3B.1** | Solo privilegios sin uso: `REVOKE INSERT, UPDATE` sobre `profile`, `machine`, `sector`; `SELECT` por columna sobre `credential`; `UPDATE` por columna donde el motor solo bloquea. Sin cambios de código; script de roles versionado y reversible | Bajo; verificable con el inventario |
-| **D.3B.2** | Rol de identidad: `IDENTITY_DATABASE_URL` opcional (ausente ⇒ comportamiento actual, activación gradual); `get_connection` con dos variantes; los routers de autenticación y administración usan la de identidad; CLI (`manage_user.py`, `create_user.py`) con el rol de identidad | Medio: toca la fábrica de conexiones y routers |
-| **D.3B.3** | Corte: quitar al rol de negocio el DML de identidad (`proposals/…` aplicado como script de roles), con verificación (`07_verification_queries.sql` ampliado) | Medio-alto: requiere ventana y pruebas con ambos roles reales |
-| **D.3B.4** (opcional) | Auditoría `SECURITY DEFINER` y funciones de validación (O2/O3) como defensa en profundidad dentro del rol de identidad | Medio |
+> **Corrección de orden.** La primera versión de este plan revocaba en D.3B.1 el `SELECT` sobre `vinto_auth.credential` y otros privilegios **antes** de que login y administración usaran el rol de identidad. Eso habría interrumpido la autenticación y la administración con el código actual (hechos verificados abajo). El plan se reescribe con una regla de orden y una prueba que la hace cumplir.
 
-### Procedimiento de despliegue y reversión (para las fases futuras; nada de esto se ejecuta ahora)
-- **Despliegue**: (1) respaldo; (2) `00_create_roles.sql` crea el rol de identidad (idempotente); (3) desplegar el código con `IDENTITY_DATABASE_URL` aún sin definir (el comportamiento no cambia); (4) definir la variable y reiniciar; verificar login, administración y las cuatro capturas en `off`/`observe`; (5) solo entonces aplicar el script de revocación al rol de negocio; (6) `07_verification_queries.sql` y la matriz fijada confirman el estado.
-- **Reversión**: los privilegios se restauran con el `GRANT` de `03_table_grants.sql` + 0007 (idempotente); la variable `IDENTITY_DATABASE_URL` se elimina y se reinicia para volver al rol único. No hay datos que deshacer.
-- **No se aplica nada en la VPS en esta tarea.**
+**Regla de orden (inviolable):** un privilegio solo se revoca al rol de negocio cuando (a) todo consumidor que lo usa ya emplea el rol de identidad, y (b) las verificaciones con **ambos roles** han aprobado. Los privilegios sin consumidores son la única excepción y pueden retirarse antes, sin cambios de código.
+
+### 7.1 Hechos del código actual que fijan el orden
+
+| Punto de entrada | Qué hace hoy | Por qué impide revocar antes |
+|------------------|--------------|------------------------------|
+| `app/auth/router.py::login` | usa `get_connection` y llama a `login_with_session` → `authenticate` | necesita el rol que luego pierde el DML |
+| `app/auth/service.py::_lock_credential` | lee `password_hash` y toma `SELECT … FOR UPDATE OF c` sobre `vinto_auth.credential`; después actualiza contadores de intentos | revocar `SELECT` (hash) o `UPDATE` rompe todos los logins |
+| `app/auth/router.py::logout` | abre `open_connection()` directamente (no es una dependencia) y llama a `revoke_session` (`UPDATE` de sesión + `INSERT` de `auth_event`) | un cambio solo en `get_connection` **no** lo migra |
+| `app/auth/dependencies.py::current_user` | `get_connection` → `resolve_session` (lee `user_id, username, must_change` de la credencial y actualiza `last_seen_at`) | es un camino de **negocio**: debe seguir con el rol de negocio y por eso conserva privilegios por columna |
+| `app/admin/router.py` | todas las rutas usan `get_connection`; escriben usuarios, sectores y concesiones vía `app/admin/service.py`, `app/admin/grants_write.py`, `app/auth/grants.py`, `app/auth/machine_form_grants.py` | sin migrar, la administración pierde el DML |
+| `manage_user.py`, `create_user.py` | CLI con su propia `open_connection(target)` y `DATABASE_URL` | quedarían fuera del rol de identidad |
+
+### 7.2 Fases
+
+| Fase | Contenido | Código | Riesgo |
+|------|-----------|--------|--------|
+| **D.3B.1** | **Solo privilegios sin consumidores:** `REVOKE INSERT, UPDATE` sobre `profile`, `machine`, `sector` y `GRANT UPDATE (updated_at)` sobre las mismas tablas (los bloqueos `FOR SHARE` del motor solo exigen una columna). Verificado: ningún módulo escribe esas tablas (`WriteInventoryTests`) | Ninguno | Bajo; reversible con `ROLLBACK_D3B1` |
+| **D.3B.2** | **Integración del rol de identidad, sin ninguna revocación.** Crear el rol (solo `GRANT`, aditivo), `IDENTITY_DATABASE_URL` opcional, `open_identity_connection()`/`get_identity_connection` y migración de **todos** los consumidores del inventario 7.4 | Sí | Medio |
+| **D.3B.3** | **Puerta de verificación con ambos roles** (7.5). No cambia nada: produce la evidencia que autoriza el corte | Ninguno | Bajo |
+| **D.3B.4** | **Corte:** retirar al rol de negocio el DML y el hash de `credential` (sección `D3B4` del prototipo, con guardas) y probar la reversión | Ninguno | Medio-alto: ventana de despliegue |
+| **D.3B.5** (opcional) | Auditoría `SECURITY DEFINER` y funciones de validación (O2/O3) dentro del rol de identidad | Sí | Medio |
+
+**Qué se movió respecto a la primera versión:** `SELECT` sobre `credential` (el hash), `UPDATE` por columna sobre `user`, `user_profile` y `user_machine_form_grant`, y toda revocación sobre `user_sector`, `session`, `auth_event` pasan de D.3B.1 a D.3B.4.
+
+### 7.3 Matriz de revocaciones (fuente de la prueba de orden)
+
+Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se migra el último consumidor. `PhaseOrderGuardTests` exige que la fase de migración sea **estrictamente anterior** a la de revocación, que una revocación sin consumidores sea la de D.3B.1 y que la tabla coincida con las secciones del prototipo SQL y con el inventario real de escrituras.
+
+| Revocación | Revocada en | Consumidores actuales | Migrados en |
+|------------|-------------|-----------------------|-------------|
+| `vinto_master.profile` INSERT, UPDATE | D.3B.1 | ninguno | — |
+| `vinto_master.machine` INSERT, UPDATE | D.3B.1 | ninguno | — |
+| `vinto_master.sector` INSERT, UPDATE | D.3B.1 | ninguno | — |
+| `vinto_master.user` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
+| `vinto_master.user_profile` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
+| `vinto_master.user_sector` INSERT, DELETE | D.3B.4 | `app/auth/grants.py` | D.3B.2 |
+| `vinto_master.user_machine_form_grant` INSERT, UPDATE | D.3B.4 | `app/auth/machine_form_grants.py` | D.3B.2 |
+| `vinto_auth.credential` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
+| `vinto_auth.credential` SELECT (hash; queda `SELECT` por columna) | D.3B.4 | `app/auth/service.py` | D.3B.2 |
+| `vinto_auth.session` INSERT, UPDATE (queda `UPDATE (last_seen_at)`) | D.3B.4 | `app/auth/sessions.py`, `app/auth/service.py` | D.3B.2 |
+| `vinto_auth.auth_event` INSERT | D.3B.4 | `app/auth/service.py`, `app/auth/sessions.py` | D.3B.2 |
+
+### 7.4 Inventario de D.3B.2 (todo consumidor migra o se declara de negocio)
+
+`PhaseOrderGuardTests` compara este inventario con los archivos que llaman hoy a las funciones que escriben identidad: un llamador nuevo sin declarar hace fallar la prueba.
+
+| Consumidor | Hoy | En D.3B.2 | Rol |
+|------------|-----|-----------|-----|
+| `app/auth/router.py::login` | `Depends(get_connection)` | `Depends(get_identity_connection)` | identidad |
+| `app/auth/router.py::logout` | `open_connection()` directo dentro del handler | `open_identity_connection()` en el mismo lugar, para seguir borrando la cookie aunque la conexión falle | identidad |
+| `app/auth/dependencies.py::current_user` (resolución de sesiones) | `Depends(get_connection)` → `resolve_session` | **sin cambio**: `resolve_session` solo lee columnas de la credencial y actualiza `last_seen_at` | negocio |
+| `app/admin/router.py` (todas las rutas, lecturas incluidas) | `Depends(get_connection)` | `Depends(get_identity_connection)`; la autorización `require_permission(USER_MANAGE)` sigue resolviendo la sesión con el rol de negocio | identidad |
+| `app/admin/service.py`, `app/admin/grants_write.py` | reciben la conexión del router | sin cambio de código: heredan la conexión de identidad | identidad |
+| `app/auth/service.py` (`create_user`, `authenticate`, `deactivate_user`, `reactivate_user`) | reciben la conexión del llamador | sin cambio de código | identidad |
+| `app/auth/grants.py`, `app/auth/machine_form_grants.py` | reciben la conexión del llamador | sin cambio de código | identidad |
+| `app/auth/sessions.py` (`login_with_session`, `create_session`, `revoke_session`; `resolve_session` es de negocio) | reciben la conexión del llamador | sin cambio de código | identidad / negocio |
+| `manage_user.py` | `open_connection(target)` con `DATABASE_URL` | conexión de identidad (`IDENTITY_DATABASE_URL`; para `--target test`, una variable equivalente con las mismas guardas de nombre `*_test`) | identidad |
+| `create_user.py` | `open_connection(target)` con `DATABASE_URL` | ídem | identidad |
+
+Fuera de alcance (no escriben identidad ni autorización): `migrate.py` (rol migrador), `import_reference.py`/`authz_readiness.py` (rol de referencia) y el resto de routers de negocio (capturas, bobinas, calidad, órdenes, asignaciones), que siguen con `get_connection`.
+
+### 7.5 Transición sin pérdida de acceso y puerta de verificación
+
+**Transición.**
+- `IDENTITY_DATABASE_URL` **ausente o vacía** ⇒ `open_identity_connection()` se comporta exactamente como `open_connection()` con `DATABASE_URL`: el comportamiento existente se conserva sin cambios hasta el corte. Es también el estado de reversión.
+- Variable **presente y válida** ⇒ los consumidores de identidad usan ese rol; el rol de negocio sigue conservando todo su DML mientras no se ejecute D.3B.4, de modo que cualquier camino aún no migrado o cualquier fallo de la variable no interrumpe nada.
+- Variable **presente pero con fallo de conexión** ⇒ error seguro (503), **sin retroceso silencioso** a `DATABASE_URL`: un retroceso ocultaría una mala configuración justo antes del corte. Contrapartida aceptada: durante la activación gradual un error de la variable es visible en lugar de enmascarado.
+- Cada arranque registra, sin URL ni credenciales, si la conexión de identidad es *dedicada* o *compartida*.
+
+**Puerta de verificación (D.3B.3): el corte queda prohibido si falta cualquiera de estas evidencias.**
+1. Suite completa verde con `IDENTITY_DATABASE_URL` ausente (comportamiento actual intacto).
+2. En una base **aislada** con el script `D3B4` ya aplicado al rol de negocio y la variable definida: login, logout, `/auth/me` (resolución de sesión), todas las rutas de administración (usuarios, sectores, concesiones), `manage_user.py`, `create_user.py` y las cuatro capturas con `enforce` aprueban.
+3. La conexión de identidad devuelve `current_user` distinto del rol de negocio (misma identidad ⇒ no hay separación y el corte no se ejecuta).
+4. El ensayo de reversión (`ROLLBACK_D3B4`, 7.6) se ejecutó en la base aislada y la matriz volvió a la actual.
+5. Las pruebas de orden (`PhaseOrderGuardTests`) están en verde.
+6. Aprobación humana explícita registrada en el PR de D.3B.4.
+
+Defensa en profundidad: la sección `D3B4` del prototipo **aborta sin cambiar nada** si el rol de identidad no tiene ya todo lo que el rol de negocio va a perder, o si ambos roles son el mismo. Esa guarda protege el privilegio; la puerta anterior protege el comportamiento de la aplicación y no puede automatizarse solo con SQL.
+
+### 7.6 Despliegue y reversión (para las fases futuras; nada de esto se ejecuta ahora)
+
+**Despliegue de D.3B.4**
+1. Respaldo.
+2. `00_create_roles.sql` crea el rol de identidad (idempotente) y se aplica `D3B2`.
+3. Se despliega el código de D.3B.2 con `IDENTITY_DATABASE_URL` aún sin definir; se confirma que nada cambió.
+4. Se define la variable y se reinicia; se completa la puerta D.3B.3.
+5. Solo entonces se aplica `D3B4` (en una sola transacción; las guardas abortan si no procede).
+6. `07_verification_queries.sql` ampliado y la matriz fijada confirman el estado.
+
+**Reversión (el orden evita el estado en que ningún rol puede administrar usuarios)**
+1. **Privilegios primero:** ejecutar `ROLLBACK_D3B4`. Solo concede al rol de negocio lo que tenía y no toca al de identidad; desde ese momento **ambos** roles administran.
+2. Verificar login y administración con el rol de negocio.
+3. **Después** quitar `IDENTITY_DATABASE_URL` y reiniciar: vuelve el rol único.
+4. No retirar privilegios al rol de identidad ni eliminarlo durante la reversión: se deja inerte y se limpia en una tarea posterior.
+5. `ROLLBACK_D3B1` restaura `INSERT, UPDATE` sobre `profile`, `machine` y `sector` si fuera necesario.
+
+**Prohibido:** quitar `IDENTITY_DATABASE_URL` mientras los privilegios del corte sigan aplicados (login y administración fallarían con `42501`), o revocar al rol de identidad antes de restaurar al de negocio.
+
+**Pruebas del prototipo** (`PhaseTransitionTests`): en cada estado intermedio (tras D3B1, D3B2, D3B4, `ROLLBACK_D3B4` y `ROLLBACK_D3B1`) al menos un rol ejecuta el flujo completo de autenticación y administración; tras `ROLLBACK_D3B4` ambos lo ejecutan, y el rol de negocio por sí solo (conexión única, sin variable) lo ejecuta; la matriz del rol de negocio tras la reversión completa es idéntica a la actual; el corte aborta si el rol de identidad no tiene aún sus privilegios y si los dos roles coinciden.
+
+**No se aplica nada en la VPS en esta tarea.**
 
 ## 8. Documentación de D.3A actualizada
 
