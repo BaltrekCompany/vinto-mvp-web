@@ -14,7 +14,7 @@ Diseño y límites: `docs/MF-13-01D3B-endurecimiento-privilegios-concesiones.md`
 | `backend/roles/rollback/ROLLBACK_D3B1.sql` | Reversión (`ROLLBACK_D3B1`). Transaccional e idempotente |
 | `backend/roles/07_verification_queries.sql` | Consulta de deriva (`d3b1_compliant`) |
 | `backend/roles/README.md` | Orden de aprovisionamiento 03 + 03b y condiciones |
-| `backend/tests/test_d3b1_privilege_hardening.py` | 40 pruebas PostgreSQL y de archivos (ver §5) |
+| `backend/tests/test_d3b1_privilege_hardening.py` | 42 pruebas PostgreSQL y de archivos (ver §5) |
 | `deploy/mvp/scripts/deploy.sh` (`postgres-grants`) | Guarda de solo lectura que falla cerrado si D.3B.1 está aplicado (ver §3) |
 | `deploy/mvp/scripts/tests/test_postgres_grants_d3b1_guard.sh` | 11 pruebas de la guarda, sin Docker ni PostgreSQL reales |
 | `.github/workflows/d3b1-postgres17.yml` | Validación en PostgreSQL 17 para GitHub Actions (sin ejecutar todavía; ver §5) |
