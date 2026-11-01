@@ -1,0 +1,85 @@
+# MF-13-01D.3B.1: valida los scripts de privilegios (03b / ROLLBACK_D3B1), la guarda de deploy.sh y las pruebas de MF-13-01D.3B contra PostgreSQL 17.
+#
+# Sin secretos y sin ninguna conexión a la VPS: todo ocurre dentro del runner, contra un contenedor PostgreSQL efímero con una cuenta DESECHABLE
+# (la contraseña de abajo es un literal sin valor fuera de este job; no es un secreto y no hay ningún `secrets.*` en este archivo).
+# Solo lectura del repositorio (permissions: contents: read). No despliega, no publica, no toca roles ni bases persistentes.
+#
+# El paso «Comprobar PostgreSQL 17» FALLA si el servidor no es 17.x: nunca se afirma compatibilidad con 17 si la ejecución fue en otra versión.
+# Este flujo NO se ha ejecutado todavía (ver docs/MF-13-01D3B1-endurecimiento-inicial-privilegios.md §5): requiere que la organización permita GitHub Actions.
+name: d3b1-postgres17
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/roles/**"
+      - "backend/tests/test_d3b1_privilege_hardening.py"
+      - "backend/tests/test_grants_hardening_design.py"
+      - "backend/tests/roles_e2e.py"
+      - "deploy/mvp/scripts/deploy.sh"
+      - "deploy/mvp/scripts/tests/test_postgres_grants_d3b1_guard.sh"
+      - ".github/workflows/d3b1-postgres17.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d3b1-postgres17-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-throwaway-account-not-a-secret
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # TEST_DATABASE_URL y DATABASE_URL deben ser bases distintas (prepare_test_db.py y las guardas de pruebas lo exigen); DATABASE_URL es solo un marcador que nunca se usa.
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-throwaway-account-not-a-secret@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-throwaway-account-not-a-secret@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-throwaway-account-not-a-secret@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout (sin credenciales persistentes)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python 3.12 (igual que backend/Dockerfile)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Dependencias del backend
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Comprobar PostgreSQL 17
+        run: |
+          python - <<'PY'
+          import psycopg, os
+          with psycopg.connect(os.environ["TEST_ADMIN_DATABASE_URL"], autocommit=True) as conn:
+              number = int(conn.execute("SHOW server_version_num").fetchone()[0])
+              print("server_version:", conn.execute("SHOW server_version").fetchone()[0])
+          assert 170000 <= number < 180000, f"se esperaba PostgreSQL 17.x, el servidor es {number}"
+          PY
+
+      - name: Pruebas de privilegios D.3B.1 y MF-13-01D.3B (PostgreSQL 17)
+        working-directory: backend
+        run: python -B -m unittest tests.test_d3b1_privilege_hardening tests.test_grants_hardening_design -v
+
+      - name: Guarda de deploy.sh (postgres-grants), sin Docker ni PostgreSQL reales
+        run: bash deploy/mvp/scripts/tests/test_postgres_grants_d3b1_guard.sh

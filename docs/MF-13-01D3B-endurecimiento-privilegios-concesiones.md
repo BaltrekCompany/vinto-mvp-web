@@ -127,6 +127,8 @@ Con el rol de negocio propuesto: E1–E7 y E9 pasan de «permitido» a **42501**
 
 **Qué se movió respecto a la primera versión:** `SELECT` sobre `credential` (el hash), `UPDATE` por columna sobre `user`, `user_profile` y `user_machine_form_grant`, y toda revocación sobre `user_sector`, `session`, `auth_event` pasan de D.3B.1 a D.3B.4.
 
+**Estado de D.3B.1:** implementada en MF-13-01D.3B.1 (`backend/roles/03b_d3b1_restrict_catalog_writes.sql`, `backend/roles/rollback/ROLLBACK_D3B1.sql`; detalle, matriz y evidencia en `docs/MF-13-01D3B1-endurecimiento-inicial-privilegios.md`). No está adoptada en ningún entorno persistente. Las demás fases siguen sin implementar.
+
 ### 7.3 Matriz de revocaciones (fuente de la prueba de orden)
 
 Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se migra el último consumidor. `PhaseOrderGuardTests` exige que la fase de migración sea **estrictamente anterior** a la de revocación, que una revocación sin consumidores sea la de D.3B.1 y que la tabla coincida con las secciones del prototipo SQL y con el inventario real de escrituras.

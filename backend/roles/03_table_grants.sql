@@ -18,6 +18,8 @@ GRANT SELECT, INSERT, UPDATE ON
   vinto_master.material_class, vinto_master.article, vinto_master.article_version,
   vinto_master.article_machine, vinto_master.article_version_spec
 TO vinto_app;
+-- MF-13-01D.3B.1: este GRANT sigue siendo la línea base amplia. Para profile, machine y sector se estrecha DESPUÉS con 03b_d3b1_restrict_catalog_writes.sql
+-- (procedimiento de aprovisionamiento = 03 + 03b, siempre juntos y en ese orden: re-ejecutar 03 sola restaura INSERT/UPDATE de tabla).
 
 -- vinto_master.user_sector: única tabla con DELETE real (backend/app/auth/grants.py:57). Nunca UPDATE
 -- (el modelo es alta/baja de filas, no edición).

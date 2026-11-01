@@ -890,6 +890,42 @@ phase_migrate() {
   echo "Si el --check anterior muestra pendientes, ejecutar 'migrate.py --target dev' (sin --check) solo tras revisar la salida."
 }
 
+# MF-13-01D.3B.1: 03_table_grants.sql concede SELECT, INSERT, UPDATE a vinto_app sobre profile, machine y sector;
+# backend/roles/03b_d3b1_restrict_catalog_writes.sql los estrecha DESPUÉS. Si D.3B.1 ya está aplicado, ejecutar
+# 03 sola restauraría en silencio los privilegios retirados. Este guardián, de SOLO LECTURA, se ejecuta ANTES de
+# cualquier GRANT: cuenta cuántas de las 3 tablas ya no tienen INSERT o UPDATE de tabla para vinto_app.
+#   0     -> D.3B.1 no está aplicado: el despliegue sigue EXACTAMENTE igual que antes de este cambio.
+#   >= 1  -> está (total o parcialmente) aplicado: FALLA CERRADO sin ejecutar nada, indicando el procedimiento.
+#   otro  -> no se pudo determinar: también falla cerrado (nunca se asume "no aplicado").
+# NUNCA aplica 03b ni la reversión: aplicar D.3B.1 en un entorno es una decisión manual y separada.
+assert_d3b1_not_silently_reverted_by_03() {
+  local migrator_pw="$1" state
+  if ! state="$(pg_run_sql_inline vinto_migrator "$migrator_pw" vinto_piloto \
+    "SELECT count(*) FROM pg_roles r CROSS JOIN unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl) WHERE r.rolname = 'vinto_app' AND (NOT has_table_privilege('vinto_app', t.tbl, 'INSERT') OR NOT has_table_privilege('vinto_app', t.tbl, 'UPDATE'));")"; then
+    echo "FALLA CERRADA: no se pudo determinar si MF-13-01D.3B.1 está aplicado en vinto_piloto (la consulta de solo lectura falló). No se ejecutó ningún GRANT." >&2
+    exit 1
+  fi
+  state="$(printf '%s' "$state" | tr -d '[:space:]')"
+  if [ "$state" = "0" ]; then
+    return 0
+  fi
+  if ! printf '%s' "$state" | grep -qE '^[1-9][0-9]*$'; then
+    echo "FALLA CERRADA: respuesta inesperada al comprobar MF-13-01D.3B.1 en vinto_piloto. No se ejecutó ningún GRANT." >&2
+    exit 1
+  fi
+  cat >&2 <<EOF
+FALLA CERRADA: MF-13-01D.3B.1 está aplicado en vinto_piloto ($state de 3 tablas sin INSERT/UPDATE de tabla para vinto_app).
+03_table_grants.sql restauraría esos privilegios. No se ejecutó ningún GRANT y esta fase NO aplica D.3B.1 por su cuenta.
+Procedimiento correcto (backend/roles/README.md, sección 'D.3B.1'):
+  - Reaprovisionar un entorno endurecido: NO ejecutar 03 sola. Si solo hace falta 02 o 04..06, ejecutarlos a mano sin 03.
+    Si hace falta 03, ejecutar a mano 03_table_grants.sql y justo después 03b_d3b1_restrict_catalog_writes.sql, como
+    vinto_migrator, y comprobar 07_verification_queries.sql (d3b1_compliant = true en las 3 tablas).
+  - Revertir D.3B.1: ejecutar a mano backend/roles/rollback/ROLLBACK_D3B1.sql como vinto_migrator; después esta fase
+    vuelve a funcionar sin cambios.
+EOF
+  exit 1
+}
+
 # Ejecuta 02_schema_grants.sql .. 06_public_and_meta_protection.sql contra vinto_piloto, como
 # vinto_migrator (ya es propietario de los 6 esquemas tras 'migrate'), exactamente en el orden de
 # backend/roles/README.md.
@@ -909,6 +945,7 @@ phase_postgres_grants() {
   local migrator_url migrator_pw
   migrator_url="$(mvp_env_value "$backend_env" MIGRATOR_DATABASE_URL)"
   migrator_pw="$(password_from_pg_url "$migrator_url")"
+  assert_d3b1_not_silently_reverted_by_03 "$migrator_pw"
   for step in 02_schema_grants 03_table_grants 04_function_grants 05_no_default_privileges 06_public_and_meta_protection; do
     echo "Ejecutando $step.sql contra vinto_piloto, como vinto_migrator..."
     pg_run_sql_file vinto_migrator "$migrator_pw" vinto_piloto "$roles_dir/$step.sql"
