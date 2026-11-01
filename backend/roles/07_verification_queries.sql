@@ -36,3 +36,27 @@ FROM (SELECT rolname AS role FROM pg_roles WHERE rolname IN ('vinto_app','vinto_
 SELECT role, has_function_privilege(role, 'vinto_txn.management_start_year(date)', 'EXECUTE') AS execute
 FROM (SELECT rolname AS role FROM pg_roles WHERE rolname IN ('vinto_app','vinto_migrator','vinto_reference','vinto_test_admin')
       UNION ALL SELECT 'public') roles;
+
+-- MF-13-01D.3B.1: detección de deriva del endurecimiento inicial. Tras adoptar 03b_d3b1_restrict_catalog_writes.sql, TODA fila debe tener
+-- d3b1_compliant = true. false significa que alguien re-ejecutó 03_table_grants.sql sin 03b (restaura INSERT/UPDATE de tabla), o que 03b aún no se aplicó.
+-- vinto_reference conserva INSERT/UPDATE: es el responsable del catálogo (import_reference.py).
+SELECT t.tbl AS tabla,
+       has_table_privilege('vinto_app', t.tbl, 'SELECT') AS app_select,
+       has_table_privilege('vinto_app', t.tbl, 'INSERT') AS app_insert_tabla,
+       has_table_privilege('vinto_app', t.tbl, 'UPDATE') AS app_update_tabla,
+       has_column_privilege('vinto_app', t.tbl, 'updated_at', 'UPDATE') AS app_update_updated_at,
+       (SELECT count(*) FROM pg_attribute a WHERE a.attrelid = t.tbl::regclass AND a.attnum > 0 AND NOT a.attisdropped
+          AND (has_column_privilege('vinto_app', t.tbl, a.attname, 'INSERT')
+               OR (a.attname <> 'updated_at' AND has_column_privilege('vinto_app', t.tbl, a.attname, 'UPDATE')))) AS app_columnas_con_escritura_extra,
+       CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_reference')
+            THEN has_table_privilege('vinto_reference', t.tbl, 'INSERT') AND has_table_privilege('vinto_reference', t.tbl, 'UPDATE') END AS reference_insert_update,
+       has_table_privilege('vinto_app', t.tbl, 'SELECT')
+         AND NOT has_table_privilege('vinto_app', t.tbl, 'INSERT') AND NOT has_table_privilege('vinto_app', t.tbl, 'UPDATE')
+         AND has_column_privilege('vinto_app', t.tbl, 'updated_at', 'UPDATE')
+         AND (SELECT count(*) FROM pg_attribute a WHERE a.attrelid = t.tbl::regclass AND a.attnum > 0 AND NOT a.attisdropped
+                AND (has_column_privilege('vinto_app', t.tbl, a.attname, 'INSERT')
+                     OR (a.attname <> 'updated_at' AND has_column_privilege('vinto_app', t.tbl, a.attname, 'UPDATE')))) = 0 AS d3b1_compliant
+FROM pg_roles r
+CROSS JOIN unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl)
+WHERE r.rolname = 'vinto_app'
+ORDER BY 1;

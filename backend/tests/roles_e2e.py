@@ -417,7 +417,7 @@ def _run_role_model(boot_password, passwords):
     report("migrate.py --check (0 pendientes, checksum verificado)", "PASS" if check_result.returncode == 0 else "FAIL",
           check_result.stdout.strip().splitlines()[-1] if check_result.stdout else "")
 
-    for script in ("02_schema_grants.sql", "03_table_grants.sql", "04_function_grants.sql",
+    for script in ("02_schema_grants.sql", "03_table_grants.sql", "03b_d3b1_restrict_catalog_writes.sql", "04_function_grants.sql",
                   "05_no_default_privileges.sql", "06_public_and_meta_protection.sql"):
         result = psql_file(ROLES_DIR / script, user="vinto_migrator", password=passwords["migrator"], dbname=DB)
         report(script, "PASS" if result.returncode == 0 else "FAIL", result.stderr.strip()[-300:])
