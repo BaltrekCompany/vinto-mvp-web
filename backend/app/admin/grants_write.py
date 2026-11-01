@@ -12,6 +12,7 @@ contrato HTTP y la traducción de errores de dominio a errores administrativos c
 
 import uuid
 
+from app.admin.actor import require_actor_authorized
 from app.admin.errors import FormNotFound, MachineNotFound, PairNotOffered, UserNotFound
 from app.admin.grants_read import pair_state
 from app.auth.errors import FormNotFoundError, FormNotLinkedToMachineError, MachineNotFoundError, UserNotFoundError
@@ -24,7 +25,9 @@ def change_machine_form_grant(connection, *, operation, user_id, machine_code, f
     request_id = f"admin-machine-form-{operation}:{uuid.uuid4()}"  # generado por el servidor; el cliente no puede fijarlo
     action = grant_machine_form if operation == "grant" else revoke_machine_form
     try:
-        changed = action(connection, user_id=user_id, machine_code=machine_code, form_code=form_code, actor_id=actor_id, request_id=request_id)
+        with connection.transaction():  # el actor se revalida y la escritura se confirma en la MISMA transacción (ver app/admin/actor.py)
+            require_actor_authorized(connection, actor_id)
+            changed = action(connection, user_id=user_id, machine_code=machine_code, form_code=form_code, actor_id=actor_id, request_id=request_id)
     except UserNotFoundError:
         raise UserNotFound() from None
     except MachineNotFoundError:

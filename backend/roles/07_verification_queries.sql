@@ -60,3 +60,18 @@ FROM pg_roles r
 CROSS JOIN unnest(ARRAY['vinto_master.profile', 'vinto_master.machine', 'vinto_master.sector']) AS t(tbl)
 WHERE r.rolname = 'vinto_app'
 ORDER BY 1;
+
+-- MF-13-01D.3B.2: ¿está listo el rol de identidad? Una fila por tabla: privilegios EFECTIVOS de vinto_identity (para comparar con vinto_app mientras D.3B.4 no se aplique).
+-- Cada fila debe mostrar identity_select/insert/update coherentes con la matriz de docs/MF-13-01D3B2-integracion-rol-identidad.md. Sin filas = el rol vinto_identity no existe (D.3B.2 no adoptado).
+SELECT t.tbl AS tabla,
+       has_table_privilege('vinto_identity', t.tbl, 'SELECT') AS identity_select,
+       has_table_privilege('vinto_identity', t.tbl, 'INSERT') AS identity_insert,
+       has_table_privilege('vinto_identity', t.tbl, 'UPDATE') AS identity_update,
+       has_table_privilege('vinto_identity', t.tbl, 'DELETE') AS identity_delete,
+       has_table_privilege('vinto_app', t.tbl, 'INSERT') AS app_insert,
+       has_table_privilege('vinto_app', t.tbl, 'UPDATE') AS app_update
+FROM pg_roles r
+CROSS JOIN unnest(ARRAY['vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_machine_form_grant', 'vinto_master.user_sector',
+                        'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event', 'vinto_audit.audit_event']) AS t(tbl)
+WHERE r.rolname = 'vinto_identity'
+ORDER BY 1;
