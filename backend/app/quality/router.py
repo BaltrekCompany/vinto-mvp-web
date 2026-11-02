@@ -64,7 +64,7 @@ def submit_quality_capture(bobbin_id: str, body: QualityCaptureIn, response: Res
 @router.get("/bobbin-forms", response_model=ProductionMachinesOut, response_model_exclude_none=True, responses={401: _ERRORS[401], 403: _ERRORS[403]})
 def bobbin_candidate_forms(user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """Máquinas del alcance y candidatos de Calidad por Bobina (DEV-Q2) que el backend publica (vacío con la política real)."""
-    return {"sectors": capture_service.available_bobbin_forms(connection, sectors=user.sectors)}
+    return {"sectors": capture_service.available_bobbin_forms(connection, sectors=user.sectors, user=user)}
 
 
 @router.get("/bobbins/{bobbin_id}/captures", response_model=list[QualityCaptureOut], responses=_CAPTURE_ERRORS)
