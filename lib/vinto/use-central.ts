@@ -7,6 +7,7 @@ import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
 import type { ActiveAssignment, Assignment, WorkOrder } from "@/lib/vinto/orders";
 import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
+import { subscribeRevalidation } from "@/lib/vinto/revalidation";
 import { listWorkOrders } from "@/lib/vinto/work-orders-api";
 
 export type { Resource } from "@/lib/vinto/resource-view";
@@ -14,7 +15,7 @@ export type { Resource } from "@/lib/vinto/resource-view";
 // Recurso central con estados idle | loading | ready | error. La carga ocurre solo al habilitarse, al cambiar la clave o al
 // llamar a refresh() (después de una mutación o desde "Reintentar"): no hay polling. Nunca se cae a datos locales ni a demo.
 // "loading" y "refreshing" se derivan (sin setState síncrono en el efecto); un 401 se informa a onUnauthorized.
-export function useResource<T>(key: string, enabled: boolean, load: (signal: AbortSignal) => Promise<ApiResult<T>>, onUnauthorized: () => void) {
+export function useResource<T>(key: string, enabled: boolean, load: (signal: AbortSignal) => Promise<ApiResult<T>>, onUnauthorized: () => void, revalidates = false) {
     const [attempt, setAttempt] = useState(0);
     const [stored, setStored] = useState<Stored<T> | null>(null);
     const latest = useRef({ load, onUnauthorized });
@@ -33,6 +34,8 @@ export function useResource<T>(key: string, enabled: boolean, load: (signal: Abo
     }, [key, enabled, attempt]);
     const view: Resource<T> = deriveView(key, enabled, attempt, stored);
     const refresh = useCallback(() => setAttempt((n) => n + 1), []);
+    // MF-13-02: los recursos de disponibilidad se vuelven a pedir al volver a la pestaña y tras un 403/404 de captura (ver revalidation.ts).
+    useEffect(() => (revalidates && enabled ? subscribeRevalidation(refresh) : undefined), [revalidates, enabled, refresh]);
     return { view, refresh };
 }
 
@@ -49,4 +52,4 @@ export const useActiveAssignment = (machineCode: string, enabled: boolean, onUna
 // Máquinas y formularios centrales operables por la sesión (solo lectura, verificado por el backend). Con `withArticles` incluye los artículos de cada máquina.
 // `scope` (obligatorio) liga el resultado a la sesión: al cambiar de usuario en el mismo navegador la vista anterior no se reutiliza.
 export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: () => void, scope: string) =>
-    useResource<Availability>(availabilityKey(withArticles, scope), enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized);
+    useResource<Availability>(availabilityKey(withArticles, scope), enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized, true);

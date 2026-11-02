@@ -279,7 +279,7 @@ export const policyLabel = (code: string): string => POLICY_LABELS[code] ?? code
 // `enabled_for_capture: false` NO es una prueba de que el formulario no exista: puede registrarse por una ruta especializada (p. ej. el registro de bobinas). Solo dice que ninguna
 // política de captura CENTRAL lo acepta hoy.
 export const NO_POLICY_NOTE = "Ninguna política de captura central lo acepta hoy. Eso no significa que el formulario no exista: puede registrarse por otra ruta especializada (por ejemplo, el registro de bobinas).";
-export const NOT_EFFECTIVE_NOTICE = "Las concesiones por máquina y formulario se registran y se auditan, pero todavía no se aplican a las capturas: no restringen ni habilitan nada hasta que se active la autorización efectiva. Ninguna se muestra como acceso operativo efectivo.";
+export const NOT_EFFECTIVE_NOTICE = "Las concesiones por máquina y formulario se registran, se auditan y determinan qué formularios ve el usuario en la interfaz. Que el servidor rechace una captura sin concesión todavía no depende de ellas: solo ocurre cuando la autorización efectiva (modo «enforce») está activada; mientras tanto la concesión no restringe la captura.";
 export const SECTOR_NOT_GRANTED_NOTICE = "El usuario no tiene concedido el sector de esta máquina. Puedes conceder el formulario igualmente, pero quedará inerte: el sector NO se concede automáticamente (se administra en «Sectores»).";
 
 export type InertReason = "user_inactive" | "sector_missing" | "sector_not_operational" | "pair_not_offered";

@@ -119,7 +119,9 @@ test("recarga y reintentos siguen funcionando: refrescar conserva la vista mient
 test("la página y useAvailability usan las claves por sesión y los demás llamadores conservan las suyas", () => {
   const page = read("app/page.tsx"), central = read("lib/vinto/use-central.ts"), sector = read("components/vinto/sector-central.tsx");
   assert.match(page, /const scope = sessionScope\(user\);/);
-  assert.match(page, /useAvailability\(false, authenticated && bobinasFront && \(activeModule === "ejecucion" \|\| activeModule === "seguimiento"\), sessionLost, scope\)/);
+  // MF-13-02: la disponibilidad de producción la pide useAccess (una sola vez por sesión) con la misma clave por sesión.
+  assert.match(page, /useAccess\(\{ enabled: user !== null && role !== null, [^}]*scope: sessionScope\(user\), onUnauthorized: sessionLost \}\)/);
+  assert.match(read("lib/vinto/use-access.ts"), /useAvailability\(false, enabled, onUnauthorized, scope\)/);
   assert.match(page, /candidateHistoryKey\("p105", scope, candRefresh\)/);
   assert.match(page, /candidateHistoryKey\("p131", scope, candRefresh\)/);
   assert.equal(/captures-p105:\$\{|captures-p131:\$\{/.test(page), false, "ya no quedan claves sin usuario");
