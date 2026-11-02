@@ -1,0 +1,91 @@
+name: VINTO RC01 frontend artifact (Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: "Exact 40-character commit SHA to build"
+        required: true
+        type: string
+        default: "a1de1855fa7a11c538dc495912846739de6db82f"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vinto-rc01-frontend-${{ inputs.source_commit }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build verified standalone artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Validate target commit
+        env:
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source_commit must be an exact lowercase 40-character SHA" >&2
+            exit 1
+          fi
+          echo "SOURCE_SHA=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Checkout immutable source commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+
+      - name: Check source identity and clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          test "$(uname -s)" = "Linux"
+          test "$(uname -m)" = "x86_64"
+
+      - name: Configure Node.js 22.18.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.18.0"
+
+      - name: Build frontend with repository release script
+        env:
+          VINTO_MVP_DOMAIN: "vinto-mvp.baltrekservices.com"
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          corepack --version
+          corepack enable
+          bash deploy/mvp/scripts/build-frontend-artifact.sh \
+            "$GITHUB_WORKSPACE" "$SOURCE_SHA" "$RUNNER_TEMP/vinto-rc01-artifact"
+
+      - name: Verify artifact manifest and checksum again
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$RUNNER_TEMP/vinto-rc01-artifact/vinto-mvp-frontend-$SOURCE_SHA"
+          test -f "$base.tar.gz"
+          test -f "$base.manifest"
+          grep -Fxq "VINTO_MVP_ARTIFACT_COMMIT=$SOURCE_SHA" "$base.manifest"
+          expected="$(sed -n 's/^VINTO_MVP_ARTIFACT_SHA256=//p' "$base.manifest")"
+          actual="$(sha256sum "$base.tar.gz" | awk '{print $1}')"
+          test "${#expected}" -eq 64
+          test "$expected" = "$actual"
+          echo "PASS: source SHA and tar SHA-256 verified"
+
+      - name: Upload archive and manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vinto-rc01-frontend-${{ inputs.source_commit }}
+          path: |
+            ${{ runner.temp }}/vinto-rc01-artifact/vinto-mvp-frontend-*.tar.gz
+            ${{ runner.temp }}/vinto-rc01-artifact/vinto-mvp-frontend-*.manifest
+          if-no-files-found: error
+          retention-days: 14
