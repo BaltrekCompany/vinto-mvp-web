@@ -38,6 +38,7 @@ from app.auth.grants import grant_sector
 from app.auth.service import create_user, deactivate_user
 from app.authz.errors import AuthorizationDenied
 from app.config import settings
+from app.database import get_identity_connection
 from app.ephemeral_db import build_reference_template, connect, database_url, drop_database
 from app.main import app
 
@@ -148,6 +149,117 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(on17["valid_as_gate_approval"])
         text = json.dumps(on17) + Report.markdown(on17)
         self.assertNotRegex(text, r"(?i)postgresql://|password|pw-")
+
+# ---- auditoría de rutas: recorrer de verdad TODAS las rutas HTTP ---------------------------------------------------------------------------------------------
+
+HTTP_METHODS = ("get", "post", "put", "patch", "delete")
+EXPECTED_ADMIN_OPERATIONS = {("GET", "/api/admin/catalog"), ("GET", "/api/admin/catalog/forms"), ("GET", "/api/admin/sectors"), ("GET", "/api/admin/users"), ("GET", "/api/admin/users/{user_id}"),
+                             ("GET", "/api/admin/users/{user_id}/grants"), ("POST", "/api/admin/users/{user_id}/grants/grant"), ("GET", "/api/admin/users/{user_id}/grants/history"),
+                             ("POST", "/api/admin/users/{user_id}/grants/revoke"), ("GET", "/api/admin/users/{user_id}/sectors"), ("POST", "/api/admin/users/{user_id}/sectors/grant"),
+                             ("POST", "/api/admin/users/{user_id}/sectors/revoke")}
+EXPECTED_OPERATIONS = EXPECTED_ADMIN_OPERATIONS | {("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("GET", "/api/auth/me"), ("POST", "/api/captures"), ("POST", "/api/bobbins"),
+                                                   ("GET", "/api/production/machines"), ("GET", "/api/quality/machine-forms"), ("GET", "/api/quality/bobbin-forms"),
+                                                   ("POST", "/api/assignments/activate"), ("POST", "/api/work-orders")}
+
+
+def flat_routes(routes):
+    """Rutas HTTP planas (con `dependant`) recorriendo los routers incluidos. Desde FastAPI 0.142 `app.routes` contiene objetos `_IncludedRouter` SIN `dependant` (el router real está en
+    `original_router`): iterar solo `app.routes` inspecciona únicamente las rutas definidas directamente en la aplicación (aquí, /health y /api/health)."""
+    for route in routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            yield from flat_routes(inner.routes)
+        elif hasattr(route, "dependant"):
+            yield route
+        elif getattr(route, "routes", None):
+            yield from flat_routes(route.routes)
+
+
+def inspected_operations(routes):
+    return {(method, route.path) for route in routes for method in route.methods if method not in ("HEAD", "OPTIONS")}
+
+
+def openapi_operations(application):
+    return {(method.upper(), path) for path, operations in application.openapi()["paths"].items() for method in operations if method in HTTP_METHODS}
+
+
+def assert_audit_is_complete(routes, application):
+    """Falla si la auditoría NO inspeccionó todas las operaciones publicadas en OpenAPI y las rutas esperadas: una auditoría que recorre menos rutas de las que existen no demuestra nada."""
+    inspected = inspected_operations(routes)
+    missing = sorted(openapi_operations(application) - inspected)
+    if missing:
+        raise AssertionError(f"la auditoría no inspeccionó {len(missing)} operaciones de OpenAPI, p. ej. {missing[:3]}")
+    absent = sorted(EXPECTED_OPERATIONS - inspected)
+    if absent:
+        raise AssertionError(f"la auditoría no inspeccionó rutas esperadas: {absent[:3]}")
+    if len(inspected) < 38:
+        raise AssertionError(f"la auditoría solo inspeccionó {len(inspected)} operaciones")
+
+
+def connection_kinds(dependant):
+    found = set()
+    for dependency in dependant.dependencies:
+        if getattr(dependency.call, "__name__", "") in ("get_connection", "get_identity_connection"):
+            found.add(dependency.call.__name__)
+        found |= connection_kinds(dependency)
+    return found
+
+
+def connection_problems(routes):
+    """Reglas de MF-13-01D.3B.2: las rutas de administración usan la conexión de identidad (además de la de negocio para resolver la sesión); login SOLO la de identidad; `/auth/me` y el resto
+    del negocio SOLO la de negocio; ninguna otra ruta pide la de identidad."""
+    problems = []
+    for route in routes:
+        path, used = route.path, connection_kinds(route.dependant)
+        if path.startswith("/api/admin") and used != {"get_identity_connection", "get_connection"}:
+            problems.append((path, "administración: se esperaba identidad + sesión de negocio", sorted(used)))
+        elif path == "/api/auth/login" and used != {"get_identity_connection"}:
+            problems.append((path, "login: solo identidad", sorted(used)))
+        elif path not in ("/api/auth/login",) and not path.startswith("/api/admin") and "get_identity_connection" in used:
+            problems.append((path, "una ruta de negocio pide la conexión de identidad", sorted(used)))
+        elif path == "/api/auth/me" and used != {"get_connection"}:
+            problems.append((path, "/auth/me: solo negocio", sorted(used)))
+    return problems
+
+
+class RouteAuditCoverageTests(unittest.TestCase):
+    def test_the_audit_inspects_every_published_operation_and_the_expected_routes(self):
+        routes = list(flat_routes(app.routes))
+        assert_audit_is_complete(routes, app)
+        inspected = inspected_operations(routes)
+        self.assertTrue(EXPECTED_ADMIN_OPERATIONS <= inspected)
+        self.assertGreaterEqual(len(inspected), 38)
+
+    def test_the_audit_fails_when_it_walks_fewer_routes_than_exist(self):
+        """Regresión del defecto: iterar solo `app.routes` ve únicamente las rutas directas de la aplicación."""
+        naive = [route for route in app.routes if hasattr(route, "dependant")]
+        self.assertLess(len(inspected_operations(naive)), 5)
+        with self.assertRaisesRegex(AssertionError, "no inspeccionó"):
+            assert_audit_is_complete(naive, app)
+        without_admin = [route for route in flat_routes(app.routes) if not route.path.startswith("/api/admin")]
+        with self.assertRaisesRegex(AssertionError, "no inspeccionó"):
+            assert_audit_is_complete(without_admin, app)
+
+    def test_the_connection_rules_hold_for_every_real_route_and_detect_a_wrong_wiring(self):
+        routes = list(flat_routes(app.routes))
+        self.assertEqual(connection_problems(routes), [])
+        by_path = {route.path: connection_kinds(route.dependant) for route in routes}
+        self.assertEqual(by_path["/api/auth/login"], {"get_identity_connection"})
+        self.assertEqual(by_path["/api/auth/me"], {"get_connection"})
+        self.assertEqual(by_path["/api/admin/users"], {"get_identity_connection", "get_connection"})
+        self.assertEqual(by_path["/api/captures"], {"get_connection"})
+
+        class Fake:  # una ruta de negocio cableada por error a la conexión de identidad
+            path = "/api/captures"
+            methods = {"POST"}
+
+            class dependant:  # noqa: N801
+                class _Dep:
+                    call = get_identity_connection
+                    dependencies = []
+                dependencies = [_Dep]
+        self.assertTrue(connection_problems([Fake]))
+
 
 
 # ---- scripts del corte: archivos ---------------------------------------------------------------------------------------------------------------------------
@@ -521,28 +633,11 @@ class TwoRoleGateTests(d1.D3B1Case):
 
     def route_audit(self):
         state = "S0"
-        with self.report.guard(state, "auditoría estática de rutas: qué conexión usa cada ruta"):
-            def kinds(dependant):
-                found = set()
-                for dependency in dependant.dependencies:
-                    if getattr(dependency.call, "__name__", "") in ("get_connection", "get_identity_connection"):
-                        found.add(dependency.call.__name__)
-                    found |= kinds(dependency)
-                return found
-            problems = []
-            for route in app.routes:
-                path = getattr(route, "path", "")
-                if not hasattr(route, "dependant") or not path.startswith("/api"):
-                    continue
-                used = kinds(route.dependant)
-                if path.startswith("/api/admin") and "get_identity_connection" not in used:
-                    problems.append((path, "admin sin conexión de identidad"))
-                if path == "/api/auth/login" and used != {"get_identity_connection"}:
-                    problems.append((path, used))
-                if not (path.startswith("/api/admin") or path == "/api/auth/login") and "get_identity_connection" in used:
-                    problems.append((path, "negocio con conexión de identidad"))
-                if path == "/api/auth/me" and used != {"get_connection"}:
-                    problems.append((path, used))
+        with self.report.guard(state, "auditoría de rutas: inspecciona todas las operaciones publicadas"):
+            routes = list(flat_routes(app.routes))
+            assert_audit_is_complete(routes, app)  # falla si la auditoría no recorre de verdad las rutas esperadas
+            self.report.check(state, "auditoría de rutas: inspecciona todas las operaciones publicadas", True, len(inspected_operations(routes)))
+            problems = connection_problems(routes)
             self.report.check(state, "auditoría estática de rutas: qué conexión usa cada ruta", not problems, problems)
             writers = d2.WiringTests("test_identity_connections_are_only_requested_from_the_identity_entry_points")
             self.report.check(state, "solo las rutas de identidad piden la conexión de identidad", writers.run().wasSuccessful())
