@@ -192,6 +192,8 @@ class SchemaTests(unittest.TestCase):
     def test_one_active_assignment_per_machine(self):
         article = self.insert("vinto_master.article","code,is_product",("TECH",True))
         version = self.insert("vinto_master.article_version","article_id,version_number,description,unit_id",(article,1,"Technical fixture",self.unit))
+        # 0010: the database now enforces that the line article is enabled for the machine (the backend already did).
+        self.connection.execute("INSERT INTO vinto_master.article_machine (article_id,machine_id) VALUES (%s,%s)",(article,self.machine))
         order = self.insert("vinto_txn.work_order","number,machine_id",("TECH",self.machine))
         revision = self.insert("vinto_txn.work_order_version","work_order_id,version_number,kind",(order,1,"baseline"))
         line = self.insert("vinto_txn.work_order_line","work_order_version_id,line_code,pv_reference,article_version_id,unit_id,quantity,due_date",(revision,"L1","TECH",version,self.unit,1,"2026-09-30"))
