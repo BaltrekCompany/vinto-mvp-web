@@ -75,3 +75,21 @@ CROSS JOIN unnest(ARRAY['vinto_master.user', 'vinto_master.user_profile', 'vinto
                         'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event', 'vinto_audit.audit_event']) AS t(tbl)
 WHERE r.rolname = 'vinto_identity'
 ORDER BY 1;
+
+-- MF-13-01D.3B.4: estado del corte por tabla (privilegios EFECTIVOS de vinto_app sobre identidad). Tras el corte TODAS las filas deben tener d3b4_compliant = true; antes del corte (o si
+-- alguien re-ejecutó 03_table_grants.sql sin 03d) todas false. Sin filas = vinto_app no existe.
+SELECT t.tbl AS tabla,
+       has_table_privilege('vinto_app', t.tbl, 'SELECT') AS app_select_tabla,
+       has_table_privilege('vinto_app', t.tbl, 'INSERT') AS app_insert_tabla,
+       has_table_privilege('vinto_app', t.tbl, 'UPDATE') AS app_update_tabla,
+       has_table_privilege('vinto_app', t.tbl, 'DELETE') AS app_delete_tabla,
+       NOT has_table_privilege('vinto_app', t.tbl, 'INSERT') AND NOT has_table_privilege('vinto_app', t.tbl, 'UPDATE') AND NOT has_table_privilege('vinto_app', t.tbl, 'DELETE')
+         AND (t.tbl <> 'vinto_auth.credential' OR (NOT has_table_privilege('vinto_app', t.tbl, 'SELECT') AND NOT has_column_privilege('vinto_app', t.tbl, 'password_hash', 'SELECT')
+                                                   AND has_column_privilege('vinto_app', t.tbl, 'username', 'SELECT')))
+         AND (t.tbl <> 'vinto_auth.auth_event' OR NOT has_table_privilege('vinto_app', t.tbl, 'SELECT'))
+         AND (t.tbl = 'vinto_auth.credential' OR t.tbl = 'vinto_auth.auth_event' OR has_table_privilege('vinto_app', t.tbl, 'SELECT')) AS d3b4_compliant
+FROM pg_roles r
+CROSS JOIN unnest(ARRAY['vinto_master.user', 'vinto_master.user_profile', 'vinto_master.user_sector', 'vinto_master.user_machine_form_grant',
+                        'vinto_auth.credential', 'vinto_auth.session', 'vinto_auth.auth_event']) AS t(tbl)
+WHERE r.rolname = 'vinto_app'
+ORDER BY 1;

@@ -528,8 +528,8 @@ class RollbackTests(D3B1Case):
 
 
 def deploy_guard_query(role):
-    """La consulta de solo lectura de deploy.sh::assert_d3b1_not_silently_reverted_by_03, con el nombre de rol sustituido."""
-    match = re.search(r'pg_run_sql_inline vinto_migrator "\$migrator_pw" vinto_piloto \\\n\s+"(SELECT count\(\*\).+?;)"\)"; then', DEPLOY.read_text(encoding="utf-8"), re.S)
+    """La consulta de solo lectura de deploy.sh::assert_identity_hardening_not_reverted_by_03, con el nombre de rol sustituido. Devuelve el texto «<d3b1> <d3b4>»."""
+    match = re.search(r'pg_run_sql_inline vinto_migrator "\$migrator_pw" vinto_piloto \\\n\s+"(SELECT \(SELECT count.+?;)"\)"; then', DEPLOY.read_text(encoding="utf-8"), re.S)
     return re.sub(r"\bvinto_app\b", role, match.group(1))
 
 
@@ -550,7 +550,9 @@ class ReprovisioningDriftTests(D3B1Case):
 
     async def test_the_deploy_guard_query_counts_hardened_tables_in_each_state(self):
         """El SQL que deploy.sh ejecuta ANTES de los GRANT: 0 sin endurecer (despliegue heredado), 3 endurecido, 1 parcial, 0 si el rol no existe."""
-        count = lambda role=None: self.connection.execute(deploy_guard_query(role or self.business)).fetchone()[0]
+        def count(role=None):
+            a, b = self.connection.execute(deploy_guard_query(role or self.business)).fetchone()[0].split(" ")
+            return int(a)  # D.3B.1; la columna D.3B.4 se prueba en test_d3b3_two_role_gate.py
         self.assertEqual(count(), 0)
         self.harden()
         self.assertEqual(count(), 3)
@@ -561,7 +563,11 @@ class ReprovisioningDriftTests(D3B1Case):
         self.connection.execute(f"REVOKE UPDATE ON vinto_master.machine FROM {self.business}")  # solo UPDATE retirado también cuenta
         self.assertEqual(count(), 1)
         self.assertEqual(count(f"d3b1_absent_{uuid4().hex[:6]}"), 0)
-        self.assertTrue(str(self.connection.execute(deploy_guard_query(self.business)).fetchone()[0]).isdigit())
+        fresh = f"d3b1_fresh_{uuid4().hex[:6]}"  # primera ejecución de postgres-grants: el rol existe pero 03 aún no le concedió NADA => NO es «D.3B.1 aplicado»
+        self.connection.execute(f"CREATE ROLE {fresh} NOLOGIN")
+        self.addCleanup(lambda: self.connection.execute(f"DROP ROLE IF EXISTS {fresh}"))
+        self.assertEqual(count(fresh), 0)
+        self.assertRegex(self.connection.execute(deploy_guard_query(self.business)).fetchone()[0], r"^[0-9]+ [0-9]+$")
 
     async def test_the_documented_procedure_03_then_03b_is_convergent_and_repeatable(self):
         for _ in range(2):
@@ -627,7 +633,7 @@ class ProvisioningFilesTests(unittest.TestCase):
         self.assertTrue(executing)
         for line in executing:
             self.assertNotRegex(line, r"(?i)03b|rollback|proposals")
-        self.assertIn("assert_d3b1_not_silently_reverted_by_03", DEPLOY.read_text(encoding="utf-8"))
+        self.assertIn("assert_identity_hardening_not_reverted_by_03", DEPLOY.read_text(encoding="utf-8"))
 
 
 class Postgres17WorkflowTests(unittest.TestCase):
@@ -643,8 +649,10 @@ class Postgres17WorkflowTests(unittest.TestCase):
         self.assertRegex(code, r"(?m)image:\s*postgres:17\s*$")
         self.assertNotRegex(code, r"postgres:(1[0-6]|18|latest)")
         self.assertIn("170000 <= number < 180000", code)
-        for target in ("tests.test_d3b1_privilege_hardening", "tests.test_grants_hardening_design", "test_postgres_grants_d3b1_guard.sh"):
+        for target in ("tests.test_d3b1_privilege_hardening", "tests.test_d3b2_identity_role", "tests.test_d3b3_two_role_gate", "tests.test_grants_hardening_design", "test_postgres_grants_d3b1_guard.sh"):
             self.assertIn(target, code)
+        self.assertIn('D3B3_REQUIRE_PG17: "1"', code)  # la puerta D.3B.3 solo es aprobación válida con PostgreSQL 17
+        self.assertIn("upload-artifact", code)  # la evidencia de aprobación o rechazo se publica como artefacto
 
     def test_it_has_no_secrets_no_deployment_and_only_read_permissions(self):
         code = self.code()

@@ -34,10 +34,12 @@ Las 4 son roles `LOGIN` (se usan para autenticar una conexión). Solo una es pro
 | 5 | `03_table_grants.sql` | `vinto_migrator` | Ninguna adicional |
 | 5b | `03b_d3b1_restrict_catalog_writes.sql` | `vinto_migrator` | **MF-13-01D.3B.1 — todavía NO adoptado en ningún entorno persistente ni en `deploy.sh`.** Siempre justo después de 03 (ver «D.3B.1» más abajo): retira `INSERT`/`UPDATE` de tabla sobre `profile`, `machine` y `sector` a `vinto_app` |
 | 5c | `03c_d3b2_identity_role_grants.sql` | `vinto_migrator` | **MF-13-01D.3B.2 — OPCIONAL, aditivo (solo `GRANT`).** Da a `vinto_identity` lo que la aplicación hace con la conexión de identidad. No revoca nada a `vinto_app` |
+| 5d | `03d_d3b4_cut_identity_dml.sql` | `vinto_migrator` | **MF-13-01D.3B.4 — EL CORTE. SOLO con aprobación independiente durante el release único; NO adoptado ni ejecutado por `deploy.sh`.** Requiere `PGOPTIONS="-c vinto.d3b4_approval=CUT-IDENTITY-DML-APPROVED"`. Retira a `vinto_app` el DML de identidad (ver «D.3B.3 / D.3B.4» más abajo) |
 | 6 | `04_function_grants.sql` | `vinto_migrator` | Ninguna adicional |
 | 7 | `05_no_default_privileges.sql` | `vinto_migrator` | Ninguna adicional. **No concede ningún privilegio** (corregido en PG54-01): declara explícitamente que `PUBLIC` no recibe nada sobre objetos futuros. El modelo es fail-closed — una tabla que una migración 0007+ cree permanece sin ningún privilegio para `vinto_app`/`vinto_reference` hasta que esa misma migración lo conceda explícitamente |
 | 8 | `06_public_and_meta_protection.sql` | `vinto_migrator` | Ninguna adicional. Documentación explícita y verificable de que `PUBLIC` no tiene nada y `vinto_meta`/`vinto_auth` están protegidos |
 | 9 | `07_verification_queries.sql` | Cualquier rol con visibilidad suficiente (superusuario o `vinto_migrator`) | Ninguna; solo lectura |
+| 10 | `08_release_preflight.sql` | Cualquier rol con visibilidad suficiente | Solo lectura. **Preflight del release único**: roles, propiedad de las tablas, privilegios efectivos y banderas por fase (`ready_for_d3b1`, `ready_for_d3b4`...). Guardar su salida como punto de control |
 
 ## Nombres de rol en un clúster compartido (PG54-05)
 
@@ -84,6 +86,16 @@ nada**, en vez de sobrescribir o asumir que es el mismo rol.
 - **Reversión:** (1) quitar `IDENTITY_DATABASE_URL` y reiniciar (suficiente por sí sola); (2) opcionalmente `rollback/ROLLBACK_D3B2.sql` como `vinto_migrator`, que se niega a continuar si D.3B.4 está aplicado (primero `ROLLBACK_D3B4`: nunca debe quedar un estado sin ningún rol que pueda administrar usuarios). El rol no se elimina.
 - **Verificación:** la última consulta de `07_verification_queries.sql` muestra los privilegios efectivos de `vinto_identity` junto a los de `vinto_app`.
 - **Qué NO hace:** no retira ningún privilegio a `vinto_app` (D.3B.4) y por tanto aún no impide escalar privilegios mediante SQL arbitrario con el rol de negocio.
+
+## D.3B.3 / D.3B.4 — puerta de dos roles y corte (MF-13-01D.3B.3 + D.3B.4)
+
+**Estado: scripts y puerta implementados y probados en bases efímeras; el corte NO se ha ejecutado en ningún entorno persistente y preparar `03d` NO autoriza su ejecución.** Detalle, evidencia y procedimiento del release: `docs/MF-13-01D3B3-D3B4-puerta-y-corte.md` y `docs/MF-13-RELEASE-unico-procedimiento.md`.
+
+- **Puerta D.3B.3:** `backend/tests/test_d3b3_two_role_gate.py` recorre estado inicial → D.3B.1 → D.3B.2 → D.3B.4 → `ROLLBACK_D3B4` → `ROLLBACK_D3B2` → `ROLLBACK_D3B1` con los scripts reales y emite un informe de evidencia (APROBADA/RECHAZADA; válido como aprobación solo en PostgreSQL 17).
+- **Corte `03d_d3b4_cut_identity_dml.sql`** (como `vinto_migrator`, transaccional, idempotente): aborta sin cambios si falta la aprobación, si D.3B.1 no está aplicado, si `vinto_identity` no existe, no puede conectar o no tiene TODO lo que `vinto_app` va a perder, si `vinto_app` es superusuario, tiene atributos peligrosos, es propietario de las tablas o **pertenece a cualquier rol** (también con `INHERIT FALSE, SET TRUE` o solo `ADMIN OPTION`: `pg_has_role(..., 'USAGE')` no las ve pero permiten `SET ROLE`), o si `vinto_app`/`vinto_identity` pueden asumir al otro, a `vinto_migrator`, `vinto_reference` o a un propietario. Verifica después los privilegios efectivos. `vinto_app` conserva: `SELECT` de tabla sobre `user`, `user_profile`, `user_sector`, `user_machine_form_grant` y `session`; `SELECT` de `user_id`, `username`, `must_change` en `credential` (nunca el hash); `UPDATE (last_seen_at)` de `session`; `UPDATE (updated_at)` donde el motor de autorización toma `FOR SHARE`; `INSERT` en la auditoría.
+- **Reversión `rollback/ROLLBACK_D3B4.sql`** (sin frase de aprobación; solo concede; restaura la ACL EXACTA anterior): **se ejecuta ANTES de quitar `IDENTITY_DATABASE_URL`**. Con el corte aplicado, quitar la variable deja login y administración sin permisos (`42501`).
+- **Orden completo del aprovisionamiento endurecido:** `03` → `03b` → `03c` → `03d`; re-ejecutar `03` sola lo deshace todo (deriva): `postgres-grants` lo detecta y falla cerrado (D.3B.1: 3 tablas; D.3B.4: 6 tablas) y `07` muestra `d3b1_compliant` / `d3b4_compliant` por tabla.
+- **Preflight del release:** `08_release_preflight.sql` (solo lectura; aplica el mismo criterio de membresías y no aborta si un rol aún no existe) antes de cada fase; no asumir que los roles reales coinciden con los de las pruebas. En una **primera instalación** solo es ejecutable después de crear los roles (`docs/MF-13-RELEASE-unico-procedimiento.md`, A2).
 
 ## Qué NO hace este modelo todavía
 
