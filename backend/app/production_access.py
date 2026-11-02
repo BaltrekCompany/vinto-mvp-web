@@ -111,4 +111,5 @@ def production_machines(connection, sectors, *, include_articles: bool = False, 
             responses={401: {"description": "No autenticado"}, 403: {"description": "Sin permiso de consulta de producción"}, 503: {"description": "Consulta no disponible"}})
 def machines(articles: bool = Query(default=False), user: AuthenticatedUser = Depends(any_view_permission), connection=Depends(get_connection)):
     """Máquinas y formularios centrales operables por la sesión (alcance verificado por el backend). Solo lectura."""
-    return production_machines(connection, user.sectors, include_articles=articles, user=user)
+    # Con `articles` (programación de OT) la salida no cambia: la programación se rige por permiso y alcance de sector, no por concesiones máquina-formulario.
+    return production_machines(connection, user.sectors, include_articles=articles, user=None if articles else user)

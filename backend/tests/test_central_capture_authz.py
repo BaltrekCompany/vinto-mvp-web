@@ -127,7 +127,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_only_post_captures_is_wired_and_there_is_no_global_switch(self):
         consumers = sorted(str(p.relative_to(BACKEND)).replace("\\", "/") for p in (BACKEND / "app").rglob("*.py")
                            if "app/authz" not in str(p).replace("\\", "/") and re.search(r"\bapp\.authz\b", p.read_text(encoding="utf-8")))
-        self.assertEqual(consumers, ["app/bobbins/router.py", "app/captures.py", "app/main.py", "app/quality/machine_router.py", "app/quality/router.py"])  # main.py solo registra el manejador de errores; Calidad no lo usa (F3: MF-13-01D.2B)
+        self.assertEqual(consumers, ["app/bobbins/router.py", "app/captures.py", "app/main.py", "app/production_access.py", "app/quality/capture_service.py", "app/quality/form_availability.py", "app/quality/machine_capture_service.py", "app/quality/machine_router.py", "app/quality/router.py"])  # main.py solo registra el manejador de errores; MF-13-02: production_access y los listados de Calidad solo consultan la elegibilidad
         self.assertEqual([n for n in Settings.model_fields if n.startswith("authz")], ["authz_central_captures_mode", "authz_bobbin_production_mode", "authz_quality_bobbin_captures_mode", "authz_quality_machine_captures_mode"])  # un modo POR operación, nunca uno global
 
 
