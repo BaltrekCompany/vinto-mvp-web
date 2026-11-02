@@ -310,7 +310,7 @@ class ResponseHygieneTests(WorkOrderApiCase):
             self.assertEqual(sorted(model["baseline"]), ["id", "lines", "published_at", "version_number"])
             self.assertEqual(sorted(model["machine"]), ["code", "name"])
             for item in model["baseline"]["lines"]:
-                self.assertEqual(sorted(item), ["article", "due_date", "id", "line_code", "pv_reference", "quantity", "unit"])
+                self.assertEqual(sorted(item), ["article", "due_date", "id", "line_code", "machine", "pv_reference", "quantity", "unit"])
                 self.assertEqual(sorted(item["article"]), ["code", "description"])
         text = json.dumps([order, published, listing]).lower()
         for forbidden in ("created_by", "updated_by", "password", "token", "hash", "cookie", "audit", "version_id", "unit_id"):

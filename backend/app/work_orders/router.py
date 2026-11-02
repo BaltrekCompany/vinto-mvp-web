@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import require_permission
-from app.auth.permissions import WORK_ORDER_MANAGE, WORK_ORDER_READ
+from app.auth.permissions import ASSIGNMENT_MANAGE, WORK_ORDER_MANAGE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.work_orders import service
@@ -17,10 +17,15 @@ router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
 _ERRORS = {
     401: {"description": "No autenticado"},
     403: {"description": "Permiso insuficiente"},
-    404: {"description": "Orden, máquina o artículo no encontrado"},
+    404: {"description": "Orden, máquina o artículo no encontrado (una OT fuera del alcance del actor es indistinguible de una inexistente)"},
     409: {"description": "Conflicto de estado (la línea base ya está publicada o no es publicable)"},
-    422: {"description": "Datos inválidos"},
+    422: {"description": "Datos inválidos, o línea en otra máquina con la compuerta MULTI_MACHINE_DISABLED apagada"},
 }
+
+
+def _manages(user: AuthenticatedUser) -> bool:
+    """Una OT con líneas en varias máquinas solo la leen quienes la gestionan (Jefatura) o la activan (Supervisión), hasta que PR5 filtre por máquina."""
+    return user.can(WORK_ORDER_MANAGE) or user.can(ASSIGNMENT_MANAGE)
 
 
 def _request_id() -> str:
@@ -40,13 +45,14 @@ def list_work_orders(machine_code: str | None = Query(default=None, max_length=6
                      status: Literal["draft", "published", "in_progress", "closed"] | None = None,
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
                      user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)), connection=Depends(get_connection)):
-    return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors)]
+    return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors,
+                                                                       multi_machine_visible=_manages(user))]
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
 def get_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
                    connection=Depends(get_connection)):
-    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors))
+    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors, multi_machine_visible=_manages(user)))
 
 
 @router.post("/{work_order_id}/lines", status_code=201, response_model=WorkOrderOut, responses=_ERRORS)
