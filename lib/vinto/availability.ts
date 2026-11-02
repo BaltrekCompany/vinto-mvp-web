@@ -4,15 +4,18 @@
 
 import { isRec, isStr } from "./capture-core.ts";
 
-export type FormRef = { code: string; name: string; version_number: number };
+// MF-13-02: `eligible` es la decisión del motor de autorización del backend (perfil, sector, máquina, formulario, versión vigente y concesión activa); NO depende del modo de la compuerta
+// (off/observe/enforce). Ausente = no elegible (falla cerrado). `bobbin_forms` lleva los formularios de bobina (F3 en producción; P1-19 / P1-20 en Calidad).
+export type FormRef = { code: string; name: string; version_number: number; eligible?: boolean };
 export type ArticleRef = { code: string; description: string };
-export type MachineAvailability = { code: string; name: string; forms: FormRef[]; articles?: ArticleRef[] };
+export type MachineAvailability = { code: string; name: string; forms: FormRef[]; articles?: ArticleRef[]; bobbin_forms?: FormRef[] };
 export type SectorAvailability = { code: string; name: string; machines: MachineAvailability[] };
 export type Availability = { sectors: SectorAvailability[] };
 
 function parseForm(value: unknown): FormRef | null {
-    return isRec(value) && isStr(value.code) && typeof value.name === "string" && typeof value.version_number === "number" && Number.isSafeInteger(value.version_number)
-        ? { code: value.code, name: value.name, version_number: value.version_number } : null;
+    if (!isRec(value) || !isStr(value.code) || typeof value.name !== "string" || typeof value.version_number !== "number" || !Number.isSafeInteger(value.version_number)) return null;
+    if (value.eligible === undefined) return { code: value.code, name: value.name, version_number: value.version_number };
+    return typeof value.eligible === "boolean" ? { code: value.code, name: value.name, version_number: value.version_number, eligible: value.eligible } : null;
 }
 function parseArticle(value: unknown): ArticleRef | null {
     return isRec(value) && isStr(value.code) && typeof value.description === "string" ? { code: value.code, description: value.description } : null;
@@ -22,6 +25,12 @@ function parseMachine(value: unknown): MachineAvailability | null {
     const forms = value.forms.map(parseForm);
     if (forms.some((f) => f === null)) return null;
     const machine: MachineAvailability = { code: value.code, name: value.name, forms: forms as FormRef[] };
+    if (value.bobbin_forms !== undefined) {
+        if (!Array.isArray(value.bobbin_forms)) return null;
+        const bobbinForms = value.bobbin_forms.map(parseForm);
+        if (bobbinForms.some((f) => f === null)) return null;
+        machine.bobbin_forms = bobbinForms as FormRef[];
+    }
     if (value.articles !== undefined) {
         if (!Array.isArray(value.articles)) return null;
         const articles = value.articles.map(parseArticle);

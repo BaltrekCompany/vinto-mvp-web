@@ -30,7 +30,7 @@ _ERRORS = {
 @router.get("/machine-forms", response_model=ProductionMachinesOut, response_model_exclude_none=True, responses=_ERRORS)
 def machine_forms(user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """Máquinas del alcance y formularios de Calidad por máquina que el backend publica (vacío con la política real)."""
-    return {"sectors": service.available_forms(connection, user.sectors)}
+    return {"sectors": service.available_forms(connection, user.sectors, user=user)}
 
 
 @router.post("/machines/{machine_code}/captures", response_model=MachineCaptureResultOut, responses={201: {"description": "Control creado"}, **_ERRORS})

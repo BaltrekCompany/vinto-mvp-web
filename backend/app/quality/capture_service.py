@@ -170,9 +170,11 @@ def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
     return _BobbinContext(*row)
 
 
-def available_bobbin_forms(connection, *, sectors) -> list[dict]:
+def available_bobbin_forms(connection, *, sectors, user=None) -> list[dict]:
     """Máquinas del alcance y candidatos por Bobina que el backend publica (política + versión publicada de área quality + vínculo). Vacío con la política real. Solo lectura."""
-    return available_quality_forms(connection, sectors, BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES)
+    from app.authz.policies import Operation
+    return available_quality_forms(connection, sectors, BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES, user=user, operation=Operation.QUALITY_BOBBIN_CAPTURE,
+                                   extra_codes=CENTRAL_BOBBIN_FORM_CODES)
 
 
 def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):

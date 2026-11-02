@@ -125,9 +125,10 @@ def list_machine_captures(connection, machine_code, *, form_code=None, limit=DEF
     return [_to_view(connection, r) for r in rows]
 
 
-def available_forms(connection, sectors) -> list[dict]:
+def available_forms(connection, sectors, user=None) -> list[dict]:
     """Máquinas activas del alcance con los formularios de Calidad por máquina que el backend publica para ellas (política + versión publicada de área quality + vínculo). Solo lectura."""
-    return available_quality_forms(connection, sectors, MACHINE_QUALITY_FORM_CODES)
+    from app.authz.policies import Operation
+    return available_quality_forms(connection, sectors, MACHINE_QUALITY_FORM_CODES, user=user, operation=Operation.QUALITY_MACHINE_CAPTURE)
 
 
 def _context(connection, actor_id, request_id):

@@ -19,7 +19,7 @@ Estado: **planificación; no autoriza ningún despliegue ni ningún cambio en la
 | MF-13-01D.3B.2 | Rol de identidad: `IDENTITY_DATABASE_URL`, login/logout/administración/CLI con la conexión de identidad, revalidación del actor, scripts `00c`/`03c`/rollback | Fusionado (PR #100). No aplicado en la VPS |
 | **MF-13-01D.3B.3** | Puerta de verificación con ambos roles (login, logout, sesiones, administración, concesiones, auditoría y las cuatro capturas) | **Automatizada en este PR** (`docs/MF-13-01D3B3-D3B4-puerta-y-corte.md`): la aprobación es válida con la evidencia de PostgreSQL 17 (CI). **Se repite sobre la instalación en el punto previo al corte (A6 en la primera instalación, B4 en una actualización; `docs/MF-13-RELEASE-unico-procedimiento.md`)** |
 | **MF-13-01D.3B.4** | Corte: `vinto_app` pierde el DML de identidad (`03d` y `ROLLBACK_D3B4`, con guardas y reversión) | **Scripts preparados y probados en este PR. NO ejecutado.** El corte real exige una aprobación independiente (A7 / B5) durante el release único, con D.3B.3 aprobada |
-| MF-13-02 | Frontend por permisos (la interfaz se muestra y se restringe según los permisos del usuario) | Pendiente |
+| MF-13-02 | Frontend por permisos y concesiones (la interfaz muestra solo lo elegible; elegibilidad ≠ modo de la compuerta; ver `docs/MF-13-02-frontend-por-permisos.md`) | **Implementado en este PR** (pendiente de revisión). Habilitación operativa futura: `enforce` tras verificar las concesiones iniciales |
 | Release único | Un solo despliegue controlado en la VPS con todo lo anterior | Pendiente de autorización explícita |
 | QA manual | Aceptación sobre ese release, acceso restringido | Posterior al release |
 | Apertura | Acceso a usuarios finales | Posterior a la aceptación del QA manual |

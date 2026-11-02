@@ -224,7 +224,9 @@ test("aislamiento por usuario y por bobina: disponibilidad e historiales de la c
   const machine = code("components/vinto/quality-machine-controls.tsx"), bobbin = code("components/vinto/quality-bobbin-candidate-capture.tsx"), page = read("app/page.tsx");
   assert.match(machine, /candidateHistoryKey\(`p118-\$\{code\}`, scope, refreshKey\)/);
   assert.match(bobbin, /candidateHistoryKey\(`\$\{screen\}-\$\{item\.bobbin\.id\}`, scope, refreshKey\)/);
-  assert.match(page, /useResource\(`quality-bobbin-forms:\$\{scope\}`, authenticated && front === "Calidad" && canReadQualityInbox && activeModule === "ejecucion", signal => getQualityBobbinForms\(signal\), sessionLost\)/);
+  // MF-13-02: el listado de Calidad por bobina lo pide useAccess (clave por sesión) y la página solo muestra lo elegible.
+  assert.match(read("lib/vinto/use-access.ts"), /useResource<Availability>\(`quality-bobbin-forms:\$\{scope\}`, enabled && canQuality, \(signal\) => getQualityBobbinForms\(signal\), onUnauthorized, true\)/);
+  assert.match(page, /const bobbinForms = \{ view: eligibleView\(access\.qualityBobbin\) \};/);
   assert.notEqual(availabilityKey(false, sessionScope(A)), availabilityKey(false, sessionScope(B)));
   assert.match(page, /setBobbinCand\(null\); setBobbinCandAttempts\(\{\}\)/); // la sesión perdida (y el cierre de sesión) descartan la bobina y los intentos pendientes
   assert.equal((page.match(/setBobbinCand\(null\); setBobbinCandAttempts\(\{\}\);/g) ?? []).length, 1); // INT-01B: el descarte vive en resetSessionState(), que llaman sessionLost y endSession

@@ -259,7 +259,8 @@ test("the five distinctions: published, offered, enabled for capture and granted
   for (const r of rows) assert.doesNotMatch(text(r), /efectiv/i, "ningún distintivo habla de acceso efectivo");
   assert.match(NO_POLICY_NOTE, /no significa que el formulario no exista/);
   assert.match(NO_POLICY_NOTE, /otra ruta especializada/);
-  assert.match(NOT_EFFECTIVE_NOTICE, /todavía no se aplican a las capturas/);
+  assert.match(NOT_EFFECTIVE_NOTICE, /determinan qué formularios ve el usuario/);
+  assert.match(NOT_EFFECTIVE_NOTICE, /modo «enforce»/); // MF-13-02: elegibilidad (interfaz) ≠ rechazo de capturas (modo de la compuerta)
   assert.equal(policyLabel("quality_by_bobbin"), "Control de Calidad por bobina");
   assert.equal(policyLabel("future_policy"), "future_policy", "una política desconocida se muestra tal cual");
 });

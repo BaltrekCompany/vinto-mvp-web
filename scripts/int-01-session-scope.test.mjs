@@ -161,7 +161,8 @@ test("sin regresión: los componentes y claves de Bobinas, Calidad, Rebobinado y
   assert.match(machine, /`quality-machine-forms:\$\{scope\}`/);
   assert.match(machine, /candidateHistoryKey\(`p122-\$\{code\}`, scope, refreshKey\)/);
   assert.match(bobbin, /candidateHistoryKey\(`\$\{screen\}-\$\{item\.bobbin\.id\}`, scope, refreshKey\)/);
-  assert.match(page, /`quality-bobbin-forms:\$\{scope\}`/);
+  assert.match(read("lib/vinto/use-access.ts"), /`quality-bobbin-forms:\$\{scope\}`/); // MF-13-02: el listado de Calidad por bobina lo pide useAccess con la clave por sesión
+  assert.match(page, /scope: sessionScope\(user\)/);
   for (const p of ["p104", "p105", "p131", "p102", "p101"]) assert.match(page, new RegExp(`candidateHistoryKey\\("${p}", scope, candRefresh\\)`), p);
   assert.match(read("components/vinto/sector-central.tsx"), /candidateHistoryKey\("reb-p130", scope, refreshKey\)/);
   assert.match(page, /const scope = sessionScope\(user\);/);

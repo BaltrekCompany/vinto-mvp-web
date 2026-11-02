@@ -1,7 +1,9 @@
 // Núcleo COMÚN de las capturas centrales de producción (M2-B1): lo que no depende del formulario. Extraído de captures.ts (F6) sin cambiar su
 // comportamiento; F6 y los formularios siguientes lo especializan con su propio parser de `values`, su borrador y su payload.
-// Todo es PURO (sin red, sin DOM, sin imports en tiempo de ejecución) para probarlo con Node. Lo que SÍ es específico de cada formulario (valores,
+// Todo es PURO (sin red, sin DOM; su único import es el bus de revalidación, también puro) para probarlo con Node. Lo que SÍ es específico de cada formulario (valores,
 // validaciones, opciones, código) NO está aquí: el envelope solo acepta lo que el backend garantiza para cualquier captura central.
+
+import { requestRevalidation } from "./revalidation.ts";
 
 export type Option = { value: string; label: string };
 export const optionLabel = (options: readonly Option[], value: string) => options.find((o) => o.value === value)?.label ?? value;
@@ -157,6 +159,7 @@ export async function submitAttemptOf<P, S extends SubmissionOf<C>, C extends { 
     if (posted.ok) return { kind: "submitted", created: posted.data.created, alreadySubmitted: posted.data.already_submitted, reconciled: false, capture: posted.data.capture };
     if (posted.status === 401) return { kind: "session" };
     const rejection = rejectionFor(posted.status, posted.code);
+    if (rejection && (rejection.reason === "forbidden" || rejection.reason === "not_found")) requestRevalidation(); // MF-13-02: el acceso pudo cambiar; se vuelven a pedir las disponibilidades
     if (rejection) return { kind: "rejected", ...rejection };
     return reconcileOf(attempt.captureId, deps);
 }

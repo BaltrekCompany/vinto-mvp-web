@@ -168,7 +168,7 @@ test("Calidad Execution renders the central inbox and no longer the demo Release
   const quality = executionBody.slice(executionBody.indexOf('if (front === "Calidad")'), executionBody.indexOf("return <><Panel"));
   assert.match(quality, /\{qualityInbox\}/);
   assert.equal(/ReleaseCards|releases|setReleases|Compuerta de liberación/.test(quality), false);
-  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=\{item => setSelectedQualityBobbin\(humidityAttempt \? humidityAttempt\.bobbin : item\)\} onRegisterProperties=\{item => setSelectedPhysicalBobbin\(physicalAttempt \? physicalAttempt\.bobbin : item\)\} onViewHistory=\{openQualityHistory\} candidateOffers=\{bobbinOffers\} onRegisterCandidate=\{\(screen, item\) => setBobbinCand\(\{ screen, item \}\)\}\/>/);
+  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=\{item => setSelectedQualityBobbin\(humidityAttempt \? humidityAttempt\.bobbin : item\)\} onRegisterProperties=\{item => setSelectedPhysicalBobbin\(physicalAttempt \? physicalAttempt\.bobbin : item\)\} onViewHistory=\{openQualityHistory\} candidateOffers=\{bobbinOffers\} actionOffers=\{m => qualityBobbinActions\(access\.qualityBobbin\.status === "ready" \? access\.qualityBobbin\.data : null, m\)\} onRegisterCandidate=\{\(screen, item\) => setBobbinCand\(\{ screen, item \}\)\}\/>/);
   assert.equal(/Execution\(\{[^}]*\b(releases|setReleases|canRelease)\b/.test(executionBody), false);
   assert.equal(/<Execution [^>]*(releases=|setReleases=|canRelease=)/.test(page), false);
 });

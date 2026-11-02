@@ -11,6 +11,7 @@ import type { CandidateCapture } from "@/lib/vinto/candidate-form";
 import { qualityMachines, qualityScreensFor, type QualityCandidateScreen } from "@/lib/vinto/quality-offers";
 import { QUALITY_CANDIDATES } from "@/lib/vinto/quality-candidates";
 import { candidateHistoryKey } from "@/lib/vinto/resource-view";
+import { onlyEligible } from "@/lib/vinto/eligibility";
 import { useResource } from "@/lib/vinto/use-central";
 
 // Controles de Calidad POR MÁQUINA (DEV-Q1 y DEV-Q2, candidatos P1-18, P1-22, P1-26 y P1-27): sin bobina, asignación ni OT. La disponibilidad (qué formularios publica el backend para cada máquina) viene de
@@ -26,11 +27,12 @@ type Props = {
 };
 
 export function QualityMachineControls({ scope, canCapture, mode, refreshKey, onOpen, onSessionLost }: Props) {
-    const forms = useResource(`quality-machine-forms:${scope}`, canCapture, signal => getQualityMachineForms(signal), onSessionLost);
+    const forms = useResource(`quality-machine-forms:${scope}`, canCapture, signal => getQualityMachineForms(signal), onSessionLost, true);
     const [chosen, setChosen] = useState<string | null>(null);
-    const machines = forms.view.status === "ready" ? qualityMachines(forms.view.data) : [];
+    const eligible = forms.view.status === "ready" ? onlyEligible(forms.view.data) : null; // MF-13-02: solo lo que el backend marca elegible; lo demás no se muestra
+    const machines = eligible ? qualityMachines(eligible) : [];
     const machine = machines.find(m => m.code === chosen) ?? machines[0];
-    const offered = forms.view.status === "ready" && machine ? qualityScreensFor(forms.view.data, machine.code) : [];
+    const offered = eligible && machine ? qualityScreensFor(eligible, machine.code) : [];
     const code = machine?.code ?? "";
     const history = {
         p118: useResource<CandidateCapture[]>(candidateHistoryKey(`p118-${code}`, scope, refreshKey), canCapture && offered.includes("p118"), signal => QUALITY_CANDIDATES.p118.machineApi.list(code, signal), onSessionLost),

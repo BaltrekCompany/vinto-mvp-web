@@ -7,7 +7,7 @@ formularios: nada se ofrece. Esta función no decide qué formulario está habil
 from app.sectors import scoped_sector_codes
 
 
-def available_quality_forms(connection, sectors, codes) -> list[dict]:
+def available_quality_forms(connection, sectors, codes, *, user=None, operation=None, extra_codes=None) -> list[dict]:
     codes = sorted(codes)
     scoped = list(scoped_sector_codes(sectors))
     with connection.transaction():
@@ -25,8 +25,23 @@ def available_quality_forms(connection, sectors, codes) -> list[dict]:
                        SELECT fvm.machine_id, l.code, l.name, l.version_number FROM latest l JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = l.version_id
                        WHERE fvm.machine_id = ANY(%s) ORDER BY fvm.machine_id, l.code""", (codes, ids)).fetchall():
                 forms.setdefault(machine_id, []).append({"code": code, "name": name, "version_number": version})
+        # MF-13-02: con un usuario y la operación, cada formulario lleva su elegibilidad (mismo motor que `enforce`, sin mirar el modo de la compuerta). `extra_codes` son formularios de la
+        # misma operación que esta lista no incluía (los centrales P1-19/P1-20 de Calidad por bobina) y salen aparte, en `bobbin_forms`.
+        extra: dict = {}
+        if user is not None and operation is not None:
+            from app.authz.availability import is_eligible, published_forms_by_machine
+            codes_by_id = {r[2]: r[3] for r in machines}
+            for machine_id, items in forms.items():
+                for item in items:
+                    item["eligible"] = is_eligible(connection, user, operation, codes_by_id[machine_id], item["code"])
+            if extra_codes:
+                for machine_id, items in published_forms_by_machine(connection, ids, extra_codes, "quality").items():
+                    extra[machine_id] = [{**item, "eligible": is_eligible(connection, user, operation, codes_by_id[machine_id], item["code"])} for item in items]
     out: dict = {}
     for sector_code, sector_name, machine_id, machine_code, machine_name in machines:
         sector = out.setdefault(sector_code, {"code": sector_code, "name": sector_name, "machines": []})
-        sector["machines"].append({"code": machine_code, "name": machine_name, "forms": forms.get(machine_id, [])})
+        machine = {"code": machine_code, "name": machine_name, "forms": forms.get(machine_id, [])}
+        if user is not None and operation is not None and extra_codes:
+            machine["bobbin_forms"] = extra.get(machine_id, [])
+        sector["machines"].append(machine)
     return list(out.values())

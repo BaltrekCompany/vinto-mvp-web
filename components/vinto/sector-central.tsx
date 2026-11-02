@@ -19,6 +19,7 @@ import { candidateHistoryKey } from "@/lib/vinto/resource-view";
 import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_11_CODE, parseP111List } from "@/lib/vinto/p1-11";
 import { P1_29_CODE, parseP129List } from "@/lib/vinto/p1-29";
+import { onlyEligible } from "@/lib/vinto/eligibility";
 import { useActiveAssignment, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
 
 // Shell CENTRAL por sector (M4-A Rebobinado, M6-A Conversión): Jefatura crea/publica OT, Supervisión activa asignaciones, Operación abre los formularios que el backend publica para la máquina y Seguimiento
@@ -57,7 +58,8 @@ export function SectorCentral(props: Props) {
     const config = SECTORS[code];
     const availability = useAvailability(canManageOrders && module === "programacion", true, onSessionLost, scope); // la programación pide además los artículos de cada máquina
     if (availability.view.status !== "ready") return <CentralStatus state={availability.view} onRetry={availability.refresh} title={`No se pudo consultar la disponibilidad de ${config.label}`}/>;
-    const view = sectorView(availability.view.data, code);
+    // MF-13-02: Ejecución solo muestra lo que el backend marca elegible (perfil + sector + máquina + formulario + concesión); Programación y Seguimiento se rigen por permiso y alcance de sector.
+    const view = sectorView(module === "ejecucion" ? onlyEligible(availability.view.data) : availability.view.data, code);
     if (view.kind === "disabled") return <div role="status" {...tag(code, "disabled")}><Panel title={config.disabledTitle} note={config.disabledMessage}><p className="text-sm text-slate-700">Habilitar {config.label} requiere datos maestros aprobados y un cambio de configuración revisado en el backend; no se puede activar desde esta pantalla.</p></Panel></div>;
     if (module === "programacion") return <Programming {...props} sector={view.sector}/>;
     if (module === "ejecucion") return <Execution {...props} sector={view.sector}/>;
