@@ -10,7 +10,10 @@ from app.work_orders.service import LineInput, WorkOrderView
 
 
 class LineIn(BaseModel):
-    """Solo el cliente aporta PV, código de artículo, cantidad y fecha. Descripción, unidad y versión las resuelve el servidor."""
+    """Solo el cliente aporta PV, código de artículo, cantidad, fecha y, opcionalmente, el CÓDIGO de la máquina de la línea.
+
+    Sin `machine_code` rige la máquina de cabecera (contrato anterior). Descripción, unidad, versión e ids internos (`machine_id`, versiones
+    operativas) los resuelve el servidor; `extra="forbid"` rechaza cualquier otro campo con 422."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -18,9 +21,10 @@ class LineIn(BaseModel):
     article_code: str = Field(min_length=1, max_length=64)
     quantity: Decimal = Field(gt=0, max_digits=15, decimal_places=3)
     due_date: date
+    machine_code: str | None = Field(default=None, min_length=1, max_length=64)
 
     def to_domain(self) -> LineInput:
-        return LineInput(self.pv_reference, self.article_code, self.quantity, self.due_date)
+        return LineInput(self.pv_reference, self.article_code, self.quantity, self.due_date, self.machine_code)
 
 
 class CreateWorkOrderIn(BaseModel):
@@ -48,6 +52,7 @@ class LineOut(BaseModel):
     quantity: Decimal
     unit: str
     due_date: date
+    machine: MachineOut  # máquina de ESTA línea (igual a la de cabecera en las OT de una sola máquina)
 
     @field_serializer("quantity", when_used="json")
     def quantity_as_number(self, value: Decimal) -> float:
@@ -77,4 +82,5 @@ def work_order_out(view: WorkOrderView) -> WorkOrderOut:
             id=view.baseline.id, version_number=view.baseline.version_number, published_at=view.baseline.published_at,
             lines=[LineOut(id=l.id, line_code=l.line_code, pv_reference=l.pv_reference,
                            article=ArticleOut(code=l.article_code, description=l.article_description),
-                           quantity=l.quantity, unit=l.unit, due_date=l.due_date) for l in view.baseline.lines]))
+                           quantity=l.quantity, unit=l.unit, due_date=l.due_date,
+                           machine=MachineOut(code=l.machine_code, name=l.machine_name)) for l in view.baseline.lines]))

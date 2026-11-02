@@ -12,6 +12,12 @@ Decisiones:
 - El número `OT-AAAA-NNNN` y el `line_code` (L1, L2, ...) se generan en el servidor. Sin tablas nuevas, la
   numeración usa un advisory lock transaccional estable; UNIQUE(number) y UNIQUE(version, line_code) son la
   defensa final. El esquema de numeración puede reemplazarse cuando Expertus sea la autoridad de las OT.
+- MF-13-03B PR2: cada línea lleva su máquina (`machine_code` opcional; si falta se usa la de cabecera, que se conserva como dato legado). Una línea
+  en una máquina distinta de la de cabecera solo se acepta (crear, añadir, publicar) con la compuerta de servidor
+  `settings.work_orders_multi_machine_enabled`; apagada, se rechaza con MultiMachineDisabledError y NUNCA se reasigna en silencio.
+- Visibilidad (mismo bloque): una OT solo es visible/modificable si TODAS sus máquinas (cabecera y líneas) están en el alcance de sectores del
+  actor; de lo contrario es indistinguible de una inexistente (no se devuelve una OT parcial). Una OT multimáquina solo la leen los perfiles que
+  la gestionan (`multi_machine_visible=True`: work_order.manage o assignment.manage) hasta que PR5 filtre por máquina autorizada.
 - Auditoría: cada transacción fija vinto.actor_id (created_by/updated_by), vinto.request_id y vinto.reason.
 """
 
@@ -21,9 +27,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from app.config import settings
 from app.sectors import in_scope, scoped_sector_codes
 from app.work_orders.errors import (ArticleNotAllowedForMachineError, ArticleNotFoundError, InvalidWorkOrderLineError,
-                                    MachineNotFoundError, MachineOutsideScopeError, WorkOrderAlreadyPublishedError,
+                                    MachineNotFoundError, MachineOutsideScopeError, MultiMachineDisabledError,
+                                    WorkOrderAlreadyPublishedError,
                                     WorkOrderNotDraftError, WorkOrderNotFoundError, WorkOrderNotPublishableError)
 
 MAX_PV_LENGTH = 100
@@ -43,6 +51,7 @@ class LineInput:
     article_code: str
     quantity: Decimal | int | str
     due_date: date
+    machine_code: str | None = None  # None: la máquina de cabecera (contrato anterior)
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,8 @@ class LineView:
     quantity: Decimal
     unit: str
     due_date: date
+    machine_code: str
+    machine_name: str
 
 
 @dataclass(frozen=True)
@@ -113,6 +124,29 @@ def _context(connection, actor_id, request_id, reason):
     connection.execute("SELECT set_config('vinto.reason', %s, true)", (reason,))
 
 
+def _multi_machine_enabled() -> bool:
+    return settings.work_orders_multi_machine_enabled is True
+
+
+def _line_machines(connection, header_machine_id, header_machine_code, lines, sectors):
+    """Resuelve la máquina de cada línea (código -> id; activa y en alcance) ANTES de escribir. Devuelve la lista de ids alineada con `lines`.
+    Sin `machine_code` rige la cabecera. Una máquina distinta de la de cabecera exige la compuerta; apagada se rechaza, no se reasigna."""
+    cache = {header_machine_code: header_machine_id}
+    resolved = []
+    for line in lines:
+        code = line.machine_code
+        if code is None:
+            resolved.append(header_machine_id)
+            continue
+        code = code.strip() if isinstance(code, str) else code
+        if code not in cache:
+            cache[code] = _machine(connection, code, sectors)
+        resolved.append(cache[code])
+    if any(machine_id != header_machine_id for machine_id in resolved) and not _multi_machine_enabled():
+        raise MultiMachineDisabledError()
+    return resolved
+
+
 def _machine(connection, machine_code, sectors):
     if not isinstance(machine_code, str) or not machine_code.strip():
         raise MachineNotFoundError("machine_code es obligatorio")
@@ -155,14 +189,22 @@ def _resolve_article(connection, machine_id, article_code):
 
 
 def _insert_line(connection, version_id, machine_id, line: LineInput):
+    """`machine_id` es la máquina de ESTA línea (ya resuelta y validada por el llamador)."""
     pv, code, quantity, due_date = clean_line(line)
     article_version_id, unit_id = _resolve_article(connection, machine_id, code)
     next_number = connection.execute(
         "SELECT coalesce(max(substring(line_code from 2)::int), 0) + 1 FROM vinto_txn.work_order_line WHERE work_order_version_id = %s AND line_code ~ '^L[0-9]+$'",
         (version_id,)).fetchone()[0]
     connection.execute(
-        """INSERT INTO vinto_txn.work_order_line (work_order_version_id,line_code,pv_reference,article_version_id,unit_id,quantity,due_date)
-           VALUES (%s,%s,%s,%s,%s,%s,%s)""", (version_id, f"L{next_number}", pv, article_version_id, unit_id, quantity, due_date))
+        """INSERT INTO vinto_txn.work_order_line (work_order_version_id,line_code,pv_reference,article_version_id,unit_id,quantity,due_date,machine_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", (version_id, f"L{next_number}", pv, article_version_id, unit_id, quantity, due_date, machine_id))
+
+
+# Una línea de la baseline cuya máquina está fuera del alcance (2.º parámetro). Con la cabecera dentro, basta para ocultar la OT completa.
+_OUT_OF_SCOPE_LINE = """SELECT 1 FROM vinto_txn.work_order_line out_line
+    JOIN vinto_master.machine out_machine ON out_machine.id = out_line.machine_id
+    JOIN vinto_master.sector out_sector ON out_sector.id = out_machine.sector_id
+    WHERE out_line.work_order_version_id = v.id AND NOT (out_sector.code = ANY(%s))"""
 
 
 def _lock_baseline(connection, work_order_id, sectors):
@@ -174,7 +216,8 @@ def _lock_baseline(connection, work_order_id, sectors):
            JOIN vinto_txn.work_order_version v ON v.work_order_id = wo.id AND v.version_number = 1 AND v.kind = 'baseline'
            JOIN vinto_master.machine m ON m.id = wo.machine_id
            JOIN vinto_master.sector s ON s.id = m.sector_id
-           WHERE wo.id = %s AND s.code = ANY(%s) FOR UPDATE OF wo, v""", (work_order_id, list(scoped_sector_codes(sectors)))).fetchone()
+           WHERE wo.id = %s AND s.code = ANY(%s) AND NOT EXISTS (""" + _OUT_OF_SCOPE_LINE + """)
+           FOR UPDATE OF wo, v""", (work_order_id, list(scoped_sector_codes(sectors)), list(scoped_sector_codes(sectors)))).fetchone()
     if row is None:
         raise WorkOrderNotFoundError()
     return row
@@ -201,14 +244,15 @@ def create_work_order(connection, *, actor_id, machine_code, lines, request_id=N
     with connection.transaction():
         _context(connection, actor_id, request_id, "work order create")
         machine_id = _machine(connection, machine_code, sectors)
+        line_machines = _line_machines(connection, machine_id, machine_code.strip(), lines, sectors)  # valida todo antes de escribir
         connection.execute("SELECT pg_advisory_xact_lock(%s)", (_NUMBER_LOCK,))  # serializa la numeración hasta el commit
         number = _next_number(connection)
         work_order_id = connection.execute("INSERT INTO vinto_txn.work_order (number,machine_id) VALUES (%s,%s) RETURNING id", (number, machine_id)).fetchone()[0]
         version_id = connection.execute(
             "INSERT INTO vinto_txn.work_order_version (work_order_id,version_number,kind) VALUES (%s,1,'baseline') RETURNING id", (work_order_id,)).fetchone()[0]
-        for line in lines:  # el orden del arreglo define L1, L2, ...; una línea inválida revierte todo
-            _insert_line(connection, version_id, machine_id, line)
-    return get_work_order(connection, work_order_id, sectors=sectors)
+        for line, line_machine_id in zip(lines, line_machines):  # el orden del arreglo define L1, L2, ...; una línea inválida revierte todo
+            _insert_line(connection, version_id, line_machine_id, line)
+    return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)  # quien crea gestiona la OT
 
 
 def add_line(connection, *, actor_id, work_order_id, line: LineInput, request_id=None, sectors) -> WorkOrderView:
@@ -224,8 +268,10 @@ def add_line(connection, *, actor_id, work_order_id, line: LineInput, request_id
         count = connection.execute("SELECT count(*) FROM vinto_txn.work_order_line WHERE work_order_version_id = %s", (version_id,)).fetchone()[0]
         if count >= MAX_LINES_PER_ORDER:
             raise InvalidWorkOrderLineError(f"Máximo {MAX_LINES_PER_ORDER} líneas por orden")
-        _insert_line(connection, version_id, machine_id, line)
-    return get_work_order(connection, work_order_id, sectors=sectors)
+        header_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (machine_id,)).fetchone()[0]
+        (line_machine_id,) = _line_machines(connection, machine_id, header_code, [line], sectors)
+        _insert_line(connection, version_id, line_machine_id, line)
+    return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
 
 
 def publish_work_order(connection, *, actor_id, work_order_id, request_id=None, sectors) -> WorkOrderView:
@@ -235,24 +281,27 @@ def publish_work_order(connection, *, actor_id, work_order_id, request_id=None, 
         _context(connection, actor_id, request_id, "work order publish baseline")
         status, machine_id, version_id, published_at = _lock_baseline(connection, work_order_id, sectors)
         if status == "published" and published_at is not None:
-            return get_work_order(connection, work_order_id, sectors=sectors)
+            return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
         if status != "draft" or published_at is not None:
             raise WorkOrderNotPublishableError()
         lines = connection.execute("SELECT count(*) FROM vinto_txn.work_order_line WHERE work_order_version_id = %s", (version_id,)).fetchone()[0]
         if lines == 0:
             raise WorkOrderNotPublishableError("La orden no tiene líneas")
+        if not _multi_machine_enabled() and connection.execute(
+                "SELECT 1 FROM vinto_txn.work_order_line WHERE work_order_version_id = %s AND machine_id <> %s LIMIT 1", (version_id, machine_id)).fetchone():
+            raise MultiMachineDisabledError()
         incoherent = connection.execute(
             """SELECT l.line_code FROM vinto_txn.work_order_line l
                JOIN vinto_master.article_version av ON av.id = l.article_version_id
                JOIN vinto_master.article a ON a.id = av.article_id
                WHERE l.work_order_version_id = %s AND (NOT a.active OR NOT a.is_product OR NOT EXISTS
-                     (SELECT 1 FROM vinto_master.article_machine am WHERE am.article_id = a.id AND am.machine_id = %s))
-               ORDER BY l.line_code""", (version_id, machine_id)).fetchall()
+                     (SELECT 1 FROM vinto_master.article_machine am WHERE am.article_id = a.id AND am.machine_id = l.machine_id))
+               ORDER BY l.line_code""", (version_id,)).fetchall()
         if incoherent:
             raise WorkOrderNotPublishableError("Las líneas ya no son coherentes con los maestros: " + ", ".join(r[0] for r in incoherent))
         connection.execute("UPDATE vinto_txn.work_order_version SET published_at = clock_timestamp() WHERE id = %s", (version_id,))
         connection.execute("UPDATE vinto_txn.work_order SET status = 'published' WHERE id = %s", (work_order_id,))
-    return get_work_order(connection, work_order_id, sectors=sectors)
+    return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -264,7 +313,13 @@ _HEADER_SQL = """SELECT wo.id, wo.number, wo.status, m.code, m.name, v.id, v.ver
                  JOIN vinto_master.machine m ON m.id = wo.machine_id
                  JOIN vinto_master.sector s ON s.id = m.sector_id
                  JOIN vinto_txn.work_order_version v ON v.work_order_id = wo.id AND v.version_number = 1 AND v.kind = 'baseline'
-                 WHERE s.code = ANY(%s)"""
+                 WHERE s.code = ANY(%s) AND NOT EXISTS (""" + _OUT_OF_SCOPE_LINE + """)
+                 AND (%s OR NOT EXISTS (SELECT 1 FROM vinto_txn.work_order_line other WHERE other.work_order_version_id = v.id AND other.machine_id <> wo.machine_id))"""
+
+
+def _header_params(sectors, multi_machine_visible) -> list:
+    codes = list(scoped_sector_codes(sectors))
+    return [codes, codes, bool(multi_machine_visible)]
 
 
 def _hydrate(connection, headers) -> list[WorkOrderView]:
@@ -272,11 +327,12 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
     lines: dict = {version_id: [] for version_id in version_ids}
     if version_ids:
         rows = connection.execute(
-            """SELECT l.work_order_version_id, l.id, l.line_code, l.pv_reference, a.code, av.description, l.quantity, u.code, l.due_date
+            """SELECT l.work_order_version_id, l.id, l.line_code, l.pv_reference, a.code, av.description, l.quantity, u.code, l.due_date, lm.code, lm.name
                FROM vinto_txn.work_order_line l
                JOIN vinto_master.article_version av ON av.id = l.article_version_id
                JOIN vinto_master.article a ON a.id = av.article_id
                JOIN vinto_master.unit u ON u.id = l.unit_id
+               JOIN vinto_master.machine lm ON lm.id = l.machine_id
                WHERE l.work_order_version_id = ANY(%s) ORDER BY l.work_order_version_id, length(l.line_code), l.line_code""", (version_ids,)).fetchall()
         for version_id, *rest in rows:
             lines[version_id].append(LineView(*rest))
@@ -285,24 +341,25 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
             for wo_id, number, status, machine_code, machine_name, version_id, version_number, published_at in headers]
 
 
-def get_work_order(connection, work_order_id, *, sectors) -> WorkOrderView:
-    """Detalle (solo la baseline). OT inexistente o fuera del alcance: WorkOrderNotFoundError."""
+def get_work_order(connection, work_order_id, *, sectors, multi_machine_visible=False) -> WorkOrderView:
+    """Detalle (solo la baseline). OT inexistente, fuera del alcance o multimáquina sin visibilidad: WorkOrderNotFoundError."""
     work_order_id = _as_uuid(work_order_id)
-    headers = connection.execute(_HEADER_SQL + " AND wo.id = %s", (list(scoped_sector_codes(sectors)), work_order_id)).fetchall()
+    headers = connection.execute(_HEADER_SQL + " AND wo.id = %s", (*_header_params(sectors, multi_machine_visible), work_order_id)).fetchall()
     if not headers:
         raise WorkOrderNotFoundError()
     return _hydrate(connection, headers)[0]
 
 
-def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors) -> list[WorkOrderView]:
-    """Más recientes primero (created_at y número descendentes, orden estable). Filtros opcionales: máquina y estado."""
+def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors, multi_machine_visible=False) -> list[WorkOrderView]:
+    """Más recientes primero (created_at y número descendentes, orden estable). Filtros opcionales: máquina (de cabecera o de alguna línea) y estado."""
     if status is not None and status not in STATUSES:
         raise InvalidWorkOrderLineError(f"status debe ser uno de {', '.join(STATUSES)}")
     limit = max(1, min(int(limit), MAX_LIST_LIMIT))
-    sql, params = _HEADER_SQL, [list(scoped_sector_codes(sectors))]
+    sql, params = _HEADER_SQL, _header_params(sectors, multi_machine_visible)
     if machine_code is not None:
-        sql += " AND m.code = %s"
-        params.append(machine_code)
+        sql += """ AND (m.code = %s OR EXISTS (SELECT 1 FROM vinto_txn.work_order_line mine JOIN vinto_master.machine mine_machine ON mine_machine.id = mine.machine_id
+                                               WHERE mine.work_order_version_id = v.id AND mine_machine.code = %s))"""
+        params += [machine_code, machine_code]
     if status is not None:
         sql += " AND wo.status = %s"
         params.append(status)

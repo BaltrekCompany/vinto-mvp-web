@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # MF-13-01D.2C.2: ídem para POST /api/quality/machines/{machine_code}/captures (Calidad por máquina, Operation.QUALITY_MACHINE_CAPTURE). Independiente de las otras tres. Variable AUTHZ_QUALITY_MACHINE_CAPTURES_MODE.
     authz_quality_machine_captures_mode: Literal["off", "observe", "enforce"] = "off"
 
+    # MF-13-03B PR2: compuerta de servidor para crear/publicar OT con líneas en una máquina distinta de la de cabecera. Variable
+    # WORK_ORDERS_MULTI_MACHINE_ENABLED; el cliente HTTP no puede cambiarla. Apagada por defecto: una solicitud multimáquina se RECHAZA
+    # (nunca se convierte en silencio a la máquina de cabecera). Depende de PR3 (índice/activación por línea), PR4 (activación masiva) y
+    # PR5 (listados filtrados por máquina autorizada); no activar antes en ningún entorno real. Ver docs/MF-13-03B-PR2-ot-multimaquina.md.
+    work_orders_multi_machine_enabled: bool = False
+
     @field_validator("authz_central_captures_mode", "authz_bobbin_production_mode", "authz_quality_bobbin_captures_mode", "authz_quality_machine_captures_mode", mode="before")
     @classmethod
     def _normalize_authz_mode(cls, value):

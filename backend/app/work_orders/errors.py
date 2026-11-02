@@ -46,3 +46,7 @@ class WorkOrderAlreadyPublishedError(WorkOrderNotDraftError):
 
 class WorkOrderNotPublishableError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_NOT_PUBLISHABLE", "La orden no se puede publicar en su estado actual"
+
+
+class MultiMachineDisabledError(WorkOrderError):
+    http_status, code, public_message = 422, "MULTI_MACHINE_DISABLED", "Las órdenes con líneas en distintas máquinas no están habilitadas"
