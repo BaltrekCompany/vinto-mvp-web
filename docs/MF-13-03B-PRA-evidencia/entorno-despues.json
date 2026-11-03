@@ -1,0 +1,15 @@
+{
+  "postgres": "17.11 (Debian 17.11-1.pgdg13+2)",
+  "node": "v24.20.0",
+  "python": "Python 3.12.10",
+  "chrome": "156.0.8078.80",
+  "runId": "20261103T205750Z-18b00576",
+  "commit": "acb5335d586666d4cf00c23b7168251166473856",
+  "dirty": true,
+  "phase": "enabled",
+  "database": "vinto_mmqa_3d22221e88d1_test",
+  "api": "http://127.0.0.1:8194",
+  "web": "http://127.0.0.1:8797",
+  "postgresContainer": "vinto-pra-pg",
+  "postgresPort": 55442
+}
