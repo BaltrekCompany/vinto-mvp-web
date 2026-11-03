@@ -10,6 +10,7 @@ export type WorkOrderLine = {
     id: string;
     line_code: string;
     pv_reference: string;
+    machine: { code: string; name: string }; // MF-13-03B PR2: máquina de ESTA línea (en una OT antigua coincide con la de la cabecera)
     article: { code: string; description: string };
     quantity: number;
     unit: string;
@@ -65,12 +66,16 @@ function pair(value: unknown, second: string): { code: string; name: string } | 
     return { code: value.code, name: value[second] as string };
 }
 
-export function parseLine(value: unknown): WorkOrderLine | null {
+// `fallbackMachine` solo se usa cuando la respuesta NO trae `machine` en la línea (servidor anterior a PR2 o la línea de una asignación, cuya máquina es la de la
+// asignación): una OT antigua tiene todas sus líneas en la máquina de la cabecera. Si `machine` viene, debe ser válida; nunca se descarta ni se sustituye.
+export function parseLine(value: unknown, fallbackMachine: { code: string; name: string } | null = null): WorkOrderLine | null {
     if (!isRec(value) || !isStr(value.id) || !isStr(value.line_code) || !isStr(value.pv_reference) || !isStr(value.unit) || !isStr(value.due_date)) return null;
     if (typeof value.quantity !== "number" || !Number.isFinite(value.quantity) || value.quantity <= 0) return null;
     const article = value.article;
     if (!isRec(article) || !isStr(article.code) || typeof article.description !== "string") return null;
-    return { id: value.id, line_code: value.line_code, pv_reference: value.pv_reference, article: { code: article.code, description: article.description },
+    const machine = value.machine === undefined ? fallbackMachine : isRec(value.machine) ? pair(value.machine, "name") : null;
+    if (!machine) return null;
+    return { id: value.id, line_code: value.line_code, pv_reference: value.pv_reference, machine, article: { code: article.code, description: article.description },
         quantity: value.quantity, unit: value.unit, due_date: value.due_date };
 }
 
@@ -80,7 +85,7 @@ export function parseWorkOrder(value: unknown): WorkOrder | null {
     const baseline = value.baseline;
     if (!machine || !isRec(baseline) || !isStr(baseline.id) || typeof baseline.version_number !== "number" || !isNullableStr(baseline.published_at)) return null;
     if (!Array.isArray(baseline.lines)) return null;
-    const lines = baseline.lines.map(parseLine);
+    const lines = baseline.lines.map((line) => parseLine(line, machine));
     if (lines.some((line) => line === null)) return null;
     return { id: value.id, number: value.number, status: value.status as WorkOrderStatus, machine,
         baseline: { id: baseline.id, version_number: baseline.version_number, published_at: baseline.published_at, lines: lines as WorkOrderLine[] } };
@@ -101,7 +106,7 @@ export function parseAssignment(value: unknown): Assignment | null {
     if (!machine || !shift || !isRec(order) || !isStr(order.id) || !isStr(order.number)) return null;
     if (!isRec(operational) || typeof operational.version_number !== "number") return null;
     if (!isRec(user) || !isStr(user.id) || typeof user.display_name !== "string") return null;
-    const line = parseLine(value.line);
+    const line = parseLine(value.line, machine);
     if (!line) return null;
     return { id: value.id, status: value.status as AssignmentStatus, operating_date: value.operating_date, created_at: value.created_at, finished_at: value.finished_at,
         machine, shift, work_order: { id: order.id, number: order.number }, operational: { version_number: operational.version_number }, line,
@@ -171,14 +176,24 @@ export const ASSIGNMENT_LABELS: Record<AssignmentStatus, "Activa" | "Finalizada"
 // ---- payloads (solo los campos que el backend acepta; nunca número, line_code, unidad, descripción, ids de versión,
 // máquina de la asignación, turno ni fecha operativa) ------------------------------------------------------------------
 
-export type LineDraft = { pvReference: string; articleCode: string; quantity: number; dueDate: string };
+// `machineCode` (MF-13-03B PR6) es OPCIONAL: ausente = la máquina de la cabecera (payload histórico idéntico, también para servidores anteriores a PR2). Solo la creación multimáquina lo envía.
+export type LineDraft = { pvReference: string; articleCode: string; quantity: number; dueDate: string; machineCode?: string };
+
+export const MAX_ORDER_LINES = 200; // mismo límite que el backend (CreateWorkOrderIn.lines)
 
 export function lineBody(line: LineDraft) {
-    return { pv_reference: line.pvReference.trim(), article_code: line.articleCode, quantity: line.quantity, due_date: line.dueDate };
+    const body = { pv_reference: line.pvReference.trim(), article_code: line.articleCode, quantity: line.quantity, due_date: line.dueDate };
+    return line.machineCode ? { ...body, machine_code: line.machineCode } : body;
 }
 
 export function createWorkOrderPayload(machineCode: string, line: LineDraft) {
     return { machine_code: machineCode, lines: [lineBody(line)] };
+}
+
+// UNA sola solicitud con todas las líneas, en el orden en que Jefatura las dejó (el servidor numera L1, L2, ...). La máquina de cabecera es la de la primera línea.
+// Nunca se envían número de OT, line_code, ids ni versiones: son del servidor.
+export function createWorkOrderLinesPayload(machineCode: string, lines: LineDraft[]) {
+    return { machine_code: machineCode, lines: lines.map(lineBody) };
 }
 
 export const addLinePayload = lineBody;

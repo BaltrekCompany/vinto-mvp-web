@@ -97,7 +97,7 @@ test("8 · las capturas centrales F3, P1-06, P1-19 y P1-20 siguen conectadas", (
   for (const marker of ["<F6Capture ", "<F3BobbinCapture ", "<QualityHumidityCapture ", "<QualityPhysicalCapture ", "<QualityBobbinHistory "]) assert.ok(page.includes(marker), marker);
   assert.match(page, /const f6List = useResource<CentralCapture\[\]>\(candidateHistoryKey\("f6", scope, 0\)/);
   assert.match(page, /const qualityInbox = useResource<QualityBobbinInboxItem\[\]>\(qualityInboxKey\(scope\)/);
-  assert.match(page, /<BobbinasProgramming /);
+  assert.match(page, /<BobbinasProgrammingSource /); // MF-13-03B PR6: la programación de Bobinas toma el catálogo del backend a través de este contenedor, que renderiza <BobbinasProgramming>
 });
 
 test("9 · Rebobinado y Conversión solo usan sus shells centrales y la pantalla ya no escribe ni borra los datos locales históricos", () => {
