@@ -31,5 +31,13 @@ class MultipleActiveAssignmentsError(AssignmentError):
     http_status, code, public_message = 409, "MULTIPLE_ACTIVE_ASSIGNMENTS", "La máquina tiene varias asignaciones activas; finalícelas explícitamente"
 
 
+class ActivationPlanChangedError(AssignmentError):
+    http_status, code, public_message = 409, "ACTIVATION_PLAN_CHANGED", "El estado cambió desde la vista previa; repita la vista previa antes de confirmar"
+
+
+class ActivationBlockedError(AssignmentError):
+    http_status, code, public_message = 409, "ACTIVATION_BLOCKED", "La activación masiva tiene bloqueos; no se activó ninguna línea"
+
+
 class InvalidAssignmentFilterError(AssignmentError):
     http_status, code, public_message = 422, "INVALID_FILTER", "Filtro inválido"
