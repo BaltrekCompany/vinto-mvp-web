@@ -1,0 +1,43 @@
+{
+  "runId": "20261103T174224Z-818f5d15",
+  "commit": "e1937772579bd83d19ea53836d5defcdfc24dea5",
+  "dirty": true,
+  "startedAt": "2026-11-03T17:42:24.342Z",
+  "status": "failed",
+  "note": "Una corrida es válida solo si status = passed; resultados de otra corrida no la hacen exitosa.",
+  "finishedAt": "2026-11-03T17:44:24.179Z",
+  "exitCode": 1,
+  "phases": {
+    "enabled": {
+      "database": "vinto_mmqa_220a671036b9_test",
+      "exitCode": 1,
+      "verdict": {
+        "ok": false,
+        "reason": "2 comprobaciones fallidas",
+        "total": 48,
+        "pass": 46,
+        "fail": 2
+      }
+    },
+    "closed": {
+      "database": "vinto_mmqa_9f25db434c52_test",
+      "exitCode": 0,
+      "verdict": {
+        "ok": true,
+        "reason": "ok",
+        "total": 18,
+        "pass": 18,
+        "fail": 0
+      }
+    }
+  },
+  "cleanup": {
+    "ok": false,
+    "pending": [
+      {
+        "resource": "directorio temporal",
+        "id": "C:\\Users\\ALEXIS~1\\AppData\\Local\\Temp\\mm13-20261103T174224Z-818f5d15-op-movil-Cuz2Js"
+      }
+    ]
+  }
+}

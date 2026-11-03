@@ -1,0 +1,119 @@
+{
+  "runId": "20261103T174224Z-818f5d15",
+  "commit": "e1937772579bd83d19ea53836d5defcdfc24dea5",
+  "database": "vinto_mmqa_9f25db434c52_test",
+  "phase": "closed",
+  "total": 18,
+  "pass": 18,
+  "fail": 0,
+  "results": [
+    {
+      "name": "S0 [closed] la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de MM-13-QA",
+      "ok": true,
+      "kind": "sql",
+      "detail": "vinto_mmqa_9f25db434c52_test"
+    },
+    {
+      "name": "S0a [closed] la corrida está identificada: el contenedor de PostgreSQL lleva la etiqueta de esta corrida y publica solo 127.0.0.1:55441",
+      "ok": true,
+      "kind": "static",
+      "detail": "20261103T174224Z-818f5d15"
+    },
+    {
+      "name": "S0b [closed] la API real responde (200)",
+      "ok": true,
+      "kind": "http",
+      "detail": "200"
+    },
+    {
+      "name": "S1 la API real responde con sesión y la base efímera parte sin OT, asignaciones ni capturas",
+      "ok": true,
+      "kind": "http",
+      "detail": ""
+    },
+    {
+      "name": "S2 el servidor informa multi_machine=false (compuerta apagada solo en el proceso de prueba)",
+      "ok": true,
+      "kind": "http",
+      "detail": "{\"multi_machine\":false}"
+    },
+    {
+      "name": "H0 con la compuerta apagada Jefatura crea y publica una OT de una sola máquina (flujo histórico)",
+      "ok": true,
+      "kind": "http",
+      "detail": "OT-2026-0001"
+    },
+    {
+      "name": "H1 el servidor rechaza una OT con una línea en OTRA máquina que la cabecera (422 MULTI_MACHINE_DISABLED)",
+      "ok": true,
+      "kind": "http",
+      "detail": "422 MULTI_MACHINE_DISABLED"
+    },
+    {
+      "name": "H2 la activación masiva está cerrada en el servidor (422 MULTI_MACHINE_DISABLED)",
+      "ok": true,
+      "kind": "http",
+      "detail": "422 MULTI_MACHINE_DISABLED"
+    },
+    {
+      "name": "H3 Supervisión NO ve «Activar todas las líneas» (compuerta apagada) pero sí «Activar» por línea",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "H4 PostgreSQL: la activación individual crea UNA asignación (L1)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L1"
+    },
+    {
+      "name": "H5 activar la otra línea REEMPLAZA a la anterior (una sola activa por máquina)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "H6 PostgreSQL: tras reemplazar queda UNA activa (L2) y L1 finalizada (histórico)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L2"
+    },
+    {
+      "name": "H7 Operación ve su línea activa SIN selector ni paso extra (flujo histórico)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "H8 una sola lectura /active (200) y ninguna /active-lines",
+      "ok": true,
+      "kind": "browser",
+      "detail": "/assignments/active?machine_code=MP1→200"
+    },
+    {
+      "name": "H9 se registra producción F3 sobre la línea activa",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "H10 PostgreSQL: la captura quedó en la asignación activa (L2)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L2|1"
+    },
+    {
+      "name": "H11 sin excepciones de página",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "Z1 sin sesiones activas de prueba tras los logouts (fase closed)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "activas 0"
+    }
+  ]
+}
