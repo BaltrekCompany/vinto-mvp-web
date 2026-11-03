@@ -1,4 +1,5 @@
 import { requestJson, type ApiResult } from "@/lib/vinto/central-http";
+import { parseCapabilitiesResponse, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { addLinePayload, createWorkOrderLinesPayload, createWorkOrderPayload, parseWorkOrder, parseWorkOrderList, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
 
 // OT base de Bobinas. Solo se envían los campos del contrato; el backend genera número, line_code, unidad y descripción.
@@ -23,4 +24,9 @@ export function addWorkOrderLine(workOrderId: string, line: LineDraft, signal?: 
 
 export function publishWorkOrder(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
     return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/publish`, { method: "POST", signal }, parseWorkOrder);
+}
+
+// MF-13-03B PR6.1: capacidades de OT que el servidor confirma a la sesión (solo lectura). Una respuesta que no sea exactamente el contrato es un fallo («unavailable»): la capacidad queda apagada.
+export function getWorkOrderCapabilities(signal?: AbortSignal): Promise<ApiResult<WorkOrderCapabilities>> {
+    return requestJson("/api/work-orders/capabilities", { signal }, parseCapabilitiesResponse);
 }

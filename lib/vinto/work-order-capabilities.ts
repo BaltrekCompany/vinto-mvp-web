@@ -4,8 +4,9 @@
 //  - no depende de una variable NEXT_PUBLIC (se compila en el navegador y no garantiza lo que el servidor autoriza);
 //  - un 422 (incluido MULTI_MACHINE_DISABLED) NUNCA enciende nada, ni ningún otro error;
 //  - lo ausente, mal formado o no estrictamente `true` es «apagado».
-// Hoy no existe un contrato para consultarlo (ver docs/MF-13-03B-PR6-ui-ot-multimaquina.md, endpoint propuesto): mientras tanto la aplicación pasa NO_CAPABILITIES y la
-// creación queda en el flujo tradicional de una sola máquina.
+// MF-13-03B PR6.1: el servidor lo publica en GET /api/work-orders/capabilities ({"multi_machine": bool}, solo Jefatura y Supervisión, sin caché). Mientras la consulta carga, falla
+// (401, 403, 404, 5xx, red) o devuelve algo que no es exactamente ese contrato, la aplicación usa NO_CAPABILITIES y la creación queda en el flujo tradicional de una sola máquina.
+// La respuesta NO autoriza la creación: el POST vuelve a validar permisos, máquinas, artículos y la compuerta.
 
 export type WorkOrderCapabilities = { readonly multiMachine: boolean };
 
@@ -19,4 +20,22 @@ export function parseCapabilities(value: unknown): WorkOrderCapabilities {
 // Se ofrece multimáquina solo con confirmación del servidor, permiso de gestión y más de una máquina elegible para la sesión.
 export function multiMachineOffered(capabilities: WorkOrderCapabilities, canManageOrders: boolean, machineCount: number): boolean {
     return capabilities.multiMachine === true && canManageOrders && machineCount > 1;
+}
+
+// Parser ESTRICTO de la respuesta del endpoint: debe ser un objeto con `multi_machine` booleano; cualquier otra cosa es una respuesta inválida (null) y el cliente la trata como
+// fallo, es decir, capacidad apagada. Las claves adicionales se ignoran: nunca amplían nada.
+export function parseCapabilitiesResponse(value: unknown): WorkOrderCapabilities | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const flag = (value as Record<string, unknown>).multi_machine;
+    if (typeof flag !== "boolean") return null;
+    return flag ? Object.freeze({ multiMachine: true }) : NO_CAPABILITIES;
+}
+
+export type CapabilityStatus = "idle" | "loading" | "ready" | "error";
+type CapabilityView = { status: "idle" } | { status: "loading" } | { status: "ready"; data: WorkOrderCapabilities } | { status: "error" };
+
+// Vista de la consulta -> capacidades efectivas. Solo un recurso `ready` con `true` habilita; idle, loading y error son «apagado» (falla cerrado).
+export function capabilitiesOf(view: CapabilityView): { capabilities: WorkOrderCapabilities; status: CapabilityStatus } {
+    if (view.status === "ready") return { capabilities: view.data.multiMachine === true ? view.data : NO_CAPABILITIES, status: "ready" };
+    return { capabilities: NO_CAPABILITIES, status: view.status };
 }

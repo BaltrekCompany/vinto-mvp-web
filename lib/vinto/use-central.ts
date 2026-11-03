@@ -6,9 +6,10 @@ import type { Availability } from "@/lib/vinto/availability";
 import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
 import type { ActiveAssignment, Assignment, WorkOrder } from "@/lib/vinto/orders";
-import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
+import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, workOrderCapabilitiesKey, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
+import type { WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { subscribeRevalidation } from "@/lib/vinto/revalidation";
-import { listWorkOrders } from "@/lib/vinto/work-orders-api";
+import { getWorkOrderCapabilities, listWorkOrders } from "@/lib/vinto/work-orders-api";
 
 export type { Resource } from "@/lib/vinto/resource-view";
 
@@ -53,3 +54,8 @@ export const useActiveAssignment = (machineCode: string, enabled: boolean, onUna
 // `scope` (obligatorio) liga el resultado a la sesión: al cambiar de usuario en el mismo navegador la vista anterior no se reutiliza.
 export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: () => void, scope: string) =>
     useResource<Availability>(availabilityKey(withArticles, scope), enabled, (signal) => getProductionAvailability(signal, withArticles), onUnauthorized, true);
+
+// MF-13-03B PR6.1: lo que el SERVIDOR confirma sobre las OT multimáquina. `scope` (obligatorio) liga el resultado a la sesión: al cambiar de cuenta, o con una respuesta tardía de la anterior, la vista
+// previa nunca se reutiliza (deriveView por clave). Se consulta solo cuando `enabled` (sesión autenticada con permiso de gestionar OT); un 401 lleva a `onUnauthorized`.
+export const useWorkOrderCapabilities = (enabled: boolean, onUnauthorized: () => void, scope: string) =>
+    useResource<WorkOrderCapabilities>(workOrderCapabilitiesKey(scope), enabled, (signal) => getWorkOrderCapabilities(signal), onUnauthorized, true);

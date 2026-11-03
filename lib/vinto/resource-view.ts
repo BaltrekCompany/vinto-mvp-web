@@ -27,6 +27,7 @@ export const sessionScope = (user: { id: string } | null | undefined): string =>
 export const availabilityKey = (withArticles: boolean, scope: string): string => `availability:${withArticles ? "articles" : "base"}:${scope}`;
 export const candidateHistoryKey = (screen: string, scope: string, refresh: number): string => `captures-${screen}:${scope}:${refresh}`;
 export const workOrdersKey = (scope: string): string => `work-orders:${scope}`;
+export const workOrderCapabilitiesKey = (scope: string): string => `work-order-capabilities:${scope}`; // MF-13-03B PR6.1: la capacidad confirmada por el servidor es de ESTA sesión
 export const assignmentsKey = (scope: string): string => `assignments:${scope}`;
 export const activeAssignmentKey = (machineCode: string, scope: string): string => `active:${scope}:${machineCode}`;
 export const qualityInboxKey = (scope: string): string => `quality-bobbin-inbox:${scope}`;

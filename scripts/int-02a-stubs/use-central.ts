@@ -15,3 +15,4 @@ export const useWorkOrders = (enabled: boolean, onUnauthorized: unknown, scope: 
 export const useAssignments = (enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`assignments:${scope}`, enabled, null, onUnauthorized);
 export const useActiveAssignment = (machineCode: string, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`active:${scope}:${machineCode}`, enabled, null, onUnauthorized);
 export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`availability:${withArticles ? "articles" : "base"}:${scope}`, enabled, null, onUnauthorized);
+export const useWorkOrderCapabilities = (enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`work-order-capabilities:${scope}`, enabled, null, onUnauthorized);

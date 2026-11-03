@@ -35,6 +35,15 @@ export function setField(rows: readonly DraftRow[], key: string, field: DraftFie
     return rows.map((row) => (row.key === key ? { ...row, [field]: value } : row));
 }
 
+// Si la modalidad pasa a «una sola máquina» (p. ej. el servidor dejó de confirmar la multimáquina), todas las filas toman la máquina de la primera y se invalida el producto que ya no corresponde.
+// Cuando `multi` es verdadero devuelve las mismas filas.
+export function normalizeForMode(rows: readonly DraftRow[], multi: boolean, catalog: CatalogOf): DraftRow[] {
+    if (multi || rows.length === 0) return [...rows];
+    const machine = rows[0].machine;
+    if (rows.every((row) => row.machine === machine)) return [...rows];
+    return rows.map((row) => ({ ...row, machine, code: catalog(machine).some((item) => item.code === row.code) ? row.code : "" }));
+}
+
 export type RowError = { key: string; field: "machine" | DraftField; message: string };
 export type DraftValidation = { ok: true; machineCode: string; lines: LineDraft[] } | { ok: false; errors: RowError[]; message: string };
 

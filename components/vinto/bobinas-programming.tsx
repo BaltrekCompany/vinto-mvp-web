@@ -12,10 +12,10 @@ import { activateAssignment } from "@/lib/vinto/assignments-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
 import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
 import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
-import { emptyRow, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
+import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
 import type { Resource } from "@/lib/vinto/use-central";
-import { NO_CAPABILITIES, multiMachineOffered, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
+import { NO_CAPABILITIES, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { addWorkOrderLine, createWorkOrderWithLines, publishWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
@@ -29,6 +29,7 @@ type Props = {
     catalog?: (machine: string) => readonly CatalogItem[]; // por defecto la lista estática temporal de Bobinas; Rebobinado pasa los artículos que verifica el backend
     creation?: Creation; // máquinas y productos que el BACKEND ofrece a la sesión para crear (puede incluir varios sectores autorizados)
     capabilities?: WorkOrderCapabilities; // lo que el SERVIDOR confirmó; por defecto la creación multimáquina está apagada
+    capabilityStatus?: CapabilityStatus; // estado de esa consulta: solo cambia el aviso; nunca habilita nada
     initialRows?: DraftRow[]; // solo para renderizar un borrador conocido (pruebas)
     sectorLabel?: string;
     workOrders: Resource<WorkOrder[]>;
@@ -38,18 +39,26 @@ type Props = {
     canManageAssignments: boolean;
 };
 
+// Aviso cuando la creación multimáquina no se ofrece. Solo informa: loading/error/«no habilitado» producen el mismo flujo tradicional.
+function capabilityNote(status: CapabilityStatus): string {
+    if (status === "loading") return "Confirmando con el servidor si admite OT con líneas en varias máquinas…";
+    if (status === "error") return "No se pudo confirmar si el servidor admite OT con líneas en varias máquinas; se usa el flujo de una sola máquina.";
+    return "Las OT con líneas en varias máquinas no están habilitadas por el servidor.";
+}
+
 const machinesOf = (order: WorkOrder) => [...new Set(order.baseline.lines.map(line => line.machine.code))];
 
 // Programación de OT contra las APIs centrales. Sin estado local de OT/asignaciones persistidas, sin optimismo: cada mutación espera la respuesta del backend (que es la autoridad de número,
 // line_code, estado y fechas) y después se reconcilia con GET. El ÚNICO estado local es el borrador de una OT nueva (filas aún no enviadas) y el de «añadir línea» de un borrador.
-export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
+export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, capabilityStatus = "ready", initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
     const options = creation === undefined ? { machines: machines.map(code => ({ code, name: code })), catalog: catalogOfMachine } : creation;
     const optionMachines = typeof options === "string" ? [] : options.machines;
     const optionCatalog = typeof options === "string" ? () => [] : options.catalog;
     const multi = multiMachineOffered(capabilities, canManageOrders, optionMachines.length);
     const keyCounter = useRef(1);
     const nextKey = () => `r${++keyCounter.current}`;
-    const [rows, setRows] = useState<DraftRow[]>(() => initialRows ?? [emptyRow("r1", optionMachines[0]?.code ?? "")]);
+    const [storedRows, setRows] = useState<DraftRow[]>(() => initialRows ?? [emptyRow("r1", optionMachines[0]?.code ?? "")]);
+    const rows = normalizeForMode(storedRows, multi, optionCatalog); // si el servidor deja de confirmar la multimáquina, el borrador vuelve a una sola máquina
     const [errors, setErrors] = useState<RowError[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [confirming, setConfirming] = useState<WorkOrder | null>(null);
@@ -109,7 +118,7 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                         <Button className="bg-[#146b4f]" disabled={locked} onClick={create}>{busy === "create" ? "Creando…" : multi ? "Crear OT con estas líneas" : rows.length > 1 ? "Crear OT con estas líneas" : "Crear OT inicial"}</Button>
                         <p data-create-summary="" className="text-sm text-slate-700">Se enviará una sola OT: {summaryText(summarize(rows))}. El número y los códigos de línea los asigna el servidor.</p>
                     </div>
-                    {!multi && <p data-multi-off="" className="mt-3 text-xs text-slate-600">OT de una sola máquina. Las OT con líneas en varias máquinas no están habilitadas por el servidor.</p>}
+                    {!multi && <p data-multi-off="" data-capability={capabilityStatus} className="mt-3 text-xs text-slate-600">OT de una sola máquina. {capabilityNote(capabilityStatus)}</p>}
                 </>}
         </Panel> : <Panel title="Programa base" note="Tu perfil puede consultar las OT; su creación y publicación corresponden a Jefatura."><p className="text-sm text-slate-700">Solo lectura.</p></Panel>}
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
