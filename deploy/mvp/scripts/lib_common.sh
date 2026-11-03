@@ -173,9 +173,18 @@ mvp_stat() {
 # incompleto (CLOUD-DEP-02A.2-R2-2, punto 1: "impedir que postgres-grants y el arranque continúen
 # si el esquema requerido no está migrado"). Mantiene la aprobación explícita para APLICAR
 # migraciones intacta: esta función solo verifica (--check), nunca ejecuta migrate.py sin --check.
+#
+# MF-13-03B PR-C (OBS-2): acepta el release a comprobar como argumento opcional. Sin argumento
+# usa 'current' (postgres-grants y systemd-install, que corren cuando 'current' YA es el release
+# que importa). 'activate' DEBE pasar el release que va a activar: antes comprobaba 'current' (el
+# release ANTERIOR), así que un release nuevo con migraciones sin aplicar pasaba la guarda y se
+# activaba sobre un esquema insuficiente. Un release cuyo código conoce MENOS migraciones que las
+# aplicadas en la base (p. ej. activar un release viejo con 'activate') también falla aquí
+# (migrate.py: "migraciones ausentes de este checkout"): volver atrás se hace con
+# 'rollback.sh version <sha>', que no consulta el esquema.
 assert_schema_migrated() {
   assert_can_read_mvp_private_paths
-  local release_dir="$MVP_APP_DIR/current"
+  local release_dir="${1:-$MVP_APP_DIR/current}"
   if ! mvp_test -d "$release_dir/backend"; then
     echo "FALLA: $release_dir/backend no existe. Ejecutar 'activate <sha>' primero." >&2
     exit 1
@@ -189,7 +198,7 @@ assert_schema_migrated() {
     echo "FALLA: el esquema de vinto_piloto no está completamente migrado (migrate.py --target dev --check falló):" >&2
     cat "$log" >&2
     rm -f "$log"
-    echo "Ejecutar 'deploy.sh migrate' (con autorización explícita, revisando qué queda pendiente antes de aplicar) antes de continuar." >&2
+    echo "Para un release NUEVO, antes de activarlo: 'bash deploy.sh check-release <sha>' (solo lectura) y 'CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh migrate-release <sha>' (con autorización explícita, revisando qué queda pendiente). Primera instalación: 'deploy.sh migrate'." >&2
     exit 1
   fi
   rm -f "$log"

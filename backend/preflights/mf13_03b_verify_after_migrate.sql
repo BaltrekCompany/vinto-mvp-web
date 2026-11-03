@@ -1,5 +1,6 @@
--- MF13-03.B · consolidated pre-deployment checks. READ ONLY: no write of any kind; run with psql as any reader of the schemas involved:
---   psql -v ON_ERROR_STOP=1 -f mf13_03b_predeploy_readonly.sql
+-- MF13-03.B · checks AFTER migrations 0010-0012 are applied (they query objects those migrations create: work_order_line.machine_id, the 0012 trigger). READ ONLY: no write of any kind.
+-- DO NOT run this BEFORE migrating (it would fail on the missing objects): use mf13_03b_preflight_before_migrate.sql for that.
+--   psql -v ON_ERROR_STOP=1 -f mf13_03b_verify_after_migrate.sql
 -- Every query returns rows ONLY when something needs a human decision before turning WORK_ORDERS_MULTI_MACHINE_ENABLED on. The gate itself is a backend
 -- environment setting that PostgreSQL cannot see: verify it in the backend environment file, not here.
 -- 0 rows in every section = nothing blocks the activation from the data side.

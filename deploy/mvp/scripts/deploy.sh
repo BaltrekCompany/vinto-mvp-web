@@ -66,6 +66,9 @@
 #   CONFIRM=yes bash deploy.sh python-venv <sha>
 #   CONFIRM=yes bash deploy.sh install-frontend-artifact <sha> <tar.gz> <manifiesto>
 #   bash deploy.sh preflight-startup
+#   (ACTUALIZACIÓN de un release nuevo sobre un esquema ya instalado, MF-13-03B PR-C: ANTES de 'activate')
+#   bash deploy.sh check-release <sha>                                  (solo lectura: ¿basta el esquema para ese release?)
+#   CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh migrate-release <sha>  (aplica lo que falte; no activa nada)
 #   CONFIRM=yes bash deploy.sh activate <sha>
 #   CONFIRM=yes TVC_BACKUP_CONFIRMED=yes bash deploy.sh postgres-up
 #   CONFIRM=yes bash deploy.sh postgres-bootstrap-db
@@ -658,7 +661,8 @@ phase_activate() {
     # CLOUD-DEP-02A.2-R2-2, punto 1: no reiniciar (ni arrancar por primera vez) sobre un esquema
     # incompleto. Solo verifica (--check); aplicar migraciones sigue exigiendo su propia fase y
     # confirmación explícita ("deploy.sh migrate").
-    assert_schema_migrated
+    # MF-13-03B PR-C (OBS-2): se comprueba el release que se VA A ACTIVAR (antes: 'current', el anterior).
+    assert_schema_migrated "$release_dir"
     for unit in vinto-mvp-backend.service vinto-mvp-frontend.service; do
       assert_unit_is_ours "$unit"
     done
@@ -888,6 +892,7 @@ phase_migrate() {
   # resolve_role_url en backend/app/db_guard.py.
   sudo -u "$SERVICE_USER" bash -c 'cd "$1" && exec "$1/.venv/bin/python" migrate.py --target dev --check' -- "$release_dir/backend"
   echo "Si el --check anterior muestra pendientes, ejecutar 'migrate.py --target dev' (sin --check) solo tras revisar la salida."
+  echo "Para actualizar un release NUEVO usar 'check-release <sha>' y 'migrate-release <sha>' ANTES de 'activate': esta fase comprueba el release que YA está en 'current'."
 }
 
 # MF-13-01D.3B.1 / D.3B.4: 03_table_grants.sql concede a vinto_app SELECT, INSERT, UPDATE sobre profile, machine y sector (D.3B.1 se los estrecha después con 03b) y el DML de
@@ -1002,6 +1007,147 @@ phase_systemd_install() {
   sudo systemctl status --no-pager vinto-mvp-backend.service vinto-mvp-frontend.service
 }
 
+# ---------------------------------------------------------------------------------------------------
+# MF-13-03B PR-C (OBS-2): migraciones de un release NUEVO ANTES de activarlo.
+#
+# Hallazgo: 'migrate' corre desde 'current' (el release que YA está activo) y solo hace --check; y la
+# guarda de 'activate' (assert_schema_migrated) comprobaba también 'current', es decir, el release
+# ANTERIOR. Resultado: un release nuevo con migraciones sin aplicar pasaba la guarda y se activaba
+# sobre un esquema insuficiente. Estas dos fases usan el código y los archivos de migración del PROPIO
+# release (releases/<sha>/backend), con el venv de ese release, como el usuario de servicio, y NUNCA
+# tocan 'current', systemd, el frontend ni el backend en ejecución.
+#   check-release <sha>    SOLO LECTURA (sin CONFIRM): ¿el esquema de vinto_piloto basta para ese release?
+#                          exit 0 = suficiente; 2 = faltan migraciones (se listan); 1 = error o historial divergente
+#   migrate-release <sha>  APLICA lo que falte (CONFIRM=yes y AUTHORIZED_COMMIT=<sha>), con candado compartido
+#                          con activate/rollback, y vuelve a verificar al terminar.
+# Mecanismo de privilegios: el mismo que 'migrate' (sudo -u $SERVICE_USER + backend/.env; en
+# PG_PRIVILEGE_MODE=hardened migrate.py usa MIGRATOR_DATABASE_URL, nunca la cuenta de la API).
+# ---------------------------------------------------------------------------------------------------
+
+# Valida que el release esté PREPARADO como para activarse (mismas condiciones que 'activate'), ANTES
+# de tocar la base: nunca se migra para un release que no podría activarse de todos modos.
+# Deja la ruta en RELEASE_DIR.
+require_prepared_release() {
+  local commit="$1"
+  RELEASE_DIR="$APP_DIR/releases/$commit"
+  if ! mvp_test -d "$RELEASE_DIR/backend/migrations"; then
+    echo "FALLA: $RELEASE_DIR no es un release preparado (falta backend/migrations). Ejecutar 'checkout $commit' primero. No se tocó la base." >&2
+    exit 1
+  fi
+  if ! mvp_test -f "$RELEASE_DIR/backend/migrate.py"; then
+    echo "FALLA: $RELEASE_DIR/backend/migrate.py no existe. No se tocó la base." >&2
+    exit 1
+  fi
+  if ! mvp_test -x "$RELEASE_DIR/backend/.venv/bin/python" || ! mvp_test -x "$RELEASE_DIR/backend/.venv/bin/uvicorn"; then
+    echo "FALLA: $RELEASE_DIR no tiene su venv instalado. Ejecutar 'python-venv $commit' primero. No se tocó la base." >&2
+    exit 1
+  fi
+  if ! mvp_test -f "$RELEASE_DIR/dist/standalone/server.js"; then
+    echo "FALLA: $RELEASE_DIR no tiene el build del frontend. Ejecutar 'install-frontend-artifact $commit ...' primero. No se tocó la base." >&2
+    exit 1
+  fi
+  if ! mvp_test -e "$RELEASE_DIR/backend/.env"; then
+    echo "FALLA: $RELEASE_DIR/backend/.env no existe (enlace a shared/backend.env). Ejecutar 'link-backend-env $commit'. No se tocó la base." >&2
+    exit 1
+  fi
+}
+
+# release_migrate_py <log> <argumentos de migrate.py...>: corre migrate.py DEL RELEASE, con su propio
+# venv, desde su propio directorio y como el usuario de servicio. Devuelve su código de salida.
+release_migrate_py() {
+  local log="$1"; shift
+  run_with_lock_fd_closed sudo -u "$SERVICE_USER" bash -c 'cd "$1" && exec "$1/.venv/bin/python" migrate.py --target dev "${@:2}"' -- "$RELEASE_DIR/backend" "$@" >"$log" 2>&1
+}
+
+# Diagnóstico de SOLO LECTURA (migrate.py --status): imprime el estado. Devuelve 0 si el esquema basta
+# (nada pendiente), 2 si hay pendientes, 1 si hubo un error o el historial diverge (modificadas,
+# huecos, o más migraciones aplicadas que las del release). Nunca escribe en la base.
+release_schema_report() {
+  local log pending
+  log="$(mktemp)"
+  if ! release_migrate_py "$log" --status; then
+    echo "FALLA: no se pudo verificar el historial de migraciones con el código de $RELEASE_DIR (migrate.py --status):" >&2
+    cat "$log" >&2
+    rm -f "$log"
+    echo "Causas posibles: migración aplicada con checksum distinto o ausente de este release (¿es un release MÁS VIEJO que la base? para volver atrás usar 'rollback.sh version <sha>'), base inaccesible o rol sin permiso. No se modificó nada." >&2
+    return 1
+  fi
+  cat "$log"
+  pending="$(grep -c ': pendiente$' "$log" || true)"
+  rm -f "$log"
+  if [ "$pending" -gt 0 ]; then
+    echo "Migraciones pendientes para este release: $pending."
+    return 2
+  fi
+  echo "El esquema ya incluye todas las migraciones de este release."
+  return 0
+}
+
+phase_check_release() {
+  assert_can_read_mvp_private_paths
+  local commit="${1:?Uso: deploy.sh check-release <commit-sha>}"
+  require_full_sha "$commit"
+  require_prepared_release "$commit"
+  local rc=0
+  release_schema_report || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    echo "Siguiente paso (con autorización): CONFIRM=yes AUTHORIZED_COMMIT=$commit bash deploy.sh migrate-release $commit"
+  fi
+  exit "$rc"
+}
+
+phase_migrate_release() {
+  require_confirm
+  local commit="${1:?Uso: deploy.sh migrate-release <commit-sha>}"
+  require_full_sha "$commit"
+  if [ "${AUTHORIZED_COMMIT:-}" != "$commit" ]; then
+    echo "FALLA: definir AUTHORIZED_COMMIT=$commit (exactamente igual al commit pedido) para confirmar de forma deliberada que las migraciones de ESTE release concreto están autorizadas. No se tocó la base." >&2
+    exit 1
+  fi
+  assert_service_user_is_ours "$SERVICE_USER"
+  assert_can_read_mvp_private_paths
+  # Mismo candado que activate/rollback: ninguna migración mientras otra activación o reversión conmuta 'current'.
+  acquire_activate_lock
+  require_prepared_release "$commit"
+  local rc=0
+  release_schema_report || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    echo "Detenido: no se aplicó nada." >&2
+    exit 1
+  fi
+  local log
+  if [ "$rc" -eq 0 ]; then
+    echo "Nada que aplicar (ejecución idempotente). Verificando de nuevo con --check..."
+  else
+    echo "Aplicando las migraciones pendientes de $commit (cada una en su propia transacción; migrate.py usa un candado advisory contra ejecuciones concurrentes)..."
+    log="$(mktemp)"
+    if ! release_migrate_py "$log"; then
+      echo "FALLA: la migración se detuvo (la migración en curso se revirtió entera; las anteriores YA aplicadas permanecen):" >&2
+      cat "$log" >&2
+      rm -f "$log"
+      echo "No se activó nada y 'current' NO cambió. Estado actual: 'bash deploy.sh check-release $commit'. Tras corregir la causa, repetir este mismo comando: solo aplica lo que falte." >&2
+      exit 1
+    fi
+    cat "$log"
+    rm -f "$log"
+  fi
+  log="$(mktemp)"
+  if ! release_migrate_py "$log" --check; then
+    echo "FALLA: la verificación posterior (migrate.py --check) no pasó:" >&2
+    cat "$log" >&2
+    rm -f "$log"
+    echo "No activar $commit. 'current' NO cambió." >&2
+    exit 1
+  fi
+  rm -f "$log"
+  local current_target="(sin 'current')"
+  if mvp_test -e "$APP_DIR/current"; then
+    current_target="$(mvp_readlink_f "$APP_DIR/current")"
+  fi
+  echo "OK: el esquema es suficiente para $commit. 'current' sigue en $current_target; no se reinició ningún servicio ni se activó nada."
+  echo "Siguiente paso: bash deploy.sh preflight-startup && CONFIRM=yes bash deploy.sh activate $commit"
+}
+
 phase_healthcheck() {
   # Versión verbosa de uso manual (muestra cada respuesta). La MISMA comprobación, en forma
   # silenciosa para decidir pass/fail programáticamente, vive en lib_common.sh::mvp_healthcheck
@@ -1029,13 +1175,15 @@ case "${1:-}" in
   postgres-bootstrap-db) phase_postgres_bootstrap_db ;;
   postgres-roles) phase_postgres_roles ;;
   migrate) phase_migrate ;;
+  check-release) phase_check_release "${2:-}" ;;
+  migrate-release) phase_migrate_release "${2:-}" ;;
   postgres-grants) phase_postgres_grants ;;
   import-reference) phase_import_reference ;;
   import-reference-apply) phase_import_reference_apply ;;
   systemd-install) phase_systemd_install ;;
   healthcheck) phase_healthcheck ;;
   *)
-    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|link-backend-env <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
+    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|link-backend-env <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|check-release <sha>|migrate-release <sha>|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
     exit 1
     ;;
 esac
