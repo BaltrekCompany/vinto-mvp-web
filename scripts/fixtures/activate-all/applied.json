@@ -1,0 +1,206 @@
+{
+ "http_status": 201,
+ "body": {
+  "dry_run": false,
+  "outcome": "applied",
+  "work_order": {
+   "id": "ee200650-6508-4a18-9305-fb9d79c46662",
+   "number": "OT-2026-0007"
+  },
+  "status": "published",
+  "plan_hash": "4f8ecf9187c446ba049ed8a5def5683dcb63517aa011df9fb751689d903e8404",
+  "can_confirm": true,
+  "summary": {
+   "activate": 3,
+   "already_active": 0,
+   "blocked": 0,
+   "expired_to_finish": 0,
+   "conflicts": 0
+  },
+  "lines": [
+   {
+    "baseline_line_id": "2c3fab46-8c04-4a66-9ced-08bf99be0306",
+    "line_code": "L1",
+    "pv_reference": "PV-1",
+    "article": {
+     "code": "M1-1024",
+     "description": "M1-BOBINA PH G-22 CR-25% R-540640"
+    },
+    "machine": {
+     "code": "MP1",
+     "name": "MP1"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "operating_date": "2026-11-02",
+    "action": "activate",
+    "reason": null,
+    "assignment_id": null
+   },
+   {
+    "baseline_line_id": "5d453c43-19af-4086-a13a-4eb7dd8b230f",
+    "line_code": "L2",
+    "pv_reference": "PV-2",
+    "article": {
+     "code": "M1-1029",
+     "description": "M1-BOBINA PH G-19 CR-22% R-540640"
+    },
+    "machine": {
+     "code": "MP1",
+     "name": "MP1"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "operating_date": "2026-11-02",
+    "action": "activate",
+    "reason": null,
+    "assignment_id": null
+   },
+   {
+    "baseline_line_id": "ee1e606e-8b7a-4232-8db2-4af20c3f1b5b",
+    "line_code": "L3",
+    "pv_reference": "PV-3",
+    "article": {
+     "code": "M3-3004",
+     "description": "M3-BOBINA PH G-18 CR-15% R-9010"
+    },
+    "machine": {
+     "code": "MP3",
+     "name": "MP3"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "operating_date": "2026-11-02",
+    "action": "activate",
+    "reason": null,
+    "assignment_id": null
+   }
+  ],
+  "expired": [],
+  "conflicts": [],
+  "activated": [
+   {
+    "id": "09f10b6f-dc08-45fb-93bd-53fb3a4c4512",
+    "status": "active",
+    "operating_date": "2026-11-02",
+    "created_at": "2026-11-03T05:32:35.314836Z",
+    "finished_at": null,
+    "machine": {
+     "code": "MP1",
+     "name": "MP1"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "work_order": {
+     "id": "ee200650-6508-4a18-9305-fb9d79c46662",
+     "number": "OT-2026-0007"
+    },
+    "operational": {
+     "version_number": 2
+    },
+    "line": {
+     "id": "92f23abf-08d0-4896-80da-b1a659dfec2d",
+     "line_code": "L1",
+     "pv_reference": "PV-1",
+     "article": {
+      "code": "M1-1024",
+      "description": "M1-BOBINA PH G-22 CR-25% R-540640"
+     },
+     "quantity": 10.0,
+     "unit": "KG",
+     "due_date": "2026-11-01"
+    },
+    "assigned_by": {
+     "id": "ebc5c78b-c658-4508-a64a-74a7e233746b",
+     "display_name": "Supervision"
+    }
+   },
+   {
+    "id": "c4bbf649-09e4-40da-bcaf-0820d77db753",
+    "status": "active",
+    "operating_date": "2026-11-02",
+    "created_at": "2026-11-03T05:32:35.321861Z",
+    "finished_at": null,
+    "machine": {
+     "code": "MP1",
+     "name": "MP1"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "work_order": {
+     "id": "ee200650-6508-4a18-9305-fb9d79c46662",
+     "number": "OT-2026-0007"
+    },
+    "operational": {
+     "version_number": 2
+    },
+    "line": {
+     "id": "49331047-4a3f-46fe-992d-0e544a6b8c50",
+     "line_code": "L2",
+     "pv_reference": "PV-2",
+     "article": {
+      "code": "M1-1029",
+      "description": "M1-BOBINA PH G-19 CR-22% R-540640"
+     },
+     "quantity": 10.0,
+     "unit": "KG",
+     "due_date": "2026-11-01"
+    },
+    "assigned_by": {
+     "id": "ebc5c78b-c658-4508-a64a-74a7e233746b",
+     "display_name": "Supervision"
+    }
+   },
+   {
+    "id": "e53a4fa1-f51c-4cb4-ace0-630c5c22c26f",
+    "status": "active",
+    "operating_date": "2026-11-02",
+    "created_at": "2026-11-03T05:32:35.327029Z",
+    "finished_at": null,
+    "machine": {
+     "code": "MP3",
+     "name": "MP3"
+    },
+    "shift": {
+     "code": "NOCHE",
+     "name": "Noche"
+    },
+    "work_order": {
+     "id": "ee200650-6508-4a18-9305-fb9d79c46662",
+     "number": "OT-2026-0007"
+    },
+    "operational": {
+     "version_number": 2
+    },
+    "line": {
+     "id": "d2783201-62d1-44e8-b880-91d489172721",
+     "line_code": "L3",
+     "pv_reference": "PV-3",
+     "article": {
+      "code": "M3-3004",
+      "description": "M3-BOBINA PH G-18 CR-15% R-9010"
+     },
+     "quantity": 10.0,
+     "unit": "KG",
+     "due_date": "2026-11-01"
+    },
+    "assigned_by": {
+     "id": "ebc5c78b-c658-4508-a64a-74a7e233746b",
+     "display_name": "Supervision"
+    }
+   }
+  ],
+  "already_active": [],
+  "finished": []
+ }
+}

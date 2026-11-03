@@ -1,0 +1,102 @@
+{
+ "dry_run": true,
+ "outcome": "preview",
+ "work_order": {
+  "id": "4cb18a85-1baf-44cb-af76-1a48ed11a7a8",
+  "number": "OT-2026-0008"
+ },
+ "status": "published",
+ "plan_hash": "132b5900623bb50da21c03e7075e8fc5ff29d758946ea64f1d8c4db43b5786de",
+ "can_confirm": false,
+ "summary": {
+  "activate": 1,
+  "already_active": 0,
+  "blocked": 2,
+  "expired_to_finish": 0,
+  "conflicts": 1
+ },
+ "lines": [
+  {
+   "baseline_line_id": "7bb26993-8450-4a33-b952-85aeea8d72f7",
+   "line_code": "L1",
+   "pv_reference": "PV-1",
+   "article": {
+    "code": "M1-1024",
+    "description": "M1-BOBINA PH G-22 CR-25% R-540640"
+   },
+   "machine": {
+    "code": "MP1",
+    "name": "MP1"
+   },
+   "shift": {
+    "code": "NOCHE",
+    "name": "Noche"
+   },
+   "operating_date": "2026-11-02",
+   "action": "blocked",
+   "reason": "MACHINE_ACTIVE_WITH_OTHER_WORK_ORDER",
+   "assignment_id": null
+  },
+  {
+   "baseline_line_id": "e171bd57-ace4-42dd-b7f9-cd25d8e38fc1",
+   "line_code": "L2",
+   "pv_reference": "PV-2",
+   "article": {
+    "code": "M1-1029",
+    "description": "M1-BOBINA PH G-19 CR-22% R-540640"
+   },
+   "machine": {
+    "code": "MP1",
+    "name": "MP1"
+   },
+   "shift": {
+    "code": "NOCHE",
+    "name": "Noche"
+   },
+   "operating_date": "2026-11-02",
+   "action": "blocked",
+   "reason": "MACHINE_ACTIVE_WITH_OTHER_WORK_ORDER",
+   "assignment_id": null
+  },
+  {
+   "baseline_line_id": "3efdf329-6495-4abc-87bd-7eb9f0248841",
+   "line_code": "L3",
+   "pv_reference": "PV-3",
+   "article": {
+    "code": "M3-3004",
+    "description": "M3-BOBINA PH G-18 CR-15% R-9010"
+   },
+   "machine": {
+    "code": "MP3",
+    "name": "MP3"
+   },
+   "shift": {
+    "code": "NOCHE",
+    "name": "Noche"
+   },
+   "operating_date": "2026-11-02",
+   "action": "activate",
+   "reason": null,
+   "assignment_id": null
+  }
+ ],
+ "expired": [],
+ "conflicts": [
+  {
+   "assignment_id": "20605583-a4b6-4d04-bcc3-4e64fb2db8d9",
+   "machine": {
+    "code": "MP1",
+    "name": "MP1"
+   },
+   "work_order": {
+    "id": "36522ed4-f9f5-4d28-919b-07f97442e1d7",
+    "number": "OT-2026-0009"
+   },
+   "line_code": "L1",
+   "expired": false
+  }
+ ],
+ "activated": [],
+ "already_active": [],
+ "finished": []
+}
