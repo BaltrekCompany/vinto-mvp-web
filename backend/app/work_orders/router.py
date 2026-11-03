@@ -3,8 +3,10 @@
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
+from app.assignments import service as assignments_service
+from app.assignments.schemas import ActivateAllIn, ActivateAllOut, activate_all_out
 from app.auth.dependencies import require_permission
 from app.auth.permissions import ASSIGNMENT_MANAGE, WORK_ORDER_MANAGE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
@@ -67,3 +69,21 @@ def publish_work_order(work_order_id: str, user: AuthenticatedUser = Depends(req
                        connection=Depends(get_connection)):
     return work_order_out(service.publish_work_order(connection, actor_id=user.user_id, work_order_id=work_order_id,
                                                      request_id=_request_id(), sectors=user.sectors))
+
+
+@router.post("/{work_order_id}/activate-all", response_model=ActivateAllOut,
+             responses={200: {"description": "Vista previa, o confirmación sin cambios (ya vigente)"}, 201: {"description": "Líneas activadas"}, **_ERRORS})
+def activate_all(work_order_id: str, body: ActivateAllIn, response: Response, user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+                 connection=Depends(get_connection)):
+    """Activación masiva en dos fases (solo Supervisión, `assignment.manage`; requiere la compuerta multimáquina del servidor).
+
+    `{"dry_run": true}`: vista previa de solo lectura con `plan_hash`. `{"dry_run": false, "plan_hash": "..."}`: confirma TODO O NADA.
+    409: el estado cambió desde la vista previa (ACTIVATION_PLAN_CHANGED) o hay bloqueos/conflictos (ACTIVATION_BLOCKED, otra OT en la máquina, etc.).
+    El 404 también cubre una OT con alguna máquina fuera del alcance del actor. 422: compuerta apagada (MULTI_MACHINE_DISABLED) o cuerpo inválido.
+    """
+    if body.dry_run:
+        return activate_all_out(assignments_service.preview_activate_all(connection, work_order_id=work_order_id, sectors=user.sectors))
+    result = assignments_service.activate_all(connection, actor_id=user.user_id, work_order_id=work_order_id, plan_hash=body.plan_hash,
+                                              request_id=_request_id(), sectors=user.sectors)
+    response.status_code = 201 if result.outcome == "applied" else 200
+    return activate_all_out(result, plan_hash=body.plan_hash)

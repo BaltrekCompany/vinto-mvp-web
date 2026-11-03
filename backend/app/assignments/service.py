@@ -28,11 +28,13 @@ Garantías:
 """
 
 import hashlib
+import json
+import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from app.assignments.errors import (AssignmentNotFoundError, BaselineLineNotFoundError, InvalidAssignmentFilterError,
+from app.assignments.errors import (ActivationBlockedError, ActivationPlanChangedError, AssignmentNotFoundError, BaselineLineNotFoundError, InvalidAssignmentFilterError,
                                     MachineBusyWithOtherWorkOrderError, MultipleActiveAssignmentsError, OperationalVersionError,
                                     WorkOrderNotActivatableError)
 from app.config import settings
@@ -277,7 +279,11 @@ def _load_target(connection, *, work_order_id, baseline_line_id, sectors) -> tup
     return status, _Target(line_code, baseline_version_id, machine_id, sector_id)
 
 
-def _activate_target(connection, *, actor_id, work_order_id, order_status, target: _Target, shift: ResolvedShift, sectors) -> ActivationResult:
+def _tagged(reason, tag):
+    return reason if tag is None else f"{reason} [{tag}]"
+
+
+def _activate_target(connection, *, actor_id, work_order_id, order_status, target: _Target, shift: ResolvedShift, sectors, batch_tag=None) -> ActivationResult:
     """Activa un destino ya validado. Exige la OT bloqueada; toma el lock de la máquina (re-entrante si el llamador ya lo tiene)."""
     multi = _multi_machine_enabled()
     _lock_machines(connection, [target.machine_id])
@@ -310,10 +316,10 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         replaced = current  # semántica histórica: la anterior se sustituye
     finished = [row[0] for row in (*stale, *replaced)]
     if finished:
-        _reason(connection, "finish previous assignment")
+        _reason(connection, _tagged("finish previous assignment", batch_tag))
         for assignment_id in finished:
             connection.execute("UPDATE vinto_txn.assignment SET status = 'finished', finished_at = clock_timestamp() WHERE id = %s", (assignment_id,))
-    _reason(connection, "activate assignment")
+    _reason(connection, _tagged("activate assignment", batch_tag))
     new_id = connection.execute(
         """INSERT INTO vinto_txn.assignment (work_order_line_id, machine_id, shift_schedule_id, operating_date, assigned_by)
            VALUES (%s,%s,%s,%s,%s) RETURNING id""",
@@ -408,3 +414,232 @@ def get_active_lines(connection, *, machine_code, sectors) -> ActiveLines:
     """Contrato multilínea (PR5/PR8): TODAS las activas de la máquina con su 'vencida' y el turno actual. Sin selección implícita."""
     items, shift = _active_items(connection, machine_code, sectors)
     return ActiveLines(shift.shift_code if shift else None, shift.shift_name if shift else None, shift.operating_date if shift else None, items)
+
+
+# ---------------------------------------------------------------------------------------------------
+# bulk activation (PR4): preview + confirm of ALL lines of one work order in a single transaction
+# ---------------------------------------------------------------------------------------------------
+
+BULK_BATCH = "activate-all"
+_PLAN_HASH = re.compile(r"^[a-f0-9]{64}$")
+
+
+@dataclass(frozen=True)
+class PlanLine:
+    baseline_line_id: uuid.UUID
+    line_code: str
+    pv_reference: str
+    article_code: str
+    article_description: str
+    machine_id: uuid.UUID
+    machine_code: str
+    machine_name: str
+    sector_id: uuid.UUID
+    baseline_version_id: uuid.UUID
+    action: str  # activate | already_active | blocked
+    reason: str | None  # código estable cuando action == blocked
+    assignment_id: uuid.UUID | None  # asignación vigente (already_active)
+    shift_code: str | None
+    shift_name: str | None
+    operating_date: date | None
+    shift_schedule_id: uuid.UUID | None
+
+
+@dataclass(frozen=True)
+class PlanExpired:
+    assignment_id: uuid.UUID
+    machine_code: str
+    machine_name: str
+    line_code: str
+
+
+@dataclass(frozen=True)
+class PlanConflict:
+    assignment_id: uuid.UUID
+    machine_code: str
+    machine_name: str
+    work_order_id: uuid.UUID
+    work_order_number: str
+    line_code: str
+    expired: bool | None
+
+
+@dataclass(frozen=True)
+class ActivationPlan:
+    work_order_id: uuid.UUID
+    number: str
+    status: str
+    lines: tuple[PlanLine, ...]
+    expired: tuple[PlanExpired, ...]  # asignaciones vencidas de ESTA OT que la confirmación finalizará
+    conflicts: tuple[PlanConflict, ...]  # asignaciones activas de OTRA OT: bloquean todo, nunca se finalizan
+    plan_hash: str
+    shifts: dict = field(compare=False, repr=False, default_factory=dict)
+
+    @property
+    def can_confirm(self) -> bool:
+        return not self.conflicts and all(line.action != "blocked" for line in self.lines)
+
+    @property
+    def noop(self) -> bool:
+        return self.can_confirm and not self.expired and all(line.action == "already_active" for line in self.lines)
+
+
+@dataclass(frozen=True)
+class BulkResult:
+    plan: ActivationPlan
+    outcome: str  # preview | applied | already_in_effect
+    activated: tuple[AssignmentView, ...] = ()
+    already_active: tuple[AssignmentView, ...] = ()
+    finished: tuple[AssignmentView, ...] = ()
+
+
+def _require_bulk_enabled():
+    if not _multi_machine_enabled():
+        raise MultiMachineDisabledError()
+
+
+def _digest(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _plan_hash(work_order_id, lines, expired, conflicts) -> str:
+    """64 hex = 32 de ESTADO FINAL aprobado + 32 de ACCIONES. Ver docs: el reintento tras una respuesta perdida conserva la mitad de estado."""
+    state = _digest({"v": 1, "work_order": str(work_order_id), "lines": [
+        [str(l.baseline_line_id), str(l.machine_id), None if l.shift_schedule_id is None else str(l.shift_schedule_id),
+         None if l.operating_date is None else l.operating_date.isoformat()] for l in lines]})
+    actions = _digest({"v": 1, "lines": [[str(l.baseline_line_id), l.action, l.reason, None if l.assignment_id is None else str(l.assignment_id)] for l in lines],
+                       "expired": sorted(str(e.assignment_id) for e in expired), "conflicts": sorted(str(c.assignment_id) for c in conflicts)})
+    return state[:32] + actions[:32]
+
+
+def _build_plan(connection, *, work_order_id, sectors, now, lock) -> ActivationPlan:
+    """Calcula el plan completo. Con `lock` toma OT -> máquinas (por id) -> asignaciones, en ese orden; sin él es solo lectura.
+
+    404 si la OT no existe o ALGUNA de sus máquinas (cabecera o líneas) queda fuera del alcance: nunca un resultado parcialmente autorizado.
+    """
+    order = connection.execute(
+        "SELECT wo.number, wo.status, hs.code FROM vinto_txn.work_order wo JOIN vinto_master.machine hm ON hm.id = wo.machine_id "
+        "JOIN vinto_master.sector hs ON hs.id = hm.sector_id WHERE wo.id = %s" + (" FOR UPDATE OF wo" if lock else ""), (work_order_id,)).fetchone()
+    codes = set(scoped_sector_codes(sectors))
+    if order is None or order[2] not in codes:
+        raise WorkOrderNotFoundError()
+    number, status, _ = order
+    rows = connection.execute(
+        """SELECT l.id, l.line_code, l.pv_reference, v.id, l.machine_id, m.code, m.name, m.active, s.id, s.code, ar.code, av.description
+           FROM vinto_txn.work_order_line l JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
+           JOIN vinto_master.machine m ON m.id = l.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
+           JOIN vinto_master.article_version av ON av.id = l.article_version_id JOIN vinto_master.article ar ON ar.id = av.article_id
+           WHERE v.work_order_id = %s AND v.kind = 'baseline' AND v.version_number = 1 AND v.published_at IS NOT NULL
+           ORDER BY length(l.line_code), l.line_code""", (work_order_id,)).fetchall()
+    if any(row[9] not in codes for row in rows):
+        raise WorkOrderNotFoundError()
+    if status not in ("published", "in_progress") or not rows:
+        raise WorkOrderNotActivatableError(f"La orden está en estado {status}")
+    machine_ids = sorted({row[4] for row in rows}, key=str)
+    if lock:
+        _lock_machines(connection, machine_ids)
+    actives = connection.execute(
+        """SELECT a.id, a.machine_id, a.work_order_line_id, a.shift_schedule_id, a.operating_date, v.work_order_id, wo.number, l.line_code
+           FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
+           JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id
+           WHERE a.machine_id = ANY(%s) AND a.status = 'active' ORDER BY a.id""" + (" FOR UPDATE OF a" if lock else ""), (machine_ids,)).fetchall()
+    operational = dict(connection.execute(
+        """SELECT l.line_code, l.id FROM vinto_txn.work_order_line l JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
+           WHERE v.id = (SELECT id FROM vinto_txn.work_order_version WHERE work_order_id = %s AND kind = 'operational' AND published_at IS NOT NULL
+                         ORDER BY version_number DESC LIMIT 1)""", (work_order_id,)).fetchall())
+    shifts = {}
+    for sector_id in {row[8] for row in rows}:
+        try:
+            shifts[sector_id] = resolve_shift(connection, now, sector_id=sector_id)
+        except ShiftResolutionError as error:
+            shifts[sector_id] = error.code
+    machine_info = {row[4]: (row[5], row[6]) for row in rows}
+    lines, expired, conflicts, busy = [], [], [], set()
+    for a_id, machine_id, _, schedule_id, op_date, owner_id, owner_number, line_code in actives:
+        shift = shifts.get(next(r[8] for r in rows if r[4] == machine_id))
+        current = (schedule_id, op_date) == (shift.shift_schedule_id, shift.operating_date) if isinstance(shift, ResolvedShift) else None
+        if owner_id != work_order_id:
+            busy.add(machine_id)
+            conflicts.append(PlanConflict(a_id, *machine_info[machine_id], owner_id, owner_number, line_code, None if current is None else not current))
+        elif current is False:
+            expired.append(PlanExpired(a_id, *machine_info[machine_id], line_code))
+    for l_id, line_code, pv, version_id, machine_id, m_code, m_name, m_active, sector_id, _, a_code, a_desc in rows:
+        shift = shifts[sector_id]
+        resolved = isinstance(shift, ResolvedShift)
+        existing = None
+        if resolved and operational.get(line_code) is not None:
+            existing = next((a[0] for a in actives if a[2] == operational[line_code] and (a[3], a[4]) == (shift.shift_schedule_id, shift.operating_date)), None)
+        if not m_active:
+            action, reason = "blocked", "MACHINE_INACTIVE"
+        elif not resolved:
+            action, reason = "blocked", shift
+        elif machine_id in busy:
+            action, reason = "blocked", "MACHINE_ACTIVE_WITH_OTHER_WORK_ORDER"
+        elif existing is not None:
+            action, reason = "already_active", None
+        else:
+            action, reason = "activate", None
+        lines.append(PlanLine(l_id, line_code, pv, a_code, a_desc, machine_id, m_code, m_name, sector_id, version_id, action, reason, existing,
+                              shift.shift_code if resolved else None, shift.shift_name if resolved else None,
+                              shift.operating_date if resolved else None, shift.shift_schedule_id if resolved else None))
+    return ActivationPlan(work_order_id, number, status, tuple(lines), tuple(expired), tuple(conflicts),
+                          _plan_hash(work_order_id, lines, expired, conflicts), shifts)
+
+
+def preview_activate_all(connection, *, work_order_id, sectors) -> BulkResult:
+    """Vista previa: transacción REPEATABLE READ y READ ONLY (PostgreSQL rechaza cualquier escritura): sin versión operativa, sin
+    asignaciones, sin auditoría de negocio, sin bloqueos de fila."""
+    _require_bulk_enabled()
+    work_order_id = _uuid(work_order_id, WorkOrderNotFoundError)
+    with connection.transaction():
+        connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        plan = _build_plan(connection, work_order_id=work_order_id, sectors=sectors, now=_now(connection), lock=False)
+    return BulkResult(plan, "preview")
+
+
+def _views(connection, ids, sectors):
+    return tuple(get_assignment(connection, i, sectors=sectors) for i in ids)
+
+
+def activate_all(connection, *, actor_id, work_order_id, plan_hash, request_id=None, sectors) -> BulkResult:
+    """Confirma el plan aprobado: TODO O NADA en una sola transacción.
+
+    Recalcula bajo bloqueo y compara con `plan_hash`:
+    - mismo estado final y mismas acciones -> aplica;
+    - mismo estado final y nada que hacer (reintento tras una respuesta perdida, o ya activas) -> `already_in_effect`, sin escribir;
+    - cualquier otra diferencia (turno/fecha, máquinas, acciones, conflictos nuevos) -> 409 ACTIVATION_PLAN_CHANGED sin escribir;
+    - plan con bloqueos -> 409 ACTIVATION_BLOCKED sin escribir.
+    """
+    _require_bulk_enabled()
+    work_order_id = _uuid(work_order_id, WorkOrderNotFoundError)
+    request_id = request_id or f"assignment:{uuid.uuid4()}"
+    if not isinstance(plan_hash, str) or not _PLAN_HASH.fullmatch(plan_hash):
+        raise ActivationPlanChangedError()
+    with connection.transaction():
+        _context(connection, actor_id, request_id, "create operational work order version")
+        plan = _build_plan(connection, work_order_id=work_order_id, sectors=sectors, now=_now(connection), lock=True)
+        if plan.plan_hash[:32] != plan_hash[:32]:
+            raise ActivationPlanChangedError()
+        if plan.plan_hash != plan_hash and not plan.noop:
+            raise ActivationPlanChangedError()
+        if not plan.can_confirm:
+            raise ActivationBlockedError()
+        if plan.noop:
+            return BulkResult(plan, "already_in_effect", already_active=_views(connection, [l.assignment_id for l in plan.lines], sectors))
+        tag = f"{BULK_BATCH} {plan_hash}"
+        created, finished = [], []
+        for line in plan.lines:
+            if line.action != "activate":
+                continue
+            order_status, target = _load_target(connection, work_order_id=work_order_id, baseline_line_id=line.baseline_line_id, sectors=sectors)
+            result = _activate_target(connection, actor_id=actor_id, work_order_id=work_order_id, order_status=order_status, target=target,
+                                      shift=plan.shifts[line.sector_id], sectors=sectors, batch_tag=tag)
+            if not result.created:
+                raise ActivationPlanChangedError()  # imposible bajo los bloqueos; si ocurriera, se revierte todo
+            created.append(result.assignment.id)
+            finished.extend(result.finished_assignment_ids)
+        if set(finished) != {e.assignment_id for e in plan.expired}:
+            raise ActivationPlanChangedError()  # se finalizó algo distinto de lo aprobado: se revierte todo
+        return BulkResult(plan, "applied", activated=_views(connection, created, sectors),
+                          already_active=_views(connection, [l.assignment_id for l in plan.lines if l.action == "already_active"], sectors),
+                          finished=_views(connection, finished, sectors))
