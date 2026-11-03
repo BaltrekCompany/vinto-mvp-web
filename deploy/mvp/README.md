@@ -84,6 +84,17 @@ ni PostgreSQL, y conserva siempre la referencia a la versión anterior.
    que sirve TVC (aunque en un archivo distinto). Requiere completar `__ALLOWED_CIDR__` con una
    IP/rango real: la plantilla deniega todo el tráfico por defecto (DEP55-05) hasta que se edite.
 
+## Actualizar un release NUEVO sobre un esquema ya instalado (MF-13-03B PR-C)
+
+La lista anterior es la de la primera instalación. Para **actualizar**, las migraciones del release nuevo se comprueban y aplican **antes** de activarlo (el backend nuevo no funciona sobre un esquema anterior; el anterior sí funciona sobre el nuevo para 0010–0012):
+
+```
+bash deploy.sh check-release <sha>                                         # solo lectura; 0 = basta, 2 = faltan, 1 = error/divergencia
+CONFIRM=yes AUTHORIZED_COMMIT=<sha> bash deploy.sh migrate-release <sha>   # aplica lo que falte con el código DEL release; no activa nada
+bash deploy.sh preflight-startup && CONFIRM=yes bash deploy.sh activate <sha>
+```
+`check-release`/`migrate-release` exigen un release ya preparado (venv, build del frontend, `backend/.env` enlazado), usan el `migrate.py` y los archivos de migración del propio release como `$SERVICE_USER`, toman el candado compartido con `activate`/`rollback` (`migrate-release`) y **nunca** cambian `current`, reinician systemd ni activan backend o frontend. `activate` comprueba el esquema contra el release **destino**. Volver atrás: `rollback.sh version <sha>` (no consulta el esquema; no se revierte el esquema). Plan completo, preflight SQL y matriz GO/NO-GO: `docs/MF-13-03B-plan-de-despliegue.md`. Pruebas: `deploy/mvp/scripts/tests/test_activate_hardening.sh` (tests 46–52, usuarios reales) y `backend/tests/test_deploy_release_migrations.py` (migrate.py real + PostgreSQL efímero).
+
 ## Qué requiere autorización explícita de quien administra el VPS
 
 Cada fase de `deploy.sh` exige `CONFIRM=yes` individualmente. Además, antes de cualquier fase:

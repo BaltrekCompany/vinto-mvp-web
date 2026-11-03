@@ -239,7 +239,7 @@ class PredeployPreflightTests(Journey):
 
     def run_preflight(self):
         import pathlib
-        text = (pathlib.Path(__file__).resolve().parents[1] / "preflights" / "mf13_03b_predeploy_readonly.sql").read_text(encoding="utf-8")
+        text = (pathlib.Path(__file__).resolve().parents[1] / "preflights" / "mf13_03b_verify_after_migrate.sql").read_text(encoding="utf-8")
         results = []
         with self.connection.transaction():
             self.connection.execute("SET TRANSACTION READ ONLY")  # any write would fail: the script is provably read only

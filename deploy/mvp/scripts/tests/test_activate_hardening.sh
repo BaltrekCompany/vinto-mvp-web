@@ -137,15 +137,15 @@ reset_systemctl_mock() {
 
 # --- sandbox de $APP_DIR: dos releases reales, "current" apuntando al anterior ------------------
 # $1 (opcional): código de salida que debe devolver "migrate.py --check" (assert_schema_migrated)
-# en el release AL QUE YA APUNTA 'current' (el chequeo de esquema corre sobre 'current', antes de
-# conmutarlo) -- grabado DIRECTAMENTE en el script al crearlo (nunca leído de una variable de
+# en el release DESTINO, NEW_SHA (PR-C: el chequeo de esquema corre sobre el release que se va a
+# activar, antes de conmutar 'current'; antes corría sobre 'current') -- grabado DIRECTAMENTE en el script al crearlo (nunca leído de una variable de
 # entorno en tiempo de ejecución: "sudo -u $MVP_SERVICE_USER <python> ..." es un "sudo" real, que
 # no propaga el entorno del invocador salvo que se liste explícitamente -- mismo motivo por el que
 # "systemctl" tampoco puede simularse con una variable de entorno).
 make_sandbox() {
   local schema_exit="${1:-0}"
   # CLOUD-DEP-02B.2-G.12-B4-P3-H2: "schema_sleep" (2do parámetro, por defecto 0) hace que el
-  # "migrate.py --check" DEL RELEASE AL QUE YA APUNTA 'current' (OLD_SHA, comprobado por
+  # "migrate.py --check" DEL RELEASE DESTINO (NEW_SHA, comprobado por
   # assert_schema_migrated ANTES de conmutar) duerma esa cantidad de segundos antes de responder.
   # Se usa únicamente para abrir una ventana de tiempo controlada y real -- nunca un "sleep" suelto
   # en la propia prueba -- entre "acquire_activate_lock" (ya adquirido justo antes, al principio de
@@ -162,7 +162,9 @@ make_sandbox() {
     mkdir -p "$dir/releases/$sha/backend"
     : > "$dir/releases/$sha/backend/migrate.py"
     local this_exit=0 this_sleep=0
-    if [ "$sha" = "$OLD_SHA" ]; then
+    # MF-13-03B PR-C (OBS-2): el chequeo de esquema de phase_activate corre sobre el release DESTINO
+    # (NEW_SHA); antes corría sobre 'current' (OLD_SHA, el anterior), que es justo el hueco que se corrigió.
+    if [ "$sha" = "$NEW_SHA" ]; then
       this_exit="$schema_exit"
       this_sleep="$schema_sleep"
     fi
@@ -768,7 +770,7 @@ test_reversion_individual_libera_candado_tras_exito() {
 }
 
 test_dos_activaciones_simultaneas_al_mismo_commit_solo_una_gana() {
-  # El "migrate.py --check" de OLD_SHA (al que apunta 'current' antes de conmutar, comprobado por
+  # El "migrate.py --check" de NEW_SHA (el release destino, comprobado por
   # assert_schema_migrated ANTES de tocar 'current') duerme 3s -- ventana real, no simulada con
   # texto, entre "acquire_activate_lock" (ya adquirido) y la conmutación. Durante esa ventana, una
   # SEGUNDA activación concurrente al MISMO commit debe fallar por candado ocupado, sin tocar
@@ -1130,6 +1132,139 @@ test_rollback_systemd_no_toca_el_candado() {
   [ "$rc" -eq 0 ] && [ "$lock_free" -eq 1 ] && [ "$units_gone" -eq 1 ]
 }
 
+# ==================================================================================================
+# MF-13-03B PR-C (OBS-2): check-release / migrate-release con privilegio REAL (testop invoca, testsvc ejecuta).
+# El "python" de cada release es un simulador que REGISTRA quién lo ejecuta, desde qué directorio y con qué
+# argumentos, y cuyo resultado se controla con archivos fijos (el "sudo" real no propaga el entorno). La
+# lógica real de migrate.py contra PostgreSQL se prueba en backend/tests/test_deploy_release_migrations.py.
+# ==================================================================================================
+MOCK_MIG_LOG=/tmp/.mock-migrate-calls.log
+
+reset_migrate_mock() {   # $1 status-rc, $2 apply-rc, $3 check-rc, $4 texto de --status
+  rm -f "$MOCK_MIG_LOG"
+  printf '%s' "${1:-0}" > /tmp/.mock-migrate-status-rc
+  printf '%s' "${2:-0}" > /tmp/.mock-migrate-apply-rc
+  printf '%s' "${3:-0}" > /tmp/.mock-migrate-check-rc
+  printf '%s\n' "${4:-0011_x.sql: aplicada}" > /tmp/.mock-migrate-status
+  chmod 644 /tmp/.mock-migrate-status /tmp/.mock-migrate-*-rc
+}
+
+make_mig_sandbox() {
+  local dir; dir="$(make_sandbox 0)"
+  for sha in "$OLD_SHA" "$NEW_SHA"; do
+    mkdir -p "$dir/releases/$sha/backend/migrations"
+    : > "$dir/releases/$sha/backend/.env"
+    cat > "$dir/releases/$sha/backend/.venv/bin/python" <<'MOCKPY'
+#!/bin/sh
+echo "$(id -un)|$PWD|$0|$*" >> /tmp/.mock-migrate-calls.log
+case "$*" in
+  *--status*) cat /tmp/.mock-migrate-status; exit "$(cat /tmp/.mock-migrate-status-rc)" ;;
+  *--check*)  exit "$(cat /tmp/.mock-migrate-check-rc)" ;;
+  *)          exit "$(cat /tmp/.mock-migrate-apply-rc)" ;;
+esac
+MOCKPY
+    chmod +x "$dir/releases/$sha/backend/.venv/bin/python"
+  done
+  chown -R "$SVC_USER:$SVC_USER" "$dir"
+  printf '%s' "$dir"
+}
+
+test_migrate_release_corre_como_servicio_desde_el_release_con_su_venv() {
+  local app_dir; app_dir="$(make_mig_sandbox)"
+  reset_migrate_mock 0 0 0 "0010_x.sql: pendiente"
+  reset_systemctl_mock 0
+  local rc=0 before after
+  before="$(readlink "$app_dir/current")"
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'AUTHORIZED_COMMIT="'"$NEW_SHA"'"; phase_migrate_release "'"$NEW_SHA"'"' >/tmp/tprc1.out 2>&1 || rc=$?
+  after="$(readlink "$app_dir/current")"
+  local calls; calls="$(cat "$MOCK_MIG_LOG" 2>/dev/null)"
+  local syscalls=0; [ -s "$MOCK_SYSTEMCTL_LOG" ] && syscalls=1
+  rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$before" = "$after" ] && [ "$syscalls" -eq 0 ] \
+    && [ "$(printf '%s\n' "$calls" | wc -l)" -eq 3 ] \
+    && printf '%s\n' "$calls" | grep -q "^$SVC_USER|.*/releases/$NEW_SHA/backend|.*/releases/$NEW_SHA/backend/.venv/bin/python|.*--status" \
+    && printf '%s\n' "$calls" | sed -n 2p | grep -q "^$SVC_USER|.*/releases/$NEW_SHA/backend|.*python|migrate.py --target dev$" \
+    && printf '%s\n' "$calls" | sed -n 3p | grep -q -- "--check" \
+    && ! printf '%s\n' "$calls" | grep -q "/releases/$OLD_SHA"
+}
+
+test_migrate_release_sin_confirmacion_o_autorizacion_no_ejecuta_nada() {
+  local app_dir; app_dir="$(make_mig_sandbox)"
+  reset_migrate_mock 0 0 0 "0010_x.sql: pendiente"
+  local rc1=0 rc2=0
+  sudo -u "$OP_USER" env MVP_APP_DIR="$app_dir" MVP_SERVICE_USER="$SVC_USER" SCRIPT_DIR="$SCRIPT_DIR" bash "$SCRIPT_DIR/deploy.sh" migrate-release "$NEW_SHA" >/tmp/tprc2a.out 2>&1 || rc1=$?
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_migrate_release "'"$NEW_SHA"'"' >/tmp/tprc2b.out 2>&1 || rc2=$?
+  local ran=0; [ -s "$MOCK_MIG_LOG" ] && ran=1
+  rm -rf "$app_dir"
+  [ "$rc1" -eq 1 ] && [ "$rc2" -eq 1 ] && [ "$ran" -eq 0 ] && grep -q "CONFIRM=yes" /tmp/tprc2a.out && grep -q "AUTHORIZED_COMMIT" /tmp/tprc2b.out
+}
+
+test_migrate_release_historial_divergente_se_detiene_sin_aplicar() {
+  local app_dir; app_dir="$(make_mig_sandbox)"
+  reset_migrate_mock 1 0 0 "Migración detenida: Migración aplicada modificada: 0005_x.sql"
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'AUTHORIZED_COMMIT="'"$NEW_SHA"'"; phase_migrate_release "'"$NEW_SHA"'"' >/tmp/tprc3.out 2>&1 || rc=$?
+  local calls; calls="$(cat "$MOCK_MIG_LOG" 2>/dev/null)"
+  rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$(printf '%s\n' "$calls" | wc -l)" -eq 1 ] && printf '%s\n' "$calls" | grep -q -- "--status" \
+    && grep -q "Detenido: no se aplicó nada" /tmp/tprc3.out
+}
+
+test_migrate_release_fallo_al_aplicar_no_activa_ni_verifica() {
+  local app_dir; app_dir="$(make_mig_sandbox)"
+  reset_migrate_mock 0 1 0 "0010_x.sql: pendiente"
+  reset_systemctl_mock 0
+  local rc=0 before after
+  before="$(readlink "$app_dir/current")"
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'AUTHORIZED_COMMIT="'"$NEW_SHA"'"; phase_migrate_release "'"$NEW_SHA"'"' >/tmp/tprc4.out 2>&1 || rc=$?
+  after="$(readlink "$app_dir/current")"
+  local calls; calls="$(cat "$MOCK_MIG_LOG" 2>/dev/null)"
+  local syscalls=0; [ -s "$MOCK_SYSTEMCTL_LOG" ] && syscalls=1
+  rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$before" = "$after" ] && [ "$syscalls" -eq 0 ] && [ "$(printf '%s\n' "$calls" | wc -l)" -eq 2 ] \
+    && ! printf '%s\n' "$calls" | grep -q -- "--check" && grep -q "NO cambió" /tmp/tprc4.out
+}
+
+test_check_release_es_de_solo_lectura_y_no_pide_confirmacion() {
+  local app_dir; app_dir="$(make_mig_sandbox)"
+  reset_migrate_mock 0 0 0 "0010_x.sql: pendiente"
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'unset CONFIRM; phase_check_release "'"$NEW_SHA"'"' >/tmp/tprc5.out 2>&1 || rc=$?
+  local calls; calls="$(cat "$MOCK_MIG_LOG" 2>/dev/null)"
+  rm -rf "$app_dir"
+  [ "$rc" -eq 2 ] && [ "$(printf '%s\n' "$calls" | wc -l)" -eq 1 ] && printf '%s\n' "$calls" | grep -q -- "--status" \
+    && ! printf '%s\n' "$calls" | grep -q "migrate.py --target dev$" && grep -q "migrate-release" /tmp/tprc5.out
+}
+
+test_activate_comprueba_el_release_destino_no_current() {
+  # El release ANTERIOR (current) reportaría un fallo de esquema; el DESTINO está bien: la activación debe proceder
+  # (antes de PR-C la guarda miraba 'current' y habría fallado por el motivo equivocado, o pasado por el equivocado).
+  local app_dir; app_dir="$(make_sandbox 0)"
+  printf '#!/bin/sh\nexit 1\n' > "$app_dir/releases/$OLD_SHA/backend/.venv/bin/python"
+  chown "$SVC_USER:$SVC_USER" "$app_dir/releases/$OLD_SHA/backend/.venv/bin/python"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local rc=0
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tprc6.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 0 ] && [ "$after" = "$app_dir/releases/$NEW_SHA" ]
+}
+
+test_activate_rechaza_release_destino_con_esquema_insuficiente_sin_tocar_current() {
+  # Release destino con migraciones sin aplicar (su --check falla); 'current' (OLD) estaría "sano": la guarda debe frenar igual.
+  local app_dir; app_dir="$(make_sandbox 1)"
+  write_legit_units "$app_dir"
+  reset_systemctl_mock 0
+  local before rc=0
+  before="$(readlink "$app_dir/current")"
+  run_as_op "$app_dir" "$ACTIVATE_PRELUDE"'phase_activate "'"$NEW_SHA"'"' >/tmp/tprc7.out 2>&1 || rc=$?
+  local after; after="$(readlink "$app_dir/current")"
+  local syscalls=0; [ -s "$MOCK_SYSTEMCTL_LOG" ] && syscalls=1
+  remove_units; rm -rf "$app_dir"
+  [ "$rc" -eq 1 ] && [ "$before" = "$after" ] && [ "$syscalls" -eq 0 ] && grep -q "check-release" /tmp/tprc7.out
+}
+
 t() { local name="$1" fn="$2"; local rc=0; "$fn" || rc=$?; report "$name" "$rc"; }
 
 t "1  assert_unit_is_ours: unidad legítima root:root 600 -> aceptada"         test_unidad_legitima_600_root
@@ -1177,6 +1312,14 @@ t "42 prevalidación fallida libera el candado para el siguiente intento"    tes
 t "43 candado se recicla entre ejecuciones independientes consecutivas"      test_candado_se_recicla_correctamente_entre_ejecuciones_independientes_consecutivas
 t "44 archivo de candado vive en SCRIPT_DIR, nunca en APP_DIR"               test_archivo_de_candado_vive_en_script_dir_no_en_app_dir
 t "45 rollback_systemd no toca el candado compartido"                       test_rollback_systemd_no_toca_el_candado
+
+t "46 migrate-release: corre como el usuario de servicio, desde el release, con su venv; current intacto" test_migrate_release_corre_como_servicio_desde_el_release_con_su_venv
+t "47 migrate-release: sin CONFIRM o sin AUTHORIZED_COMMIT exacto -> no ejecuta nada"       test_migrate_release_sin_confirmacion_o_autorizacion_no_ejecuta_nada
+t "48 migrate-release: historial divergente -> se detiene sin aplicar"                      test_migrate_release_historial_divergente_se_detiene_sin_aplicar
+t "49 migrate-release: fallo al aplicar -> no verifica, no activa, current intacto"         test_migrate_release_fallo_al_aplicar_no_activa_ni_verifica
+t "50 check-release: solo lectura (--status), sin CONFIRM"                                  test_check_release_es_de_solo_lectura_y_no_pide_confirmacion
+t "51 activate comprueba el release DESTINO (no current)"                                   test_activate_comprueba_el_release_destino_no_current
+t "52 activate rechaza un destino con esquema insuficiente sin tocar current"               test_activate_rechaza_release_destino_con_esquema_insuficiente_sin_tocar_current
 
 echo
 echo "Resumen: $PASS PASS, $FAILED FAIL."
