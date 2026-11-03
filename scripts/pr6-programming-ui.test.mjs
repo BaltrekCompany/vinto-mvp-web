@@ -153,8 +153,8 @@ test("roles: Supervisión and Operación get a read-only programme; only manager
   assert.ok(operator.includes("Solo lectura") && !operator.includes("Activar") && !operator.includes("data-order-draft"));
 });
 
-test("there is NO mass activation in this stage", () => {
-  const text = html(props({ canManageAssignments: true, canManageOrders: true, capabilities: { multiMachine: true }, workOrders: ready([order("published", MULTI_LINES)]) }));
+test("without the server's confirmation there is NO mass activation, only the individual buttons (PR7 adds the mass button only with multi_machine: true)", () => {
+  const text = html(props({ canManageAssignments: true, canManageOrders: true, workOrders: ready([order("published", MULTI_LINES)]) }));
   assert.ok(!/activar (todas|todo)|activaci[oó]n masiva|activate-all/i.test(text));
   assert.equal(count(text, ">Activar<"), 3, "only the individual per-line button");
 });

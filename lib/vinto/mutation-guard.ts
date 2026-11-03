@@ -29,12 +29,13 @@ export function createMutationGuard() {
     };
 }
 
-export type GuardedResult<T> = { ok: true; data: T } | { ok: false; kind: string };
+export type GuardedFailure = { ok: false; kind: string; status?: number; code?: string };
+export type GuardedResult<T> = { ok: true; data: T } | GuardedFailure;
 export type GuardedHandlers<T> = {
     onStart: () => void; // la escritura salió (p. ej. marcar «ocupado»)
     onOk: (data: T) => void; // respuesta vigente y correcta
     onSession: () => void; // 401: se vuelve al inicio de sesión
-    onFailure: (kind: string) => void; // cualquier otro fallo: el borrador NO se descarta
+    onFailure: (kind: string, failure: GuardedFailure) => void; // cualquier otro fallo (con su código estable del backend, si lo hay): el borrador NO se descarta
     onSettled: () => void; // fin de una escritura VIGENTE (no se llama para una respuesta tardía)
 };
 export type GuardedOutcome = "skipped" | "stale" | "ok" | "session" | "failure";
@@ -49,11 +50,11 @@ export async function runGuarded<T>(guard: ReturnType<typeof createMutationGuard
         if (!guard.isCurrent(token)) return "stale";
         if (result.ok) { handlers.onOk(result.data); return "ok"; }
         if (result.kind === "session") { handlers.onSession(); return "session"; }
-        handlers.onFailure(result.kind);
+        handlers.onFailure(result.kind, result);
         return "failure";
     } catch {
         if (!guard.isCurrent(token)) return "stale";
-        handlers.onFailure("unavailable");
+        handlers.onFailure("unavailable", { ok: false, kind: "unavailable" });
         return "failure";
     } finally {
         guard.end(token);

@@ -39,3 +39,9 @@ export function capabilitiesOf(view: CapabilityView): { capabilities: WorkOrderC
     if (view.status === "ready") return { capabilities: view.data.multiMachine === true ? view.data : NO_CAPABILITIES, status: "ready" };
     return { capabilities: NO_CAPABILITIES, status: view.status };
 }
+
+// MF-13-03B PR7: el botón «Activar todas las líneas» exige la confirmación del servidor (`multi_machine: true`), el permiso de ACTIVAR (`assignment.manage`; crear OT sigue siendo
+// `work_order.manage`) y una OT publicada o en ejecución. Cualquier otra cosa lo deshabilita. Es solo presentación: el backend vuelve a verificarlo todo.
+export function massActivationOffered(capabilities: WorkOrderCapabilities, canManageAssignments: boolean, orderStatus: string): boolean {
+    return capabilities.multiMachine === true && canManageAssignments === true && (orderStatus === "published" || orderStatus === "in_progress");
+}

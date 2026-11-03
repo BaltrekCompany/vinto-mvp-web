@@ -142,12 +142,12 @@ test("the capability belongs to the session: keys differ per user, and a stored 
   assert.equal(deriveView(workOrderCapabilitiesKey(a), false, 0, storedByA).status, "idle");
 });
 
-test("the hook asks only when the session may manage orders, scopes the key by session and reports 401 as a lost session", () => {
+test("the hook asks only when the session may manage orders or activate them, scopes the key by session and reports 401 as a lost session", () => {
   const hooks = noComments(read("lib/vinto/use-central.ts"));
   assert.match(hooks, /useWorkOrderCapabilities = \(enabled: boolean, onUnauthorized: \(\) => void, scope: string\) =>/);
   assert.match(hooks, /useResource<WorkOrderCapabilities>\(workOrderCapabilitiesKey\(scope\), enabled, \(signal\) => getWorkOrderCapabilities\(signal\), onUnauthorized, true\)/);
   const wrapper = noComments(read("components/vinto/bobinas-programming-source.tsx"));
-  assert.match(wrapper, /useWorkOrderCapabilities\(rest\.canManageOrders, rest\.onSessionLost, scope\)/, "enabled only for work_order.manage; 401 goes to the session handler");
+  assert.match(wrapper, /useWorkOrderCapabilities\(rest\.canManageOrders \|\| rest\.canManageAssignments, rest\.onSessionLost, scope\)/, "enabled for work_order.manage (create) or assignment.manage (PR7 mass activation); 401 goes to the session handler");
   assert.match(wrapper, /capabilitiesOf\(/);
   assert.ok(!/NEXT_PUBLIC|localStorage|sessionStorage|process\.env/.test(wrapper + hooks + noComments(read("lib/vinto/work-order-capabilities.ts"))));
   const page = noComments(read("app/page.tsx"));

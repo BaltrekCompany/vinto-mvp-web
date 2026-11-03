@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ActivateAllDialog } from "@/components/vinto/activate-all-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CentralStatus } from "@/components/vinto/central-status";
@@ -15,7 +16,7 @@ import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
 import type { Resource } from "@/lib/vinto/use-central";
-import { NO_CAPABILITIES, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
+import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { addWorkOrderLine, createWorkOrderWithLines, publishWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
@@ -30,6 +31,8 @@ type Props = {
     creation?: Creation; // máquinas y productos que el BACKEND ofrece a la sesión para crear (puede incluir varios sectores autorizados)
     capabilities?: WorkOrderCapabilities; // lo que el SERVIDOR confirmó; por defecto la creación multimáquina está apagada
     capabilityStatus?: CapabilityStatus; // estado de esa consulta: solo cambia el aviso; nunca habilita nada
+    scope?: string; // sessionScope(user): el diálogo de activación masiva y su plan pertenecen a ESTA sesión
+    onCapabilitiesStale?: () => void; // el servidor respondió MULTI_MACHINE_DISABLED: volver a pedir las capacidades
     initialRows?: DraftRow[]; // solo para renderizar un borrador conocido (pruebas)
     sectorLabel?: string;
     workOrders: Resource<WorkOrder[]>;
@@ -50,7 +53,7 @@ const machinesOf = (order: WorkOrder) => [...new Set(order.baseline.lines.map(li
 
 // Programación de OT contra las APIs centrales. Sin estado local de OT/asignaciones persistidas, sin optimismo: cada mutación espera la respuesta del backend (que es la autoridad de número,
 // line_code, estado y fechas) y después se reconcilia con GET. El ÚNICO estado local es el borrador de una OT nueva (filas aún no enviadas) y el de «añadir línea» de un borrador.
-export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, capabilityStatus = "ready", initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
+export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, capabilityStatus = "ready", scope = "", onCapabilitiesStale, initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
     const options = creation === undefined ? { machines: machines.map(code => ({ code, name: code })), catalog: catalogOfMachine } : creation;
     const optionMachines = typeof options === "string" ? [] : options.machines;
     const optionCatalog = typeof options === "string" ? () => [] : options.catalog;
@@ -62,6 +65,10 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     const [errors, setErrors] = useState<RowError[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [confirming, setConfirming] = useState<WorkOrder | null>(null);
+    // Activación masiva (PR7): el diálogo guarda el plan (y su hash) solo en memoria, ligado a la sesión y a la OT. `blockedBy` recuerda la respuesta de capacidades que el servidor desmintió con
+    // MULTI_MACHINE_DISABLED: se vuelve a habilitar únicamente si una nueva consulta al servidor confirma `true` (objeto distinto).
+    const [massOrder, setMassOrder] = useState<{ scope: string; id: string; number: string } | null>(null);
+    const [blockedBy, setBlockedBy] = useState<WorkOrderCapabilities | null>(null);
     const [guard] = useState(createMutationGuard);
     useEffect(() => () => guard.reset(), [guard]); // al desmontar (o perder la sesión) las respuestas tardías se descartan
 
@@ -124,11 +131,13 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
         {orders.map(order => {
             const orderMachines = machinesOf(order);
-            return <div key={order.id} data-work-order={order.number} className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}</div></div>
+            return <div key={order.id} data-work-order={order.number} className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={() => setMassOrder({ scope, id: order.id, number: order.number })}>Activar todas las líneas</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}</div></div>
                 <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Activando…" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
                 {canManageOrders && order.status === "draft" && typeof options !== "string" && <AddLine order={order} options={options} multi={multi} disabled={locked} busy={busy === `add:${order.id}`} nextKey={nextKey} onAdd={draft => addLine(order, draft)}/>}
             </div>;
         })}
+        {massOrder && massOrder.scope === scope && <ActivateAllDialog key={`${massOrder.scope}:${massOrder.id}`} orderId={massOrder.id} orderNumber={massOrder.number} onClose={() => setMassOrder(null)} onSessionLost={onSessionLost} onApplied={onChanged}
+            onDisabled={() => { setBlockedBy(capabilities); onCapabilitiesStale?.(); }}/>}
         <AlertDialog open={confirming !== null} onOpenChange={open => { if (!open) setConfirming(null); }}>
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Publicar la línea base de {confirming?.number}</AlertDialogTitle>
                 <AlertDialogDescription>{confirming ? `La OT tiene ${confirming.baseline.lines.length} línea(s) en ${machinesOf(confirming).length} máquina(s): ${machinesOf(confirming).join(", ")}. ` : ""}Una vez publicada, la línea base es inmutable: no se podrán modificar ni retirar sus líneas. Supervisión operará una copia.</AlertDialogDescription></AlertDialogHeader>

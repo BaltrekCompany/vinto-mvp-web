@@ -1,0 +1,7 @@
+{
+ "http_status": 409,
+ "body": {
+  "detail": "La activaci\u00f3n masiva tiene bloqueos; no se activ\u00f3 ninguna l\u00ednea",
+  "code": "ACTIVATION_BLOCKED"
+ }
+}
