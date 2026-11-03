@@ -207,7 +207,7 @@ class IsolationTests(MultiMachineApiCase):
     async def test_operation_quality_and_data_never_see_multi_machine_orders(self):
         for user in ("OPERACION", "CALIDAD", "DATA_BALTREK"):
             ids = await self.ids(user)
-            self.assertIn(self.single["id"], ids, user)
+            self.assertNotIn(self.single["id"], ids, user)  # PR5: con la compuerta encendida el filtro por máquina está activo y estos usuarios no tienen concesiones
             self.assertFalse({self.cross["id"], self.same_sector["id"]} & ids, user)
             for hidden in (self.cross, self.same_sector):
                 reply = await self.get(f"/api/work-orders/{hidden['id']}", user)

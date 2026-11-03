@@ -322,6 +322,15 @@ def _header_params(sectors, multi_machine_visible) -> list:
     return [codes, codes, bool(multi_machine_visible)]
 
 
+def _machine_filter(machine_codes):
+    """PR5: con un conjunto de máquinas autorizadas una OT solo es visible si TODAS sus máquinas (cabecera y líneas) están en él: nunca una OT parcial."""
+    if machine_codes is None:
+        return "", []
+    codes = sorted(machine_codes)
+    return (" AND m.code = ANY(%s) AND NOT EXISTS (SELECT 1 FROM vinto_txn.work_order_line x JOIN vinto_master.machine xm ON xm.id = x.machine_id "
+            "WHERE x.work_order_version_id = v.id AND NOT (xm.code = ANY(%s)))"), [codes, codes]
+
+
 def _hydrate(connection, headers) -> list[WorkOrderView]:
     version_ids = [row[5] for row in headers]
     lines: dict = {version_id: [] for version_id in version_ids}
@@ -341,21 +350,24 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
             for wo_id, number, status, machine_code, machine_name, version_id, version_number, published_at in headers]
 
 
-def get_work_order(connection, work_order_id, *, sectors, multi_machine_visible=False) -> WorkOrderView:
-    """Detalle (solo la baseline). OT inexistente, fuera del alcance o multimáquina sin visibilidad: WorkOrderNotFoundError."""
+def get_work_order(connection, work_order_id, *, sectors, multi_machine_visible=False, machine_codes=None) -> WorkOrderView:
+    """Detalle (solo la baseline). OT inexistente, fuera del alcance, multimáquina sin visibilidad o con alguna máquina no autorizada (`machine_codes`): WorkOrderNotFoundError."""
     work_order_id = _as_uuid(work_order_id)
-    headers = connection.execute(_HEADER_SQL + " AND wo.id = %s", (*_header_params(sectors, multi_machine_visible), work_order_id)).fetchall()
+    extra_sql, extra_params = _machine_filter(machine_codes)
+    headers = connection.execute(_HEADER_SQL + extra_sql + " AND wo.id = %s", (*_header_params(sectors, multi_machine_visible), *extra_params, work_order_id)).fetchall()
     if not headers:
         raise WorkOrderNotFoundError()
     return _hydrate(connection, headers)[0]
 
 
-def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors, multi_machine_visible=False) -> list[WorkOrderView]:
+def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors, multi_machine_visible=False, machine_codes=None) -> list[WorkOrderView]:
     """Más recientes primero (created_at y número descendentes, orden estable). Filtros opcionales: máquina (de cabecera o de alguna línea) y estado."""
     if status is not None and status not in STATUSES:
         raise InvalidWorkOrderLineError(f"status debe ser uno de {', '.join(STATUSES)}")
     limit = max(1, min(int(limit), MAX_LIST_LIMIT))
     sql, params = _HEADER_SQL, _header_params(sectors, multi_machine_visible)
+    extra_sql, extra_params = _machine_filter(machine_codes)
+    sql, params = sql + extra_sql, params + extra_params
     if machine_code is not None:
         sql += """ AND (m.code = %s OR EXISTS (SELECT 1 FROM vinto_txn.work_order_line mine JOIN vinto_master.machine mine_machine ON mine_machine.id = mine.machine_id
                                                WHERE mine.work_order_version_id = v.id AND mine_machine.code = %s))"""

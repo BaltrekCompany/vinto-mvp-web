@@ -12,6 +12,7 @@ from app import capture_service
 from app.auth.dependencies import require_permission
 from app.auth.permissions import CATALOG_READ, PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
+from app.authz import visibility
 from app.authz.capture_gate import gate_for
 from app.capture_schemas import CaptureIn, CaptureOut, CaptureResultOut, capture_out, result_out
 from app.config import settings
@@ -96,9 +97,11 @@ def list_captures(assignment_id: UUID | None = None, machine_code: str | None = 
                   limit: int = Query(default=capture_service.DEFAULT_LIST_LIMIT, ge=1, le=capture_service.MAX_LIST_LIMIT),
                   user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
     return [capture_out(v) for v in capture_service.list_captures(connection, assignment_id=assignment_id, machine_code=machine_code,
-                                                                   operating_date=operating_date, limit=limit, form_code=form_code, sectors=user.sectors)]
+                                                                   operating_date=operating_date, limit=limit, form_code=form_code, sectors=user.sectors,
+                                                                   machine_codes=visibility.legacy_scope(connection, user, "captures.list"))]
 
 
 @router.get("/{capture_id}", response_model=CaptureOut, responses=_CAPTURE_ERRORS)
 def get_capture(capture_id: str, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)), connection=Depends(get_connection)):
-    return capture_out(capture_service.get_capture(connection, capture_id, sectors=user.sectors))
+    return capture_out(capture_service.get_capture(connection, capture_id, sectors=user.sectors,
+                                                   machine_codes=visibility.legacy_scope(connection, user, "captures.detail")))

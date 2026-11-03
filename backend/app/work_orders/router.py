@@ -10,6 +10,7 @@ from app.assignments.schemas import ActivateAllIn, ActivateAllOut, activate_all_
 from app.auth.dependencies import require_permission
 from app.auth.permissions import ASSIGNMENT_MANAGE, WORK_ORDER_MANAGE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
+from app.authz import visibility
 from app.database import get_connection
 from app.work_orders import service
 from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
@@ -47,14 +48,16 @@ def list_work_orders(machine_code: str | None = Query(default=None, max_length=6
                      status: Literal["draft", "published", "in_progress", "closed"] | None = None,
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
                      user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)), connection=Depends(get_connection)):
+    scope = visibility.legacy_scope(connection, user, "work_orders.list")
     return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors,
-                                                                       multi_machine_visible=_manages(user))]
+                                                                       multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope)]
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
 def get_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
                    connection=Depends(get_connection)):
-    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors, multi_machine_visible=_manages(user)))
+    scope = visibility.legacy_scope(connection, user, "work_orders.detail")
+    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors, multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope))
 
 
 @router.post("/{work_order_id}/lines", status_code=201, response_model=WorkOrderOut, responses=_ERRORS)
