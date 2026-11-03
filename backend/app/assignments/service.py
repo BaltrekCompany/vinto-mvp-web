@@ -287,6 +287,8 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     """Activa un destino ya validado. Exige la OT bloqueada; toma el lock de la máquina (re-entrante si el llamador ya lo tiene)."""
     multi = _multi_machine_enabled()
     _lock_machines(connection, [target.machine_id])
+    # Declares the mode to trigger 0012 (the database cannot see the gate): anything but 'on' is single-assignment mode there.
+    connection.execute("SELECT set_config('vinto.assignment_multi_line', %s, true)", ("on" if multi else "off",))
     operational_version_id = _ensure_operational(connection, work_order_id, target.baseline_version_id)
     operational_line = connection.execute(
         "SELECT id, machine_id FROM vinto_txn.work_order_line WHERE work_order_version_id = %s AND line_code = %s", (operational_version_id, target.line_code)).fetchone()

@@ -53,6 +53,7 @@ PINNED_MIGRATIONS = [
     ("0009_user_machine_form_grant_revocation_actor.sql", "eb0d95824949b4ad2bba0e65768d39ccefba70e3d8baf55fdc7a90f18fdc5afd"),  # MF-13-01B.4: a revocation must carry the session actor (guard function body only)
     ("0010_work_order_line_machine.sql", "87373de2652f5dbf9b2c406e6a3982bd6130afc04dc0034862c407084d5da601"),  # MF-13-03B PR1: machine per work order line (expand step, backfill, coherence trigger)
     ("0011_assignment_same_work_order_lines.sql", "8e1e34fafbefe4bfad9caec9773ba020d595c2137359e214bfd5c5c99ceb07c6"),  # MF-13-03B PR3: several active lines of one work order per machine (index -> trigger)
+    ("0012_assignment_single_mode_guard.sql", "59ae36295c8a4ae7948e985b88a514ce03b415a015ca8ddd7f08cd3b09673977"),  # MF-13-03B: single-assignment guard while the multi-line mode is not declared (trigger only)
 ]
 
 
