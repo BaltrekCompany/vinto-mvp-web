@@ -13,6 +13,8 @@ Solo frontend. Consume los contratos de PR2 (`machine_code` por línea, `machine
 ## Disponibilidad: la interfaz no tiene compuerta propia
 La creación multimáquina solo se ofrece si **el servidor lo confirma** (`WorkOrderCapabilities.multiMachine`, `lib/vinto/work-order-capabilities.ts`), hay permiso de gestión y hay más de una máquina elegible. Hoy **no existe un contrato para consultarlo**, así que la aplicación pasa `NO_CAPABILITIES` y la creación queda en el flujo tradicional. No se usa `NEXT_PUBLIC_*` (se compila en el navegador y no garantiza lo que el servidor autoriza) y **ningún error enciende nada** (un 422 `MULTI_MACHINE_DISABLED` es solo un error; probado). Lo ausente o mal formado es «apagado»; solo `{"multi_machine": true}` estricto enciende.
 
+> **Actualización (PR6.1):** el endpoint propuesto ya está implementado y conectado; ver `docs/MF-13-03B-PR6-1-capacidades-ot.md`.
+
 ### Endpoint de capacidades propuesto (para revisión; NO implementado aquí)
 `GET /api/work-orders/capabilities` — autenticado, solo lectura, alcance mínimo:
 - Permiso: cualquier sesión válida con `work_order.read` (o `assignment.read`); 401/403 como el resto.

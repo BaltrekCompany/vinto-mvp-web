@@ -3,14 +3,16 @@
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 
 from app.assignments import service as assignments_service
 from app.assignments.schemas import ActivateAllIn, ActivateAllOut, activate_all_out
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import FORBIDDEN, require_permission
 from app.auth.permissions import ASSIGNMENT_MANAGE, WORK_ORDER_MANAGE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
 from app.authz import visibility
+from app.config import settings
 from app.database import get_connection
 from app.work_orders import service
 from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
@@ -29,6 +31,19 @@ _ERRORS = {
 def _manages(user: AuthenticatedUser) -> bool:
     """Una OT con líneas en varias máquinas solo la leen quienes la gestionan (Jefatura) o la activan (Supervisión), hasta que PR5 filtre por máquina."""
     return user.can(WORK_ORDER_MANAGE) or user.can(ASSIGNMENT_MANAGE)
+
+
+class CapabilitiesOut(BaseModel):
+    """Lo ÚNICO que se publica: si el servidor acepta OT con líneas en varias máquinas. Sin otros ajustes, versiones ni datos de OT."""
+
+    multi_machine: bool
+
+
+def capabilities_reader(user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ))) -> AuthenticatedUser:
+    """Mínimo apropiado: quien GESTIONA OT (Jefatura) o las activa (Supervisión). Operación, Calidad y DATA_BALTREK no necesitan esta consulta: 403."""
+    if not _manages(user):
+        raise HTTPException(status_code=403, detail=FORBIDDEN)
+    return user
 
 
 def _request_id() -> str:
@@ -51,6 +66,15 @@ def list_work_orders(machine_code: str | None = Query(default=None, max_length=6
     scope = visibility.legacy_scope(connection, user, "work_orders.list")
     return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors,
                                                                        multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope)]
+
+
+# DEBE ir antes de `/{work_order_id}`: de lo contrario «capabilities» se interpretaría como el identificador de una OT.
+@router.get("/capabilities", response_model=CapabilitiesOut, responses={401: _ERRORS[401], 403: _ERRORS[403]})
+def capabilities(response: Response, user: AuthenticatedUser = Depends(capabilities_reader)):
+    """Capacidades de OT que el SERVIDOR confirma a la sesión (solo lectura). `multi_machine` refleja la compuerta de servidor WORK_ORDERS_MULTI_MACHINE_ENABLED
+    (apagada por defecto); el cliente no puede cambiarla con query, cabeceras ni cuerpo, y no es una autorización: el POST de creación vuelve a validarlo todo."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return CapabilitiesOut(multi_machine=settings.work_orders_multi_machine_enabled is True)
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)

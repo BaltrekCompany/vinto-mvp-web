@@ -3,7 +3,8 @@
 import type { ComponentProps } from "react";
 import { BobbinasProgramming, type Creation } from "@/components/vinto/bobinas-programming";
 import { BOBINAS_SECTOR, articlesOf, sectorOf } from "@/lib/vinto/availability";
-import { useAvailability } from "@/lib/vinto/use-central";
+import { useAvailability, useWorkOrderCapabilities } from "@/lib/vinto/use-central";
+import { capabilitiesOf } from "@/lib/vinto/work-order-capabilities";
 
 type Props = Omit<ComponentProps<typeof BobbinasProgramming>, "catalog" | "creation"> & { scope: string };
 
@@ -12,6 +13,8 @@ type Props = Omit<ComponentProps<typeof BobbinasProgramming>, "catalog" | "creat
 // del servidor la creación no se ofrece (las OT existentes siguen visibles). `machines` solo decide qué OT se listan en este frente.
 export function BobbinasProgrammingSource({ scope, ...rest }: Props) {
     const availability = useAvailability(true, rest.canManageOrders, rest.onSessionLost, scope);
+    // Solo quien gestiona OT necesita saber si el servidor admite líneas en varias máquinas. loading/error/401/403/404/5xx/JSON inválido = apagado (flujo tradicional).
+    const capability = capabilitiesOf(useWorkOrderCapabilities(rest.canManageOrders, rest.onSessionLost, scope).view);
     let creation: Creation | undefined;
     if (rest.canManageOrders) {
         const view = availability.view;
@@ -22,5 +25,5 @@ export function BobbinasProgrammingSource({ scope, ...rest }: Props) {
         else creation = { machines: sector.machines.map(m => ({ code: m.code, name: m.name })), catalog: code => articlesOf(sector.machines.find(m => m.code === code)).map(a => ({ code: a.code, name: a.description })) };
     }
     // `key`: al llegar el catálogo el panel se monta de nuevo para que la primera fila tome la primera máquina ofrecida (el estado inicial del borrador se fija al montar).
-    return <BobbinasProgramming key={typeof creation === "object" ? "catalog" : "wait"} {...rest} creation={creation}/>;
+    return <BobbinasProgramming key={typeof creation === "object" ? "catalog" : "wait"} {...rest} creation={creation} capabilities={capability.capabilities} capabilityStatus={capability.status}/>;
 }
