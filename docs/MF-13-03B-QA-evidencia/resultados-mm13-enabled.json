@@ -1,0 +1,299 @@
+{
+  "runId": "20261103T174224Z-818f5d15",
+  "commit": "e1937772579bd83d19ea53836d5defcdfc24dea5",
+  "database": "vinto_mmqa_220a671036b9_test",
+  "phase": "enabled",
+  "total": 48,
+  "pass": 46,
+  "fail": 2,
+  "results": [
+    {
+      "name": "S0 [enabled] la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de MM-13-QA",
+      "ok": true,
+      "kind": "sql",
+      "detail": "vinto_mmqa_220a671036b9_test"
+    },
+    {
+      "name": "S0a [enabled] la corrida está identificada: el contenedor de PostgreSQL lleva la etiqueta de esta corrida y publica solo 127.0.0.1:55441",
+      "ok": true,
+      "kind": "static",
+      "detail": "20261103T174224Z-818f5d15"
+    },
+    {
+      "name": "S0b [enabled] la API real responde (200)",
+      "ok": true,
+      "kind": "http",
+      "detail": "200"
+    },
+    {
+      "name": "S1 la API real responde con sesión y la base efímera parte sin OT, asignaciones ni capturas",
+      "ok": true,
+      "kind": "http",
+      "detail": ""
+    },
+    {
+      "name": "S2 el servidor informa multi_machine=true (compuerta encendida solo en el proceso de prueba)",
+      "ok": true,
+      "kind": "http",
+      "detail": "{\"multi_machine\":true}"
+    },
+    {
+      "name": "A0 Jefatura crea y publica una OT con 3 líneas en 2 máquinas (MP1 y MP3)",
+      "ok": true,
+      "kind": "http",
+      "detail": "OT-2026-0001"
+    },
+    {
+      "name": "A1 Supervisión ve «Activar todas las líneas» en la OT publicada (compuerta encendida, permiso assignment.manage)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "A2 la vista previa es UNA solicitud de solo lectura con el cuerpo exacto {\"dry_run\":true}",
+      "ok": true,
+      "kind": "browser",
+      "detail": "{\"dry_run\":true}"
+    },
+    {
+      "name": "A3 PostgreSQL: la vista previa NO creó ninguna asignación",
+      "ok": true,
+      "kind": "sql",
+      "detail": ""
+    },
+    {
+      "name": "A4 el diálogo muestra OT, líneas, máquinas (MP1 y MP3), producto y PV resueltos por el servidor",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "A5 teclado: el foco inicial del diálogo NO cae sobre «Confirmar»",
+      "ok": true,
+      "kind": "browser",
+      "detail": "Cerrar"
+    },
+    {
+      "name": "A6 Escape cierra el diálogo (no hay confirmación en vuelo)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "A6b accesibilidad: al cerrar el diálogo el foco vuelve al botón «Activar todas las líneas» que lo abrió",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco en: VINTO\n\nPRODUCCIÓN DIGITAL\n\nSupervision (prueba E2E)\nSupervisión\nEn línea\n\nFRONT OPERATIVO\n\nBobinas\n\nMÓDULOS\n\nProgramación\nEjecución\nSeguimiento\n\nPerfil\n\nSupervisión\n\nSin Monday Producción. Expertus queda como integración futura.\n\nMVP To-Be actualizado\nBobinas · Programacion\n\nPV → OT multiproducto → línea base → gestión operativa → ejecución → calidad → seguimiento.\n\nPrograma base\n\nTu perfil puede consultar las OT; su creación y publicación corresponden a Jefatura.\n\nSolo lectura.\n\nOT-2026-0001 · MP1\n\nBase v1 · 3 producto(s) · 3 PV · máquina(s): MP1, MP3\n\nMáquina principal de la OT: MP1\n\nPublicada\nActivar todas las líneas\nLínea\tMáquina\tPV\tProducto\tCantidad\tEntrega\tGestión\nL1\tMP1\tPV-1\tM1-1024\nM1-BOBINA PH G-22 CR-25% R-540640\t10 KG\t2026-12-01\tActivar\nL2\tMP1\tPV-2\tM1-1029\nM1-BOBINA PH G-19 CR-22% R-540640\t20 KG\t2026-12-01\tActivar\nL3\tMP3\tPV-3\tM3-3004\nM3-BOBINA PH G-18 CR-15% R-9010\t30 KG\t2026-12-01\tActivar"
+    },
+    {
+      "name": "A7 PostgreSQL: cerrar con Escape no escribió nada",
+      "ok": true,
+      "kind": "sql",
+      "detail": ""
+    },
+    {
+      "name": "A8 reabrir pide una vista previa NUEVA (el plan anterior no se reutiliza)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "A9 doble clic sobre «Confirmar activación»",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "A10 el doble clic envía UNA sola confirmación con el plan_hash del servidor (64 hex)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "{\"dry_run\":false,\"plan_hash\":\"c55e796efaaab72b8a7417b9355372510438c32d3e808f9d73dca040b9b8ad88\"}"
+    },
+    {
+      "name": "A11 PostgreSQL: 3 asignaciones activas (L1, L2 en MP1 y L3 en MP3) creadas por esa única operación",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L1,L2 / L3"
+    },
+    {
+      "name": "A12 la pantalla no registra excepciones ni errores de consola durante el recorrido",
+      "ok": true,
+      "kind": "browser",
+      "detail": "[]"
+    },
+    {
+      "name": "M1 móvil: aparece el selector con las 2 líneas activas de MP1 y ninguna marcada",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "M2 móvil: sin desplazamiento horizontal de la página (390 px)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "0"
+    },
+    {
+      "name": "M3 móvil: cada opción mide al menos 44 px de alto (objetivo táctil)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B1 la lectura histórica /active responde 409 y SOLO entonces se pide /active-lines (200)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "/assignments/active?machine_code=MP1→409 | /assignments/active-lines?machine_code=MP1→200"
+    },
+    {
+      "name": "B2 el selector lista L1 y L2 con OT, producto y PV, y NINGUNA línea está preseleccionada",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B3 sin elegir línea, F3 NO se abre (no hay contexto de captura)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B4 teclado: la opción enfocada se elige con la barra espaciadora",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B5 la línea elegida (L1) muestra su contexto de captura",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B6 se registra producción F3 sobre L1",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B7 cambio de línea: se elige L2 y se registra otra captura",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B8 PostgreSQL: cada captura quedó asociada a SU asignación (1 en L1 y 1 en L2)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L1|1,L2|1"
+    },
+    {
+      "name": "B9 los POST de captura envían el assignment_id elegido (L1 y luego L2), no el de otra línea",
+      "ok": true,
+      "kind": "browser",
+      "detail": "84cba1cd , ce4b2d15"
+    },
+    {
+      "name": "B10 Supervisión finaliza L1 (API) mientras Operación está en pantalla",
+      "ok": true,
+      "kind": "http",
+      "detail": "200"
+    },
+    {
+      "name": "B11 tras actualizar, Operación pierde el contexto de L1: ya no hay selector y el contexto es el de la única línea activa (L2)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "Bobina 2 registrada · gramaje 19 · Calidad pendiente Bobina 1 registrada · gramaje 22 · Calidad pendiente Hay varias líneas activas en esta máquina: elige la línea que vas a capturar. VINTO PRODUCCIÓN"
+    },
+    {
+      "name": "B12 PostgreSQL: el histórico de L1 se conserva (1 captura, asignación finalizada)",
+      "ok": true,
+      "kind": "sql",
+      "detail": ""
+    },
+    {
+      "name": "B13 sin red: se muestra el estado de error con «Reintentar» y ninguna línea ajena",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B14 al volver la red, «Reintentar» recupera el contexto real de MP3 (L3)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "B15 el navegador no guarda la selección ni capturas en almacenamiento local",
+      "ok": true,
+      "kind": "browser",
+      "detail": "vinto-device-key"
+    },
+    {
+      "name": "B16 sin excepciones de página durante el recorrido de Operación",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "C1 un operador SIN concesión (compuerta encendida) no recibe ningún frente: «Sin accesos asignados», sin selector ni líneas",
+      "ok": true,
+      "kind": "browser",
+      "detail": "VINTO PRODUCCIÓN DIGITAL Operacion Sin Concesion (prueba E2E) Operación Accesos Sin accesos asignados Tu usuario no tiene frentes ni formularios habilitados en este momento. Solicítalos a Administraci"
+    },
+    {
+      "name": "C2 sin concesión no puede abrir un formulario de captura (no se envía ningún POST de captura)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "D1 Supervisión abre la vista previa de otra OT cuya máquina MP1 ya tiene líneas activas de otra OT",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "D2 el conflicto se informa («Finaliza esas asignaciones…») y «Confirmar activación» está deshabilitado",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "D3 no se envió ninguna confirmación y la OT original sigue intacta",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L2"
+    },
+    {
+      "name": "D4 móvil: Supervisión abre la vista previa con conflicto (390 px)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "D5 móvil: sin desplazamiento horizontal de la página y el diálogo cabe en la pantalla",
+      "ok": true,
+      "kind": "browser",
+      "detail": "0"
+    },
+    {
+      "name": "D6 accesibilidad (tema claro): el resumen y los encabezados del diálogo tienen contraste >= 4.5:1",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mínimo 17.06:1"
+    },
+    {
+      "name": "D7 accesibilidad (tema oscuro del sistema): el resumen y los encabezados del diálogo tienen contraste >= 4.5:1",
+      "ok": false,
+      "kind": "browser",
+      "detail": "mínimo 1.12:1"
+    },
+    {
+      "name": "Z1 sin sesiones activas de prueba tras los logouts (fase enabled)",
+      "ok": true,
+      "kind": "sql",
+      "detail": "activas 0"
+    }
+  ]
+}
