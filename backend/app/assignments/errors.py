@@ -23,5 +23,13 @@ class OperationalVersionError(AssignmentError):
     http_status, code, public_message = 409, "OPERATIONAL_VERSION_ERROR", "La versión operativa no es coherente con la línea base"
 
 
+class MachineBusyWithOtherWorkOrderError(AssignmentError):
+    http_status, code, public_message = 409, "MACHINE_ACTIVE_WITH_OTHER_WORK_ORDER", "La máquina tiene líneas activas de otra orden de trabajo"
+
+
+class MultipleActiveAssignmentsError(AssignmentError):
+    http_status, code, public_message = 409, "MULTIPLE_ACTIVE_ASSIGNMENTS", "La máquina tiene varias asignaciones activas; finalícelas explícitamente"
+
+
 class InvalidAssignmentFilterError(AssignmentError):
     http_status, code, public_message = 422, "INVALID_FILTER", "Filtro inválido"

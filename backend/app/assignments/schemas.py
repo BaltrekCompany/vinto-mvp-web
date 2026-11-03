@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_serializer
 
-from app.assignments.service import ActivationResult, ActiveAssignment, AssignmentView
+from app.assignments.service import ActivationResult, ActiveAssignment, ActiveLines, AssignmentView
 
 
 class ActivateIn(BaseModel):
@@ -73,8 +73,14 @@ class AssignmentOut(BaseModel):
 class ActivationOut(BaseModel):
     created: bool
     already_active: bool
-    finished_assignment_id: UUID | None
+    finished_assignment_id: UUID | None  # solo si se finalizó exactamente una; la lista completa va en finished_assignment_ids
+    finished_assignment_ids: list[UUID] = []
     assignment: AssignmentOut
+
+
+class ActiveItemOut(BaseModel):
+    assignment: AssignmentOut
+    stale: bool | None
 
 
 class CurrentShiftOut(BaseModel):
@@ -87,6 +93,13 @@ class ActiveOut(BaseModel):
     assignment: AssignmentOut | None
     current_shift: CurrentShiftOut | None
     stale: bool | None
+
+
+class ActiveLinesOut(BaseModel):
+    """Contrato multilínea: todas las asignaciones activas de la máquina; ninguna se elige por el cliente ni por el servidor."""
+
+    current_shift: CurrentShiftOut | None
+    assignments: list[ActiveItemOut]
 
 
 def assignment_out(view: AssignmentView) -> AssignmentOut:
@@ -104,11 +117,19 @@ def assignment_out(view: AssignmentView) -> AssignmentOut:
 
 def activation_out(result: ActivationResult) -> ActivationOut:
     return ActivationOut(created=result.created, already_active=result.already_active,
-                         finished_assignment_id=result.finished_assignment_id, assignment=assignment_out(result.assignment))
+                         finished_assignment_id=result.finished_assignment_id,
+                         finished_assignment_ids=list(result.finished_assignment_ids), assignment=assignment_out(result.assignment))
+
+
+def _current_shift(code, name, operating_date):
+    return None if code is None else CurrentShiftOut(code=code, name=name, operating_date=operating_date)
 
 
 def active_out(result: ActiveAssignment) -> ActiveOut:
-    shift = None
-    if result.current_shift_code is not None:
-        shift = CurrentShiftOut(code=result.current_shift_code, name=result.current_shift_name, operating_date=result.current_operating_date)
-    return ActiveOut(assignment=assignment_out(result.assignment) if result.assignment else None, current_shift=shift, stale=result.stale)
+    return ActiveOut(assignment=assignment_out(result.assignment) if result.assignment else None,
+                     current_shift=_current_shift(result.current_shift_code, result.current_shift_name, result.current_operating_date), stale=result.stale)
+
+
+def active_lines_out(result: ActiveLines) -> ActiveLinesOut:
+    return ActiveLinesOut(current_shift=_current_shift(result.current_shift_code, result.current_shift_name, result.current_operating_date),
+                          assignments=[ActiveItemOut(assignment=assignment_out(i.assignment), stale=i.stale) for i in result.items])

@@ -336,7 +336,7 @@ class ResponseHygieneTests(AssignmentApiCase):
         activation = (await self.activate(order, 0)).json()
         listing = (await call("GET", "/api/assignments", cookie=await self.cookie("CALIDAD"))).json()
         active = (await call("GET", "/api/assignments/active?machine_code=MP1", cookie=await self.cookie("CALIDAD"))).json()
-        self.assertEqual(sorted(activation), ["already_active", "assignment", "created", "finished_assignment_id"])
+        self.assertEqual(sorted(activation), ["already_active", "assignment", "created", "finished_assignment_id", "finished_assignment_ids"])
         for assignment in (activation["assignment"], listing[0], active["assignment"]):
             self.assertEqual(sorted(assignment), ["assigned_by", "created_at", "finished_at", "id", "line", "machine", "operating_date", "operational", "shift", "status", "work_order"])
             self.assertEqual(sorted(assignment["assigned_by"]), ["display_name", "id"])
