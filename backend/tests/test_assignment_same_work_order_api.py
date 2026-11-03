@@ -32,7 +32,7 @@ class SameOrderApiTests(base.AssignmentApiCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    async def active(self, path="/api/assignments/active?machine_code=MP1", profile="CALIDAD"):
+    async def active(self, path="/api/assignments/active?machine_code=MP1", profile="SUPERVISION"):
         return await call("GET", path, cookie=await self.cookie(profile))
 
     async def test_two_lines_of_one_order_are_active_and_activation_reports_no_ambiguous_replacement(self):
@@ -116,8 +116,9 @@ class SameOrderApiTests(base.AssignmentApiCase):
         for profile in ("JEFATURA", "OPERACION", "CALIDAD", "DATA_BALTREK"):
             self.assertEqual((await self.activate(order, 0, profile=profile)).status, 403, profile)
         await self.activate(order, 0)
-        for profile in base.PROFILES:
-            self.assertEqual((await self.active("/api/assignments/active-lines?machine_code=MP1", profile)).status, 200, profile)
+        for profile in base.PROFILES:  # PR5: gestores ven su sector; Operación, Calidad y DATA sin concesiones de máquina no (misma respuesta que fuera de alcance)
+            expected = 200 if profile in ("JEFATURA", "SUPERVISION") else 422
+            self.assertEqual((await self.active("/api/assignments/active-lines?machine_code=MP1", profile)).status, expected, profile)
 
 
 if __name__ == "__main__":

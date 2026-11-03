@@ -8,11 +8,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response
 
 from app.assignments import service
-from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveLinesOut, ActiveOut, AssignmentOut, activation_out,
-                                     active_lines_out, active_out, assignment_out)
+from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveLinesOut, ActiveOut, AssignmentOut, OperationalLinesOut,
+                                     activation_out, active_lines_out, active_out, assignment_out, operational_lines_out)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import ASSIGNMENT_MANAGE, ASSIGNMENT_READ
 from app.auth.service import AuthenticatedUser
+from app.authz import visibility
 from app.database import get_connection
 
 router = APIRouter(prefix="/api/assignments", tags=["Asignaciones"])
@@ -50,14 +51,23 @@ def active(machine_code: str = Query(max_length=64), user: AuthenticatedUser = D
            connection=Depends(get_connection)):
     """Asignación activa de la máquina (o null), turno actual y si la asignación quedó vencida (`stale`). Con 2+ activas: 409 MULTIPLE_ACTIVE_ASSIGNMENTS
     (usar /active-lines)."""
-    return active_out(service.get_active(connection, machine_code=machine_code, sectors=user.sectors))
+    return active_out(service.get_active(connection, machine_code=machine_code, sectors=user.sectors,
+                                         machine_codes=visibility.legacy_scope(connection, user, "assignments.active")))
 
 
 @router.get("/active-lines", response_model=ActiveLinesOut, responses=_ERRORS)
 def active_lines(machine_code: str = Query(max_length=64), user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
                  connection=Depends(get_connection)):
     """Todas las asignaciones activas de la máquina (varias líneas de una misma OT con la compuerta multimáquina), cada una con `stale`."""
-    return active_lines_out(service.get_active_lines(connection, machine_code=machine_code, sectors=user.sectors))
+    return active_lines_out(service.get_active_lines(connection, machine_code=machine_code, sectors=user.sectors,
+                                                     machine_codes=visibility.operational_scope(connection, user)))
+
+
+@router.get("/operational-lines", response_model=OperationalLinesOut, responses=_ERRORS)
+def operational_lines(user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)), connection=Depends(get_connection)):
+    """Contrato operativo: todas las líneas activas de las máquinas AUTORIZADAS del usuario (Operación/Calidad: las de sus concesiones; Jefatura/Supervisión:
+    las de su alcance por sector). Cada línea trae `assignment_id`, `stale` y `selectable`; el servidor nunca elige una."""
+    return operational_lines_out(service.list_operational_lines(connection, sectors=user.sectors, machine_codes=visibility.operational_scope(connection, user)))
 
 
 @router.get("", response_model=list[AssignmentOut], responses=_ERRORS)
@@ -66,4 +76,5 @@ def list_assignments(machine_code: str | None = Query(default=None, max_length=6
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
                      user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)), connection=Depends(get_connection)):
     return [assignment_out(v) for v in service.list_assignments(connection, machine_code=machine_code, status=status,
-                                                                  operating_date=operating_date, work_order_id=work_order_id, limit=limit, sectors=user.sectors)]
+                                                                  operating_date=operating_date, work_order_id=work_order_id, limit=limit, sectors=user.sectors,
+                                                                  machine_codes=visibility.legacy_scope(connection, user, "assignments.list"))]

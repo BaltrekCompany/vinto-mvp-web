@@ -474,16 +474,18 @@ def _to_view(connection, row) -> CaptureView:
     return CaptureView(*row, values=_serialize_values(_stored_values(connection, row[0])))
 
 
-def get_capture(connection, capture_id, *, sectors) -> CaptureView:
+def get_capture(connection, capture_id, *, sectors, machine_codes=None) -> CaptureView:
+    """`machine_codes` (PR5): None = sin restricción por máquina; si no, una captura de otra máquina es indistinguible de una inexistente."""
     capture_id = _uuid(capture_id, CaptureNotFoundError)
-    rows = connection.execute(_CENTRAL_VIEW_SQL + " AND c.id = %s", (sorted(CENTRAL_FORM_CODES), list(scoped_sector_codes(sectors)), capture_id)).fetchall()
+    machine_sql, machine_params = ("", []) if machine_codes is None else (" AND m.code = ANY(%s)", [sorted(machine_codes)])
+    rows = connection.execute(_CENTRAL_VIEW_SQL + machine_sql + " AND c.id = %s", (sorted(CENTRAL_FORM_CODES), list(scoped_sector_codes(sectors)), *machine_params, capture_id)).fetchall()
     if not rows:
         raise CaptureNotFoundError()
     return _to_view(connection, rows[0])
 
 
 def list_captures(connection, *, assignment_id=None, machine_code=None, operating_date=None, limit=DEFAULT_LIST_LIMIT, form_code=None,
-                  sectors) -> list[CaptureView]:
+                  sectors, machine_codes=None) -> list[CaptureView]:
     """Capturas centrales enviadas (submitted/closed), más recientes primero. Sin borradores.
 
     Sin `form_code` se conserva el comportamiento histórico (solo F6). Con `form_code` se filtra a ese formulario, que debe estar habilitado
@@ -492,6 +494,9 @@ def list_captures(connection, *, assignment_id=None, machine_code=None, operatin
         raise UnsupportedFormError("Formulario no habilitado para captura central")
     sql = _VIEW_SQL + " AND fv.area = 'production' AND c.status IN ('submitted','closed')"
     params = [FORM_CODE if form_code is None else form_code, list(scoped_sector_codes(sectors))]
+    if machine_codes is not None:  # PR5: solo capturas de máquinas autorizadas, también con filtros por asignación/máquina/fecha manipulados
+        sql += " AND m.code = ANY(%s)"
+        params.append(sorted(machine_codes))
     for clause, value in ((" AND a.id = %s", assignment_id), (" AND m.code = %s", machine_code), (" AND c.operating_date = %s", operating_date)):
         if value is not None:
             sql += clause

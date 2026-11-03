@@ -7,7 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from app.assignments.service import ActivationPlan, ActivationResult, ActiveAssignment, ActiveLines, AssignmentView, BulkResult
+from app.assignments.service import (ActivationPlan, ActivationResult, ActiveAssignment, ActiveLines, AssignmentView, BulkResult,
+                                     OperationalLine)
 
 
 class ActivateIn(BaseModel):
@@ -232,3 +233,24 @@ def activate_all_out(result: BulkResult, plan_hash: str | None = None) -> Activa
                    for c in plan.conflicts],
         activated=[assignment_out(v) for v in result.activated], already_active=[assignment_out(v) for v in result.already_active],
         finished=[assignment_out(v) for v in result.finished])
+
+
+class OperationalLineOut(BaseModel):
+    """Una línea activa seleccionable. `assignment_id` es la referencia inequívoca que el cliente envía en la captura; `selectable` es false si está vencida o
+    no se pudo resolver el turno (el backend rechazará la captura de todos modos)."""
+
+    assignment_id: UUID
+    selectable: bool
+    stale: bool | None
+    current_shift: CurrentShiftOut | None
+    assignment: AssignmentOut
+
+
+class OperationalLinesOut(BaseModel):
+    lines: list[OperationalLineOut]
+
+
+def operational_lines_out(items: list[OperationalLine]) -> OperationalLinesOut:
+    return OperationalLinesOut(lines=[OperationalLineOut(
+        assignment_id=i.assignment.id, selectable=i.stale is False, stale=i.stale,
+        current_shift=_current_shift(i.shift_code, i.shift_name, i.operating_date), assignment=assignment_out(i.assignment)) for i in items])

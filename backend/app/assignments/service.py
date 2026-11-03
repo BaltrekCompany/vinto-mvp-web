@@ -367,10 +367,15 @@ def finish(connection, *, actor_id, assignment_id, request_id=None, sectors) -> 
 # queries
 # ---------------------------------------------------------------------------------------------------
 
-def list_assignments(connection, *, machine_code=None, status=None, operating_date=None, work_order_id=None, limit=DEFAULT_LIST_LIMIT, sectors) -> list[AssignmentView]:
+def list_assignments(connection, *, machine_code=None, status=None, operating_date=None, work_order_id=None, limit=DEFAULT_LIST_LIMIT, sectors,
+                     machine_codes=None) -> list[AssignmentView]:
+    """`machine_codes` (PR5): None = sin restricción por máquina (gestores); si no, SOLO esas máquinas, también con filtros por máquina/OT/fecha."""
     if status is not None and status not in ASSIGNMENT_STATUSES:
         raise InvalidAssignmentFilterError(f"status debe ser uno de {', '.join(ASSIGNMENT_STATUSES)}")
     sql, params = _VIEW_SQL, [list(scoped_sector_codes(sectors))]
+    if machine_codes is not None:
+        sql += " AND m.code = ANY(%s)"
+        params.append(sorted(machine_codes))
     for clause, value in ((" AND m.code = %s", machine_code), (" AND a.status = %s", status), (" AND a.operating_date = %s", operating_date),
                           (" AND wo.id = %s", None if work_order_id is None else _uuid(work_order_id, WorkOrderNotFoundError))):
         if value is not None:
@@ -381,9 +386,12 @@ def list_assignments(connection, *, machine_code=None, status=None, operating_da
     return [_to_view(r) for r in rows]
 
 
-def _active_items(connection, machine_code, sectors):
-    """(items, turno actual o None) con TODAS las asignaciones activas de la máquina, antiguas primero."""
+def _active_items(connection, machine_code, sectors, machine_codes=None):
+    """(items, turno actual o None) con TODAS las asignaciones activas de la máquina, antiguas primero. Con `machine_codes` (PR5) una máquina no autorizada
+    se trata como fuera de alcance (misma respuesta que un sector no concedido): nunca se distingue «sin acceso» de «sin asignaciones»."""
     machine_id, _, sector_id = _machine_info(connection, machine_code, sectors)
+    if machine_codes is not None and machine_code.strip() not in machine_codes:
+        raise MachineOutsideScopeError()
     rows = connection.execute(_VIEW_SQL + " AND m.code = %s AND a.status = 'active' ORDER BY a.created_at, a.id", (list(scoped_sector_codes(sectors)), machine_code.strip())).fetchall()
     views = [_to_view(row) for row in rows]
     try:
@@ -395,14 +403,14 @@ def _active_items(connection, machine_code, sectors):
     return tuple(ActiveItem(v, contexts[v.id] != (shift.shift_schedule_id, shift.operating_date)) for v in views), shift
 
 
-def get_active(connection, *, machine_code, sectors) -> ActiveAssignment:
+def get_active(connection, *, machine_code, sectors, machine_codes=None) -> ActiveAssignment:
     """¿Qué OT/línea/producto tengo activo en esta máquina ahora? Incluye el turno actual y si la asignación quedó vencida.
 
     Contrato HISTÓRICO de una sola asignación. Con 2+ activas (varias líneas de la misma OT, solo con la compuerta multimáquina) no se
     elige una al azar ni se devuelve `null` (se leería como 'sin asignación'): 409 MULTIPLE_ACTIVE_ASSIGNMENTS. Las pantallas que necesiten
     varias líneas leen `get_active_lines` (GET /api/assignments/active-lines).
     """
-    items, shift = _active_items(connection, machine_code, sectors)
+    items, shift = _active_items(connection, machine_code, sectors, machine_codes)
     if len(items) > 1:
         raise MultipleActiveAssignmentsError()
     item = items[0] if items else None
@@ -410,9 +418,9 @@ def get_active(connection, *, machine_code, sectors) -> ActiveAssignment:
                             shift.operating_date if shift else None, item.stale if item else None)
 
 
-def get_active_lines(connection, *, machine_code, sectors) -> ActiveLines:
+def get_active_lines(connection, *, machine_code, sectors, machine_codes=None) -> ActiveLines:
     """Contrato multilínea (PR5/PR8): TODAS las activas de la máquina con su 'vencida' y el turno actual. Sin selección implícita."""
-    items, shift = _active_items(connection, machine_code, sectors)
+    items, shift = _active_items(connection, machine_code, sectors, machine_codes)
     return ActiveLines(shift.shift_code if shift else None, shift.shift_name if shift else None, shift.operating_date if shift else None, items)
 
 
@@ -643,3 +651,43 @@ def activate_all(connection, *, actor_id, work_order_id, plan_hash, request_id=N
         return BulkResult(plan, "applied", activated=_views(connection, created, sectors),
                           already_active=_views(connection, [l.assignment_id for l in plan.lines if l.action == "already_active"], sectors),
                           finished=_views(connection, finished, sectors))
+
+
+@dataclass(frozen=True)
+class OperationalLine:
+    assignment: AssignmentView
+    stale: bool | None  # None cuando no se puede resolver el turno de su sector
+    shift_code: str | None  # turno ACTUAL del sector de la máquina
+    shift_name: str | None
+    operating_date: date | None
+
+
+def list_operational_lines(connection, *, sectors, machine_codes=None) -> list[OperationalLine]:
+    """Contrato operativo (PR5/PR8): TODAS las asignaciones activas de las máquinas autorizadas, de varias máquinas, sin elegir ninguna.
+
+    `machine_codes` None = gestores (alcance por sector); un conjunto = solo esas máquinas (vacío = ninguna). Cada línea trae su `assignment` completo (id inequívoco),
+    si está vencida y el turno vigente de su sector; solo una línea NO vencida admite captura. Orden estable: máquina, antigüedad, id."""
+    sql, params = _VIEW_SQL + " AND a.status = 'active'", [list(scoped_sector_codes(sectors))]
+    if machine_codes is not None:
+        sql += " AND m.code = ANY(%s)"
+        params.append(sorted(machine_codes))
+    views = [_to_view(row) for row in connection.execute(sql + " ORDER BY m.code, a.created_at, a.id", params).fetchall()]
+    if not views:
+        return []
+    contexts = {row[0]: row[1:] for row in connection.execute(
+        """SELECT a.id, a.shift_schedule_id, a.operating_date, m.sector_id FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id = a.machine_id
+           WHERE a.id = ANY(%s)""", ([v.id for v in views],)).fetchall()}
+    now, shifts = _now(connection), {}
+    for schedule_id, operating_date, sector_id in contexts.values():
+        if sector_id not in shifts:
+            try:
+                shifts[sector_id] = resolve_shift(connection, now, sector_id=sector_id)
+            except ShiftResolutionError:
+                shifts[sector_id] = None
+    lines = []
+    for view in views:
+        schedule_id, operating_date, sector_id = contexts[view.id]
+        shift = shifts[sector_id]
+        lines.append(OperationalLine(view, None if shift is None else (schedule_id, operating_date) != (shift.shift_schedule_id, shift.operating_date),
+                                     None if shift is None else shift.shift_code, None if shift is None else shift.shift_name, None if shift is None else shift.operating_date))
+    return lines

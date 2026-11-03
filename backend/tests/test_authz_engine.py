@@ -100,8 +100,8 @@ class ShapeTests(unittest.TestCase):
     def test_the_engine_is_wired_only_to_the_four_capture_routes(self):
         consumers = [str(path.relative_to(BACKEND)).replace("\\", "/") for path in sorted((BACKEND / "app").rglob("*.py"))
                      if "app/authz" not in str(path).replace("\\", "/") and re.search(r"\bapp\.authz\b|\bfrom app import authz\b", path.read_text(encoding="utf-8"))]
-        # MF-13-01D.2A/2B/2C.1/2C.2: las cuatro rutas de captura (central, F3, Calidad por bobina y por máquina) y el manejador de errores (main.py); el resto no lo usa
-        self.assertEqual(consumers, ["app/bobbins/router.py", "app/captures.py", "app/main.py", "app/production_access.py", "app/quality/capture_service.py", "app/quality/form_availability.py", "app/quality/machine_capture_service.py", "app/quality/machine_router.py", "app/quality/router.py"])
+        # MF-13-03B PR5: los routers de asignaciones y de OT solo importan app.authz.visibility (lectura por máquina, vía el motor sin bloqueos). MF-13-01D.2A/2B/2C.1/2C.2: las cuatro rutas de captura (central, F3, Calidad por bobina y por máquina) y el manejador de errores (main.py); el resto no lo usa
+        self.assertEqual(consumers, ["app/assignments/router.py", "app/bobbins/router.py", "app/captures.py", "app/main.py", "app/production_access.py", "app/quality/capture_service.py", "app/quality/form_availability.py", "app/quality/machine_capture_service.py", "app/quality/machine_router.py", "app/quality/router.py", "app/work_orders/router.py"])
         self.assertIn("lock=False", (BACKEND / "app/authz/availability.py").read_text(encoding="utf-8"))  # MF-13-02: production_access y los servicios/listados de Calidad solo CONSULTAN la elegibilidad (sin bloqueos ni escrituras)
 
     def test_the_locked_tables_are_exactly_those_vinto_app_may_lock(self):
