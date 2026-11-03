@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getActiveAssignment, listAssignments } from "@/lib/vinto/assignments-api";
+import { getActiveAssignment, getOperationSelection, listAssignments } from "@/lib/vinto/assignments-api";
 import type { Availability } from "@/lib/vinto/availability";
 import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
+import type { OperationSelection } from "@/lib/vinto/active-lines";
 import type { ActiveAssignment, Assignment, WorkOrder } from "@/lib/vinto/orders";
-import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, workOrderCapabilitiesKey, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
+import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, operationSelectionKey, workOrderCapabilitiesKey, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
 import type { WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { subscribeRevalidation } from "@/lib/vinto/revalidation";
 import { getWorkOrderCapabilities, listWorkOrders } from "@/lib/vinto/work-orders-api";
@@ -49,6 +50,10 @@ export const useAssignments = (enabled: boolean, onUnauthorized: () => void, sco
 
 export const useActiveAssignment = (machineCode: string, enabled: boolean, onUnauthorized: () => void, scope: string) =>
     useResource<ActiveAssignment>(activeAssignmentKey(machineCode, scope), enabled, (signal) => getActiveAssignment(machineCode, signal), onUnauthorized);
+
+// MF-13-03B PR8: lectura de Ejecución (Operación): `/active` y, solo si hay varias líneas activas, `/active-lines`. Misma disciplina de clave por sesión y máquina.
+export const useOperationSelection = (machineCode: string, enabled: boolean, onUnauthorized: () => void, scope: string) =>
+    useResource<OperationSelection>(operationSelectionKey(machineCode, scope), enabled, (signal) => getOperationSelection(machineCode, signal), onUnauthorized);
 
 // Máquinas y formularios centrales operables por la sesión (solo lectura, verificado por el backend). Con `withArticles` incluye los artículos de cada máquina.
 // `scope` (obligatorio) liga el resultado a la sesión: al cambiar de usuario en el mismo navegador la vista anterior no se reutiliza.

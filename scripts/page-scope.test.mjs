@@ -8,7 +8,7 @@ const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8").r
 
 test("Calidad does not consume the central active assignment", () => {
   assert.equal(/qualityOnBobinas|qualityContextFromActive/.test(page), false);
-  const hookCalls = page.match(/useActiveAssignment\([^\n]*\n/g) ?? [];
+  const hookCalls = page.match(/useOperationSelection\([^\n]*\n/g) ?? []; // MF-13-03B PR8: la lectura de Ejecución (antes useActiveAssignment) sigue habilitada SOLO para Bobinas / Ejecución
   assert.equal(hookCalls.length, 1);
   assert.match(hookCalls[0], /usesCentralAssignment\(front, activeModule\)/);
   assert.doesNotMatch(hookCalls[0].split("//")[0], /Calidad/); // el comentario puede mencionarla; el código no
