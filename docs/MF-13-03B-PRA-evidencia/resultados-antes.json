@@ -1,0 +1,275 @@
+{
+  "runId": "20261103T204348Z-24601185",
+  "commit": "acb5335d586666d4cf00c23b7168251166473856",
+  "database": "vinto_mmqa_a8c5c7f9bea0_test",
+  "phase": "enabled",
+  "total": 44,
+  "pass": 29,
+  "fail": 15,
+  "results": [
+    {
+      "name": "S0 [enabled] la base del recorrido es efímera (*_test) y su identidad se verificó con current_database() dentro del PostgreSQL exclusivo de PR-A-QA",
+      "ok": true,
+      "kind": "sql",
+      "detail": "vinto_mmqa_a8c5c7f9bea0_test"
+    },
+    {
+      "name": "S0a [enabled] la corrida está identificada: el contenedor de PostgreSQL lleva la etiqueta de esta corrida y publica solo 127.0.0.1:55442",
+      "ok": true,
+      "kind": "static",
+      "detail": "20261103T204348Z-24601185"
+    },
+    {
+      "name": "S0b [enabled] la API real responde (200)",
+      "ok": true,
+      "kind": "http",
+      "detail": "200"
+    },
+    {
+      "name": "A0 Jefatura crea y publica una OT de 3 líneas en 2 máquinas",
+      "ok": true,
+      "kind": "http",
+      "detail": "OT-2026-0001"
+    },
+    {
+      "name": "F1-mouse abrir el diálogo (mouse)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "F2-mouse foco inicial dentro del diálogo y NO sobre «Confirmar» (mouse)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "button:Cerrar [en diálogo]"
+    },
+    {
+      "name": "F3-mouse Escape cierra y el foco vuelve al botón «Activar todas las líneas» (mouse)",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F1-keyboard abrir el diálogo (keyboard)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "F2-keyboard foco inicial dentro del diálogo y NO sobre «Confirmar» (keyboard)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "button:Cerrar [en diálogo]"
+    },
+    {
+      "name": "F3-keyboard Escape cierra y el foco vuelve al botón «Activar todas las líneas» (keyboard)",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F1-programmatic abrir el diálogo (programmatic)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "F2-programmatic foco inicial dentro del diálogo y NO sobre «Confirmar» (programmatic)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "button:Cerrar [en diálogo]"
+    },
+    {
+      "name": "F3-programmatic Escape cierra y el foco vuelve al botón «Activar todas las líneas» (programmatic)",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F4 «Cerrar» (ratón real) cierra y devuelve el foco al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F5 la X de cierre (ratón real) cierra y devuelve el foco al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F6 teclado: Tab recorre solo el diálogo (trampa de foco), en orden Cerrar → Actualizar → Confirmar → X y vuelve a empezar",
+      "ok": true,
+      "kind": "browser",
+      "detail": "button:Cerrar [en diálogo] | button:Actualizar vista previa [en diálogo] | button:Confirmar activación de 3 línea(s) [en diálogo] | button:Close [en diálogo] | button:Cerrar [en diálogo] | button:Actualizar vista previa [en diálogo] | button:Confirmar activación de 3 línea(s) [en diálogo]"
+    },
+    {
+      "name": "F7 teclado: Mayús+Tab retrocede dentro del diálogo",
+      "ok": true,
+      "kind": "browser",
+      "detail": "button:Actualizar vista previa [en diálogo]"
+    },
+    {
+      "name": "F8 invocador DESHABILITADO al cerrar: el foco no se pone en él ni se pierde en <body>",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "F9 invocador OCULTO al cerrar: el foco cae en un destino seguro, no en <body>",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "C1 contraste de la vista previa en tema CLARO (todo el texto >= 4.5:1; grande >= 3:1)",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 6.2; []"
+    },
+    {
+      "name": "C2 contraste de la vista previa en tema OSCURO del sistema",
+      "ok": false,
+      "kind": "browser",
+      "detail": "mín 1.12; [{\"text\":\"OT-2026-0001: 3 línea(s) · 3 por activar\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Línea y máquina\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Producto y PV\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Turno y fecha\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-1\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-2\",\"ratio\":2.61,\"need\":4.5}]"
+    },
+    {
+      "name": "D1 doble clic real: UNA sola confirmación y 3 asignaciones activas en PostgreSQL",
+      "ok": true,
+      "kind": "browser",
+      "detail": "confirmaciones 1; activas L1,L2,L3"
+    },
+    {
+      "name": "C3 contraste del resultado en tema CLARO",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 6.2; []"
+    },
+    {
+      "name": "C4 contraste del resultado en tema OSCURO",
+      "ok": false,
+      "kind": "browser",
+      "detail": "mín 1.12; [{\"text\":\"Línea y máquina\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Producto y PV\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Turno y fecha\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-1\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-2\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5}]"
+    },
+    {
+      "name": "F10 tras el resultado, Escape cierra y el foco vuelve al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "K1 abrir el diálogo de una OT que choca con la anterior",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "C5 contraste del conflicto (alerta, tabla de bloqueadas) en tema CLARO",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 6.2; []"
+    },
+    {
+      "name": "C6 contraste del conflicto en tema OSCURO",
+      "ok": false,
+      "kind": "browser",
+      "detail": "mín 1.12; [{\"text\":\"OT-2026-0002: 1 línea(s) · 0 por activar\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Línea y máquina\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Producto y PV\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Turno y fecha\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Motivo\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-X\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"Esta vista previa es informativa: no mod\",\"ratio\":2.61,\"need\":4.5}]"
+    },
+    {
+      "name": "V1 abrir el diálogo (ratón real)",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "V2 con la confirmación EN VUELO, Escape NO cierra el diálogo y la X de cierre no se ofrece",
+      "ok": true,
+      "kind": "browser",
+      "detail": "abierto=true Xoculta=true"
+    },
+    {
+      "name": "V3 con la confirmación en vuelo «Cerrar» y «Confirmar» están deshabilitados",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "V4 PostgreSQL: la confirmación en vuelo terminó con UNA asignación activa",
+      "ok": true,
+      "kind": "sql",
+      "detail": "L1"
+    },
+    {
+      "name": "V5 al terminar, Escape cierra y el foco vuelve al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "C7 contraste del estado «incierto» (alerta y botones) en tema CLARO",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 6.2; []"
+    },
+    {
+      "name": "C8 contraste del estado «incierto» en tema OSCURO",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 7.66; []"
+    },
+    {
+      "name": "C9 PostgreSQL: sin red no se activó nada",
+      "ok": true,
+      "kind": "sql",
+      "detail": ""
+    },
+    {
+      "name": "F11 el cierre desde el estado «incierto» también devuelve el foco al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "M1 móvil: abrir el diálogo",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "M2 móvil: sin desplazamiento horizontal y el diálogo cabe en la pantalla",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "C10 móvil: contraste en tema CLARO",
+      "ok": true,
+      "kind": "browser",
+      "detail": "mín 6.2; []"
+    },
+    {
+      "name": "C11 móvil: contraste en tema OSCURO",
+      "ok": false,
+      "kind": "browser",
+      "detail": "mín 1.12; [{\"text\":\"OT-2026-0004: 1 línea(s) · 1 por activar\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Línea y máquina\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Producto y PV\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"Turno y fecha\",\"ratio\":1.12,\"need\":4.5},{\"text\":\"PV\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"PV-D\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"Esta vista previa es informativa: no mod\",\"ratio\":2.61,\"need\":4.5},{\"text\":\"Confirmar activación de 1 línea(s)\",\"ratio\":2.77,\"need\":4.5}]"
+    },
+    {
+      "name": "M3 móvil: los botones del pie miden al menos 44 px de alto",
+      "ok": true,
+      "kind": "browser",
+      "detail": ""
+    },
+    {
+      "name": "F12 móvil: Escape cierra y el foco vuelve al invocador",
+      "ok": false,
+      "kind": "browser",
+      "detail": "foco: body:VINTO"
+    },
+    {
+      "name": "Z1 sin sesiones activas de prueba tras los logouts",
+      "ok": true,
+      "kind": "sql",
+      "detail": "activas 0"
+    }
+  ]
+}
