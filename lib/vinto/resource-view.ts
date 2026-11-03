@@ -30,5 +30,6 @@ export const workOrdersKey = (scope: string): string => `work-orders:${scope}`;
 export const workOrderCapabilitiesKey = (scope: string): string => `work-order-capabilities:${scope}`; // MF-13-03B PR6.1: la capacidad confirmada por el servidor es de ESTA sesión
 export const assignmentsKey = (scope: string): string => `assignments:${scope}`;
 export const activeAssignmentKey = (machineCode: string, scope: string): string => `active:${scope}:${machineCode}`;
+export const operationSelectionKey = (machineCode: string, scope: string): string => `operation-selection:${scope}:${machineCode}`; // MF-13-03B PR8: la lectura de Ejecución es de ESTA sesión y ESTA máquina
 export const qualityInboxKey = (scope: string): string => `quality-bobbin-inbox:${scope}`;
 export const qualityHistoryKey = (scope: string, bobbinId: string | null, seq: number): string => `quality-history:${scope}:${bobbinId ?? "none"}:${seq}`;

@@ -228,12 +228,13 @@ export type CaptureContext = {
 
 export type ContextCheck =
     | { ok: true; context: CaptureContext }
-    | { ok: false; reason: "none" | "stale" | "unresolvable"; assignment: Assignment | null };
+    | { ok: false; reason: "none" | "stale" | "unresolvable" | "unselected"; assignment: Assignment | null };
 
 export const CONTEXT_MESSAGES = {
     none: "Se requiere una asignación activa y vigente.",
     stale: "La asignación activa corresponde a otro turno o fecha operativa. Supervisión debe reactivarla.",
     unresolvable: "No se pudo resolver el turno vigente, por lo que no se permite capturar.",
+    unselected: "Hay varias líneas activas en esta máquina: elige la línea que vas a capturar.",
 } as const;
 
 // Texto de la cantidad programada para el operario. Solo si la cifra es válida (> 0) y hay unidad; nunca se inventa ninguna de las dos.
