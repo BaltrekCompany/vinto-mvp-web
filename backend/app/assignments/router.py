@@ -8,8 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response
 
 from app.assignments import service
-from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveOut, AssignmentOut, activation_out, active_out,
-                                     assignment_out)
+from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveLinesOut, ActiveOut, AssignmentOut, activation_out,
+                                     active_lines_out, active_out, assignment_out)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import ASSIGNMENT_MANAGE, ASSIGNMENT_READ
 from app.auth.service import AuthenticatedUser
@@ -48,8 +48,16 @@ def finish(assignment_id: str, user: AuthenticatedUser = Depends(require_permiss
 @router.get("/active", response_model=ActiveOut, responses=_ERRORS)
 def active(machine_code: str = Query(max_length=64), user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
            connection=Depends(get_connection)):
-    """Asignación activa de la máquina (o null), turno actual y si la asignación quedó vencida (`stale`)."""
+    """Asignación activa de la máquina (o null), turno actual y si la asignación quedó vencida (`stale`). Con 2+ activas: 409 MULTIPLE_ACTIVE_ASSIGNMENTS
+    (usar /active-lines)."""
     return active_out(service.get_active(connection, machine_code=machine_code, sectors=user.sectors))
+
+
+@router.get("/active-lines", response_model=ActiveLinesOut, responses=_ERRORS)
+def active_lines(machine_code: str = Query(max_length=64), user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
+                 connection=Depends(get_connection)):
+    """Todas las asignaciones activas de la máquina (varias líneas de una misma OT con la compuerta multimáquina), cada una con `stale`."""
+    return active_lines_out(service.get_active_lines(connection, machine_code=machine_code, sectors=user.sectors))
 
 
 @router.get("", response_model=list[AssignmentOut], responses=_ERRORS)

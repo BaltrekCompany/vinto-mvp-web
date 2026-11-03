@@ -191,14 +191,14 @@ class LineMachineSchemaTests(ConnectionMixin, unittest.TestCase):
         self.f.assignment(l1, self.f.m1, self.f.schedules["a"])
         self.f.assignment(l2, self.f.m2, self.f.schedules["b"])
 
-    def test_one_active_assignment_per_machine_is_untouched(self):
+    def test_the_per_machine_index_is_superseded_by_0011_without_losing_the_per_line_guarantee(self):
+        """0010 left assignment_one_active_machine alone; 0011 (PR3) replaces it. The full rule set is in test_assignment_same_work_order.py."""
         _, version = self.f.order("MF-OT-10", self.f.m1)
         l1 = self.f.line(version, "L1", self.f.article_a, self.f.m1)
-        l2 = self.f.line(version, "L2", self.f.article_a, self.f.m1)
-        self.assertIsNotNone(self.connection.execute(
+        self.assertIsNone(self.connection.execute(
             "SELECT 1 FROM pg_indexes WHERE schemaname='vinto_txn' AND indexname='assignment_one_active_machine'").fetchone())
         self.f.assignment(l1, self.f.m1, self.f.schedules["a"])
-        self.rejected(lambda: self.f.assignment(l2, self.f.m1, self.f.schedules["a"]), sqlstate="23505")
+        self.rejected(lambda: self.f.assignment(l1, self.f.m1, self.f.schedules["a"]), sqlstate="23505")
 
     def test_line_inserts_are_audited_with_the_actor(self):
         _, version = self.f.order("MF-OT-11", self.f.m1)

@@ -315,22 +315,35 @@ class ScopeIsolationTests(MultiMachineCase):
 
 
 class ActivationCompatibilityTests(MultiMachineCase):
-    """PR2 does not touch activation: the old endpoint keeps using the header machine and fails closed for other machines."""
+    """PR3 supersedes the PR2 note: activation now uses the machine of the LINE (flag on) and refuses other machines with the flag off."""
 
-    def test_activation_on_the_header_machine_works_and_on_another_machine_fails_closed(self):
+    def published(self):
+        return service.publish_work_order(self.connection, actor_id=self.jefatura, work_order_id=self.create(self.three_lines()).id)
+
+    def test_with_the_gate_on_each_line_is_activated_on_its_own_machine(self):
         self.enable_gate()
-        order = service.publish_work_order(self.connection, actor_id=self.jefatura, work_order_id=self.create(self.three_lines()).id)
+        order = self.published()
         with patch.object(_assignments, "_now", return_value=DAY):
-            assignments.activate(self.connection, actor_id=self.supervisor, work_order_id=order.id, baseline_line_id=order.baseline.lines[0].id)
-            import psycopg
-            with self.assertRaises(psycopg.errors.CheckViolation):
-                with self.connection.transaction():
-                    assignments.activate(self.connection, actor_id=self.supervisor, work_order_id=order.id, baseline_line_id=order.baseline.lines[2].id)
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.assignment WHERE status='active'"), 1)
+            for index in (0, 2):
+                assignments.activate(self.connection, actor_id=self.supervisor, work_order_id=order.id, baseline_line_id=order.baseline.lines[index].id)
+        rows = self.connection.execute(
+            """SELECT l.line_code, m.code FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+               JOIN vinto_master.machine m ON m.id=a.machine_id WHERE a.status='active' ORDER BY l.line_code""").fetchall()
+        self.assertEqual(rows, [("L1", "MP1"), ("L3", "MP3")])
         operational = self.connection.execute(
             """SELECT l.line_code,m.code FROM vinto_txn.work_order_line l JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
                JOIN vinto_master.machine m ON m.id=l.machine_id WHERE v.work_order_id=%s AND v.kind='operational' ORDER BY l.line_code""", (order.id,)).fetchall()
-        self.assertEqual(operational, [("L1", "MP1"), ("L2", "MP1"), ("L3", "MP3")])  # the unmodified copy keeps each line machine
+        self.assertEqual(operational, [("L1", "MP1"), ("L2", "MP1"), ("L3", "MP3")])  # the copy keeps each line machine
+
+    def test_with_the_gate_off_a_multi_machine_order_only_activates_header_machine_lines(self):
+        self.enable_gate()
+        order = self.published()
+        self.enable_gate(False)
+        with patch.object(_assignments, "_now", return_value=DAY):
+            assignments.activate(self.connection, actor_id=self.supervisor, work_order_id=order.id, baseline_line_id=order.baseline.lines[0].id)
+            with self.assertRaises(MultiMachineDisabledError):
+                assignments.activate(self.connection, actor_id=self.supervisor, work_order_id=order.id, baseline_line_id=order.baseline.lines[2].id)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.assignment WHERE status='active'"), 1)
 
 
 if __name__ == "__main__":

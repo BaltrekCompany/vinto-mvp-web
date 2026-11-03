@@ -52,6 +52,7 @@ PINNED_MIGRATIONS = [
     ("0008_user_machine_form_grant_integrity.sql", "d0231a7dc96f96d665dc8086c558a11e4ebd67e1d030c77e03e65d94ba77dd09"),  # MF-13-01B.3: integrity hardening of the grant table (guard function + insert trigger)
     ("0009_user_machine_form_grant_revocation_actor.sql", "eb0d95824949b4ad2bba0e65768d39ccefba70e3d8baf55fdc7a90f18fdc5afd"),  # MF-13-01B.4: a revocation must carry the session actor (guard function body only)
     ("0010_work_order_line_machine.sql", "87373de2652f5dbf9b2c406e6a3982bd6130afc04dc0034862c407084d5da601"),  # MF-13-03B PR1: machine per work order line (expand step, backfill, coherence trigger)
+    ("0011_assignment_same_work_order_lines.sql", "8e1e34fafbefe4bfad9caec9773ba020d595c2137359e214bfd5c5c99ceb07c6"),  # MF-13-03B PR3: several active lines of one work order per machine (index -> trigger)
 ]
 
 
