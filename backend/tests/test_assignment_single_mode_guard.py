@@ -277,13 +277,180 @@ class MigrationRehearsalTests(GuardCase):
             self.activate(order, 0)
             self.activate(order, 1)
         before = self.snapshot()
-        self.assertEqual(self.connection.execute(PREFLIGHT.read_text(encoding="utf-8")).fetchall(), [("MP1", 2, 1)])
+        rows = self.connection.execute(PREFLIGHT.read_text(encoding="utf-8")).fetchall()
+        self.assertEqual([(r[0], r[1], r[2]) for r in rows], [("MP1", 2, 1)])
+        self.assertEqual(rows[0][3], self.scalar("SELECT number FROM vinto_txn.work_order WHERE id=%s", (order.id,)))  # a person can see WHICH work order
+        active_ids = [str(r[0]) for r in self.connection.execute("SELECT id FROM vinto_txn.assignment WHERE status='active'").fetchall()]
+        self.assertTrue(all(i in rows[0][4] for i in active_ids))  # and which assignments to finish explicitly
         self.assertEqual(self.snapshot(), before)
 
     def test_files_follow_the_repository_conventions(self):
         text = MIGRATION.read_text(encoding="utf-8")
         for forbidden in ("BEGIN;", "COMMIT;", "CONCURRENTLY", "DELETE", "UPDATE vinto_txn", "DROP TABLE", "TRUNCATE"):
             self.assertNotIn(forbidden, text)
+
+
+class TransactionScopeTests(GuardCase):
+    """The declaration is transaction-local: it can never leak into a later transaction of the same (reused) connection."""
+
+    def setting(self):
+        return self.scalar("SELECT coalesce(current_setting('vinto.assignment_multi_line', true), '')")
+
+    def finish_all(self):
+        for assignment_id in [r[0] for r in self.connection.execute("SELECT id FROM vinto_txn.assignment WHERE status='active'").fetchall()]:
+            service.finish(self.connection, actor_id=self.supervisor, assignment_id=assignment_id)
+
+    def test_the_declaration_disappears_after_commit(self):
+        with self.connection.transaction():
+            self.connection.execute("SELECT set_config('vinto.assignment_multi_line', 'on', true)")
+            self.assertEqual(self.setting(), "on")
+        self.assertEqual(self.setting(), "")
+
+    def test_the_declaration_disappears_after_rollback(self):
+        with self.assertRaises(RuntimeError):
+            with self.connection.transaction():
+                self.connection.execute("SELECT set_config('vinto.assignment_multi_line', 'on', true)")
+                raise RuntimeError("boom")
+        self.assertEqual(self.setting(), "")
+
+    def test_an_earlier_on_does_not_enable_later_inserts_on_a_reused_connection(self):
+        order = self.same_machine_order(2)
+        self.activate(order, 0)
+        with self.connection.transaction():
+            self.insert_sql(order, 1, "on")  # allowed, and declared 'on' for THIS transaction only
+        self.assertEqual(self.setting(), "")
+        self.finish_all()
+        with self.connection.transaction():
+            self.insert_sql(order, 0)  # free machine
+        self.assertEqual(self.sql_error(lambda: self.insert_sql(order, 1)).sqlstate, "23P01")  # no declaration now: single mode again
+
+    def test_the_service_declaration_is_local_and_the_next_activation_redeclares_its_own_mode(self):
+        order = self.same_machine_order(3)
+        with patch.object(settings, "work_orders_multi_machine_enabled", True):
+            self.activate(order, 0)
+            self.activate(order, 1)
+            self.assertEqual(self.setting(), "")  # the service transaction ended: nothing leaked
+        self.assertEqual(self.active_codes(), ["L1", "L2"])
+        self.finish_all()
+        with patch.object(settings, "work_orders_multi_machine_enabled", True):
+            self.activate(order, 0)
+        self.activate(order, 1)  # same connection, gate OFF now: replaces instead of adding
+        self.assertEqual(self.active_codes(), ["L2"])
+        self.assertEqual(self.setting(), "")
+
+    def test_a_rolled_back_activation_leaves_no_declaration_behind(self):
+        one, two = self.same_machine_order(1), self.same_machine_order(1)
+        with patch.object(settings, "work_orders_multi_machine_enabled", True):
+            self.activate(one, 0)
+            with self.assertRaises(MachineBusyWithOtherWorkOrderError):
+                self.activate(two, 0)
+            self.assertEqual(self.setting(), "")
+        self.assertEqual(self.active_codes(), ["L1"])
+
+    def test_application_connections_run_at_read_committed(self):
+        self.assertEqual(self.scalar("SHOW default_transaction_isolation"), "read committed")
+        self.assertEqual(self.scalar("SELECT current_setting('transaction_isolation')"), "read committed")
+
+    def test_app_code_has_one_insert_and_declares_the_mode_before_it(self):
+        text = (ROOT / "app" / "assignments" / "service.py").read_text(encoding="utf-8")
+        self.assertLess(text.index("set_config('vinto.assignment_multi_line'"), text.index("INSERT INTO vinto_txn.assignment"))
+        self.assertEqual(text.count("INSERT INTO vinto_txn.assignment"), 1)
+        for path in (ROOT / "app").rglob("*.py"):
+            if not (path.name == "service.py" and path.parent.name == "assignments"):
+                self.assertNotIn("INSERT INTO vinto_txn.assignment", path.read_text(encoding="utf-8"), str(path))
+
+
+class LockOrderTests(GuardCase):
+    """No new deadlocks: the trigger takes the SAME advisory lock the service already holds (re-entrant), after the order lock."""
+
+    def hammer(self, rounds):
+        order = self.same_machine_order(3)
+        self.activate(order, 0)
+        failures = []
+        for _ in range(rounds):
+            actives = [r[0] for r in self.connection.execute("SELECT id FROM vinto_txn.assignment WHERE status='active'").fetchall()]
+            targets = [self.act(order, i) for i in range(3)] + [
+                (lambda c, a=a: service.finish(c, actor_id=self.supervisor, assignment_id=a)) for a in actives]
+            failures += [o[1] for o in self.run_threads(targets) if o[0] == "error"]
+        return failures
+
+    def test_activation_and_finish_in_a_loop_never_deadlock_with_the_gate_off(self):
+        failures = self.hammer(6)
+        self.assertEqual([getattr(f, "sqlstate", None) or repr(f) for f in failures], [])
+        self.assertLessEqual(len(self.active_codes()), 1)
+
+    def test_activation_and_finish_in_a_loop_never_deadlock_with_the_gate_on(self):
+        self.gate(True)
+        failures = self.hammer(6)
+        self.assertEqual([getattr(f, "sqlstate", None) or repr(f) for f in failures], [])
+        self.assertEqual(self.scalar("SELECT count(*) - count(DISTINCT work_order_line_id) FROM vinto_txn.assignment WHERE status='active'"), 0)
+
+
+class DeploymentTests(GuardCase):
+    """Installation under concurrent sessions, old backend, and migration history through the real runner."""
+
+    def rolled_back_database(self):
+        with self.connection.transaction():
+            self.connection.execute(ROLLBACK.read_text(encoding="utf-8"))
+
+    def trigger_enabled(self):
+        return self.connection.execute("SELECT tgenabled FROM pg_trigger WHERE tgname = 'validate_assignment_single_mode'").fetchone()
+
+    def test_the_runner_registers_0012_with_the_exact_checksum_after_a_rollback(self):
+        import migrate
+        self.rolled_back_database()
+        self.assertEqual(self.scalar("SELECT max(version) FROM vinto_meta.schema_migration"), 11)
+        migrate.apply(self.connection, migrate.read_migrations())
+        self.assertEqual(self.connection.execute("SELECT version, filename, checksum FROM vinto_meta.schema_migration WHERE version = 12").fetchone(),
+                         (12, MIGRATION.name, migrate.read_migrations()[-1].checksum))
+        self.assertEqual(self.trigger_enabled(), ("O",))
+        migrate.validate_history(migrate.read_migrations(), migrate.applied_migrations(self.connection))  # what `--check` verifies
+
+    def test_installing_waits_for_an_in_flight_write_and_then_succeeds(self):
+        self.rolled_back_database()
+        holder, installed = connect(self.database), []
+        self.addCleanup(holder.close)
+        holder.execute("BEGIN")
+        holder.execute("LOCK TABLE vinto_txn.assignment IN ROW EXCLUSIVE MODE")  # what an in-flight INSERT holds
+
+        def install():
+            try:
+                with connect(self.database) as other:
+                    other.execute("SET lock_timeout = '1500ms'")
+                    with other.transaction():
+                        other.execute(MIGRATION.read_text(encoding="utf-8"))
+                    installed.append("ok")
+            except psycopg.Error as error:
+                installed.append(error.sqlstate)
+        thread = threading.Thread(target=install)
+        thread.start()
+        thread.join(timeout=30)
+        self.assertEqual(installed, ["55P03"])  # waits for the writer, then gives up cleanly; the transaction rolled back
+        self.assertEqual(self.scalar("SELECT count(*) FROM pg_trigger WHERE tgname = 'validate_assignment_single_mode'"), 0)
+        holder.execute("COMMIT")
+        installed.clear()
+        thread = threading.Thread(target=install)
+        thread.start()
+        thread.join(timeout=30)
+        self.assertEqual(installed, ["ok"])
+        self.assertEqual(self.trigger_enabled(), ("O",))
+
+    def test_an_old_backend_that_never_declares_the_mode_cannot_add_a_second_line_after_0012(self):
+        with patch.object(settings, "work_orders_multi_machine_enabled", True):
+            order = self.same_machine_order(2)
+            self.activate(order, 0)
+        self.assertEqual(self.sql_error(lambda: self.insert_sql(order, 1)).sqlstate, "23P01")  # exactly what an undeclared (old) writer does
+        self.assertEqual(self.active_codes(), ["L1"])
+
+    def test_the_preflight_flags_the_incompatible_state_without_changing_it(self):
+        with patch.object(settings, "work_orders_multi_machine_enabled", True):
+            order = self.same_machine_order(3)
+            for index in range(3):
+                self.activate(order, index)
+        before = self.connection.execute("SELECT to_jsonb(a) FROM vinto_txn.assignment a ORDER BY id").fetchall()
+        rows = self.connection.execute(PREFLIGHT.read_text(encoding="utf-8")).fetchall()
+        self.assertEqual([(r[0], r[1], r[2]) for r in rows], [("MP1", 3, 1)])
+        self.assertEqual(self.connection.execute("SELECT to_jsonb(a) FROM vinto_txn.assignment a ORDER BY id").fetchall(), before)
 
 
 if __name__ == "__main__":
