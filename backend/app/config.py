@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # PR5 (listados filtrados por máquina autorizada); no activar antes en ningún entorno real. Ver docs/MF-13-03B-PR2-ot-multimaquina.md.
     work_orders_multi_machine_enabled: bool = False
 
+    # E1-03: logical execution state separate from shift assignment. Must stay OFF until
+    # E1-04 capture enforcement and E1-05/06 UI are integrated and validated.
+    # Environment: WORK_ORDER_LINE_EXECUTION_ENABLED, never user-controlled.
+    work_order_line_execution_enabled: bool = False
+
     # MF-13-03B PR5: visibilidad de LECTURA por máquina para perfiles que no gestionan (asignaciones, OT, capturas centrales; ver app/authz/visibility.py). Variable
     # AUTHZ_ASSIGNMENT_READS_MODE. off = alcance por sector (comportamiento anterior); observe = registra lo que se ocultaría sin cambiar la respuesta; enforce = filtra por
     # máquinas autorizadas. Con la compuerta multimáquina encendida las rutas históricas ya filtran, sea cual sea este modo. El contrato nuevo (`/active-lines`,
