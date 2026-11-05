@@ -25,7 +25,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd 'pg_isready -U ci_admin -d postgres'
+          --health-cmd "pg_isready -U ci_admin -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
