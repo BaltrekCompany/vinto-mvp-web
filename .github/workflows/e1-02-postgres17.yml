@@ -68,14 +68,7 @@ jobs:
           import os
           import psycopg
           with psycopg.connect(os.environ['TEST_ADMIN_DATABASE_URL'], autocommit=True) as conn:
-              conn.execute("""
-                  DO $
-                  BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app') THEN
-                      CREATE ROLE vinto_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
-                    END IF;
-                  END $;
-              """)
+              conn.execute('CREATE ROLE vinto_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE')
           print('Disposable CI role vinto_app provisioned')
           PY
 
