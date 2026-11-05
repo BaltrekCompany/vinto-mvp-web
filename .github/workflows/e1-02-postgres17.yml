@@ -76,6 +76,16 @@ jobs:
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_work_order_line_execution_schema.py' -v
 
+      - name: Remove disposable app role before legacy assignment regression
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ['TEST_ADMIN_DATABASE_URL'], autocommit=True) as conn:
+              conn.execute('DROP ROLE IF EXISTS vinto_app')
+          print('Disposable CI role removed')
+          PY
+
       - name: MF-13 assignment regression tests
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
