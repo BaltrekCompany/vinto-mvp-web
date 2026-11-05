@@ -136,5 +136,51 @@ class ExecutionSchemaTests(base.SameOrderCase):
         self.assertEqual(next(x[1] for x in outcome if x[0]=='error'),'23505')
 
 
+    def test_rollback_empty_history_then_reapply(self):
+        """The manual rollback removes only an unused 0013, then the real migrator can re-apply it."""
+        from pathlib import Path
+        from migrate import apply, applied_migrations, read_migrations
+        root = Path(__file__).resolve().parents[1]
+        sql = (root / 'rollbacks' / '0013_work_order_line_execution_rollback.sql').read_text(encoding='utf-8')
+        self.assertEqual(self.scalar('SELECT count(*) FROM vinto_txn.work_order_line_execution'), 0)
+        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
+        self.connection.execute(sql, prepare=False)
+        self.assertIsNone(self.scalar("SELECT to_regclass('vinto_txn.work_order_line_execution')"))
+        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 12)
+        apply(self.connection, read_migrations())
+        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
+        self.assertIsNotNone(self.scalar("SELECT to_regclass('vinto_txn.work_order_line_execution')"))
+        self.assertEqual(len(applied_migrations(self.connection)), 13)
+
+    def test_rollback_refuses_real_history_without_deleting_anything(self):
+        """A planned line is already history; no rollback is permitted."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        sql = (root / 'rollbacks' / '0013_work_order_line_execution_rollback.sql').read_text(encoding='utf-8')
+        order = self.same_machine_order(1)
+        self.insert(order, 0)
+        try:
+            with self.assertRaises(psycopg.Error) as caught:
+                self.connection.execute(sql, prepare=False)
+            self.assertEqual(caught.exception.sqlstate, 'P0001')
+        finally:
+            # The rollback script started BEGIN, which must be cancelled on failure.
+            self.connection.execute('ROLLBACK')
+        self.assertEqual(self.scalar('SELECT count(*) FROM vinto_txn.work_order_line_execution'), 1)
+        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
+
+    def test_app_role_can_read_write_but_not_delete_or_truncate(self):
+        """Only applies when an isolated test cluster explicitly provisions vinto_app."""
+        exists = self.scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='vinto_app')")
+        if not exists:
+            self.skipTest('vinto_app not provisioned in this test cluster')
+        table = 'vinto_txn.work_order_line_execution'
+        expected = [('SELECT', True), ('INSERT', True), ('UPDATE', True),
+                    ('DELETE', False), ('TRUNCATE', False)]
+        for privilege, allowed in expected:
+            actual = self.scalar("SELECT has_table_privilege('vinto_app', %s, %s)", (table, privilege))
+            self.assertEqual(actual, allowed, privilege)
+
+
 if __name__=='__main__':
     unittest.main()
