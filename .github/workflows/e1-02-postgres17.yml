@@ -62,6 +62,23 @@ jobs:
           assert 170000 <= version < 180000, f'Expected PostgreSQL 17, received {version}'
           PY
 
+      - name: Provision disposable app role for least-privilege migration test
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ['TEST_ADMIN_DATABASE_URL'], autocommit=True) as conn:
+              conn.execute("""
+                  DO $
+                  BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app') THEN
+                      CREATE ROLE vinto_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+                    END IF;
+                  END $;
+              """)
+          print('Disposable CI role vinto_app provisioned')
+          PY
+
       - name: E1-02 database schema and concurrency tests
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_work_order_line_execution_schema.py' -v
