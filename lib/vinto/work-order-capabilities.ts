@@ -8,13 +8,13 @@
 // (401, 403, 404, 5xx, red) o devuelve algo que no es exactamente ese contrato, la aplicación usa NO_CAPABILITIES y la creación queda en el flujo tradicional de una sola máquina.
 // La respuesta NO autoriza la creación: el POST vuelve a validar permisos, máquinas, artículos y la compuerta.
 
-export type WorkOrderCapabilities = { readonly multiMachine: boolean };
+export type WorkOrderCapabilities = { readonly multiMachine: boolean; readonly lineExecution?: boolean };
 
 export const NO_CAPABILITIES: WorkOrderCapabilities = Object.freeze({ multiMachine: false });
 
 export function parseCapabilities(value: unknown): WorkOrderCapabilities {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return NO_CAPABILITIES;
-    return (value as Record<string, unknown>).multi_machine === true ? Object.freeze({ multiMachine: true }) : NO_CAPABILITIES;
+    return parseCapabilitiesResponse(value) ?? NO_CAPABILITIES;
 }
 
 // Se ofrece multimáquina solo con confirmación del servidor, permiso de gestión y más de una máquina elegible para la sesión.
@@ -28,6 +28,9 @@ export function parseCapabilitiesResponse(value: unknown): WorkOrderCapabilities
     if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
     const flag = (value as Record<string, unknown>).multi_machine;
     if (typeof flag !== "boolean") return null;
+    const execution = (value as Record<string, unknown>).line_execution;
+    if (execution !== undefined && typeof execution !== "boolean") return null;
+    if (execution === true) return Object.freeze({ multiMachine: flag, lineExecution: true });
     return flag ? Object.freeze({ multiMachine: true }) : NO_CAPABILITIES;
 }
 
@@ -36,7 +39,7 @@ type CapabilityView = { status: "idle" } | { status: "loading" } | { status: "re
 
 // Vista de la consulta -> capacidades efectivas. Solo un recurso `ready` con `true` habilita; idle, loading y error son «apagado» (falla cerrado).
 export function capabilitiesOf(view: CapabilityView): { capabilities: WorkOrderCapabilities; status: CapabilityStatus } {
-    if (view.status === "ready") return { capabilities: view.data.multiMachine === true ? view.data : NO_CAPABILITIES, status: "ready" };
+    if (view.status === "ready") return { capabilities: view.data, status: "ready" };
     return { capabilities: NO_CAPABILITIES, status: view.status };
 }
 
@@ -44,4 +47,9 @@ export function capabilitiesOf(view: CapabilityView): { capabilities: WorkOrderC
 // `work_order.manage`) y una OT publicada o en ejecución. Cualquier otra cosa lo deshabilita. Es solo presentación: el backend vuelve a verificarlo todo.
 export function massActivationOffered(capabilities: WorkOrderCapabilities, canManageAssignments: boolean, orderStatus: string): boolean {
     return capabilities.multiMachine === true && canManageAssignments === true && (orderStatus === "published" || orderStatus === "in_progress");
+}
+
+// E1-05: UI actions require the server's independent execution flag and Supervisor permission.
+export function lineExecutionOffered(capabilities: WorkOrderCapabilities, canManageAssignments: boolean): boolean {
+    return capabilities.lineExecution === true && canManageAssignments === true;
 }
