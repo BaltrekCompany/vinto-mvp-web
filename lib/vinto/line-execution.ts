@@ -105,3 +105,8 @@ export function parseExecutionMutation(raw: unknown): ExecutionMutation | null {
         work_order_id: parsed.work_order_id,
     };
 }
+
+export function parseExecutionCapability(raw: unknown): boolean | null {
+    if (!isRec(raw) || typeof raw.line_execution !== "boolean") return null;
+    return raw.line_execution;
+}
