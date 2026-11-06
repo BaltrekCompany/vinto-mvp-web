@@ -41,7 +41,7 @@ jobs:
         run: node --test scripts/e1-06-operation.test.mjs
       - name: Existing selection and capture regressions
         run: |
-          node --test scripts/pr8-active-line-selection.test.mjs
+          node --test scripts/pr8-line-selection.test.mjs
           node --test scripts/pr6-order-draft.test.mjs
       - name: TypeScript
         run: pnpm exec tsc --noEmit
