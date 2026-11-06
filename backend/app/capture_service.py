@@ -31,8 +31,9 @@ from app import capture_uniqueness, dependent_options
 from app.assignments.errors import AssignmentNotFoundError
 from app.assignments.service import _machine_lock
 from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, CaptureIdempotencyConflictError, CaptureNotFoundError,
-                                CaptureValidationError, CorrelativeInUseError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError,
+                                CaptureValidationError, CorrelativeInUseError, DeviceInactiveError, DeviceMachineMismatchError, FormNotAvailableError, LineNotInProductionError,
                                 UnsupportedFormDefinitionError, UnsupportedFormError)
+from app.config import settings
 from app.shifts import resolve_shift
 from app.sectors import scoped_sector_codes
 
@@ -544,6 +545,35 @@ def resolve_assignment_machine(connection, assignment_id, sectors):
     return head
 
 
+def _require_line_in_production(connection, assignment_id, machine_id):
+    """E1-04: only the baseline line matching the persisted assignment can capture.
+
+    Call ONLY after the machine advisory lock is held. SELECT FOR SHARE OF e
+    serializes against logical line finish; no OT row lock is acquired here.
+    Historical capture retries return before lock_active_assignment, so they
+    remain idempotent when a line has subsequently finished.
+    """
+    if settings.work_order_line_execution_enabled is not True:
+        return
+    row = connection.execute(
+        """SELECT e.status
+           FROM vinto_txn.assignment a
+           JOIN vinto_txn.work_order_line ol ON ol.id=a.work_order_line_id
+           JOIN vinto_txn.work_order_version ov ON ov.id=ol.work_order_version_id
+             AND ov.kind='operational'
+           JOIN vinto_txn.work_order_version bv
+             ON bv.work_order_id=ov.work_order_id
+             AND bv.kind='baseline' AND bv.version_number=1
+           JOIN vinto_txn.work_order_line bl
+             ON bl.work_order_version_id=bv.id
+             AND bl.line_code=ol.line_code AND bl.machine_id=a.machine_id
+           JOIN vinto_txn.work_order_line_execution e ON e.baseline_line_id=bl.id
+           WHERE a.id=%s AND a.machine_id=%s
+           FOR SHARE OF e""", (assignment_id, machine_id)).fetchone()
+    if row is None or row[0] != "in_production":
+        raise LineNotInProductionError()
+
+
 def lock_active_assignment(connection, assignment_id, sectors) -> ActiveContext:
     """Toma el lock de máquina y valida que la asignación siga activa y vigente para el turno/fecha actuales.
 
@@ -568,6 +598,7 @@ def lock_active_assignment(connection, assignment_id, sectors) -> ActiveContext:
     shift = resolve_shift(connection, now, sector_id=sector_id)  # SHIFT_NOT_CONFIGURED / SHIFT_AMBIGUOUS siguen su manejo seguro
     if (shift.shift_schedule_id, shift.operating_date) != (schedule_id, operating_date):
         raise AssignmentStaleError()
+    _require_line_in_production(connection, assignment_id, machine_id)
     return ActiveContext(machine_id, schedule_id, operating_date, article_version_id, now)
 
 
