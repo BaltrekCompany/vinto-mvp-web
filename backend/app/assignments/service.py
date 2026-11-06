@@ -287,6 +287,17 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     """Activa un destino ya validado. Exige la OT bloqueada; toma el lock de la máquina (re-entrante si el llamador ya lo tiene)."""
     multi = _multi_machine_enabled()
     _lock_machines(connection, [target.machine_id])
+    # A turn change may make prior assignments stale while their logical line
+    # remains in production. Never activate a different OT on that machine
+    # until Supervisión explicitly finishes the prior logical line.
+    if settings.work_order_line_execution_enabled is True:
+        producing_other_ot = connection.execute(
+            """SELECT EXISTS (
+                   SELECT 1 FROM vinto_txn.work_order_line_execution
+                   WHERE machine_id=%s AND status='in_production' AND work_order_id<>%s
+               )""", (target.machine_id, work_order_id)).fetchone()[0]
+        if producing_other_ot:
+            raise MachineBusyWithOtherWorkOrderError()
     # Declares the mode to trigger 0012 (the database cannot see the gate): anything but 'on' is single-assignment mode there.
     connection.execute("SELECT set_config('vinto.assignment_multi_line', %s, true)", ("on" if multi else "off",))
     operational_version_id = _ensure_operational(connection, work_order_id, target.baseline_version_id)
