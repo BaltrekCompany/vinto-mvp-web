@@ -4,7 +4,9 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 from app.assignments import service as assignments_service
 from app.assignments.schemas import ActivateAllIn, ActivateAllOut, activate_all_out
@@ -15,6 +17,7 @@ from app.authz import visibility
 from app.config import settings
 from app.database import get_connection
 from app.work_orders import service
+from app.work_orders import line_execution
 from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
@@ -114,3 +117,41 @@ def activate_all(work_order_id: str, body: ActivateAllIn, response: Response, us
                                               request_id=_request_id(), sectors=user.sectors)
     response.status_code = 201 if result.outcome == "applied" else 200
     return activate_all_out(result, plan_hash=body.plan_hash)
+
+
+class StartLineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignment_id: uuid.UUID  # Current assignment of the explicitly selected line
+
+
+class LineExecutionOut(BaseModel):
+    baseline_line_id: uuid.UUID
+    work_order_id: uuid.UUID
+    line_code: str
+    machine_code: str
+    status: Literal["planned", "enabled", "in_production", "finished"]
+    started_at: datetime | None
+    started_by: uuid.UUID | None
+    finished_at: datetime | None
+    finished_by: uuid.UUID | None
+
+
+@router.post("/{work_order_id}/lines/{line_code}/start", response_model=LineExecutionOut, responses=_ERRORS)
+def start_line(work_order_id: str, line_code: str, body: StartLineIn,
+               user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+               connection=Depends(get_connection)):
+    """E1-03 Supervisión only; a shift assignment is not a logical line execution."""
+    return line_execution.start_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, assignment_id=body.assignment_id,
+        sectors=user.sectors, request_id=_request_id())
+
+
+@router.post("/{work_order_id}/lines/{line_code}/finish", response_model=LineExecutionOut, responses=_ERRORS)
+def finish_line(work_order_id: str, line_code: str,
+                user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+                connection=Depends(get_connection)):
+    """E1-03: finish the logical line, never the entire OT."""
+    return line_execution.finish_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, sectors=user.sectors, request_id=_request_id())

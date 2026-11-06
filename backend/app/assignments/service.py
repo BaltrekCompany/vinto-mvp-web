@@ -287,6 +287,17 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     """Activa un destino ya validado. Exige la OT bloqueada; toma el lock de la máquina (re-entrante si el llamador ya lo tiene)."""
     multi = _multi_machine_enabled()
     _lock_machines(connection, [target.machine_id])
+    # A turn change may make prior assignments stale while their logical line
+    # remains in production. Never activate a different OT on that machine
+    # until Supervisión explicitly finishes the prior logical line.
+    if settings.work_order_line_execution_enabled is True:
+        producing_other_ot = connection.execute(
+            """SELECT EXISTS (
+                   SELECT 1 FROM vinto_txn.work_order_line_execution
+                   WHERE machine_id=%s AND status='in_production' AND work_order_id<>%s
+               )""", (target.machine_id, work_order_id)).fetchone()[0]
+        if producing_other_ot:
+            raise MachineBusyWithOtherWorkOrderError()
     # Declares the mode to trigger 0012 (the database cannot see the gate): anything but 'on' is single-assignment mode there.
     connection.execute("SELECT set_config('vinto.assignment_multi_line', %s, true)", ("on" if multi else "off",))
     operational_version_id = _ensure_operational(connection, work_order_id, target.baseline_version_id)
@@ -306,7 +317,13 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     current = [row for row in actives if (row[2], row[3]) == context]
     stale = [row for row in actives if (row[2], row[3]) != context]
     for row in current:
-        if row[1] == operational_line_id:  # mismo contexto: idempotente, sin escribir (ni siquiera las vencidas)
+        if row[1] == operational_line_id:  # same assignment: keep old idempotency semantics
+            if settings.work_order_line_execution_enabled is True:
+                from app.work_orders.line_execution import enable_from_activation
+                enable_from_activation(
+                    connection, actor_id=actor_id, work_order_id=work_order_id,
+                    baseline_version_id=target.baseline_version_id, line_code=target.line_code,
+                    machine_id=target.machine_id, allow_create=False)
             return ActivationResult(get_assignment(connection, row[0], sectors=sectors), created=False, already_active=True, finished_assignment_id=None)
     replaced = []
     if multi:
@@ -326,6 +343,12 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         """INSERT INTO vinto_txn.assignment (work_order_line_id, machine_id, shift_schedule_id, operating_date, assigned_by)
            VALUES (%s,%s,%s,%s,%s) RETURNING id""",
         (operational_line_id, target.machine_id, shift.shift_schedule_id, shift.operating_date, actor_id)).fetchone()[0]
+    if settings.work_order_line_execution_enabled is True:
+        from app.work_orders.line_execution import enable_from_activation
+        enable_from_activation(
+            connection, actor_id=actor_id, work_order_id=work_order_id,
+            baseline_version_id=target.baseline_version_id, line_code=target.line_code,
+            machine_id=target.machine_id, allow_create=True)
     if order_status == "published":
         connection.execute("UPDATE vinto_txn.work_order SET status = 'in_progress' WHERE id = %s", (work_order_id,))
     return ActivationResult(get_assignment(connection, new_id, sectors=sectors), created=True, already_active=False,
@@ -361,6 +384,21 @@ def finish(connection, *, actor_id, assignment_id, request_id=None, sectors) -> 
         if state is None:
             raise AssignmentNotFoundError()
         if state[0] == "active":
+            if settings.work_order_line_execution_enabled is True:
+                from app.work_orders.line_execution import ExecutionStateConflictError
+                producing = connection.execute(
+                    """SELECT EXISTS (
+                       SELECT 1 FROM vinto_txn.work_order_line_execution e
+                       JOIN vinto_txn.work_order_line bl ON bl.id=e.baseline_line_id
+                       JOIN vinto_txn.assignment a ON a.id=%s
+                       JOIN vinto_txn.work_order_line ol ON ol.id=a.work_order_line_id
+                       JOIN vinto_txn.work_order_version ov ON ov.id=ol.work_order_version_id
+                       WHERE e.work_order_id=ov.work_order_id AND e.machine_id=a.machine_id
+                         AND bl.line_code=ol.line_code AND e.status='in_production')""",
+                    (assignment_id,)).fetchone()[0]
+                if producing:
+                    raise ExecutionStateConflictError(
+                        "La línea está en producción; finalícela mediante el cierre lógico")
             connection.execute("UPDATE vinto_txn.assignment SET status = 'finished', finished_at = clock_timestamp() WHERE id = %s", (assignment_id,))
     return get_assignment(connection, assignment_id, sectors=sectors)
 
