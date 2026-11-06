@@ -99,7 +99,11 @@ def collect(connection) -> dict:
         if role_exists:
             rollout["vinto_app_privileges"] = bool(connection.execute(
                 """SELECT has_table_privilege('vinto_app',
-                   'vinto_txn.work_order_line_execution', 'SELECT,INSERT,UPDATE')"""
+                   'vinto_txn.work_order_line_execution', 'SELECT')
+                   AND has_table_privilege('vinto_app',
+                   'vinto_txn.work_order_line_execution', 'INSERT')
+                   AND has_table_privilege('vinto_app',
+                   'vinto_txn.work_order_line_execution', 'UPDATE')"""
             ).fetchone()[0])
         else:
             rollout["vinto_app_privileges"] = "role_absent"
