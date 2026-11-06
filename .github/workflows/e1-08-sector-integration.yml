@@ -21,7 +21,7 @@ permissions:
 jobs:
   frontend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,10 +43,14 @@ jobs:
         run: pnpm exec tsc --noEmit
       - name: ESLint
         run: pnpm exec eslint components/vinto/sector-central.tsx components/vinto/candidate-form-capture.tsx
+      - name: Broad regression all frontend test modules (flag OFF compatibility)
+        run: node --test scripts/*.test.mjs
+      - name: Next.js production build (no deployment)
+        run: pnpm build
 
   backend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:17
@@ -104,3 +108,8 @@ jobs:
       - name: E1-02 existing assignment and multi-machine regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
+      - name: Broad backend regression all unittest modules on disposable PG17
+        working-directory: backend
+        env:
+          WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
