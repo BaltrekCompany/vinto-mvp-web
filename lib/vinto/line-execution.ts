@@ -96,6 +96,12 @@ export function parseExecutionMutation(raw: unknown): ExecutionMutation | null {
     };
     const parsed = parseWorkOrderExecution(data);
     if (!parsed || parsed.lines.length !== 1) return null;
-    const { current_assignment_id: _unused, ...line } = parsed.lines[0];
-    return { ...line, work_order_id: parsed.work_order_id };
+    const line = parsed.lines[0];
+    return {
+        baseline_line_id: line.baseline_line_id, line_code: line.line_code,
+        machine_code: line.machine_code, status: line.status,
+        started_at: line.started_at, started_by: line.started_by,
+        finished_at: line.finished_at, finished_by: line.finished_by,
+        work_order_id: parsed.work_order_id,
+    };
 }
