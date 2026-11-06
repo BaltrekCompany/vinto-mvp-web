@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getWorkOrderExecution, startWorkOrderLine, finishWorkOrderLine } from "@/lib/vinto/line-execution-api";
-import { actionForLine, EXECUTION_LABELS, safeExecutionMessage, type ExecutionLine, type ExecutionMutation, type WorkOrderExecution } from "@/lib/vinto/line-execution";
+import { getWorkOrderExecution, startWorkOrderLine, finishWorkOrderLine, closeWorkOrder } from "@/lib/vinto/line-execution-api";
+import { actionForLine, closeReadiness, EXECUTION_LABELS, safeExecutionMessage, type ExecutionLine, type WorkOrderExecution } from "@/lib/vinto/line-execution";
 import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { failureMessage, type FailureKind, type WorkOrder } from "@/lib/vinto/orders";
 import { useResource } from "@/lib/vinto/use-central";
@@ -27,13 +27,14 @@ export function LineExecutionPanel({ order, scope, refreshRevision, lockedExtern
     const [guard] = useState(createMutationGuard);
     const [busy, setBusy] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<ExecutionLine | null>(null);
+    const [confirmClose, setConfirmClose] = useState(false);
     const resource = useResource<WorkOrderExecution>(
         "supervision-line-execution:" + scope + ":" + order.id, true,
         signal => getWorkOrderExecution(order.id, signal), onSessionLost);
     useEffect(() => () => guard.reset(), [guard, scope]);
     useEffect(() => { if (refreshRevision > 0) resource.refresh(); }, [refreshRevision, resource.refresh]);
 
-    function perform(key: string, action: () => Promise<ApiResult<ExecutionMutation>>, success: string) {
+    function perform<T>(key: string, action: () => Promise<ApiResult<T>>, success: string) {
         void runGuarded(guard, action, {
             onStart: () => setBusy(key),
             onOk: () => {
@@ -54,6 +55,7 @@ export function LineExecutionPanel({ order, scope, refreshRevision, lockedExtern
     const data = view.status === "ready" && view.data.work_order_id === order.id ? view.data : null;
     const loading = view.status === "loading" || (view.status === "ready" && view.refreshing);
     const blocked = busy !== null || lockedExternal || loading;
+    const close = closeReadiness(order, data);
     return <section data-line-execution="" aria-label={"Ejecución de líneas de " + order.number} className="border-t bg-slate-50 p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -66,6 +68,16 @@ export function LineExecutionPanel({ order, scope, refreshRevision, lockedExtern
         {view.status === "error" && <div role="alert" className="space-y-2 rounded-md border border-red-200 bg-white p-3 text-sm text-red-800">
             <p>No se pudo consultar el estado de ejecución. No se habilitan acciones sin confirmación del servidor.</p>
             <Button size="sm" variant="outline" onClick={resource.refresh}>Reintentar</Button>
+        </div>}
+        {data && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3">
+            <div>
+                <p className="text-sm font-semibold">Progreso de la OT: {close.finished}/{close.total} líneas finalizadas</p>
+                <p className="text-xs text-slate-600">{close.canClose
+                    ? "Todas las líneas están finalizadas. Supervisión puede cerrar la OT manualmente."
+                    : "La OT permanece abierta. No se exige el 100 % de producción ni un motivo por déficit."}</p>
+            </div>
+            <Button size="sm" disabled={blocked || !close.canClose} onClick={() => setConfirmClose(true)}
+                data-close-work-order="">Cerrar OT</Button>
         </div>}
         {data && <div className="overflow-x-auto rounded-lg border bg-white">
             <table className="w-full min-w-[740px] text-sm">
@@ -102,6 +114,25 @@ export function LineExecutionPanel({ order, scope, refreshRevision, lockedExtern
                 })}</tbody>
             </table>
         </div>}
+        <AlertDialog open={confirmClose} onOpenChange={open => { if (!open && busy === null) setConfirmClose(false); }}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Cerrar completamente {order.number}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Se marcará la OT como Cerrada. Se conservarán las capturas y el déficit programado frente a lo producido.
+                        Esta acción es independiente de finalizar cada línea y no exige una explicación libre.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={busy !== null}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction disabled={blocked || !close.canClose} onClick={() => {
+                        setConfirmClose(false);
+                        perform("close:" + order.id, () => closeWorkOrder(order.id),
+                            "OT " + order.number + " cerrada correctamente.");
+                    }}>Confirmar cierre de OT</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
         <AlertDialog open={confirm !== null} onOpenChange={open => { if (!open && busy === null) setConfirm(null); }}>
             <AlertDialogContent>
                 <AlertDialogHeader>
