@@ -6,8 +6,10 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
+from pydantic import BaseModel
 
 from app.assignments import service
+from app.assignments import execution_read
 from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveLinesOut, ActiveOut, AssignmentOut, OperationalLinesOut,
                                      activation_out, active_lines_out, active_out, assignment_out, operational_lines_out)
 from app.auth.dependencies import require_permission
@@ -44,6 +46,29 @@ def activate(body: ActivateIn, response: Response, user: AuthenticatedUser = Dep
 @router.post("/{assignment_id}/finish", response_model=AssignmentOut, responses=_ERRORS)
 def finish(assignment_id: str, user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)), connection=Depends(get_connection)):
     return assignment_out(service.finish(connection, actor_id=user.user_id, assignment_id=assignment_id, request_id=_request_id(), sectors=user.sectors))
+
+
+class AssignmentExecutionStateOut(BaseModel):
+    assignment_id: UUID
+    status: Literal["planned", "enabled", "in_production", "finished", "requires_review"]
+
+
+class MachineExecutionOut(BaseModel):
+    line_execution: bool
+    assignments: list[AssignmentExecutionStateOut]
+
+
+@router.get("/execution-status", response_model=MachineExecutionOut, responses=_ERRORS)
+def machine_execution_status(
+        response: Response,
+        machine_code: str = Query(max_length=64),
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_READ)),
+        connection=Depends(get_connection)):
+    """E1-06: scoped read for Operación. Assignment.active is not proof of production."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return execution_read.read_machine_execution(
+        connection, machine_code=machine_code, sectors=user.sectors,
+        machine_codes=visibility.operational_scope(connection, user))
 
 
 @router.get("/active", response_model=ActiveOut, responses=_ERRORS)
