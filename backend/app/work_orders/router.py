@@ -40,6 +40,7 @@ class CapabilitiesOut(BaseModel):
     """Lo ÚNICO que se publica: si el servidor acepta OT con líneas en varias máquinas. Sin otros ajustes, versiones ni datos de OT."""
 
     multi_machine: bool
+    line_execution: bool = False  # E1-05: server-confirmed, OFF by default
 
 
 def capabilities_reader(user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ))) -> AuthenticatedUser:
@@ -77,7 +78,8 @@ def capabilities(response: Response, user: AuthenticatedUser = Depends(capabilit
     """Capacidades de OT que el SERVIDOR confirma a la sesión (solo lectura). `multi_machine` refleja la compuerta de servidor WORK_ORDERS_MULTI_MACHINE_ENABLED
     (apagada por defecto); el cliente no puede cambiarla con query, cabeceras ni cuerpo, y no es una autorización: el POST de creación vuelve a validarlo todo."""
     response.headers["Cache-Control"] = "private, no-store"
-    return CapabilitiesOut(multi_machine=settings.work_orders_multi_machine_enabled is True)
+    return CapabilitiesOut(multi_machine=settings.work_orders_multi_machine_enabled is True,
+                           line_execution=settings.work_order_line_execution_enabled is True)
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
@@ -117,6 +119,34 @@ def activate_all(work_order_id: str, body: ActivateAllIn, response: Response, us
                                               request_id=_request_id(), sectors=user.sectors)
     response.status_code = 201 if result.outcome == "applied" else 200
     return activate_all_out(result, plan_hash=body.plan_hash)
+
+
+class LineExecutionStateOut(BaseModel):
+    baseline_line_id: uuid.UUID
+    line_code: str
+    machine_code: str
+    status: Literal["planned", "enabled", "in_production", "finished", "requires_review"]
+    current_assignment_id: uuid.UUID | None
+    started_at: datetime | None
+    started_by: uuid.UUID | None
+    finished_at: datetime | None
+    finished_by: uuid.UUID | None
+
+
+class WorkOrderExecutionOut(BaseModel):
+    work_order_id: uuid.UUID
+    lines: list[LineExecutionStateOut]
+
+
+@router.get("/{work_order_id}/execution", response_model=WorkOrderExecutionOut,
+            responses={401: _ERRORS[401], 403: _ERRORS[403], 404: _ERRORS[404], 422: _ERRORS[422]})
+def get_work_order_execution(work_order_id: str, response: Response,
+                             user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+                             connection=Depends(get_connection)):
+    """Supervisor-only read; never uses assignment.active as proxy for production."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return line_execution.read_work_order_execution(
+        connection, work_order_id=work_order_id, sectors=user.sectors)
 
 
 class StartLineIn(BaseModel):
