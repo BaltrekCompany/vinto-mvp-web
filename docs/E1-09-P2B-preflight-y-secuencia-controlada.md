@@ -2,6 +2,27 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## G2 CERRADO — PASS (06/nov/2026): release preparado sin activación
+
+**Fuente:** informe de Codex Desktop/operador SSH remitido por el usuario. No ejecución directa desde ChatGPT. Se superó el bloqueo previo de permisos en la transferencia/instalación del artefacto.
+
+| Criterio | Evidencia final reportada |
+|---|---|
+| Causa de falla previa | Confirmada: `vinto-mvp` no podía leer tarball del staging original `ubuntu:700`/archivos `600`; el release `dist` estaba ausente |
+| Staging nuevo | `/var/tmp/vinto-g2-d5bc472.KRMA7h`; directorio `ubuntu:vinto-mvp` `750`; tarball/manifiesto `ubuntu:vinto-mvp` `640` |
+| Commit de artefacto | `d5bc472b831eae8abd60899296ce8c146c119a5a` |
+| SHA-256 tarball | `fed3605f81b72303d1aa3f3d8e73d0689a627075cfe2f5d2678bb2c3ccf2a88b` coincidente con manifiesto |
+| Instalación | `deploy.sh install-frontend-artifact` **exit 0**; `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a/dist/standalone/server.js` existe |
+| Verificación de release | `deploy.sh check-release` **exit 2, esperado**: solo `0013_work_order_line_execution.sql` y `0014_work_order_archive.sql` pendientes |
+| Log privado | `/var/tmp/vinto-g2-install-d5bc472.KSjQlQ.log`, modo `600`; no difundir contenido sensible |
+| Checkout/venv | Conservados; no se repitieron |
+| Release activo | `current` permanece `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`, backend/frontend activos; PostgreSQL MVP 17 saludable |
+| Migraciones y datos | Ninguna aplicada; sin cambios OT, backups, flags, permisos ni TVC |
+
+**Decisión:** G2 **PASS / CERRADO**. Se ha **preparado** el release sin activar; `check-release` con exit 2 significa las dos migraciones pendientes previstas, **no** un error de G2. Las observaciones previas de G2 PARCIAL conservadas abajo son solo historial, no estado vigente.
+
+**Siguiente puerta G3 (aún NO AUTORIZADA):** un **nuevo respaldo antes de DDL**, ejecutado una sola vez con `backup.sh create-and-verify` de Ops, manteniendo la evidencia P1-B y todos los anteriores. Revalidar G1, disponibilidad y ausencia de concurrencia, `current` intacto, 0013/0014 sin aplicar y contenedor MVP exacto. Conservar resultado de backup + `.verified`, hashes, restauración temporal aislada, conciliación y estado de servicios. La copia off-host **no está verificada**: definir una vía de réplica separada con hashes comprobados antes de aceptar mutación DDL, o registrar y aprobar explícitamente el riesgo de un único filesystem. **G3 no incluye `migrate-release`, activación, borrado/archivo de OT, cambio de flags, retención/prune o intervención TVC.**
+
 ## G2 — Nuevo diagnóstico: instalador exit 1 sin log; causa de permisos identificada en código (06/nov/2026)
 
 **Evidencia recibida:** staging original `/home/ubuntu/vinto-g2-staging-d5bc472` corregido a directorio `700` y dos archivos `600` **propiedad de `ubuntu`**. Tarball y manifiesto identifican `d5bc472b831eae8abd60899296ce8c146c119a5a`, SHA-256 tar `fed3605f81b72303d1aa3f3d8e73d0689a627075cfe2f5d2678bb2c3ccf2a88b`. Preflight previo a instalación PASS, pero `deploy.sh install-frontend-artifact` **exit 1**, detalle de stderr no conservado. **`dist` del release nuevo NO VERIFICADO después del fallo**; `check-release` no ejecutado. Release activo y servicios solo revalidados **antes** del intento. No se reportó ninguna migración ni modificación de negocio.
