@@ -264,7 +264,7 @@ def read_work_order_execution(connection, *, work_order_id, sectors):
     active_by_line = {}
     for entry in active:
         active_by_line.setdefault((entry[1], entry[2]), []).append(entry)
-    now = connection.execute("SELECT clock_timestamp()").fetchone()[0]
+    now = assignments._now(connection)  # PostgreSQL clock in production; same instant source as start_line
     shifts = {}
     for row in lines:
         sector_id = row[4]
