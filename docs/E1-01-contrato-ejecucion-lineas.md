@@ -116,3 +116,10 @@ Una asignación puede vencer/cerrar al cambiar turno **sin** que la línea lógi
 **E1-02:** diseño DDL y migración 0013 (aditiva), preflight/rollback, pruebas PostgreSQL 17, definición del identificador estable de línea. **E1-03:** operaciones de inicio/finalización y API. **E1-04:** integración completa F3/F6/central con captura idempotente. **E1-05–E1-07:** UI Supervisión, Operación y cierre. **E1-08:** QA integral. **E1-09:** despliegue con respaldo, migración, verificación y rollback controlado.
 
 **Estado del documento:** elaborado a partir de código real y acuerdos funcionales; no equivale a aprobación de D1–D4, PR mergeado ni cambio productivo.
+## 9. Aclaración posterior de Sergio — turnos y cierre por déficit (2026-11-05)
+
+**D1 — Continuidad entre turnos:** es físicamente posible seguir produciendo el mismo producto al turno siguiente, pero automatizar cambios de cantidad, fecha de entrega y saldo no es prioridad. Para el MVP, si la continuación requiere una programación nueva, **Jefatura registra manualmente otra OT/programación**. El arrastre automático queda como backlog opcional. Antes de iniciar otra OT en la misma máquina, Supervisión debe finalizar explícitamente la línea anterior; no finalizar silenciosamente por vencimiento del turno ni liberar una máquina con ejecución lógica en producción.
+
+**D2 — Cantidad insuficiente:** se puede finalizar una línea con cantidad real menor a la solicitada sin motivo obligatorio. Ej.: 120 programado, 90 producido, **déficit 30**. Seguimiento y tableros operativos analizan el desempeño. La diferencia no se trata automáticamente como «cantidad cancelada»; esto exige una anulación expresa (Entrega 3).
+
+**Precisión:** D1 se resuelve para el **alcance mínimo sin automatización**; una futura continuación de la *misma* línea lógica entre turnos requiere un contrato independiente y no bloquea el MVP. D2 se resuelve sin captura libre de motivos; E1-07 debe verificar estados terminales, no cumplimiento del 100 % de cantidad para permitir cierre. Ningún traslado automático debe sumarse al camino crítico.
