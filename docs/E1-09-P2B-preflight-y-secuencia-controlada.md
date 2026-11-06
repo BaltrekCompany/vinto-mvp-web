@@ -2,6 +2,50 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## Resultado G2 — PARCIAL / NO-GO por artefacto frontend (06/nov/2026)
+
+**Fuente:** informe Codex Desktop SSH entregado por el usuario. ChatGPT no realizó SSH ni escritura sobre el VPS.
+
+| Fase | Resultado |
+|---|---|
+| Preflight G1 revalidado | PASS: host `vps-14d8e0ce`, operador `ubuntu`, release antiguo, backend/frontend y PostgreSQL MVP saludables, scripts Ops y P1-B íntegros, capacidad/concurrencia |
+| Checkout | PASS: release nuevo `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a` recién creado; `origin` y `HEAD` exactos; propietario/grupo `vinto-mvp:vinto-mvp`, modo `775`; `.previous-release-path` correcto |
+| Enlace `backend/.env` | PASS: apunta a `shared/backend.env`; archivo de destino regular, `vinto-mvp:600`, contenido no consultado |
+| `python-venv` | PASS: dependencias Python instaladas solo en el nuevo release, exit 0 |
+| Artefacto frontend | **PENDIENTE/BLOQUEO:** tarball + manifiesto válidos NO disponibles; CI PR #137 no generó artifacts |
+| `check-release` | NO ejecutado: falta `dist/standalone/server.js`; correrlo ahora causaría error de preparación, no permite determinar esquema nuevo |
+| Release activo | Sin cambios: `current` apunta a `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` |
+| Migraciones y datos | SIN ALTERACIONES: no 0013/0014, activación, flags ni OT mutadas; último historial leído en G1 |
+| Alcance de búsqueda | `find` amplio de artefactos produjo `Permission denied` en `/home/ubuntu/vinto/pgdata`. No inspeccionó datos y se detuvo; no repetir búsquedas amplias ni acceder a rutas TVC |
+
+**Estado real:** G2 **PARCIAL**, NO-GO para G3/G4/G5. **No repetir** `checkout` ni `python-venv` por defecto: ya pasaron y el directorio versionado existe. No borrar/sobrescribir el release o revertir el symlink.
+
+### Solución ya existente para el artefacto, sin cambios en producción
+
+El repositorio `main@d5bc472b831eae8abd60899296ce8c146c119a5a` incluye el workflow versionado [`rc01-frontend-linux.yml`](https://github.com/BaltrekCompany/vinto-mvp-web/blob/main/.github/workflows/rc01-frontend-linux.yml): **`VINTO RC01 frontend artifact (Linux)`**, evento manual `workflow_dispatch`, input `source_commit` obligatorio. Ese workflow:
+
+1. Comprueba `source_commit` de 40 hex, hace checkout exacto, verifica HEAD y árbol limpio, Linux x86_64.
+2. Usa Node `22.18.0`, `VINTO_MVP_DOMAIN=vinto-mvp.baltrekservices.com` (validar que sea el dominio realmente autorizado antes de disparar), y llama a `deploy/mvp/scripts/build-frontend-artifact.sh`.
+3. El script instala con pnpm lockfile, compila con `NEXT_PUBLIC_API_URL=https://$VINTO_MVP_DOMAIN`, completa dependencias standalone y pasa prueba HTTP 200 arrancando **el tarball extraído fuera del repositorio**.
+4. Verifica `VINTO_MVP_ARTIFACT_COMMIT` y SHA-256 del `.tar.gz` contra el manifiesto; publica ambos mediante `upload-artifact` con retención 14 días y nombre `vinto-rc01-frontend-<source_commit>`.
+
+**Forma de iniciar desde un cliente autenticado en GitHub (no desde VPS):** entrar a [Actions → VINTO RC01 frontend artifact (Linux)](https://github.com/BaltrekCompany/vinto-mvp-web/actions/workflows/rc01-frontend-linux.yml), pulsar **Run workflow**, seleccionar rama `main` y pegar `source_commit=d5bc472b831eae8abd60899296ce8c146c119a5a`. El input por defecto del workflow es antiguo; **no usarlo**. La conexión actual de ChatGPT no expone una operación para emitir el evento `workflow_dispatch`; no se ha lanzado por el asistente.
+
+**Tras RUN exitoso:**
+- Descargar ZIP del artifact **de esa misma ejecución** en GitHub Actions usando una cuenta autenticada; comprobar `source_commit`, conclusión SUCCESS, manifiesto completo y SHA-256 del tarball tras descomprimir, en el equipo externo. ZIP es contenedor de transporte: no pasar el ZIP como si fuese el `.tar.gz` al instalador.
+- Transferir únicamente el tarball y el `.manifest` a una ruta de staging propiedad de `ubuntu` en el VPS, de acceso restringido. El canal se selecciona por el operador (p. ej. `scp`/SFTP autenticado), sin publicar enlaces secretos, tokens o variables de entorno. Nunca transferirlo a `/home/ubuntu/vinto/pgdata`, `/opt/vinto-web` o el árbol TVC.
+- En el VPS **sin volver a ejecutar checkout o python-venv**: revalidar ruta SHA y salud, comprobar que el staging contiene exactamente `vinto-mvp-frontend-d5bc472b831eae8abd60899296ce8c146c119a5a.tar.gz` y su manifiesto. Verificar manualmente `sha256sum` frente al SHA del manifiesto, luego invocar únicamente:
+  ```bash
+  cd /home/ubuntu/vinto-mvp-ops/scripts
+  SHA=d5bc472b831eae8abd60899296ce8c146c119a5a
+  CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA" "<RUTA_STAGING>/vinto-mvp-frontend-$SHA.tar.gz" "<RUTA_STAGING>/vinto-mvp-frontend-$SHA.manifest"
+  ```
+  El script valida commit/hash, contenido tar seguro y no sobrescribe `dist`; en falla, detener sin "extraer a mano".
+- Solo después de confirmar `dist/standalone/server.js` en release, ejecutar **`bash deploy.sh check-release "$SHA"`** (solo lectura). Esperado: exit **2**, pendientes **exactamente 0013 y 0014**; exit 1 o discrepancias ⇒ NO-GO, no migrar. No interpretar ese exit 2 como fallido en G2 cuando contiene precisamente las pendientes esperadas.
+- Postchecks de no mutación: `current` igual, servicios MVP activos, migraciones y datos inalterados, flag E1 no habilitado, TVC no tocado. Reportar **G2 PASS / NO-GO** y detenerse antes de G3.
+
+**Riesgos a retener:** el directorio versionado reportado como modo `775` es escribible por su grupo. Antes de activar en una intervención futura, validar que la membresía/permiso de grupo `vinto-mvp` está restringida al modelo de operación; no cambiar chmod/chown ni inspeccionar datos privados por su cuenta. El build del frontend incrusta dominio API en el cliente, por eso el dominio del workflow debe ser correcto antes de ejecutar.
+
 ## AUTORIZACIÓN G2 — vigente, instalación de release NO EJECUTADA (06/nov/2026)
 
 El usuario confirmó explícitamente **«Autorizo ejecutar G2»** tras recibir el resultado G1 PASS. La autorización cubre **exclusivamente crear y preparar** el release inmutable de `main@d5bc472b831eae8abd60899296ce8c146c119a5a` en `/opt/vinto-mvp-web/releases/<SHA>`, sin modificar el enlace `current` ni ejecutar código nuevo en producción.
