@@ -2,6 +2,16 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## Evidencia SSH directa del usuario — 5/5 PASS (06/nov/2026, 22:05:15–22:05:28 UTC)
+
+El usuario se conectó a la VPS desde **PowerShell/SSH como `ubuntu`** y ejecutó la verificación con `sudo -n -u vinto-mvp`. Host `vps-14d8e0ce`; filesystem `/dev/sda1` sobre `/`, ext4; `current` sigue apuntando al SHA anterior `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`.
+
+En **cinco comprobaciones consecutivas** entre 22:05:15 y 22:05:28 UTC, `stat` del release `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a` devolvió **exit 0**, mismo inode **2648012**, owner/group `vinto-mvp:vinto-mvp`, modo **775**. `dist/standalone/server.js` PASS exit 0; `backend/.venv/bin/python` PASS exit 0; `git -C <release> rev-parse HEAD` PASS exacto `d5bc472b831eae8abd60899296ce8c146c119a5a` en los cinco intentos. `ls` del directorio `releases/` también muestra el SHA (mtime 2026-11-06 20:08 UTC).
+
+**Decisión actual:** NO ejecutar `checkout`, `python-venv` ni `install-frontend-artifact` de nuevo: el release **está presente y esencialmente completo** durante esa ventana, y el script checkout rechaza destinos existentes. **Causa de ENOENT intermitente anterior sigue no identificada**, por lo que la estabilidad de 13 segundos no demuestra persistencia futura. La existencia de `backend/.env`, estado efectivo del flag, `check-release` y salud contemporánea no están confirmados por este bloque concreto; requieren nuevas comprobaciones read-only. **G4/G5 continúan sin ejecutar** y no deben darse por PASS solo por esta evidencia.
+
+**Próximo paso:** consultar identidad/configuración efectiva del release nuevo sin exponer secretos; confirmar `backend/.env`, flag E1 OFF, `check-release` exit 2 (exactamente 0013/0014 pendientes), `current` antiguo, salud y ausencia de actividad incompatible. Tras ello, decidir cómo reanudar el despliegue condicionado ya aprobado, manteniendo la parada automática si vuelve ENOENT, falla el flag o el historial diverge. **No reconstruir, no modificar OT ni tocar TVC.**
+
 ## Estado posterior — ENOENT intermitente del release; reconstrucción condicional (06/nov/2026)
 
 **Hallazgo informado por Codex Desktop:** cinco `stat` consecutivos como `vinto-mvp` sobre la ruta absoluta `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a` devolvieron ENOENT (no permiso denegado), con componentes y `git` inaccesibles. Host único `vps-14d8e0ce`, raíz `/dev/sda1`, ext4, mismo montaje. Una comprobación separada y posterior sí encontró el directorio (`vinto-mvp:vinto-mvp`, modo 775, dev 2049, inode 2648012). **No se conoce la causa.** Ninguna migración ni activación ejecutada.
