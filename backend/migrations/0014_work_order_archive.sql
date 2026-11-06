@@ -84,9 +84,13 @@ CREATE TRIGGER a_guard_archive
   BEFORE INSERT OR UPDATE OR DELETE ON vinto_txn.work_order
   FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_work_order_archive();
 
--- DB-level safety even against direct assignment INSERT/UPDATE, not only the
--- API. FOR SHARE serializes with the parent order's archive UPDATE, so a
--- concurrent activation cannot slip in after an archive transaction commits.
+-- DB-level safety for direct assignment INSERT, not only the API. FOR SHARE
+-- serializes new assignments with the parent OT archive UPDATE. Do NOT take
+-- this parent lock on assignment UPDATE: finishing an existing assignment
+-- locks machine -> assignment; taking the parent OT there would invert
+-- activation's OT -> machine lock order and deadlock. 0011 already makes
+-- assignment identity (including work_order_line_id) immutable on UPDATE;
+-- archived OT cannot have ANY assignment, so INSERT is the only entrypoint.
 CREATE FUNCTION vinto_txn.guard_assignment_archive()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE archived timestamptz;
@@ -103,7 +107,7 @@ BEGIN
   RETURN NEW;
 END $$;
 CREATE TRIGGER a_guard_archive_assignment
-  BEFORE INSERT OR UPDATE ON vinto_txn.assignment
+  BEFORE INSERT ON vinto_txn.assignment
   FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_assignment_archive();
 
 -- Guard baseline/operational descendants, even for direct SQL writers.
