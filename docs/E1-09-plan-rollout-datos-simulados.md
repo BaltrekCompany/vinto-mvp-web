@@ -1,9 +1,17 @@
 # VINTO E1-09 — Plan de despliegue condicionado con datos simulados
 
 **Fecha:** 2026-11-06. **Estado:** PLAN DOCUMENTAL; no ejecutado.  
-**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). Siguiente puerta: [P2-A diagnóstico READ ONLY](E1-09-P2A-diseno-pre-migracion-readonly.md), no ejecutado. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
+**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). Siguiente puerta: [P2-A diagnóstico READ ONLY](E1-09-P2A-diseno-pre-migracion-readonly.md), **parcialmente ejecutado**: 20 OT en base (7 draft, 12 in_progress, 1 published), 72 asignaciones, 63 capturas submitted vinculadas y 21 capturas sin assignment; consulta H abortó por falta de USAGE en vinto_meta. Continuación P2-A2 de solo lectura preparada. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
 **Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado actualmente:** `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (PR #136 backup-flock incluido); VPS app sigue en release previo `86e4ec4` según P0, no desplegado E1.  
 **QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
+
+## Nuevo corte P2-A: dependencias de escenarios ficticios (06/nov/2026)
+
+Codex ejecutó P2-A en el contenedor MVP como `vinto_app` y `REPEATABLE READ READ ONLY`: **20 OT totales** (7 draft, 12 in_progress, 1 published), **32 versiones, 45 líneas, 29 baseline y 72 asignaciones** (11 active/61 finished). **63 capturas submitted** están enlazadas por FK a asignaciones de OT en progreso; **21 capturas sin assignment_id** no pueden atribuirse con ese conteo. Conjunto visible por usuario/sector **NO VERIFICADO**, igual que bobinas, Calidad, auditoría JSON e historial de migraciones. Referencia: [informe P2-A actualizado](E1-09-P2A-diseno-pre-migracion-readonly.md).
+
+El bloque H terminó `permission denied for schema vinto_meta`, sin escritura ni elevación de privilegios. Se corrigió la consulta H y se preparó [continuación P2-A2](E1-09-P2A2-continuacion-readonly.sql) y [P2-A3 opcional según permisos](E1-09-P2A3-dependientes-opcional-readonly.sql).
+
+**Decisión:** no interpretar autorización para retirar OT ficticias como permiso de borrado masivo. **Ocultar OT no resuelve el bloqueo E1-08** si 12 OT siguen `in_progress` y sin ejecución 0013. Se requieren política separada de preservación de capturas y auditoría, selección exacta de OT visibles y estrategia de corte de datos históricos **sin desactivar triggers**.
 
 ## Actualización de alcance de saneamiento de datos (06/nov/2026)
 
