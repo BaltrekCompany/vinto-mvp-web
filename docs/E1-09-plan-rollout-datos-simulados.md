@@ -5,6 +5,14 @@
 **Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado actualmente:** `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (PR #136 backup-flock incluido); VPS app sigue en release previo `86e4ec4` según P0, no desplegado E1.  
 **QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
 
+## Actualización de alcance de saneamiento de datos (06/nov/2026)
+
+El usuario autorizó realizar el **diagnóstico P2-A** y declaró que se pueden retirar las OT ficticias visibles. La inspección **estática** de `main@c64893e` confirmó que la eliminación física está protegida por FKs `ON DELETE RESTRICT`, inmutabilidad de versiones/líneas publicadas, rechazo de borrado de capturas y auditoría inmutable. **No se ha borrado ninguna OT ni realizado consultas remotas desde ChatGPT.**
+
+Se preparó [consulta SQL P2-A de solo lectura para la VPS](E1-09-P2A-ot-ficticias-diagnostico.sql) y [runbook P2-A actualizado](E1-09-P2A-diseno-pre-migracion-readonly.md). Antes de diseñar cualquier saneamiento se necesitan: distribución actual de OT por estado; dependencias de líneas/asignaciones/capturas/bobinas/Calidad/auditoría; y correspondencia exacta entre el conjunto visible bajo el rol del usuario y las filas de la base. **No confundir "datos ficticios" con permiso para desactivar triggers o truncar tablas.**
+
+**GO solo para diagnóstico READ ONLY autorizado por el usuario. NO-GO para SQL de eliminación física, cambios de modelo de visibilidad, migración 0013, deploy y flag ON hasta comprobar los dependientes reales y definir procedimiento de integridad.**
+
 ## 1. Decisión funcional: qué cambia por los datos simulados
 
 El usuario confirmó que **los registros actuales del MVP VINTO son simulados**. En consecuencia, para la liberación **no es necesario acreditar una producción física industrial real** de las 16 líneas del snapshot; la validación se convierte en **QA de estados y transiciones simuladas**. Sin embargo:
