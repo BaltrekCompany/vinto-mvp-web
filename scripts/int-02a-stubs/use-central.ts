@@ -15,5 +15,7 @@ export const useWorkOrders = (enabled: boolean, onUnauthorized: unknown, scope: 
 export const useAssignments = (enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`assignments:${scope}`, enabled, null, onUnauthorized);
 export const useActiveAssignment = (machineCode: string, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`active:${scope}:${machineCode}`, enabled, null, onUnauthorized);
 export const useOperationSelection = (machineCode: string, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`operation-selection:${scope}:${machineCode}`, enabled, null, onUnauthorized);
+// E1-06: the real hook also isolates execution state by account and machine.
+export const useMachineExecution = (machineCode: string, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`machine-execution:${scope}:${machineCode}`, enabled, null, onUnauthorized);
 export const useAvailability = (withArticles: boolean, enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`availability:${withArticles ? "articles" : "base"}:${scope}`, enabled, null, onUnauthorized);
 export const useWorkOrderCapabilities = (enabled: boolean, onUnauthorized: unknown, scope: string) => useResource(`work-order-capabilities:${scope}`, enabled, null, onUnauthorized);
