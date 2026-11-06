@@ -31,8 +31,11 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Sector UI render test (Rebobinado, Conversión and guards)
         run: node --test scripts/e1-08-sector-execution.test.mjs
-      - name: E1-06/E1-07 selector and close regressions
-        run: node --test scripts/e1-06-operation.test.mjs scripts/e1-07-work-order-close.test.mjs
+      - name: E1-05/06/07 and historical selector regressions
+        run: |
+          node --test scripts/e1-05-supervision.test.mjs scripts/e1-06-operation.test.mjs scripts/e1-07-work-order-close.test.mjs
+          node --test scripts/pr8-line-selection.test.mjs
+          node --test scripts/pr6-order-draft.test.mjs
       - name: TypeScript
         run: pnpm exec tsc --noEmit
       - name: ESLint
@@ -83,3 +86,18 @@ jobs:
       - name: READ ONLY legacy preflight on PostgreSQL 17
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_rollout_preflight_e108.py' -v
+      - name: E1-07 close service concurrency and idempotency
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_order_close_flow.py' -v
+      - name: E1-03 logical execution state and race regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_line_execution_flow.py' -v
+      - name: E1-04 F3/F6 transactional guard regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_capture_line_execution_guard.py' -v
+      - name: E1-05 supervisor capability, scope and gate regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_line_execution_capabilities_api.py' -v
+      - name: E1-02 existing assignment and multi-machine regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
