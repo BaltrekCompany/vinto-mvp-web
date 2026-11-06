@@ -48,6 +48,7 @@ fi
 
 # An independently held FD lock blocks *all* mutation entrypoints.
 exec 9<>"$lock"
+chmod 600 "$lock"  # File under contention must meet the script security contract.
 flock -n 9
 for mode in create verify create-and-verify prune-apply; do
   if [ "$mode" = verify ]; then
