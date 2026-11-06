@@ -43,9 +43,10 @@ jobs:
         run: pnpm exec tsc --noEmit
       - name: ESLint
         run: pnpm exec eslint components/vinto/sector-central.tsx components/vinto/candidate-form-capture.tsx
-      - name: Broad regression all frontend test modules (flag OFF compatibility)
-        run: node --test scripts/*.test.mjs
+      - name: All frontend modules, differential gate against pre-E1 main
+        run: node scripts/e1-broad-regression-gate.mjs
       - name: Next.js production build (no deployment)
+        if: always()
         run: pnpm build
 
   backend:
