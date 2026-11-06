@@ -131,9 +131,11 @@ AND (t.tgtype::int & 8) <> 0
 ORDER BY 1,2;
 
 -- H. Privilegios de lectura sobre auditoría y metadatos. No consultar contenido.
-SELECT has_table_privilege(current_user,'vinto_audit.audit_event','SELECT')
-         AS auditoria_lectura_autorizada,
-       has_table_privilege(current_user,'vinto_meta.schema_migration','SELECT')
-         AS migraciones_lectura_autorizada;
+SELECT CASE WHEN to_regclass('vinto_audit.audit_event') IS NULL THEN NULL
+            ELSE has_table_privilege(current_user, to_regclass('vinto_audit.audit_event'), 'SELECT')
+       END AS auditoria_lectura_autorizada,
+       CASE WHEN to_regclass('vinto_meta.schema_migration') IS NULL THEN NULL
+            ELSE has_table_privilege(current_user, to_regclass('vinto_meta.schema_migration'), 'SELECT')
+       END AS migraciones_lectura_autorizada;
 
 COMMIT;
