@@ -2,7 +2,44 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
-## AUTORIZACIÓN G3 VIGENTE — respaldo pre-DDL aprobado, PENDIENTE DE EJECUTAR (06/nov/2026)
+## GO VIGENTE G4 — migraciones 0013/0014 SIN nuevo respaldo G3 (06/nov/2026)
+
+**Fuente de autorización:** tras autorizar originalmente G3, el usuario solicitó saltar directamente a migraciones; se le explicó el riesgo de depender del backup P1-B guardado solo en el VPS y de perder los cambios posteriores si fuera necesario restaurarlo. El usuario respondió **«Autorizo»** a ejecutar G4 aplicando 0013 y 0014 sin crear otro respaldo. **G3 queda omitido / NO EJECUTAR por decisión posterior del usuario**, y NO debe lanzarse `backup.sh` bajo la autorización anterior.
+
+**Estado de ejecución a fecha de registro:** G1 PASS, G2 PASS. **G4 autorizado pero NO ejecutado por ChatGPT**, que no dispone de SSH al servidor. Solo Codex Desktop SSH debe operar con el runbook y devolver evidencias, sin avanzar a G5. El riesgo aceptado cubre exclusivamente omitir G3 y la ausencia de copia off-host verificada; **NO implica GO incondicional si el preflight G4 falla**.
+
+**Línea base objetivo:** VPS `vps-14d8e0ce`, operador `ubuntu`; base de datos MVP `vinto_piloto`, PostgreSQL 17, Compose `vinto-mvp`; `/opt/vinto-mvp-web/current` debe seguir apuntando a `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`. Release preparado `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a` con venv, `backend/.env` y `dist/standalone/server.js`. `WORK_ORDER_LINE_EXECUTION_ENABLED` efectivamente OFF en release activo. `check-release` G2 exit 2 (solo 0013/0014 pendientes).
+
+### G4.1 — Preflight nuevo READ ONLY y bloqueo ante anomalías
+
+1. Confirmar host y usuario, operación en ventana autorizada y baja concurrencia; `current` exacto, backend/frontend activos, contenedor PostgreSQL 17 MVP único y saludable, sin procesos de activación/rollback, deploy, migración, backup, restore ni OT de mantenimiento concurrentes. No inspeccionar, conectarse ni ejecutar sobre TVC. **No detener servicios** para forzar ventana de mantenimiento.
+2. Comprobar integridad de los scripts Ops instalados (sin sobrescribirlos), especialmente `deploy.sh` coherente con código previamente validado y `lib_common.sh` SHA256 `31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b`. Asegurar integridad del release preparado: commit EXACTO, frontend y venv presentes, propietario/permiso adecuado; link backend a `shared/backend.env` sin imprimir contenido. Verificar que backend activo todavía no reconoce flag nuevo o efectivo está OFF; no editar variables.
+3. Revalidar respaldo **P1-B ya existente, sin crear otro**: `/home/ubuntu/vinto-mvp-backups/vinto-mvp-vinto_piloto-20261106-154402-3915284.dump`; SHA256 dump `4ea5aa54a8ebfc579d6703683e7252efe0acd432615072e39a0319a3b29b97a3`; manifiesto SHA256 `0cab974da88b70d3721c8da1ee0885938dc1ca2e9b434717fbe3502dd7f4b363`, marcador `.verified` válido, verificación `sha256sum -c` de dump+manifiesto y evidencia histórica de restauración aislada 47 tablas/0 diferencias. **No repetir restore** ni hacer dump nuevo. Si alguna prueba falla STOP: aceptación de riesgo no autoriza proceder sin respaldo verificable.
+4. Antes de DDL, tomar diagnóstico **solo agregado** de estado funcional mínimo y control de migraciones, sin leer contenido de capturas/auditoría ni identificadores individuales; al menos conteos de OT por estado, asignaciones activas/terminadas y totales pertinentes. Obtenerlo en transacción `REPEATABLE READ READ ONLY`, con `lock_timeout <= 1500ms` y `statement_timeout <= 15000ms`. No otorgar nuevos privilegios ni utilizar `vinto_app` para leer `vinto_meta.schema_migration`: usar exclusivamente la identidad de migrador ya provisionada si se requiere consulta directa del historial.
+5. Ejecutar `bash deploy.sh check-release d5bc472b831eae8abd60899296ce8c146c119a5a` **solo lectura**; se exige **exit 2 y exactamente** `0013_work_order_line_execution.sql: pendiente` y `0014_work_order_archive.sql: pendiente`, 0001–0012 `aplicada` con nombres/checksums sin drift. El script del release nuevo valida hashes lógicos UTF-8 normalizados. Comprobar hashes **completos** de 0013/0014 respecto al commit `d5bc...` (no confiar solo en prefijos del informe previo). Si exit distinto, drift, extraneous pending o modificaciones en fuente ⇒ STOP.
+6. Revisar disponibilidad/capacidad de la base e inodos, locks DDL y actividad de escritura actual. Las instrucciones de 0014 contienen `ALTER TABLE` y triggers sobre tablas operativas; aun siendo aditivas, **pueden esperar locks e impactar escrituras**. Si se detecta congestión o período inapropiado, STOP / NO-GO, sin alterar servicios ni operaciones de usuarios.
+
+### G4.2 — Única ejecución autorizada
+
+**Solo si TODOS los guardas anteriores son PASS**, ejecutar como `ubuntu` desde scripts Ops instalados y con los dos valores de protección:
+
+```bash
+cd /home/ubuntu/vinto-mvp-ops/scripts
+SHA=d5bc472b831eae8abd60899296ce8c146c119a5a
+CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh migrate-release "$SHA"
+```
+
+Este **único comando** aplica secuencialmente 0013 y 0014 del release preparado, bajo candado de Ops/rollback y advisory lock del migrador, en **transacciones independientes por migración** y con `lock_timeout=5000` / `statement_timeout=60000` por conexión. **No** ejecutar SQL manual ni aplicar las versiones por scripts ad hoc, no ejecutar dos veces por errores. Guardar exit code y salida completa en un log privado `600` con privilegios `ubuntu`, sin `set -x` ni secretos. En fallo, STOP inmediatamente, **no** repetir aunque el script sugiera reintentar; consultar estado solo lectura para diagnosticar, y solicitar nuevo GO para reparación.
+
+### G4.3 — Postchecks obligatorios y cierre
+
+- **PASS solo si:** migrador exit 0, `check-release` exit 0 (no pendientes), historial exactamente 0001–0014 consecutivo con nombres/checksums esperados; 0013 contiene tabla `vinto_txn.work_order_line_execution` con índice unique parcial + triggers requeridos **y 0 filas**; 0014 contiene columnas `archived_at`, `archived_by`, `archived_reason`, check, índice y triggers instalados/habilitados. Al final **0 OT archivadas**, sin modificaciones de líneas, asignaciones, capturas, bobinas, Calidad ni auditoría de negocio atribuibles a G4.
+- Contrastar conteos agregados pre/post; los datos pueden tener movimiento legítimo concurrente, y diferencias exigen explicación/NO-GO de certificación, **nunca corregir datos a mano**.
+- Confirmar `current` todavía en release antiguo, backend/frontend activos, PostgreSQL MVP 17 healthy; no cambios flag E1, servicios/systemd, API ni TVC. No ejecutar `activate`, `preflight-startup` ni `postgres-up`.
+- Si 0013 pasa y 0014 falla, **0013 permanece aplicada**. Conservar diagnóstico/historial y STOP; NO intentar DROP/DELETE/rollback SQL ni activar. Reportar `G4 PARCIAL/NO-GO` y propuesta de corrección hacia delante con nueva autorización.
+- Preservar P1-B y backups anteriores; el usuario **acepta expresamente** riesgo de datos posteriores a ese backup y ausencia de copia externa verificada. **G5, archivado de OT, habilitar E1 y nueva intervención sobre datos NO autorizados.**
+
+## AUTORIZACIÓN G3 HISTÓRICA — anulada por posterior GO G4 sin nuevo respaldo (06/nov/2026)
 
 **Autorización específica del usuario:** «Ok autorizo» a la pregunta de ejecutar **G3**, un nuevo respaldo verificable del PostgreSQL MVP antes de las migraciones, **sin migración, despliegue, cambios de OT/flags ni intervención sobre TVC**.
 
