@@ -2,6 +2,14 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## Postcheck adicional del release activo — PASS (06/nov/2026)
+
+**Nueva evidencia directa enviada por usuario desde SSH después de G5:**
+- En `/opt/vinto-mvp-web/current/backend`, ejecutando `.venv/bin/python` como `vinto-mvp`, `app.config.settings.work_order_line_execution_enabled` reportó **`E1_FLAG=OFF`**.
+- `curl` a `http://127.0.0.1:8100/api/health` reportó **`API_HEALTH_HTTP=200`**.
+
+Esto **confirma configuración OFF del release actual y respuesta HTTP 200 del endpoint de salud API**. Junto con G4 PASS, G5_EXIT=0, backend `/health` HTTP 200, frontend HTTP 200, `current` SHA d5bc472b y ambos units activos, el **despliegue técnico está completado y verificado**. La consulta del módulo Python no demuestra por sí misma el entorno íntegro de cada proceso en ejecución, pero se ejecutó con el Python y configuración del release actual sin cambios reportados. **No equivale a QA funcional de usuario, permisos, formularios ni resoluciones de OT legadas.** Permanecen pendientes smoke manual read-only (autenticación, Jefatura/Supervisión/Operación, listados de OT) y observación de errores funcionales; no activar E1 ni modificar OT en esta validación. **No volver a ejecutar migraciones ni activaciones salvo incidencia concreta.**
+
 ## G5 ACTIVADO — PASS técnico de publicación productiva (06/nov/2026)
 
 **Fuente:** salida de PowerShell→SSH en la VPS, remitida directamente por el usuario. El usuario ejecutó el procedimiento oficial de activación después de G4 PASS:
