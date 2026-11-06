@@ -5,6 +5,26 @@
 **Código de referencia:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; VPS sigue en release `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` según P0.  
 **Referencia:** [P0 y P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md).
 
+## AUTORIZACIÓN VIGENTE — P1-B autorizado, pendiente de ejecutar (06/nov/2026)
+
+El usuario respondió **«Autorizo»** a la solicitud explícita de **retomar P1-B con el script corregido**, revalidando primero las condiciones del VPS y ejecutando **una sola vez** `create-and-verify`. Esta aprobación se añade a la autorización previa de uso **interno programático** de credenciales existentes de `docker/.env` por `backup.sh` exclusivamente para autenticación, sin inspección manual ni exposición de valores.
+
+**Estado real al registrar la aprobación:** script Ops PR #136 instalado PASS según Codex; respaldo P1-B **AUTORIZADO PERO NO EJECUTADO** en esta conversación (ChatGPT no dispone de SSH al VPS). Los textos históricos posteriores que dicen "NO AUTORIZADO" describen el estado anterior y quedan superados **solo para P1-B** por este apartado. Mantener NO-GO si falla alguna guarda.
+
+**Orden de ejecución a Codex Desktop, bajo SSH preautorizado:**
+
+1. Antes de toda escritura, confirmar integridad de `backup.sh` instalado SHA-256 `53bbda26c74b46f3868f239e27385f64d7c7c3d363a4e90a7427fb02259d3a25`, `lib_common.sh` SHA-256 `31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b`, sintaxis Bash, `flock`, directorio regular `ubuntu:700`, contenedor exacto `vinto-mvp-postgres` healthy, imagen `postgres:17`, Compose `vinto-mvp`, base `vinto_piloto`.
+2. Revalidar capacidad libre ≥1024 MiB en filesystem **compartido** del backup y Docker, inodos suficientes, overrides de ruta/base unset, sin scripts manuales/antiguos de respaldo no cooperativos en curso ni tareas futuras que puedan solaparse. Confirmar preflight de aislamiento TVC y política de no sobreescritura/poda. Ante desviación: **NO-GO, detener sin ejecutar**.
+3. Permitir únicamente al script examinar los **valores de autenticación necesarios** en `docker/.env` internamente; **prohibido** imprimirlos, grabarlos o usar `set -x`. El contrato del archivo se verifica antes de acceder a valores.
+4. Tras controles PASS, ejecutar **una vez**:
+   ```bash
+   cd /home/ubuntu/vinto-mvp-ops/scripts
+   CONFIRM=yes VINTO_MVP_BACKUP_MIN_FREE_MB=1024 bash backup.sh create-and-verify
+   ```
+5. Verificar que el backup **nuevo** tiene marcador `.verified`, hashes/manifiesto válidos, restauración efectiva en Postgres efímero `--network none`, **0 discrepancias** en tablas, contenedor y contraseña temporal eliminados, servicios MVP saludables y backups previos intactos. Reportar datos agregados y el resultado PASS/FAIL. Si falla, detener sin reintentos automáticos.
+
+**Esta autorización NO cubre:** restaurar sobre `vinto_piloto`, limpiar simulados, migración 0013, desplegar E1, modificar flags/grants/servicios ni tocar TVC. No avanzar a P2 aunque P1-B pase.
+
 ## ACTUALIZACIÓN MÁS RECIENTE — Bloqueos P1-B subsanados a nivel de script (06/nov/2026)
 
 El usuario autorizó la integración del correctivo #136 y su posterior instalación Ops. **Codex Desktop informó instalación PASS**, reemplazando solo `/home/ubuntu/vinto-mvp-ops/scripts/backup.sh`: Git blob `5ae19d8a8db75bb61f8e67bd1159acfab684ddc3`, SHA-256 `53bbda26c74b46f3868f239e27385f64d7c7c3d363a4e90a7427fb02259d3a25`. Se conservó copia de rollback `backup.sh.pre-e1-09-20261106T153014Z` con SHA-256 previo `12151e680a2ef8dd400393794041c18adf4425bfd4ebfea38d5882e7b345738a`; `lib_common.sh` intacto (`31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b`). Sintaxis Bash PASS; sin anomalías. [Evidencia completa](E1-09-PR136-instalacion-controlada-Ops.md).
