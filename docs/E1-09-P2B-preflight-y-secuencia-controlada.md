@@ -2,7 +2,52 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
-## G4 — PRECHECK NO-GO (06/nov/2026): **NO SE EJECUTARON MIGRACIONES**
+## NUEVA AUTORIZACIÓN OPERATIVA — GO CONDICIONADO G4 + G5, E1 OFF (06/nov/2026)
+
+**Solicitud explícita del usuario:** «Sabes estamos tomando en consideración mucho las OTs que estan abiertas, autorizemos forzosamente, el despliegue, si ya tenemos todo». Se interpreta y registra como **aprobación expresa de avanzar con las migraciones 0013/0014 (G4) y la activación del release preparado (G5, únicamente binarios)** en una intervención controlada, **SIN exigir reconciliar las transiciones históricas de OT ni cerrar OT abiertas**. **NO** autoriza habilitar el flag `WORK_ORDER_LINE_EXECUTION_ENABLED`, archivar/restaurar OT, borrar/transmutar datos, forzar permisos o sustituir automáticamente un release ausente.
+
+**Estado al registrar:** la evidencia más reciente G4-R fue **NO-GO**, sin ninguna migración ejecutada. La ausencia del release preparado era **NO VERIFICABLE** en ese diagnóstico, no una eliminación demostrada; debe revisarse como `vinto-mvp`, dado que `/opt/vinto-mvp-web` tiene acceso privado 750. La reconciliación SQL-E no puede atribuir movimientos históricos porque faltan timestamps de cortes, pero el corte actual (2026-11-06 21:21:34Z y 21:22:28Z) es estable en 54s: 21 OT totales (8 draft, 13 in_progress), 74 asignaciones (9 active, 65 finished), 18 líneas baseline de OT in_progress (9 con 1 active, 9 sin active con finished histórico, 0 con más de 1 active). **La no conciliación del drift histórico deja de ser una guarda bloqueante del despliegue**. Conservar la discrepancia como riesgo/documentación, sin alterar datos. El flag es `UNSET` en proceso viejo; en el nuevo **no se verificó el valor efectivo**.
+
+### Criterios mínimos NO NEGOCIABLES previos a escritura
+
+1. Confirmar host VPS `vps-14d8e0ce`, operador `ubuntu`; `current` exactamente `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`; backend/frontend `active` y PostgreSQL 17 `vinto-mvp-postgres` healthy, Compose `vinto-mvp`. No intervenir TVC. No alterar ni reiniciar servicios para 'hacer pasar' los prechecks.
+2. **Verificar el release staged COMO USUARIO `vinto-mvp`**, nunca mediante `test` de `ubuntu` sobre `/opt/vinto-mvp-web`: `sudo -n -u vinto-mvp test -d /opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a/backend/migrations`, y `test -f` para `dist/standalone/server.js`, `backend/migrate.py` y `backend/.env`; `test -x` sobre `.venv/bin/python` y `.venv/bin/uvicorn`; `sudo -n -u vinto-mvp git -C <release> rev-parse HEAD` exacto; origin correcto. Comprobar que `backend/.env` enlaza a shared/backend.env sin leer su contenido. **Si realmente falta, STOP** y reportar; no recrear checkout/artifact silenciosamente, no migrar ni activar.
+3. **Flag E1 OFF bajo configuración efectiva del release nuevo**, no solo default Pydantic: el unit `vinto-mvp-backend.service` esperado no define `EnvironmentFile` y el backend obtiene `backend/.env` desde `shared/backend.env`. Inspeccionar contrato/overrides systemd y cargar `settings.work_order_line_execution_enabled` con Python del nuevo release **como `vinto-mvp`**, imprimiendo exclusivamente `ON/OFF/NO_VERIFICABLE` sin registrar contenidos de `.env`, `DATABASE_URL` ni otras variables. Si unit overrides llevan `WORK_ORDER_LINE_EXECUTION_ENABLED`, comprobar su valor booleano sin volcar el resto del entorno. **Solo OFF => continuar**. Si ON/NO_VERIFICABLE, STOP; no modificar config.
+4. Revalidar respaldo P1-B `/home/ubuntu/vinto-mvp-backups/vinto-mvp-vinto_piloto-20261106-154402-3915284.dump` y sidecars `.dump.manifest`, `.dump.verified` con SHA-256 dump `4ea5aa54a8ebfc579d6703683e7252efe0acd432615072e39a0319a3b29b97a3` y manifiesto `0cab974da88b70d3721c8da1ee0885938dc1ca2e9b434717fbe3502dd7f4b363`, SHA sidecars `sha256sum -c`; restore anterior de 47 tablas / 0 discrepancias. El usuario aceptó omitir G3 y la copia off-host **NO ESTÁ verificada**. No ejecutar backup, prune ni restores adicionales.
+5. Confirmar scripts Ops instalados, identidad/permiso/hashes, ausencia de operaciones concurrentes `backup.sh`, migrador, `deploy.sh`, restore, activación/rollback; diagnóstico de procesos que EXCLUYA al propio inspector y no exponga argumentos/credenciales. Verificar locks de mantenimiento de Ops y esperas significativas en PostgreSQL MVP, ventana apta para el breve lock DDL de `0014 ALTER TABLE`/triggers. `lock_timeout=5000`, `statement_timeout=60000` del migrador limita esperas/consultas, pero **no elimina totalmente el riesgo de interrupción**.
+6. `bash deploy.sh check-release d5bc472b831eae8abd60899296ce8c146c119a5a` READ ONLY **exit 2** y exactamente 0013/0014 pendientes; 0001–0012 consecutivas, sin nombres/checksums divergentes; hashes de fuentes SQL del SHA congelado. **Actualizar corte agregado** de OT/asignaciones/líneas con transacción `REPEATABLE READ READ ONLY` y timestamps. Las diferencias de conteo respecto a SQL-E **NO bloquean** por sí solas si no revelan violación actual de invariantes (p. ej. >1 activa para misma línea o inconsistencia de FK). No limpiar OT.
+7. Validar plan de reversión **de binarios solamente**: release anterior y servicios originales disponibles, `rollback.sh version <SHA_ANTERIOR>` y healthcheck preparados; restaurar código antiguo en esquema avanzado puede tener incompatibilidades. No ejecutar downgrade SQL, borrar 0013/0014 ni asumir reversibilidad completa. Conservar operador disponible durante la activación y monitoreo.
+
+### Secuencia ejecutable con STOP obligatorio entre G4 y G5
+
+**Si TODOS los mínimos anteriores PASS**, autoriza en esta misma intervención primero:
+
+```bash
+cd /home/ubuntu/vinto-mvp-ops/scripts
+SHA=d5bc472b831eae8abd60899296ce8c146c119a5a
+CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh migrate-release "$SHA"
+```
+
+Registrar stdout/stderr y exit en log único privado `600` (sin `set -x` ni secretos), sin reintentos automáticos. `migrate.py` aplica cada migración en transacción independiente; si 0013 pasa y 0014 falla, **STOP** con 0013 aplicada y 0014 pendiente. NO activar, no revertir esquema manualmente, consultar solo lectura para diagnóstico.
+
+**Puerta intermedia obligatoria después de G4:** `migrate-release` exit 0, `bash deploy.sh check-release "$SHA"` exit 0 y migraciones exactamente 0001–0014; tabla ejecución lógica creada con **0 filas**, índice y triggers de 0013 presentes, columnas `archived_at/by/reason` + restricción/index/triggers 0014 presentes, **0 OT archivadas**, flag todavía OFF y continuidad saludable. Desviaciones STOP, sin G5.
+
+**Solo si la puerta intermedia PASS**, autoriza (G5 **activación de binarios únicamente**):
+
+```bash
+bash deploy.sh preflight-startup
+CONFIRM=yes bash deploy.sh activate "$SHA"
+```
+
+`preflight-startup` es de solo lectura y puede informar puertos 3100/8100/6544 ocupados por el **propio MVP**; verificar identidad, no confundir avisos con FALLA. `activate` usa lock Ops, verifica schema del release destino, conmuta `current`, reinicia backend/frontend y ejecuta healthchecks con rollback automático hacia binarios antiguos si falla. **No** ejecutar `postgres-up`, `systemd-install` ni `migrate` alternativo.
+
+**Postchecks G5 obligatorios:** `current` exacto al nuevo SHA, backend/frontend `active`, HTTP 200 `/health`, `/api/health` y frontend; DB MVP healthy con 0013/0014 aplicadas, flag E1 **OFF** con nueva instancia activa. Smoke de solo lectura/controlado de login, vistas principales Jefatura/Supervisión/Operación y listados de OT (sin archivar, editar, iniciar/terminar ni capturar producción), sin IDs personales. Comprobar funcionalidad legacy y errores recientes; no cambiar ETL/BI/TVC. Si fallan salud o funciones, STOP y reportar si rollback binario automático realmente ocurrió; no asumir revertido esquema.
+
+**NO AUTORIZADO por este GO:** poner flag E1 ON, archivar las 8 candidatas, editar/borrar/normalizar 13 OT `in_progress`, forzar truncados/cambios SQL, otorgar privilegios, ejecutar backup G3, tocar TVC, instalar toolchains o reemplazar/eliminar releases, ignorar fallos de schema/healthchecks para continuar. Tampoco se autoriza el cierre de E1-08: sus requisitos de conciliación de legado siguen pendientes del rollout funcional.
+
+**Estado actual de ejecución:** autorización recibida, **G4 y G5 aún NO EJECUTADOS**. ChatGPT no tiene SSH al VPS; Codex Desktop debe actuar y reportar resultados, deteniéndose si aparece cualquier bloqueo técnico real.
+
+## G4 — PRECHECK NO-GO HISTÓRICO (06/nov/2026): **NO SE EJECUTARON MIGRACIONES**
 
 **Evidencia remitida por Codex Desktop SSH**. Este estado **suspende el GO operativo G4** hasta una conciliación read-only y una autorización posterior específica para volver a intentar las migraciones. El antiguo GO G4 y la omisión explícita de G3 se conservan más abajo como histórico de decisiones.
 
