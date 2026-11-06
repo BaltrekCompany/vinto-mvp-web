@@ -79,3 +79,23 @@ export function safeExecutionMessage(code: string | undefined, fallback: string)
     if (code === "LINE_EXECUTION_CONFLICT") return "El estado de la línea cambió. Actualiza antes de repetir.";
     return fallback;
 }
+
+export type ExecutionMutation = Omit<ExecutionLine, "current_assignment_id"> & { work_order_id: string };
+
+export function parseExecutionMutation(raw: unknown): ExecutionMutation | null {
+    if (!isRec(raw) || !isStr(raw.work_order_id)) return null;
+    const data = {
+        work_order_id: raw.work_order_id,
+        lines: [{
+            baseline_line_id: raw.baseline_line_id, line_code: raw.line_code,
+            machine_code: raw.machine_code, status: raw.status,
+            current_assignment_id: null,
+            started_at: raw.started_at, started_by: raw.started_by,
+            finished_at: raw.finished_at, finished_by: raw.finished_by,
+        }],
+    };
+    const parsed = parseWorkOrderExecution(data);
+    if (!parsed || parsed.lines.length !== 1) return null;
+    const { current_assignment_id: _unused, ...line } = parsed.lines[0];
+    return { ...line, work_order_id: parsed.work_order_id };
+}
