@@ -1,9 +1,37 @@
 # VINTO E1-09 — P2-A: diagnóstico previo a migración 0013 (SOLO LECTURA)
 
-**Fecha:** 2026-11-06. **Estado:** revisión estática de código/DDL REALIZADA; diagnóstico de datos del VPS aún NO EJECUTADO (sin SSH disponible en esta sesión).  
+**Fecha:** 2026-11-06. **Estado:** diagnóstico VPS **PARCIAL** — consultas A–G ejecutadas PASS por Codex SSH; H detenida por permisos en `vinto_meta`, sin escritura; continuación READ ONLY preparada.  
 **Fuente:** P1-B verificado en VPS por Codex Desktop: `create-and-verify` una sola vez, exit 0, nuevo `.verified`, restauración temporal sin red, 47 tablas / 0 discrepancias, 18 respaldos anteriores intactos. Ver [P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md).  
 **Repositorio de referencia:** `BaltrekCompany/vinto-mvp-web`, `main@c64893e86a983a86d57f9a7406d0d736417f17e3`.  
 **Alcance de P2-A:** análisis documental y, con SSH autorizado aparte, inspección **READ ONLY**, sin cambio de servicios ni datos. **P2-B (aplicar 0013) NO AUTORIZADO**.
+
+## Resultado remoto P2-A — inspección parcial por permisos (06/nov/2026)
+
+**Fuente:** informe del operador Codex Desktop SSH. ChatGPT no ha ejecutado SQL en el VPS. Revalidación: release activo `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`, tabla 0013 ausente, backend/frontend activos, contenedor MVP PostgreSQL healthy, respaldo P1-B nuevo con marcador y checksums PASS. Consulta por stdin al contenedor `vinto-mvp-postgres`, BD `vinto_piloto`, rol `vinto_app`, transacción `REPEATABLE READ READ ONLY` con guard 1, timeouts y corte 2026-11-06 12:01:58 (Bolivia).
+
+| Estado de OT | OT | Versiones | Líneas | Baseline | Asignaciones | Activas | Finished (turno) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `draft` | 7 | 7 | 11 | 11 | 0 | 0 | 0 |
+| `in_progress` | 12 | 24 | 32 | 16 | 72 | 11 | 61 |
+| `published` | 1 | 1 | 2 | 2 | 0 | 0 | 0 |
+| `closed` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **Total** | **20** | **32** | **45** | **29** | **72** | **11** | **61** |
+
+- **Capturas:** **63 `submitted`** relacionadas por `capture.assignment_id` con OT `in_progress`. **21 capturas sin `assignment_id`** en toda la tabla: su vínculo semántico con OT no está verificado. No se obtuvieron conteos de bobinas, Calidad, detalles ni eventos de auditoría; las FKs y triggers observadas son metadatos, no volúmenes de dependientes.
+- **Fallo exacto:** consulta H intentó `to_regclass('vinto_meta.schema_migration')` y terminó `permission denied for schema vinto_meta`; `ON_ERROR_STOP=1` abortó antes del `COMMIT`. Sin escritura, sin bypass de rol, sin cambios ni lectura de secretos. El error es esperable por la restricción del rol `vinto_app`; **NO justifica `GRANT` ni acceder como superusuario**.
+- **Comparación con SQL-E:** 12 OT en curso, 16 baseline y 11 asignaciones activas coinciden con el último corte; NO se repitió la conciliación de 5 líneas sin activa. No confundir `assignment.finished` (61 asignaciones de turno) con ejecución lógica `finished`.
+- **Interpretación:** las 20 OT pertenecen al universo de base, no necesariamente a las que ve un usuario, pues la API filtra por rol y sector. Las 63 capturas asociadas son historial de pruebas que el borrado físico debería preservar o tratar con política explícita; no están autorizadas como filas eliminables.
+
+**Corrección documental GitHub:** en [consulta P2-A original](E1-09-P2A-ot-ficticias-diagnostico.sql), H fue reemplazada por una consulta a `pg_catalog.pg_class` y `pg_namespace` por **OID**, reportando `has_schema_privilege` y `has_table_privilege` sin resolver el nombre restringido `vinto_meta.schema_migration`. **El SQL corregido NO se ha ejecutado en VPS.**
+
+**Continuación recomendada, con autorización de diagnóstico READ ONLY ya otorgada:**
+
+1. Ejecutar únicamente [P2-A2 — H por catálogo y distribución sector/máquina](E1-09-P2A2-continuacion-readonly.sql) por stdin, con la misma identidad y garantías `REPEATABLE READ READ ONLY`. No repetir A–G sin motivo. Reportar los permisos efectivos `USAGE && SELECT`, agregados por sector y 21 capturas sin asignación por estado/sector. Si aparece migración 0013, otra identidad o falla autenticación: detener.
+2. **Solo cuando P2-A2 confirme `lectura_efectiva=true`** para todas las tablas implicadas, ejecutar [P2-A3 — dependientes directos de captura, bobina y Calidad](E1-09-P2A3-dependientes-opcional-readonly.sql). Si falta algún permiso, omitir íntegramente P2-A3 y marcar `NO VERIFICADO`; **no ampliar privilegios**. Estas consultas no incluyen vínculos JSON de auditoría/importaciones.
+3. El historial real `vinto_meta.schema_migration` permanece **NO VERIFICADO** mediante `vinto_app`. No usar credenciales del backup para migraciones ni ejecutar `migrate.py` sin aprobación y canal migrador legítimo.
+4. Definir el conjunto de OT **visibles en la aplicación** por rol/sector; no deducirlo de los 20 registros. Eliminar o archivar físicamente **no forma parte de P2-A**. Retirar OT de la lista sin cambiar sus estados **no elimina** los bloqueos E1-08 de OT `in_progress` sin ejecución.
+
+**Decisión actual:** P1-B PASS; P2-A **PARCIAL**, lectura corregida pendiente; P2-B/0013, borrado/archivo, despliegue, flag ON y TVC **NO EJECUTADOS**.
 
 ## Actualización: usuario autoriza retirar las OT ficticias visibles
 
