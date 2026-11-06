@@ -130,12 +130,31 @@ AND t.tgrelid IN (
 AND (t.tgtype::int & 8) <> 0
 ORDER BY 1,2;
 
--- H. Privilegios de lectura sobre auditoría y metadatos. No consultar contenido.
-SELECT CASE WHEN to_regclass('vinto_audit.audit_event') IS NULL THEN NULL
-            ELSE has_table_privilege(current_user, to_regclass('vinto_audit.audit_event'), 'SELECT')
-       END AS auditoria_lectura_autorizada,
-       CASE WHEN to_regclass('vinto_meta.schema_migration') IS NULL THEN NULL
-            ELSE has_table_privilege(current_user, to_regclass('vinto_meta.schema_migration'), 'SELECT')
-       END AS migraciones_lectura_autorizada;
+-- H. Reparación P2-A, 2026-11-06: el uso de to_regclass('vinto_meta.*')
+-- puede dar permission denied for schema vinto_meta si vinto_app no tiene
+-- USAGE. CONSULTAR SOLO EL CATALOGO, por OID, sin resolver nombres privados.
+-- has_table_privilege no equivale a acceso efectivo sin USAGE de esquema.
+-- NO consulta historiales, datos de auditoría ni credenciales.
+SELECT n.nspname AS esquema, c.relname AS tabla,
+       has_schema_privilege(current_user, n.oid, 'USAGE') AS uso_esquema,
+       has_table_privilege(current_user, c.oid, 'SELECT') AS select_tabla,
+       (has_schema_privilege(current_user, n.oid, 'USAGE')
+        AND has_table_privilege(current_user, c.oid, 'SELECT')) AS lectura_efectiva
+FROM pg_catalog.pg_class c
+JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+WHERE c.relkind IN ('r','p')
+  AND (n.nspname, c.relname) IN (
+       ('vinto_audit','audit_event'),
+       ('vinto_audit','import_record'),
+       ('vinto_txn','bobbin'),
+       ('vinto_txn','bobbin_relation'),
+       ('vinto_txn','quality_release'),
+       ('vinto_txn','capture_group_row'),
+       ('vinto_txn','capture_detail'),
+       ('vinto_meta','schema_migration')
+  )
+ORDER BY n.nspname, c.relname;
+-- Ausencia de fila o lectura_efectiva=false: NO VERIFICADO / SIN ACCESO.
+-- No intentar SELECT sobre vinto_meta ni ampliar privilegios.
 
 COMMIT;
