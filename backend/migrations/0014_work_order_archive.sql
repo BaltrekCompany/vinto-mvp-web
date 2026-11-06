@@ -109,7 +109,7 @@ CREATE TRIGGER a_guard_archive_assignment
 -- Guard baseline/operational descendants, even for direct SQL writers.
 -- We do not delete or alter any existing version/line.
 CREATE FUNCTION vinto_txn.guard_work_order_version_archive()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE parent_id uuid; archived timestamptz;
 BEGIN
   IF TG_OP = 'DELETE' THEN parent_id := OLD.work_order_id;
@@ -129,13 +129,13 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER a_guard_archive_version
   BEFORE INSERT OR UPDATE OR DELETE ON vinto_txn.work_order_version
   FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_work_order_version_archive();
 
 CREATE FUNCTION vinto_txn.guard_work_order_line_archive()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE version_id uuid; archived timestamptz;
 BEGIN
   IF TG_OP = 'DELETE' THEN version_id := OLD.work_order_version_id;
@@ -159,7 +159,7 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER a_guard_archive_line
   BEFORE INSERT OR UPDATE OR DELETE ON vinto_txn.work_order_line
   FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_work_order_line_archive();
