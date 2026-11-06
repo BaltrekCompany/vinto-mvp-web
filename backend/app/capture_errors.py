@@ -32,6 +32,14 @@ class AssignmentNotActiveError(CaptureError):
     http_status, code, public_message = 409, "ASSIGNMENT_NOT_ACTIVE", "La asignación no está activa o no admite capturas"
 
 
+class LineNotInProductionError(CaptureError):
+    http_status, code, public_message = (
+        409, "LINE_NOT_IN_PRODUCTION",
+        "La línea no está en producción; Supervisión debe iniciarla antes de capturar",
+    )
+
+
+
 class AssignmentStaleError(CaptureError):
     http_status, code, public_message = 409, "ASSIGNMENT_STALE", "La asignación corresponde a otro turno o fecha operativa; Supervisión debe reactivarla"
 
