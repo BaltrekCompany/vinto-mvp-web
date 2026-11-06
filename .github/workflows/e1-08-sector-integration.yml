@@ -10,6 +10,9 @@ on:
       - 'backend/app/work_orders/rollout_preflight.py'
       - 'backend/app/work_orders/preflight_cli.py'
       - 'backend/tests/test_rollout_preflight_e108.py'
+      - 'docs/E1-08-preflight-legado-readonly.md'
+      - 'docs/E1-08-auditoria-compatibilidad-sectores.md'
+      - 'docs/E1-08-matriz-qa-go-no-go.md'
       - '.github/workflows/e1-08-sector-integration.yml'
 
 permissions:
