@@ -1,6 +1,6 @@
 # VINTO E1-09 — P0 validado y P1-A inventario de respaldo (SOLO LECTURA)
 
-**Corte informado:** 06/nov/2026, hora de Bolivia. **Estado:** P0 PASS para preparar P1, P1-A diseñado pero **NO EJECUTADO**.  
+**Corte informado:** 06/nov/2026, hora de Bolivia. **Estado:** P0 PASS; P1-A **EJECUTADO — PASS** según evidencia del operador remoto. P1-B **NO AUTORIZADO**.  
 **Evidencia:** resultados agregados entregados por el ejecutor remoto mediante la conversación; no hubo SSH directo desde ChatGPT.  
 **Alcance:** `vinto-mvp-postgres`, `vinto_piloto`, rol `vinto_app`; TVC fuera de alcance.
 
@@ -123,4 +123,23 @@ Entregar **solo**: SHA-256 de los dos scripts del directorio Ops (o validación 
 - Definir el backup requerido y aceptar que la verificación usa Docker efímero; se necesita autorización separada antes de `CONFIRM=yes bash backup.sh create-and-verify`.
 - P1-B no incluye migración 0013, cambios de flags, desplegar, reiniciar, borrar ni manipular datos de pruebas.
 
-**Dictamen vigente:** P0 PASS; P1-A READ ONLY POR EJECUTAR; P1-B NO AUTORIZADO; migración/deploy/flag ON NO-GO.
+**Dictamen vigente (actualizado 06/nov/2026):** P0 PASS; **P1-A EJECUTADO y PASS** en modo de solo lectura, de acuerdo con el informe agregado del ejecutor remoto; **P1-B NO AUTORIZADO**. Migración 0013, despliegue y flag ON siguen en **NO-GO**.
+
+## D. Resultado P1-A recibido (06/nov/2026; evidencia agregada del operador)
+
+> Esta sección registra resultados de ejecución aportados por el operador remoto. No implica SSH directo ni reejecución desde GitHub. El procedimiento original de la sección B se conserva como referencia reproducible.
+
+| Control | Evidencia recibida | Evaluación |
+|---|---|---|
+| Integridad de scripts | Objetos Git locales equivalentes a `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; SHA-256 `backup.sh = 12151e680a2ef8dd400393794041c18adf4425bfd4ebfea38d5882e7b345738a`; `lib_common.sh = 31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b` | PASS |
+| Sintaxis | `bash -n` de ambos scripts, sin ejecutarlos | PASS |
+| Overrides | Tres variables de override sin establecer; no se divulgaron valores | PASS |
+| Directorio de respaldo | Regular, no symlink, dueño `ubuntu`, permisos `700`, ocupación 41 MiB | PASS |
+| Inventario | 18 archivos `.dump`, 18 `.verified`, 0 `.CORRUPT` | PASS en conteo; **restaurabilidad no comprobada** |
+| Capacidad | Backup y Docker comparten `/dev/sda1`; 184,838 MiB libres y 25,735,732 inodos libres | PASS; no duplicar las reservas |
+| Base `vinto_piloto` | 50,271,923 bytes (47.94 MiB); guard de base, rol y esquema PASS; transacción `REPEATABLE READ READ ONLY` cerrada con `COMMIT` | PASS |
+
+**Recomendación:** GO **solo para solicitar autorización separada de P1-B**. Como referencia, exigir un mínimo de 1 GiB libre en el filesystem compartido antes de crear/restaurar el backup; revalidar capacidad justo antes de P1-B, sin considerar 500 MB del script como suficiencia demostrada.
+
+**Precondiciones adicionales obligatorias:** comprobar aislamiento de TVC, identidad y salud del contenedor MVP, política de no sobrescritura y no poda de respaldos anteriores, permisos y recursos de Docker efímero y confidencialidad de credenciales. P1-B deberá utilizar el procedimiento versionado de `create-and-verify` únicamente tras aprobación explícita. No autoriza migración 0013, despliegues, reinicios, flags ni cambios en TVC.
+
