@@ -1,9 +1,34 @@
 # VINTO E1-09 — P1-B: respaldo nuevo y restauración verificable
 
-**Fecha:** 06/nov/2026. **Estado:** PROCEDIMIENTO PREPARADO, **P1-B NO EJECUTADO**.  
+**Fecha:** 06/nov/2026. **Estado actual:** **P1-B COMPLETADO — PASS** según informe remitido por el ejecutor SSH. Se conserva el procedimiento y los NO-GO históricos para trazabilidad.  
 **Fuente de evidencia P1-A:** resultados agregados remitidos por operador SSH; no se usó SSH desde ChatGPT.  
 **Código de referencia:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; VPS sigue en release `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` según P0.  
 **Referencia:** [P0 y P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md).
+
+## RESULTADO FINAL — P1-B PASS (2026-11-06)
+
+**Evidencia entregada por Codex Desktop/operador SSH; ChatGPT no ha entrado directamente al VPS.** Se ejecutó **una sola vez** `CONFIRM=yes VINTO_MVP_BACKUP_MIN_FREE_MB=1024 bash backup.sh create-and-verify` y terminó con **exit 0**.
+
+| Evidencia | Resultado informado |
+|---|---|
+| Nuevo respaldo | `vinto-mvp-vinto_piloto-20261106-154402-3915284.dump` |
+| SHA-256 del dump | `4ea5aa54a8ebfc579d6703683e7252efe0acd432615072e39a0319a3b29b97a3` |
+| SHA-256 del manifiesto | `0cab974da88b70d3721c8da1ee0885938dc1ca2e9b434717fbe3502dd7f4b363` |
+| Checksums de ambos | PASS |
+| Marcador nuevo `.verified` | PASS |
+| Restauración aislada | PASS, en contenedor temporal PostgreSQL `--network none` |
+| Conciliación del manifiesto | **47 tablas comparadas, 0 discrepancias** |
+| Contenedores de verificación restantes | 0 |
+| Integridad respaldos anteriores | 18 dumps anteriores conservados; resumen criptográfico previo/posterior idéntico (`bf443da5…58d509e`) |
+| Inventario después | 19 dumps, 19 marcadores `.verified`, 0 `.CORRUPT`, 0 `.partial` |
+| Servicios MVP | Backend y frontend activos; `vinto-mvp-postgres` imagen `postgres:17`, Compose `vinto-mvp`, running/healthy |
+| Credenciales | Consumo interno autorizado; valores no inspeccionados ni divulgados |
+| Concurrencia adicional | Timer de respaldos de paquetes del SO inactivo, próximo 8 h después, ajeno a VINTO |
+| Desviación no bloqueante | Una invocación aislada del helper de permisos requirió contexto `SCRIPT_DIR`; repetida con contexto correcto, PASS, sin modificar entorno |
+
+**Criterio técnico P1-B cumplido.** La verificación comprueba que `pg_restore` concluyó y que los **recuentos por tabla** de la base restaurada coinciden con un manifiesto capturado en el mismo snapshot; **no equivale a una comparación byte a byte** de todos los registros, ni a una garantía frente a fallas del mismo disco. Los 19 respaldos están en el almacenamiento compartido de la VPS según el último inventario; residencia fuera del host **NO VERIFICADA**.
+
+**Decisión:** cerrar **P1-B PASS**; autorización consumida, **no repetir** `create-and-verify` sin nuevo objetivo y aprobación. Preparar **P2-A solo lectura**, que evalúe la migración 0013, compatibilidad y tratamiento de datos históricos simulados. **NO-GO para P2-B (aplicar 0013), activación de flag, despliegue E1, modificación de simulados o TVC**. Los apartados posteriores describen decisiones y procedimientos previos a este cierre y se conservan como historial.
 
 ## AUTORIZACIÓN VIGENTE — P1-B autorizado, pendiente de ejecutar (06/nov/2026)
 
