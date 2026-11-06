@@ -9,6 +9,22 @@ export function listWorkOrders(signal?: AbortSignal): Promise<ApiResult<WorkOrde
     return requestJson("/api/work-orders", { signal }, parseWorkOrderList);
 }
 
+// E1-09 archival: manager-only endpoint. The regular list hides archived OT.
+// No direct mutation of status, assignments, captures or audit records.
+export function listArchivedWorkOrders(signal?: AbortSignal): Promise<ApiResult<WorkOrder[]>> {
+    return requestJson("/api/work-orders?archived=true", { signal }, parseWorkOrderList);
+}
+
+export function archiveWorkOrder(workOrderId: string, reason: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
+    return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/archive`,
+        { method: "POST", body: { reason: reason.trim() }, signal }, parseWorkOrder);
+}
+
+export function restoreWorkOrder(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
+    return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/restore`,
+        { method: "POST", signal }, parseWorkOrder);
+}
+
 export function createWorkOrder(machineCode: string, line: LineDraft, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
     return requestJson("/api/work-orders", { method: "POST", body: createWorkOrderPayload(machineCode, line), signal }, parseWorkOrder);
 }

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.assignments import service as assignments_service
 from app.assignments.schemas import ActivateAllIn, ActivateAllOut, activate_all_out
@@ -66,11 +66,16 @@ def create_work_order(body: CreateWorkOrderIn, user: AuthenticatedUser = Depends
 @router.get("", response_model=list[WorkOrderOut], responses=_ERRORS)
 def list_work_orders(machine_code: str | None = Query(default=None, max_length=64),
                      status: Literal["draft", "published", "in_progress", "closed"] | None = None,
+                     archived: bool = False,
                      limit: int = Query(default=service.DEFAULT_LIST_LIMIT, ge=1, le=service.MAX_LIST_LIMIT),
                      user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)), connection=Depends(get_connection)):
+    # Archived history is explicitly opt-in for managerial profiles only.
+    if archived and not _manages(user):
+        raise HTTPException(status_code=403, detail=FORBIDDEN)
     scope = visibility.legacy_scope(connection, user, "work_orders.list")
     return [work_order_out(v) for v in service.list_work_orders(connection, machine_code=machine_code, status=status, limit=limit, sectors=user.sectors,
-                                                                       multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope)]
+                                                                       multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope,
+                                                                       archived=archived)]
 
 
 # DEBE ir antes de `/{work_order_id}`: de lo contrario «capabilities» se interpretaría como el identificador de una OT.
@@ -98,10 +103,40 @@ def execution_capabilities(
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
-def get_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
+def get_work_order(work_order_id: str, include_archived: bool = False,
+                   user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ)),
                    connection=Depends(get_connection)):
+    if include_archived and not _manages(user):
+        raise HTTPException(status_code=403, detail=FORBIDDEN)
     scope = visibility.legacy_scope(connection, user, "work_orders.detail")
-    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors, multi_machine_visible=_manages(user) or scope is not None, machine_codes=scope))
+    return work_order_out(service.get_work_order(connection, work_order_id, sectors=user.sectors,
+                          multi_machine_visible=_manages(user) or scope is not None,
+                          machine_codes=scope, include_archived=include_archived))
+
+
+class ArchiveWorkOrderIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=10, max_length=300)
+
+
+@router.post("/{work_order_id}/archive", response_model=WorkOrderOut, responses=_ERRORS)
+def archive_work_order(work_order_id: str, body: ArchiveWorkOrderIn,
+                       user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                       connection=Depends(get_connection)):
+    """Jefatura only. Draft/published, no assignments. Never deletes history."""
+    return work_order_out(service.archive_work_order(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        reason=body.reason, sectors=user.sectors, request_id=_request_id()))
+
+
+@router.post("/{work_order_id}/restore", response_model=WorkOrderOut, responses=_ERRORS)
+def restore_work_order(work_order_id: str,
+                       user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                       connection=Depends(get_connection)):
+    """Jefatura only. Restore visibility; original work-order status remains."""
+    return work_order_out(service.restore_work_order(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        sectors=user.sectors, request_id=_request_id()))
 
 
 @router.post("/{work_order_id}/lines", status_code=201, response_model=WorkOrderOut, responses=_ERRORS)

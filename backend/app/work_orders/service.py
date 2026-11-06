@@ -32,7 +32,8 @@ from app.sectors import in_scope, scoped_sector_codes
 from app.work_orders.errors import (ArticleNotAllowedForMachineError, ArticleNotFoundError, InvalidWorkOrderLineError,
                                     MachineNotFoundError, MachineOutsideScopeError, MultiMachineDisabledError,
                                     WorkOrderAlreadyPublishedError,
-                                    WorkOrderNotDraftError, WorkOrderNotFoundError, WorkOrderNotPublishableError)
+                                    WorkOrderNotDraftError, WorkOrderNotFoundError, WorkOrderNotPublishableError,
+                                    WorkOrderArchiveBlockedError, WorkOrderNotArchivedError)
 
 MAX_PV_LENGTH = 100
 MAX_ARTICLE_CODE_LENGTH = 64
@@ -216,7 +217,7 @@ def _lock_baseline(connection, work_order_id, sectors):
            JOIN vinto_txn.work_order_version v ON v.work_order_id = wo.id AND v.version_number = 1 AND v.kind = 'baseline'
            JOIN vinto_master.machine m ON m.id = wo.machine_id
            JOIN vinto_master.sector s ON s.id = m.sector_id
-           WHERE wo.id = %s AND s.code = ANY(%s) AND NOT EXISTS (""" + _OUT_OF_SCOPE_LINE + """)
+           WHERE wo.id = %s AND wo.archived_at IS NULL AND s.code = ANY(%s) AND NOT EXISTS (""" + _OUT_OF_SCOPE_LINE + """)
            FOR UPDATE OF wo, v""", (work_order_id, list(scoped_sector_codes(sectors)), list(scoped_sector_codes(sectors)))).fetchone()
     if row is None:
         raise WorkOrderNotFoundError()
@@ -305,6 +306,65 @@ def publish_work_order(connection, *, actor_id, work_order_id, request_id=None, 
 
 
 # ---------------------------------------------------------------------------------------------------
+# archive / restore (metadata only, capture and assignment history are immutable)
+# ---------------------------------------------------------------------------------------------------
+
+def archive_work_order(connection, *, actor_id, work_order_id, reason, request_id=None, sectors) -> WorkOrderView:
+    """Archive an unassigned draft/published OT; all historical rows are retained.
+
+    Taking the OT row lock first serializes with the assignment activation lock
+    order. Migration 0014 also rejects a concurrent direct INSERT into assignment.
+    """
+    work_order_id = _as_uuid(work_order_id)
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if not 10 <= len(reason) <= 300:
+        raise WorkOrderArchiveBlockedError()
+    with connection.transaction():
+        _context(connection, actor_id, request_id, "work order archive")
+        status, _, _, _ = _lock_baseline(connection, work_order_id, sectors)
+        if status not in ("draft", "published"):
+            raise WorkOrderArchiveBlockedError()
+        has_assignments = connection.execute(
+            """SELECT EXISTS (
+                 SELECT 1 FROM vinto_txn.assignment a
+                 JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+                 JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+                 WHERE v.work_order_id=%s
+               )""", (work_order_id,)).fetchone()[0]
+        if has_assignments:
+            raise WorkOrderArchiveBlockedError()
+        connection.execute(
+            """UPDATE vinto_txn.work_order
+               SET archived_at=clock_timestamp(), archived_by=%s, archived_reason=%s
+               WHERE id=%s AND archived_at IS NULL""",
+            (actor_id, reason, work_order_id))
+    return get_work_order(connection, work_order_id, sectors=sectors,
+                          multi_machine_visible=True, include_archived=True)
+
+
+def restore_work_order(connection, *, actor_id, work_order_id, request_id=None, sectors) -> WorkOrderView:
+    """Restore archived OT visibility; never infer production from assignments."""
+    work_order_id = _as_uuid(work_order_id)
+    with connection.transaction():
+        _context(connection, actor_id, request_id, "work order restore archive")
+        headers = connection.execute(
+            _HEADER_SQL + " AND wo.id=%s FOR UPDATE OF wo",
+            (*_header_params(sectors, True), work_order_id)).fetchall()
+        if not headers:
+            raise WorkOrderNotFoundError()
+        was_archived = connection.execute(
+            "SELECT archived_at IS NOT NULL FROM vinto_txn.work_order WHERE id=%s",
+            (work_order_id,)).fetchone()[0]
+        if not was_archived:
+            raise WorkOrderNotArchivedError()
+        connection.execute(
+            """UPDATE vinto_txn.work_order
+               SET archived_at=NULL, archived_by=NULL, archived_reason=NULL
+               WHERE id=%s AND archived_at IS NOT NULL""", (work_order_id,))
+    return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
+
+
+# ---------------------------------------------------------------------------------------------------
 # queries
 # ---------------------------------------------------------------------------------------------------
 
@@ -350,24 +410,24 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
             for wo_id, number, status, machine_code, machine_name, version_id, version_number, published_at in headers]
 
 
-def get_work_order(connection, work_order_id, *, sectors, multi_machine_visible=False, machine_codes=None) -> WorkOrderView:
+def get_work_order(connection, work_order_id, *, sectors, multi_machine_visible=False, machine_codes=None, include_archived=False) -> WorkOrderView:
     """Detalle (solo la baseline). OT inexistente, fuera del alcance, multimáquina sin visibilidad o con alguna máquina no autorizada (`machine_codes`): WorkOrderNotFoundError."""
     work_order_id = _as_uuid(work_order_id)
     extra_sql, extra_params = _machine_filter(machine_codes)
-    headers = connection.execute(_HEADER_SQL + extra_sql + " AND wo.id = %s", (*_header_params(sectors, multi_machine_visible), *extra_params, work_order_id)).fetchall()
+    headers = connection.execute(_HEADER_SQL + extra_sql + ("" if include_archived else " AND wo.archived_at IS NULL") + " AND wo.id = %s", (*_header_params(sectors, multi_machine_visible), *extra_params, work_order_id)).fetchall()
     if not headers:
         raise WorkOrderNotFoundError()
     return _hydrate(connection, headers)[0]
 
 
-def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors, multi_machine_visible=False, machine_codes=None) -> list[WorkOrderView]:
+def list_work_orders(connection, *, machine_code=None, status=None, limit=DEFAULT_LIST_LIMIT, sectors, multi_machine_visible=False, machine_codes=None, archived=False) -> list[WorkOrderView]:
     """Más recientes primero (created_at y número descendentes, orden estable). Filtros opcionales: máquina (de cabecera o de alguna línea) y estado."""
     if status is not None and status not in STATUSES:
         raise InvalidWorkOrderLineError(f"status debe ser uno de {', '.join(STATUSES)}")
     limit = max(1, min(int(limit), MAX_LIST_LIMIT))
     sql, params = _HEADER_SQL, _header_params(sectors, multi_machine_visible)
     extra_sql, extra_params = _machine_filter(machine_codes)
-    sql, params = sql + extra_sql, params + extra_params
+    sql, params = sql + extra_sql + (" AND wo.archived_at IS NOT NULL" if archived else " AND wo.archived_at IS NULL"), params + extra_params
     if machine_code is not None:
         sql += """ AND (m.code = %s OR EXISTS (SELECT 1 FROM vinto_txn.work_order_line mine JOIN vinto_master.machine mine_machine ON mine_machine.id = mine.machine_id
                                                WHERE mine.work_order_version_id = v.id AND mine_machine.code = %s))"""

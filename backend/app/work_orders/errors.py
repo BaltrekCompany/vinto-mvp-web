@@ -50,3 +50,10 @@ class WorkOrderNotPublishableError(WorkOrderError):
 
 class MultiMachineDisabledError(WorkOrderError):
     http_status, code, public_message = 422, "MULTI_MACHINE_DISABLED", "Las órdenes con líneas en distintas máquinas no están habilitadas"
+
+class WorkOrderArchiveBlockedError(WorkOrderError):
+    http_status, code, public_message = 409, "WORK_ORDER_ARCHIVE_BLOCKED", "La OT no se puede archivar en su estado actual o tiene asignaciones"
+
+
+class WorkOrderNotArchivedError(WorkOrderError):
+    http_status, code, public_message = 409, "WORK_ORDER_NOT_ARCHIVED", "La OT no está archivada"
