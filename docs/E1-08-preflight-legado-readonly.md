@@ -21,6 +21,7 @@ Exit code `0`: ninguna inconsistencia técnica detectada (NO constituye GO). `2`
 | Señal | Interpretación y acción |
 |---|---|
 | `MIGRATION_0013_NOT_CONFIRMED` | Falta la tabla o historial aplicado. Desplegar migración solo en E1-09, tras backup y revisión |
+| `MIGRATION_0013_CHECKSUM_MISMATCH` | Historial de migración 0013 no coincide con la huella SHA-256 exacta del checkout. **No ejecutar una versión diferente sobre la base** |
 | `MISSING_MACHINE_EXCLUSIVITY_INDEX` / `MISSING_EXECUTION_GUARD` | La integridad física de una sola línea en producción no está protegida |
 | `APP_ROLE_WITHOUT_REQUIRED_TABLE_PRIVILEGES` | El rol aplicativo no puede leer/escribir estados aunque 0013 figure aplicada |
 | `ACTIVE_ASSIGNMENTS_WITHOUT_EXECUTION` | Asignaciones creadas antes de la nueva secuencia; registrar estrategia manual de corte por máquina/turno |
