@@ -1,0 +1,431 @@
+{
+  "source_commit": "86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4",
+  "source_workflow_run": 42166502339,
+  "source_job": 127724101777,
+  "tests_in_source": 2178,
+  "minimum_candidate_tests": 2249,
+  "maximum_candidate_skips": 5,
+  "notes": "Exact multiset of 3 FAIL and 102 ERROR in unmodified pre-E1 main. NOT green tests; do not suppress their existence. New failures, changed failure kinds, or increased multiplicities fail the gate.",
+  "allowed_existing_results": [
+    {
+      "kind": "ERROR",
+      "name": "test_0001_keeps_its_exact_checksum (test_auth_schema.MigrationHistoryTests.test_0001_keeps_its_exact_checksum)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_0002_is_applied_on_the_test_database (test_auth_schema.MigrationHistoryTests.test_0002_is_applied_on_the_test_database)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_client_supplied_revision_is_ignored_on_insert (test_capture_revision.RevisionTests.test_a_client_supplied_revision_is_ignored_on_insert)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_client_supplied_revision_is_ignored_on_submission (test_capture_revision.RevisionTests.test_a_client_supplied_revision_is_ignored_on_submission)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_closed_capture_stays_immutable (test_capture_revision.RevisionTests.test_a_closed_capture_stays_immutable)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_correction_without_correction_reason_is_rejected (test_capture_revision.RevisionTests.test_a_correction_without_correction_reason_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_correction_without_vinto_reason_is_rejected (test_capture_revision.RevisionTests.test_a_correction_without_vinto_reason_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_a_second_correction_after_reopening_is_revision_three (test_capture_revision.RevisionTests.test_a_second_correction_after_reopening_is_revision_three)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_after_migration_the_legacy_data_still_obeys_the_business_rules (test_work_order_line_machine.LineMachineMigrationRehearsalTests.test_after_migration_the_legacy_data_still_obeys_the_business_rules)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_all_tables_have_primary_keys_and_valid_constraints (test_schema.SchemaTests.test_all_tables_have_primary_keys_and_valid_constraints)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_all_tables_have_primary_keys_and_valid_constraints (test_schema.SchemaTests.test_all_tables_have_primary_keys_and_valid_constraints)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_article_not_enabled_for_the_line_machine_is_rejected (test_work_order_line_machine.LineMachineSchemaTests.test_article_not_enabled_for_the_line_machine_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_assignment_uses_the_machine_of_the_line_not_the_header (test_work_order_line_machine.LineMachineSchemaTests.test_assignment_uses_the_machine_of_the_line_not_the_header)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_audit_events_cannot_be_changed_or_deleted (test_schema.SchemaTests.test_audit_events_cannot_be_changed_or_deleted)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_audit_events_cannot_be_changed_or_deleted (test_schema.SchemaTests.test_audit_events_cannot_be_changed_or_deleted)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_auth_event_has_no_secret_columns (test_auth_schema.AuthEventTests.test_auth_event_has_no_secret_columns)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_auth_event_is_append_only (test_auth_schema.AuthEventTests.test_auth_event_is_append_only)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_auth_schema_has_exactly_the_expected_tables_with_primary_keys (test_auth_schema.MigrationHistoryTests.test_auth_schema_has_exactly_the_expected_tables_with_primary_keys)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_backfill_copies_header_machine_without_losing_or_altering_anything (test_work_order_line_machine.LineMachineMigrationRehearsalTests.test_backfill_copies_header_machine_without_losing_or_altering_anything)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_check_is_green (test_auth_schema.MigrationHistoryTests.test_check_is_green)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_column_is_not_null_with_foreign_key_and_index (test_work_order_line_machine.LineMachineSchemaTests.test_column_is_not_null_with_foreign_key_and_index)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_concurrent_runner_is_rejected (test_schema.MigrationDatabaseTests.test_concurrent_runner_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_configured_test_database_is_vinto_test (test_db_guard.RealConnectionTests.test_configured_test_database_is_vinto_test)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_credential_owner_cannot_change (test_auth_schema.CredentialTests.test_credential_owner_cannot_change)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_credential_requires_an_existing_user (test_auth_schema.CredentialTests.test_credential_requires_an_existing_user)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_deactivating_a_shift_that_used_to_resolve_stops_it_resolving (test_shifts.FixtureSchedulesTests.test_deactivating_a_shift_that_used_to_resolve_stops_it_resolving)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_detail_is_unique_and_type_checked (test_schema.SchemaTests.test_detail_is_unique_and_type_checked)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_detail_is_unique_and_type_checked (test_schema.SchemaTests.test_detail_is_unique_and_type_checked)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_details_cannot_be_edited_once_submitted (test_capture_revision.RevisionTests.test_details_cannot_be_edited_once_submitted)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_dev_database_is_rejected (test_db_guard.RealConnectionTests.test_dev_database_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_draft_to_blocked_keeps_the_revision (test_capture_revision.RevisionTests.test_draft_to_blocked_keeps_the_revision)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_draft_to_draft_keeps_the_revision_even_after_many_edits (test_capture_revision.RevisionTests.test_draft_to_draft_keeps_the_revision_even_after_many_edits)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_draft_to_submitted_keeps_revision_one (test_capture_revision.RevisionTests.test_draft_to_submitted_keeps_revision_one)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_empty_hash_and_unknown_algorithm_are_rejected (test_auth_schema.CredentialTests.test_empty_hash_and_unknown_algorithm_are_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_expiry_must_be_after_creation (test_auth_schema.SessionTests.test_expiry_must_be_after_creation)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_failed_migration_restores_the_guard_and_leaves_no_trace (test_work_order_line_machine.LineMachineMigrationRehearsalTests.test_failed_migration_restores_the_guard_and_leaves_no_trace)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_failed_migration_rolls_back_ddl_and_history (test_schema.MigrationDatabaseTests.test_failed_migration_rolls_back_ddl_and_history)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_field_cannot_come_from_another_form_version (test_schema.SchemaTests.test_field_cannot_come_from_another_form_version)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_field_cannot_come_from_another_form_version (test_schema.SchemaTests.test_field_cannot_come_from_another_form_version)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_first_correction_is_revision_two_and_the_second_is_three (test_capture_revision.RevisionTests.test_first_correction_is_revision_two_and_the_second_is_three)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_foreign_keys_reject_unknown_machine (test_schema.SchemaTests.test_foreign_keys_reject_unknown_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_foreign_keys_reject_unknown_machine (test_schema.SchemaTests.test_foreign_keys_reject_unknown_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_gap_between_schedules_is_not_configured (test_shifts.FixtureSchedulesTests.test_gap_between_schedules_is_not_configured)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_group_must_match_field_and_capture (test_schema.SchemaTests.test_group_must_match_field_and_capture)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_group_must_match_field_and_capture (test_schema.SchemaTests.test_group_must_match_field_and_capture)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_identity_is_immutable_and_revocation_is_final (test_auth_schema.SessionTests.test_identity_is_immutable_and_revocation_is_final)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_inactive_overlapping_shift_is_ignored_instead_of_ambiguous (test_shifts.FixtureSchedulesTests.test_inactive_overlapping_shift_is_ignored_instead_of_ambiguous)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_inactive_shift_does_not_resolve_even_if_hour_and_validity_match (test_shifts.FixtureSchedulesTests.test_inactive_shift_does_not_resolve_even_if_hour_and_validity_match)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_incomplete_draft_allowed_submission_rejected (test_schema.SchemaTests.test_incomplete_draft_allowed_submission_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_incomplete_draft_allowed_submission_rejected (test_schema.SchemaTests.test_incomplete_draft_allowed_submission_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_insert_starts_at_revision_one (test_capture_revision.RevisionTests.test_insert_starts_at_revision_one)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_insert_without_machine_defaults_to_header_machine_like_the_deployed_backend (test_work_order_line_machine.LineMachineSchemaTests.test_insert_without_machine_defaults_to_header_machine_like_the_deployed_backend)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_invalid_stored_timezone_is_rejected (test_shifts.FixtureSchedulesTests.test_invalid_stored_timezone_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_legacy_header_machine_is_kept_not_null (test_work_order_line_machine.LineMachineSchemaTests.test_legacy_header_machine_is_kept_not_null)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_line_inserts_are_audited_with_the_actor (test_work_order_line_machine.LineMachineSchemaTests.test_line_inserts_are_audited_with_the_actor)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_machine_must_be_allowed_for_form (test_schema.SchemaTests.test_machine_must_be_allowed_for_form)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_machine_must_be_allowed_for_form (test_schema.SchemaTests.test_machine_must_be_allowed_for_form)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_migrate_check_shows_0001_0002_0003_applied_in_the_test_database (test_capture_revision.TestDatabaseHistoryTests.test_migrate_check_shows_0001_0002_0003_applied_in_the_test_database)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_multi_machine_baseline_lines_are_allowed_when_the_article_is_enabled_for_each_machine (test_work_order_line_machine.LineMachineSchemaTests.test_multi_machine_baseline_lines_are_allowed_when_the_article_is_enabled_for_each_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_name_inside_connection_string_is_not_trusted (test_db_guard.RealConnectionTests.test_name_inside_connection_string_is_not_trusted)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_negative_failed_attempts_are_rejected (test_auth_schema.CredentialTests.test_negative_failed_attempts_are_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_no_record_change_trigger_exists_in_vinto_auth (test_auth_schema.SecretsStayOutOfAuditTests.test_no_record_change_trigger_exists_in_vinto_auth)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_one_active_assignment_per_machine (test_schema.SchemaTests.test_one_active_assignment_per_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_one_active_assignment_per_machine (test_schema.SchemaTests.test_one_active_assignment_per_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_one_credential_per_user (test_auth_schema.CredentialTests.test_one_credential_per_user)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_only_the_allowed_events_are_accepted (test_auth_schema.AuthEventTests.test_only_the_allowed_events_are_accepted)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_operational_copy_is_not_blocked_by_a_later_article_machine_change (test_work_order_line_machine.LineMachineSchemaTests.test_operational_copy_is_not_blocked_by_a_later_article_machine_change)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_operational_copy_without_machine_inherits_each_baseline_machine (test_work_order_line_machine.LineMachineSchemaTests.test_operational_copy_without_machine_inherits_each_baseline_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_operational_line_must_match_its_baseline_machine (test_work_order_line_machine.LineMachineSchemaTests.test_operational_line_must_match_its_baseline_machine)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_overlapping_schedules_are_ambiguous (test_shifts.FixtureSchedulesTests.test_overlapping_schedules_are_ambiguous)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_password_hash_never_reaches_audit_event (test_auth_schema.SecretsStayOutOfAuditTests.test_password_hash_never_reaches_audit_event)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_published_form_and_article_versions_are_immutable (test_schema.SchemaTests.test_published_form_and_article_versions_are_immutable)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_published_form_and_article_versions_are_immutable (test_schema.SchemaTests.test_published_form_and_article_versions_are_immutable)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_published_lines_remain_immutable_and_the_guard_is_enabled (test_work_order_line_machine.LineMachineSchemaTests.test_published_lines_remain_immutable_and_the_guard_is_enabled)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_real_counts_filter_sector_code_and_quality_without_persisting_fixtures (test_capture_api.CaptureQueryTests.test_real_counts_filter_sector_code_and_quality_without_persisting_fixtures)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_reopening_counts_one_correction_and_the_following_draft_edits_and_resubmission_keep_it (test_capture_revision.RevisionTests.test_reopening_counts_one_correction_and_the_following_draft_edits_and_resubmission_keep_it)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_reopening_still_requires_the_audited_reasons (test_capture_revision.RevisionTests.test_reopening_still_requires_the_audited_reasons)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_repeat_apply_does_not_change_history (test_schema.MigrationDatabaseTests.test_repeat_apply_does_not_change_history)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_required_fields_are_still_validated_when_the_transaction_ends (test_capture_revision.RevisionTests.test_required_fields_are_still_validated_when_the_transaction_ends)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_resolver_only_reads (test_shifts.FixtureSchedulesTests.test_resolver_only_reads)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_rollback_after_migration_returns_to_the_0009_shape_with_data_intact (test_work_order_line_machine.LineMachineMigrationRehearsalTests.test_rollback_after_migration_returns_to_the_0009_shape_with_data_intact)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_rollback_is_refused_once_a_multi_machine_line_exists (test_work_order_line_machine.LineMachineMigrationRehearsalTests.test_rollback_is_refused_once_a_multi_machine_line_exists)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_sector_without_schedules_is_not_configured (test_shifts.FixtureSchedulesTests.test_sector_without_schedules_is_not_configured)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_session_requires_an_existing_user (test_auth_schema.SessionTests.test_session_requires_an_existing_user)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_submission_audit_and_revision (test_schema.SchemaTests.test_submission_audit_and_revision)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_submission_audit_and_revision (test_schema.SchemaTests.test_submission_audit_and_revision)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_the_assignment_cannot_change (test_capture_revision.RevisionTests.test_the_assignment_cannot_change)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_the_machine_cannot_change (test_capture_revision.RevisionTests.test_the_machine_cannot_change)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_the_other_protections_of_validate_capture_are_unchanged (test_capture_revision.RevisionTests.test_the_other_protections_of_validate_capture_are_unchanged)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_the_per_machine_index_is_superseded_by_0011_without_losing_the_per_line_guarantee (test_work_order_line_machine.LineMachineSchemaTests.test_the_per_machine_index_is_superseded_by_0011_without_losing_the_per_line_guarantee)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_the_rest_of_the_context_is_still_immutable (test_capture_revision.RevisionTests.test_the_rest_of_the_context_is_still_immutable)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_timezone_comes_from_each_stored_schedule (test_shifts.FixtureSchedulesTests.test_timezone_comes_from_each_stored_schedule)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_token_hash_is_unique (test_auth_schema.SessionTests.test_token_hash_is_unique)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_token_hash_must_be_sha256_hex (test_auth_schema.SessionTests.test_token_hash_must_be_sha256_hex)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_token_hash_never_reaches_audit_event (test_auth_schema.SecretsStayOutOfAuditTests.test_token_hash_never_reaches_audit_event)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_touch_row_sets_timestamps_and_actor (test_auth_schema.CredentialTests.test_touch_row_sets_timestamps_and_actor)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_transaction_failure_rolls_back_rows_and_audit (test_schema.SchemaTests.test_transaction_failure_rolls_back_rows_and_audit)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_transaction_failure_rolls_back_rows_and_audit (test_schema.SchemaTests.test_transaction_failure_rolls_back_rows_and_audit)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_unknown_machine_is_rejected (test_work_order_line_machine.LineMachineSchemaTests.test_unknown_machine_is_rejected)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_username_is_case_insensitive_unique (test_auth_schema.CredentialTests.test_username_is_case_insensitive_unique)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_username_must_be_clean_and_bounded (test_auth_schema.CredentialTests.test_username_must_be_clean_and_bounded)"
+    },
+    {
+      "kind": "ERROR",
+      "name": "test_validity_dates_are_stored_and_applied_to_the_operating_date (test_shifts.FixtureSchedulesTests.test_validity_dates_are_stored_and_applied_to_the_operating_date)"
+    },
+    {
+      "kind": "FAIL",
+      "name": "test_cookie_flags_in_local (test_auth_api.LoginTests.test_cookie_flags_in_local)"
+    },
+    {
+      "kind": "FAIL",
+      "name": "test_nothing_in_the_application_consumes_the_table_yet (test_machine_form_grants.MigrationShapeTests.test_nothing_in_the_application_consumes_the_table_yet)"
+    },
+    {
+      "kind": "FAIL",
+      "name": "test_sectors_are_counted_separately_and_quality_is_filtered_by_sector (test_capture_count_authorization.CountSemanticsTests.test_sectors_are_counted_separately_and_quality_is_filtered_by_sector)"
+    }
+  ]
+}
