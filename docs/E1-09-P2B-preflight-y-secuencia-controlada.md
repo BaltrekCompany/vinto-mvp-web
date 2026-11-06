@@ -2,6 +2,23 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## G2 — Nuevo diagnóstico: instalador exit 1 sin log; causa de permisos identificada en código (06/nov/2026)
+
+**Evidencia recibida:** staging original `/home/ubuntu/vinto-g2-staging-d5bc472` corregido a directorio `700` y dos archivos `600` **propiedad de `ubuntu`**. Tarball y manifiesto identifican `d5bc472b831eae8abd60899296ce8c146c119a5a`, SHA-256 tar `fed3605f81b72303d1aa3f3d8e73d0689a627075cfe2f5d2678bb2c3ccf2a88b`. Preflight previo a instalación PASS, pero `deploy.sh install-frontend-artifact` **exit 1**, detalle de stderr no conservado. **`dist` del release nuevo NO VERIFICADO después del fallo**; `check-release` no ejecutado. Release activo y servicios solo revalidados **antes** del intento. No se reportó ninguna migración ni modificación de negocio.
+
+**Causa probable demostrable por inspección del script (aún NO confirmada como error concreto):**
+`deploy.sh::phase_install_frontend_artifact` primero verifica manifiesto y `sha256sum` **como usuario operador `ubuntu`**, pero la extracción segura se hace mediante `sudo -u "$SERVICE_USER" python3.12 ... tarfile.open(artifact_path,"r:gz")` con `SERVICE_USER=vinto-mvp`. El directorio `700` y tarball `600` de `ubuntu` **impiden el acceso a `vinto-mvp`**; además `/home/ubuntu` podría impedir tránsito. Por tanto, el runbook anterior, al requerir staging 700/600 exclusivamente de ubuntu y pasar ese mismo path al instalador, impuso requisitos contradictorios. La integridad SHA PASS solo prueba la lectura como ubuntu. El error exacto no se conservó; pueden existir otros bloqueos, p.ej. validación del contenido del tar.
+
+**Corrección de procedimiento, SIN elevar permisos globales:**
+
+1. **Antes de escribir:** consultar `stat` del nuevo release y, bajo identidad `vinto-mvp` mediante utilidades `mvp_test` u `sudo -u vinto-mvp test`, confirmar si existen `dist` o `dist/standalone/server.js`. **Si `dist` existe, STOP / NO-GO** sin eliminarlo ni reinstalarlo: el instalador prohíbe sobrescribir. Revalidar release activo y salud; no tocar TVC. Verificar de forma no invasiva si `vinto-mvp` puede leer el tarball del staging original (fallo previsto), sin abrir su contenido.
+2. Mantener intacto el staging privado original. Para la **única nueva instalación**, preparar un segundo directorio **aislado** en `/var/tmp` mediante `mktemp -d`, **propietario ubuntu, grupo vinto-mvp, modo 750**; copiar a él únicamente los dos archivos validados como **ubuntu:vinto-mvp, modo 640**. Estos modos conceden lectura a la identidad del servicio sin lectura pública, y permiten al operador verificar hash/manifest. No depender de traversal de `/home/ubuntu` por `vinto-mvp`. Si se requiere `sudo chgrp` o `sudo install -g vinto-mvp`, limitarlos a los archivos nuevos de esa ruta temporal y no modificar grupos/membresías/sudoers. Si política de sudo no lo permite, STOP.
+3. Exigir explícitamente `test -r` sobre tarball como **ambos usuarios** (`ubuntu` y `vinto-mvp`) y `test -x` sobre el segundo staging como `vinto-mvp`. Comprobar SHA-256 de la copia **contra el valor exacto anterior** y manifiesto, y demostrar `dist` ausente inmediatamente antes del intento.
+4. **Solo tras PASS de todas las guardas**, invocar una vez `deploy.sh install-frontend-artifact` con los archivos del segundo staging. Guardar stdout/stderr en un log **modo 600** de `ubuntu` (revisarlo y sanear secretos antes de compartir). Si exit !=0, **STOP y reportar el error real**, sin repetir. No editar scripts Ops ni extraer el tar manualmente.
+5. Si PASS, comprobar `dist/standalone/server.js`, `current` antiguo y servicios sanos; ejecutar `deploy.sh check-release <SHA>` READ ONLY y esperar exit **2** con solo 0013/0014 pendientes. Sin `migrate-release`, `activate`, nuevos backups, flags, SQL ni cambios de OT/TVC. Conservar evidencia de staging hasta cierre de G2; limpieza solo con plan aparte.
+
+**Límite:** no se puede afirmar aún que este sea el único fallo; `exit 1` sin stderr también podría deberse a guardas del tarball o instalación parcial. Esta sección reemplaza para el reintento G2 el consejo anterior de usar los archivos `700/600` de `ubuntu` directamente como argumentos del instalador.
+
 ## Resultado G2 — PARCIAL / NO-GO por artefacto frontend (06/nov/2026)
 
 **Fuente:** informe Codex Desktop SSH entregado por el usuario. ChatGPT no realizó SSH ni escritura sobre el VPS.
