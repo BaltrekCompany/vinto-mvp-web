@@ -5,6 +5,8 @@
 **Estado:** DIAGNÓSTICO TÉCNICO DEL LEGADO PASS; OPERACIÓN / ACTIVACIÓN NO-GO.  
 **Release efectivo:** `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` = `main` pre-E1.
 
+**Actualización de vigencia (06/nov/2026):** esta es evidencia del *snapshot histórico* previo a la integración. Los 7 PR E1-02 a E1-08 se fusionaron posteriormente en GitHub, con `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; ello **no actualizó automáticamente el VPS**. El release remoto citado es el último verificado por SSH, no una constatación nueva. Antes de cualquier corte, repetir lecturas con [SQL-E](E1-09-SQL-E-conciliacion-asignaciones-readonly.md) y obtener confirmación funcional de Supervisión.
+
 ## Disciplina de ejecución confirmada
 
 Las fases SQL-A/B/C/D reportaron transacciones `REPEATABLE READ READ ONLY`, `COMMIT` cuando correspondía, tiempos limitados y salida agregada. No se hicieron migraciones, DML, DDL, servicios, merges ni acceso a secretos. SQL-A inicial detuvo la ejecución al descubrir `permission denied for schema vinto_meta` — permiso intencionalmente restringido al rol aplicativo.
@@ -86,3 +88,11 @@ Todas las **11** asignaciones `active` pertenecían a OT `in_progress`. Cero en 
 ## Próxima actuación recomendada
 
 Preparar una matriz funcional interna por OT/línea para que Supervisión valide condiciones reales (sin publicar IDs individuales ni datos sensibles en issues públicos). Validar primero permisos y procedimiento de lectura de estos detalles; no ejecutar SQL nuevo sin autorización. Separar formalmente la decisión de **merge con flag OFF** de la decisión de **despliegue/migración** y de **activación con flag ON**.
+
+
+## Actualización posterior al corte SQL-D — E1-09
+
+- **GitHub integrado:** 7/7 PR (#118, #120, #122, #124, #126, #128, #130) fusionados. QA diferencial final [run 42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS; 0 regresiones nuevas detectadas, deuda histórica documentada en #134 y #135.
+- **VPS:** no se ejecutó despliegue ni migración 0013 por esta integración. Estado actual de la VPS, datos en el momento de corte y bandera real siguen **por reconfirmar**.
+- **Conciliación SQL-A/D:** 11 asignaciones activas con correspondencia única y 5 líneas baseline sin activa, **válido exclusivamente en el snapshot observado**. La nueva lectura [SQL-E](E1-09-SQL-E-conciliacion-asignaciones-readonly.md) determina cuántas de esas líneas tienen `assignment.finished` histórico, sin inferir estado físico.
+- **Decisión:** GO técnico para preparar SQL-E de solo lectura; **NO-GO despliegue/migración/flag ON** hasta conciliación con Supervisión, permisos MF13, verificación de release/privilegios y respaldo/rollback. TVC queda fuera del alcance.
