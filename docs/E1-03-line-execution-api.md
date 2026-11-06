@@ -29,11 +29,20 @@
 - E1-04: F3/F6 **aún no exigen** `in_production`. La bandera debe seguir OFF.
 - E1-05/E1-06: no hay botones en Supervisión ni protección/estado en Operación.
 - E1-07: la finalización de línea **no cierra la OT**, porque el cierre manual es una tarea separada.
-- D1: continuidad entre turnos sigue pendiente de Sergio. El nuevo inicio exige asignación y turno vigentes, y el fin lógico no es automático.
-- D2: cantidad producida inferior a programada y motivo de saldo pendiente, pendiente del funcional.
+- D1 (precisado por Sergio): se puede continuar físicamente un producto al siguiente turno, pero para el MVP **no se implementará traslado automático de saldos, cantidades ni fechas**. Si hace falta continuar, Jefatura registrará **manualmente otra OT/programación**, por rapidez y para evitar modificar los plazos. Antes de utilizar la máquina para una OT nueva, Supervisión finaliza la línea anterior y cierra la OT si todas sus líneas terminaron. Una ejecución iniciada no se cierra automáticamente al vencer el turno: la política de continuidad directa de una misma línea queda como *backlog*, no requisito E1-03.
+- D2 (confirmado): si se programan 120 y producen 90, Supervisión **puede finalizar** la línea sin texto justificativo obligatorio; la diferencia de 30 queda como **déficit de producción** en seguimiento/indicadores. No transformar automáticamente el saldo en «cancelado». Los motivos se investigan mediante los tableros operativos, no una explicación libre del operador. El saldo «cancelado» se reserva para una anulación expresa (Entrega 3).
 - Preflight E1-09 para asignaciones `active` preexistentes: sin inicio implícito.
 
 ## QA y entrega
 - Pruebas E1-03 con PostgreSQL 17 efímero, dos líneas habilitadas, inicio exclusivo, doble inicio concurrente, fin idempotente, antigua API y regresiones con bandera OFF.
 - No tocar `main`, no desplegar VPS ni activar variables hasta QA integral E1-08.
 - PR apilado sobre E1-02 (#118); fusionarlo solo después de completar dependencias y revisión.
+## Aclaración funcional posterior — alcance mínimo (Sergio, 2026-11-05)
+
+**Escenario turno Día → Noche:** Jefatura solicita 500 unidades en Día, se producen 450; faltan 50. Existe programación de 550 para Noche. Aunque la continuación del mismo producto es operativamente posible, **no automatizamos** el traspaso de 50 ni reescribimos las cantidades y la entrega de otras OTs. Para el MVP, Jefatura crea manualmente la OT/programación necesaria y define el nuevo objetivo (no suponer automáticamente 550+50). Antes de iniciar una nueva OT en esa máquina se finaliza la línea previa; así se conserva el bloqueo entre OT distintas y la trazabilidad por orden.
+
+**Escenario finalización parcial:** 120 programados, 90 producidos. Supervisión finaliza la línea y el déficit observable es 30; **ningún motivo textual obligatorio**. La diferencia no es anulación ni «pendiente cancelado». Seguimiento deberá calcular programado vs. real y exponer el déficit, con el desglose de indicadores cuando exista.
+
+**Precisión técnica:** el fin de turno no implica por sí solo fin de línea, ni equivale a una continuación automática. E1-03 exige asignación vigente para iniciar; E1-04 exigirá la misma vigencia para capturar. El uso manual de una **nueva OT** supone liberar de forma explícita las ejecuciones anteriores; no terminar procesos activos en silencio.
+
+**Fuera de alcance actual:** arrastre automático, prorrateo de cantidades, edición automática de fecha de entrega, transferir capturas entre OTs y exigir texto explicativo por producción incompleta.
