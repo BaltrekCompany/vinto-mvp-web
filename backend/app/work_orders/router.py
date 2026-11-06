@@ -4,6 +4,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -126,9 +127,17 @@ def close_work_order(work_order_id: str,
     Never imply cancellation from a planned-versus-actual deficit. Closing a
     logical line does NOT close the OT; this is a separate, explicit action.
     """
-    return work_order_out(close_order.close_work_order(
-        connection, actor_id=user.user_id, work_order_id=work_order_id,
-        sectors=user.sectors, request_id=_request_id()))
+    try:
+        return work_order_out(close_order.close_work_order(
+            connection, actor_id=user.user_id, work_order_id=work_order_id,
+            sectors=user.sectors, request_id=_request_id()))
+    except close_order.WorkOrderCloseBlockedError as error:
+        # Pending codes belong only to baseline lines already checked in the
+        # actor's full OT scope, never to another sector's private lines.
+        return JSONResponse(status_code=409, content={
+            "detail": error.public_message, "code": error.code,
+            "pending_lines": list(error.pending_lines),
+        })
 
 
 @router.post("/{work_order_id}/activate-all", response_model=ActivateAllOut,
