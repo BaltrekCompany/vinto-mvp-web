@@ -1,8 +1,8 @@
 # VINTO E1-09 — Plan de despliegue condicionado con datos simulados
 
 **Fecha:** 2026-11-06. **Estado:** PLAN DOCUMENTAL; no ejecutado.  
-**P0 actualizado (06/nov/2026):** inspección VPS **PASS** únicamente para preparar el inventario de respaldo P1-A; [resultado y runbook P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md). P1-A no ejecutado, P1-B (backup) no autorizado. 
-**Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`.  
+**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). Siguiente puerta: [P2-A diagnóstico READ ONLY](E1-09-P2A-diseno-pre-migracion-readonly.md), no ejecutado. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
+**Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado actualmente:** `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (PR #136 backup-flock incluido); VPS app sigue en release previo `86e4ec4` según P0, no desplegado E1.  
 **QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
 
 ## 1. Decisión funcional: qué cambia por los datos simulados
@@ -27,7 +27,7 @@ El usuario confirmó que **los registros actuales del MVP VINTO son simulados**.
 | Historial real de migraciones | P0 confirmó que el archivo 0013 y su tabla no están instalados; historial `vinto_meta` sigue restringido | NO VERIFICADO en historial |
 | Flag efectivo del servicio | Release anterior sin referencia ni variable de proceso `WORK_ORDER_LINE_EXECUTION_ENABLED` en P0 | PASS para esquema antiguo; valor del nuevo release NO VERIFICADO |
 | Grants reales MF13 | P0 observó grants básicos sector/máquina y usuarios/sectores activos | PASS parcial; permisos efectivos por perfil/formulario NO VERIFICADO |
-| Backups verificados + restauración | P1-A inventario aún no ejecutado; no se ha certificado restauración para este corte | PENDIENTE |
+| Backups verificados + restauración | P1-B: respaldo nuevo .verified, 47 tablas restauradas y conciliadas, 0 diferencias; 18 backups anteriores intactos | PASS bajo protocolo P1-B |
 | Estrategia de conservación de registros simulados | Usuario debe conocer impacto y confirmar | PENDIENTE |
 | Migración 0013 / activación | No autorizadas | NO-GO |
 
