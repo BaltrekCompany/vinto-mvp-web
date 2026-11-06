@@ -1,6 +1,7 @@
 # VINTO E1-09 — Plan de despliegue condicionado con datos simulados
 
 **Fecha:** 2026-11-06. **Estado:** PLAN DOCUMENTAL; no ejecutado.  
+**P0 actualizado (06/nov/2026):** inspección VPS **PASS** únicamente para preparar el inventario de respaldo P1-A; [resultado y runbook P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md). P1-A no ejecutado, P1-B (backup) no autorizado. 
 **Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`.  
 **QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
 
@@ -22,11 +23,11 @@ El usuario confirmó que **los registros actuales del MVP VINTO son simulados**.
 | SQL-A/B/C/D/E | `vinto_piloto`, `vinto_app`, PostgreSQL 17 | PASS para snapshots, sin escritura |
 | Mapeo baseline | 11/11 activas, 0 ambigüedades | PASS para SQL-E |
 | Historial de 5 líneas sin activa | MP1:4, MP3:1, todas con assignment.finished | PASS como historial, NO como cierre lógico |
-| Release actualmente activo VPS | Último confirmado `86e4ec4`; requiere reconfirmación | NO VERIFICADO ahora |
-| Historial real de migraciones | `vinto_meta` restringido a `vinto_app` | NO VERIFICADO |
-| Flag efectivo del servicio | Código default false no demuestra valor configurado | NO VERIFICADO |
-| Grants reales MF13 | Sector/máquina/perfil en VPS | NO VERIFICADO |
-| Backups verificados + restauración | No se ha certificado uno para este corte | PENDIENTE |
+| Release actualmente activo VPS | P0 confirmó `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` | PASS en P0; código anterior a E1 |
+| Historial real de migraciones | P0 confirmó que el archivo 0013 y su tabla no están instalados; historial `vinto_meta` sigue restringido | NO VERIFICADO en historial |
+| Flag efectivo del servicio | Release anterior sin referencia ni variable de proceso `WORK_ORDER_LINE_EXECUTION_ENABLED` en P0 | PASS para esquema antiguo; valor del nuevo release NO VERIFICADO |
+| Grants reales MF13 | P0 observó grants básicos sector/máquina y usuarios/sectores activos | PASS parcial; permisos efectivos por perfil/formulario NO VERIFICADO |
+| Backups verificados + restauración | P1-A inventario aún no ejecutado; no se ha certificado restauración para este corte | PENDIENTE |
 | Estrategia de conservación de registros simulados | Usuario debe conocer impacto y confirmar | PENDIENTE |
 | Migración 0013 / activación | No autorizadas | NO-GO |
 
