@@ -5,6 +5,20 @@
 **Código de referencia:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; VPS sigue en release `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` según P0.  
 **Referencia:** [P0 y P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md).
 
+## ACTUALIZACIÓN MÁS RECIENTE — Bloqueos P1-B subsanados a nivel de script (06/nov/2026)
+
+El usuario autorizó la integración del correctivo #136 y su posterior instalación Ops. **Codex Desktop informó instalación PASS**, reemplazando solo `/home/ubuntu/vinto-mvp-ops/scripts/backup.sh`: Git blob `5ae19d8a8db75bb61f8e67bd1159acfab684ddc3`, SHA-256 `53bbda26c74b46f3868f239e27385f64d7c7c3d363a4e90a7427fb02259d3a25`. Se conservó copia de rollback `backup.sh.pre-e1-09-20261106T153014Z` con SHA-256 previo `12151e680a2ef8dd400393794041c18adf4425bfd4ebfea38d5882e7b345738a`; `lib_common.sh` intacto (`31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b`). Sintaxis Bash PASS; sin anomalías. [Evidencia completa](E1-09-PR136-instalacion-controlada-Ops.md).
+
+**Se cerraron los dos bloqueos procedimentales anteriores:**
+1. El usuario **permitió el consumo interno programático de `docker/.env` por `backup.sh` solo para autenticación**. Prohibido inspeccionar valores manualmente, imprimir credenciales, exponerlas en logs/chat/GitHub, `set -x` o `docker inspect .Config.Env`.
+2. La versión nueva del script **incluye `flock` exclusivo** para `create`, `verify`, `create-and-verify` y `prune-apply`; el ejecutor confirmó disponibilidad de `flock`. El candado no protege operadores antiguos que no lo usen: inspección operativa previa sigue siendo obligatoria.
+
+**Estado:** instalación Ops PASS; P1-B **todavía NO ejecutado**. Los controles se revalidarán inmediatamente antes de una ejecución autorizada: script instalado SHA256 esperado, contenedor MVP saludable e idéntico, directorio 700, filesystem compartido con ≥1024 MiB e inodos suficientes, ausencia de operaciones externas sin lock, sin overrides de backup salvo `VINTO_MVP_BACKUP_MIN_FREE_MB=1024`, no sobrescritura/poda de los 18 respaldos previos.
+
+**No reutilizar una autorización anterior como si la operación ya se hubiera ejecutado.** La instalación quedó deliberadamente separada de P1-B; solicitar nuevo GO explícito para ejecutar exclusivamente un `create-and-verify` tras revalidar sus guardas. La fase 0013, deploy y flag ON siguen NO-GO.
+
+Las secciones antiguas siguientes preservan la explicación del NO-GO original como **historial**, no reflejan el estado del script instalado hoy.
+
 ## 0. ACTUALIZACIÓN OPERATIVA — P1-B NO-GO, no ejecutado (06/nov/2026)
 
 El ejecutor SSH realizó las comprobaciones previas sin cambios y **detuvo correctamente P1-B antes de ejecutar create-and-verify** por dos conflictos de procedimiento:
