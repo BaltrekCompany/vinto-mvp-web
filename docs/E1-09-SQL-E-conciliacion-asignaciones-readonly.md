@@ -1,24 +1,24 @@
 # VINTO E1-09 — SQL-E: conciliación agregada de asignaciones existentes (READ ONLY)
 
 **Estado:** procedimiento preparado y revisado sobre DDL del MVP; **no ejecutado contra la VPS**.  
-**Origen:** SQL-A/B/C/D sobre \`vinto_piloto\` (PostgreSQL 17, \`vinto-mvp-postgres\`, rol \`vinto_app\`).  
+**Origen:** SQL-A/B/C/D sobre `vinto_piloto` (PostgreSQL 17, `vinto-mvp-postgres`, rol `vinto_app`).  
 **Baseline del último corte:** 12 OT en progreso; 16 líneas baseline; 11 asignaciones activas, todas con correspondencia única; 5 líneas baseline sin asignación activa. El corte NO se asume vigente indefinidamente.  
-**GitHub:** E1-02 a E1-08 ya integrados en \`main@a8a8beaf611e8d892658eeabb5a5e1b972a32316\`; la VPS fue observada previamente en release \`86e4ec4\` (NO afirmar que sigue igual sin revalidar).
+**GitHub:** E1-02 a E1-08 ya integrados en `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; la VPS fue observada previamente en release `86e4ec4` (NO afirmar que sigue igual sin revalidar).
 
 ## Objetivo y límites
 
-Repetir la conciliación de 11 asignaciones a líneas baseline y clasificar las líneas **sin asignación activa** según tengan o no antecedentes \`assignment.finished\` dentro del MVP, por OT + \`line_code\` + máquina. Producir solo agregados totales, por categoría de OT y por sector/máquina. **Ningún resultado confirma trabajo físico, turno vigente ni línea lógica \`finished\`.**
+Repetir la conciliación de 11 asignaciones a líneas baseline y clasificar las líneas **sin asignación activa** según tengan o no antecedentes `assignment.finished` dentro del MVP, por OT + `line_code` + máquina. Producir solo agregados totales, por categoría de OT y por sector/máquina. **Ningún resultado confirma trabajo físico, turno vigente ni línea lógica `finished`.**
 
-- Permisos existentes exclusivamente: \`vinto_app\` sobre tablas funcionales ya verificadas por SQL-A3. **No consultar \`vinto_meta\`** (acceso denegado intencionalmente).
-- Una transacción \`REPEATABLE READ READ ONLY\`, \`statement_timeout=10s\`, \`lock_timeout=1s\`, fin con \`COMMIT\`; si algún control falla, no seguir y terminar sesión.
-- No ver, exportar ni publicar \`work_order.number\`, UUID, \`line_code\`, PV, usuarios, datos de captura o campos de producción. Las claves de relación se usan solamente dentro de los CTE y no se imprimen.
-- No emplear \`CREATE TEMP\`, \`COPY\`, \`INSERT\`, \`UPDATE\`, \`DELETE\`, funciones de la app, \`migrate.py\`, ayudas que escriban \`.pgpass\`, acceso a \`.env\`, grants o privilegios adicionales. Ni escribir archivos en el VPS.
-- Solo el contenedor exacto \`vinto-mvp-postgres\`, la base \`vinto_piloto\` y el rol \`vinto_app\`; **TVC queda fuera del alcance** (no \`postgres-vinto\`, no puerto \`6543\`).
+- Permisos existentes exclusivamente: `vinto_app` sobre tablas funcionales ya verificadas por SQL-A3. **No consultar `vinto_meta`** (acceso denegado intencionalmente).
+- Una transacción `REPEATABLE READ READ ONLY`, `statement_timeout=10s`, `lock_timeout=1s`, fin con `COMMIT`; si algún control falla, no seguir y terminar sesión.
+- No ver, exportar ni publicar `work_order.number`, UUID, `line_code`, PV, usuarios, datos de captura o campos de producción. Las claves de relación se usan solamente dentro de los CTE y no se imprimen.
+- No emplear `CREATE TEMP`, `COPY`, `INSERT`, `UPDATE`, `DELETE`, funciones de la app, `migrate.py`, ayudas que escriban `.pgpass`, acceso a `.env`, grants o privilegios adicionales. Ni escribir archivos en el VPS.
+- Solo el contenedor exacto `vinto-mvp-postgres`, la base `vinto_piloto` y el rol `vinto_app`; **TVC queda fuera del alcance** (no `postgres-vinto`, no puerto `6543`).
 - Ejecutar desde conexión SSH ya autorizada en Codex Desktop. ChatGPT no tiene acceso SSH directo.
 
 ## SQL-E — secuencia única para pegar por stdin
 
-El ejecutor debe verificar primero que el contenedor exacto está saludable y que \`docker exec\` con \`psql -X -w\` autentica **sin contraseña interactiva**. Si no, parar. No copiar credenciales ni introducir una alternativa con superusuario. Este comando pasa SQL por stdin; no crea archivos deliberadamente:
+El ejecutor debe verificar primero que el contenedor exacto está saludable y que `docker exec` con `psql -X -w` autentica **sin contraseña interactiva**. Si no, parar. No copiar credenciales ni introducir una alternativa con superusuario. Este comando pasa SQL por stdin; no crea archivos deliberadamente:
 
 ~~~bash
 docker exec -i vinto-mvp-postgres psql -X -w -U vinto_app -d vinto_piloto -v ON_ERROR_STOP=1 <<'SQL'
@@ -181,24 +181,24 @@ SQL
 
 Comprobar estas igualdades **dentro de un mismo snapshot**:
 
-1. E1: \`asignaciones_activas = mapeo_unico\`, con \`sin_baseline = mapeo_ambiguo = origen_no_operacional = 0\`.
-2. E2: \`lineas_baseline = con_una_activa + con_multiples_activas + sin_activa\`; \`sin_activa = sin_activa_con_historial_finished + sin_activa_sin_asignacion_historica\`; \`total_activas_mapeadas = E1.mapeo_unico\` cuando no hay duplicados.
-3. E3: suma \`sin_activa\` por máquina = E2 \`lineas_sin_activa\`.
+1. E1: `asignaciones_activas = mapeo_unico`, con `sin_baseline = mapeo_ambiguo = origen_no_operacional = 0`.
+2. E2: `lineas_baseline = con_una_activa + con_multiples_activas + sin_activa`; `sin_activa = sin_activa_con_historial_finished + sin_activa_sin_asignacion_historica`; `total_activas_mapeadas = E1.mapeo_unico` cuando no hay duplicados.
+3. E3: suma `sin_activa` por máquina = E2 `lineas_sin_activa`.
 4. E4: suma OT y líneas baseline coincide con el universo E2, y suma activas mapeadas con E1.
 5. Contrastar con **último corte histórico**, solo como detección de cambios: E1 = 11/11/0/0/0; E2 = 16 baseline, 11 con activa, 5 sin activa; E4 = 4 OT sin activa (5 líneas), 7 OT con una (7 líneas), 1 OT con varias (4 líneas, cuatro asignaciones). **No forzar estas cifras**: la operación puede haber cambiado desde SQL-D.
 
-Si el guard E0 falla, hay error SQL o alguna conciliación aritmética no cuadra, dictamen **NO VERIFICADO / NO-GO** y detenerse. Si las cifras difieren solo por actividad posterior legítima, documentar \`SNAPSHOT_DRIFT\` y realizar nueva conciliación funcional con Supervisión; **no modificar datos para reproducir cifras viejas**.
+Si el guard E0 falla, hay error SQL o alguna conciliación aritmética no cuadra, dictamen **NO VERIFICADO / NO-GO** y detenerse. Si las cifras difieren solo por actividad posterior legítima, documentar `SNAPSHOT_DRIFT` y realizar nueva conciliación funcional con Supervisión; **no modificar datos para reproducir cifras viejas**.
 
 ### Qué todavía no establece SQL-E
 
-- \`assignment.finished\` demuestra únicamente que una habilitación/asignación dejó de estar activa. No representa \`work_order_line_execution.finished\` ni acredita producción completa.
-- Una línea sin registros \`assignment\` emparejados no prueba que nunca existiera un proceso físico o evidencia externa.
+- `assignment.finished` demuestra únicamente que una habilitación/asignación dejó de estar activa. No representa `work_order_line_execution.finished` ni acredita producción completa.
+- Una línea sin registros `assignment` emparejados no prueba que nunca existiera un proceso físico o evidencia externa.
 - No se inspeccionan capturas ni datos de producción. Para hacerlo hace falta un alcance separado, verificación previa de privilegios y procedimiento privado.
-- La inspección de \`vinto_meta.schema_migration\` queda pendiente con el mecanismo legítimo del migrador, **sin conceder SELECT a \`vinto_app\`**.
+- La inspección de `vinto_meta.schema_migration` queda pendiente con el mecanismo legítimo del migrador, **sin conceder SELECT a `vinto_app`**.
 - La migración 0013, respaldo, deployment, cambio de bandera y QA manual requieren puertas independientes.
 
 ## Formato de decisión funcional reservado a Supervisión (NO publicar IDs)
 
-Mantener **una matriz interna, de acceso restringido**, con las 16 líneas del corte o el universo actualizado: referencia OT/línea para el supervisor, sector/máquina, ¿la línea está físicamente produciendo ahora?, ¿ya finalizó de manera definitiva?, ¿hay continuidad pendiente en otro turno?, ¿se debe habilitar para captura?, responsable de validación, fecha/hora y decisión \`VALIDADA / POR VALIDAR / BLOQUEADA\`. Esos datos **no se publican** en issues ni en logs; solo se comparte el resumen agregado por sector/máquina y número de pendientes.
+Mantener **una matriz interna, de acceso restringido**, con las 16 líneas del corte o el universo actualizado: referencia OT/línea para el supervisor, sector/máquina, ¿la línea está físicamente produciendo ahora?, ¿ya finalizó de manera definitiva?, ¿hay continuidad pendiente en otro turno?, ¿se debe habilitar para captura?, responsable de validación, fecha/hora y decisión `VALIDADA / POR VALIDAR / BLOQUEADA`. Esos datos **no se publican** en issues ni en logs; solo se comparte el resumen agregado por sector/máquina y número de pendientes.
 
-**Prioridad operativa:** MP1 y MP3 (dos asignaciones activas cada una en SQL-D), y las cinco líneas sin asignación activa. Ninguna línea se promociona automáticamente a \`in_production\`, se termina ficticiamente o se reprograma por diferencia de turnos.
+**Prioridad operativa:** MP1 y MP3 (dos asignaciones activas cada una en SQL-D), y las cinco líneas sin asignación activa. Ninguna línea se promociona automáticamente a `in_production`, se termina ficticiamente o se reprograma por diferencia de turnos.
