@@ -12,6 +12,7 @@ on:
       - 'lib/vinto/work-order-capabilities.ts'
       - 'components/vinto/line-execution-panel.tsx'
       - 'components/vinto/bobinas-programming.tsx'
+      - 'components/vinto/bobinas-programming-source.tsx'
       - 'components/vinto/activate-all-dialog.tsx'
       - 'scripts/e1-05-supervision.test.mjs'
       - '.github/workflows/e1-05-supervision.yml'
@@ -40,7 +41,7 @@ jobs:
       - name: TypeScript validation
         run: pnpm exec tsc --noEmit
       - name: ESLint touched frontend modules
-        run: pnpm exec eslint components/vinto/line-execution-panel.tsx components/vinto/bobinas-programming.tsx components/vinto/activate-all-dialog.tsx lib/vinto/line-execution.ts lib/vinto/line-execution-api.ts lib/vinto/work-order-capabilities.ts
+        run: pnpm exec eslint components/vinto/line-execution-panel.tsx components/vinto/bobinas-programming.tsx components/vinto/bobinas-programming-source.tsx components/vinto/activate-all-dialog.tsx lib/vinto/line-execution.ts lib/vinto/line-execution-api.ts lib/vinto/work-order-capabilities.ts
 
   backend:
     runs-on: ubuntu-24.04
@@ -84,3 +85,6 @@ jobs:
       - name: E1-04 capture guard regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_capture_line_execution_guard.py' -v
+      - name: Historic capabilities API regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_orders_capabilities_api.py' -v
