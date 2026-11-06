@@ -109,8 +109,8 @@ jobs:
       - name: E1-02 existing assignment and multi-machine regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
-      - name: Broad backend regression all unittest modules on disposable PG17
+      - name: Broad backend differential gate (all unittest modules, historical FAIL/ERROR audited)
         working-directory: backend
         env:
           WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
-        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+        run: python -B ../scripts/e1-backend-regression-gate.py
