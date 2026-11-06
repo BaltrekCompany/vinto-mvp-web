@@ -77,6 +77,8 @@ export function safeExecutionMessage(code: string | undefined, fallback: string)
         return "Esta línea requiere habilitación o revisión de Supervisión.";
     if (code === "LINE_EXECUTION_DISABLED") return "El control de ejecución no está habilitado en el servidor.";
     if (code === "LINE_EXECUTION_CONFLICT") return "El estado de la línea cambió. Actualiza antes de repetir.";
+    if (code === "WORK_ORDER_CLOSE_PENDING_LINES") return "No se puede cerrar la OT: todavía hay líneas pendientes o asignaciones activas. Actualiza los estados.";
+    if (code === "WORK_ORDER_CLOSE_INVALID_STATE") return "La OT no está en ejecución o ya cambió de estado. Actualiza los datos.";
     return fallback;
 }
 
