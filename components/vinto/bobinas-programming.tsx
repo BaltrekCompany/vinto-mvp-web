@@ -17,7 +17,7 @@ import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
 import type { Resource } from "@/lib/vinto/use-central";
-import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, lineExecutionOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
+import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { addWorkOrderLine, createWorkOrderWithLines, publishWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
@@ -31,6 +31,7 @@ type Props = {
     catalog?: (machine: string) => readonly CatalogItem[]; // por defecto la lista estática temporal de Bobinas; Rebobinado pasa los artículos que verifica el backend
     creation?: Creation; // máquinas y productos que el BACKEND ofrece a la sesión para crear (puede incluir varios sectores autorizados)
     capabilities?: WorkOrderCapabilities; // lo que el SERVIDOR confirmó; por defecto la creación multimáquina está apagada
+    executionEnabled?: boolean; // confirmación separada del servidor para el flujo inicio/finalización
     capabilityStatus?: CapabilityStatus; // estado de esa consulta: solo cambia el aviso; nunca habilita nada
     scope?: string; // sessionScope(user): el diálogo de activación masiva y su plan pertenecen a ESTA sesión
     onCapabilitiesStale?: () => void; // el servidor respondió MULTI_MACHINE_DISABLED: volver a pedir las capacidades
@@ -54,12 +55,11 @@ const machinesOf = (order: WorkOrder) => [...new Set(order.baseline.lines.map(li
 
 // Programación de OT contra las APIs centrales. Sin estado local de OT/asignaciones persistidas, sin optimismo: cada mutación espera la respuesta del backend (que es la autoridad de número,
 // line_code, estado y fechas) y después se reconcilia con GET. El ÚNICO estado local es el borrador de una OT nueva (filas aún no enviadas) y el de «añadir línea» de un borrador.
-export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, capabilityStatus = "ready", scope = "", onCapabilitiesStale, initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
+export function BobbinasProgramming({ machines, catalog: catalogOfMachine = catalogOf, creation, capabilities = NO_CAPABILITIES, executionEnabled = false, capabilityStatus = "ready", scope = "", onCapabilitiesStale, initialRows, sectorLabel = "Bobinas", workOrders, onChanged, onSessionLost, canManageOrders, canManageAssignments }: Props) {
     const options = creation === undefined ? { machines: machines.map(code => ({ code, name: code })), catalog: catalogOfMachine } : creation;
     const optionMachines = typeof options === "string" ? [] : options.machines;
     const optionCatalog = typeof options === "string" ? () => [] : options.catalog;
     const multi = multiMachineOffered(capabilities, canManageOrders, optionMachines.length);
-    const executionEnabled = lineExecutionOffered(capabilities, canManageAssignments);
     const keyCounter = useRef(1);
     const nextKey = () => `r${++keyCounter.current}`;
     const [storedRows, setRows] = useState<DraftRow[]>(() => initialRows ?? [emptyRow("r1", optionMachines[0]?.code ?? "")]);
