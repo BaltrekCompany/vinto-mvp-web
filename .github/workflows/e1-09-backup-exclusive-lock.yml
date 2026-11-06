@@ -1,0 +1,31 @@
+name: E1-09 backup exclusive lock
+on:
+  pull_request:
+    paths:
+      - 'deploy/mvp/scripts/backup.sh'
+      - 'deploy/mvp/scripts/lib_common.sh'
+      - 'deploy/mvp/scripts/tests/test_backup_exclusive_lock.sh'
+      - '.github/workflows/e1-09-backup-exclusive-lock.yml'
+  push:
+    branches:
+      - 'fix/e1-09-p1b-backup-flock-20261106'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bash-lock-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Validate Bash syntax
+        shell: bash
+        run: |
+          bash -n deploy/mvp/scripts/backup.sh
+          bash -n deploy/mvp/scripts/lib_common.sh
+          bash -n deploy/mvp/scripts/tests/test_backup_exclusive_lock.sh
+      - name: Exclusive backup lock safety tests (no database)
+        shell: bash
+        run: bash deploy/mvp/scripts/tests/test_backup_exclusive_lock.sh
