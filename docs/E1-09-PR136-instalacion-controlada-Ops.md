@@ -1,10 +1,34 @@
 # VINTO E1-09 — Instalación controlada del script Ops de respaldo (PR #136)
 
-**Estado:** preparación documental, **NO EJECUTADA**. Fecha 2026-11-06.  
+**Estado actual:** **INSTALACIÓN OPS PASS**, según evidencia de ejecución SSH remitida por Codex Desktop; **P1-B NO EJECUTADO**. Fecha 2026-11-06.  
 **Integrado GitHub:** PR #136, `main@c64893e86a983a86d57f9a7406d0d736417f17e3`. QA [42240240275](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42240240275) y [42240251528](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42240251528) PASS.  
 **Cambio:** solo `deploy/mvp/scripts/backup.sh` respecto de código Ops; `lib_common.sh` intacto. Git blob SHA-1 *nuevo* `5ae19d8a8db75bb61f8e67bd1159acfab684ddc3`.  
 **Antes:** Ops `backup.sh` SHA-256 `12151e680a2ef8dd400393794041c18adf4425bfd4ebfea38d5882e7b345738a`; `lib_common.sh` SHA-256 `31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b` (P1-A).  
 **Límites:** el usuario autorizó integrar #136 y **preparar** instalación controlada, así como permitir uso *interno programático* de credenciales durante un posterior backup, sin exponerlas. **No se ejecutó instalación ni respaldo** desde ChatGPT.
+
+## Resultado real de instalación — recibido tras autorización específica (06/nov/2026)
+
+**Evidencia aportada por el ejecutor SSH; ChatGPT no ha accedido al VPS:**
+
+| Comprobación | Resultado |
+|---|---|
+| Único archivo reemplazado | `/home/ubuntu/vinto-mvp-ops/scripts/backup.sh` |
+| Git blob instalado | `5ae19d8a8db75bb61f8e67bd1159acfab684ddc3` |
+| SHA-256 instalado | `53bbda26c74b46f3868f239e27385f64d7c7c3d363a4e90a7427fb02259d3a25` |
+| Bash sintaxis | PASS para `backup.sh` instalado |
+| Copia de rollback previa | `/home/ubuntu/vinto-mvp-ops/scripts/backup.sh.pre-e1-09-20261106T153014Z` |
+| SHA-256 de copia previa | `12151e680a2ef8dd400393794041c18adf4425bfd4ebfea38d5882e7b345738a` |
+| Sintaxis de copia previa | PASS |
+| `lib_common.sh` | Intacto; SHA-256 `31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b` |
+| Usuario/permisos | `ubuntu:700` para instalado y copia previa |
+| `flock` / concurrencia | Disponible; cero operaciones concurrentes detectadas en preflight |
+| Anomalías | Ninguna informada |
+| PostgreSQL, servicios, 0013, flags y TVC | No tocados durante instalación |
+| Respaldo y restauración P1-B | **NO ejecutados**; sin nuevo dump ni contenedor efímero |
+
+**Dictamen:** GO técnico para **solicitar renovación de autorización de P1-B**, no ejecución automática. Revalidar P1-B inmediatamente antes de usar la versión nueva de `backup.sh` y distinguir que el nuevo lock `.backup-operations.lock` aparecerá en el directorio privado durante la primera operación; no borrarlo para "limpiar". Los 18 dumps históricos y marcadores previos deben conservarse.
+
+Las secciones B–D siguientes describen la instalación y rollback y quedan conservadas como documentación **histórica/reproducible**; **no repetir la instalación** de un script ya actualizado.
 
 ## A. Política de secretos y concurrencia
 
@@ -96,7 +120,7 @@ No emplear `rollback.sh version` de la aplicación para esta operación.
 
 ## E. Puertas de decisión
 
-**Ahora:** PR #136 mergeado; código QA PASS; **instalación solo preparada**.  
+**Ahora:** PR #136 mergeado; código QA PASS; instalación Ops PASS en VPS según informe del operador; respaldo P1-B aún NO EJECUTADO.  
 **Para instalar:** aprobación expresa de ejecución de C, revalidación in situ, transferencia privada del candidato íntegro y copia vieja verificable.  
 **Para P1-B posterior:** tras instalar, verificar `flock` activo, permisos y salud, ausencia de trabajos no cooperativos; usar `backup.sh create-and-verify` con autenticación programática **sin revelar secretos**; guardar evidencia de dump nuevo verificado y restauración efímera aislada.  
 **Aún prohibidos:** restaurar datos sobre `vinto_piloto`, borrar OT simuladas, ejecutar 0013, desplegar E1, cambiar flags, grants o TVC.
