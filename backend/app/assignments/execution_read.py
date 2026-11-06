@@ -10,13 +10,15 @@ from app.config import settings
 
 
 def read_machine_execution(connection, *, machine_code, sectors, machine_codes):
-    # Check scope and existence with the same well-tested, MF13 protected query
-    # used by /active-lines, regardless of the flag, to avoid leaking machines.
+    if settings.work_order_line_execution_enabled is not True:
+        # The legacy UI is unchanged even for historical users without machine
+        # grants. No assignment, machine or execution data is disclosed here.
+        # This avoids introducing an extra MF13 read prerequisite while OFF.
+        return {"line_execution": False, "assignments": []}
+    # With flag ON, use exactly the same scoped query as /active-lines.
+    # A machine outside effective MF13 grants fails before any state is read.
     active = assignment_service.get_active_lines(
         connection, machine_code=machine_code, sectors=sectors, machine_codes=machine_codes)
-    if settings.work_order_line_execution_enabled is not True:
-        # Old production behavior: no query against migration 0013.
-        return {"line_execution": False, "assignments": []}
 
     ids = [item.assignment.id for item in active.items]
     if not ids:
