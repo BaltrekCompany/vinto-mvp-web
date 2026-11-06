@@ -9,6 +9,11 @@ No backfill, data repair, schema changes or feature activation are performed.
 """
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
+_MIGRATION_PATH = Path(__file__).resolve().parents[2] / "migrations" / "0013_work_order_line_execution.sql"
+
 
 def _one(connection, sql: str) -> int:
     return int(connection.execute(sql).fetchone()[0])
@@ -26,9 +31,19 @@ def collect(connection) -> dict:
     installed = bool(connection.execute(
         "SELECT to_regclass('vinto_txn.work_order_line_execution') IS NOT NULL"
     ).fetchone()[0])
-    migration_0013 = bool(connection.execute(
-        "SELECT EXISTS(SELECT 1 FROM vinto_meta.schema_migration WHERE version=13)"
-    ).fetchone()[0])
+    applied = connection.execute(
+        "SELECT filename, checksum FROM vinto_meta.schema_migration WHERE version=13"
+    ).fetchone()
+    migration_0013 = applied is not None
+    try:
+        local_sql = _MIGRATION_PATH.read_text(encoding="utf-8").replace("\r\n", "\n")
+        expected_digest = hashlib.sha256(local_sql.encode("utf-8")).hexdigest()
+        migration_checksum_ok = bool(
+            applied is not None and applied[0] == _MIGRATION_PATH.name
+            and applied[1] == expected_digest
+        )
+    except OSError:
+        migration_checksum_ok = False
     # Every scalar read is independent, allowing safe targeted diagnostics
     # without fetching even one assignment/OT record.
     counts = {
@@ -76,6 +91,7 @@ def collect(connection) -> dict:
     ]
     rollout = {
         "migration_0013_recorded": migration_0013,
+        "migration_0013_checksum_matches_checkout": migration_checksum_ok,
         "execution_table_installed": installed,
         "execution_unique_machine_index": False,
         "execution_guard_trigger_enabled": False,
@@ -143,6 +159,8 @@ def collect(connection) -> dict:
     blockers = []
     if not installed or not migration_0013:
         blockers.append("MIGRATION_0013_NOT_CONFIRMED")
+    if migration_0013 and not migration_checksum_ok:
+        blockers.append("MIGRATION_0013_CHECKSUM_MISMATCH")
     if installed and not rollout["execution_unique_machine_index"]:
         blockers.append("MISSING_MACHINE_EXCLUSIVITY_INDEX")
     if installed and not rollout["execution_guard_trigger_enabled"]:
