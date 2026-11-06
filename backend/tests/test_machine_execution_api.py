@@ -24,12 +24,43 @@ def tearDownModule():
         base.base.STATE.pop("template", None)
 
 
-class OperationExecutionHttpTests(base.VisibilityApiTests):
+class OperationExecutionHttpTests(base.base.AssignmentApiCase):
     async def asyncSetUp(self):
-        flag = patch.object(settings, "work_order_line_execution_enabled", True)
-        flag.start()
-        self.addCleanup(flag.stop)
         await super().asyncSetUp()
+        for setting in ("work_order_line_execution_enabled", "work_orders_multi_machine_enabled"):
+            flag = patch.object(settings, setting, True)
+            flag.start()
+            self.addCleanup(flag.stop)
+        self.supervisor_id = self.users["SUPERVISION"][0].user_id
+        head = await self.cookie("JEFATURA")
+        supervisor = await self.cookie("SUPERVISION")
+        created = await call("POST", "/api/work-orders",
+                             json_body=base.mixed_body(), cookie=head)
+        self.assertEqual(created.status, 201, created.text)
+        published = await call("POST", "/api/work-orders/" + created.json()["id"] + "/publish", cookie=head)
+        self.assertEqual(published.status, 200, published.text)
+        self.ot = published.json()
+        target = "/api/work-orders/" + self.ot["id"] + "/activate-all"
+        preview = await call("POST", target, json_body={"dry_run": True}, cookie=supervisor)
+        self.assertEqual(preview.status, 200, preview.text)
+        done = await call("POST", target, json_body={"dry_run": False, "plan_hash": preview.json()["plan_hash"]}, cookie=supervisor)
+        self.assertEqual(done.status, 201, done.text)
+        self.assignments = {a["line"]["line_code"]: a for a in done.json()["activated"]}
+
+    async def operator(self, *machines):
+        password = "pw-" + base.secrets.token_urlsafe(18)
+        created = base.create_user(
+            self.connection, username="e106." + base.uuid4().hex[:10],
+            display_name="E1-06 QA", profile_code="OPERACION",
+            password=password, sectors=("BOBINAS",))
+        for machine in machines:
+            base.grant_machine_form(
+                self.connection, user_id=created.user_id, machine_code=machine,
+                form_code=base.P103, actor_id=self.supervisor_id)
+        reply = await call("POST", "/api/auth/login",
+                           json_body={"username": created.username, "password": password})
+        self.assertEqual(reply.status, 200, reply.text)
+        return created, reply.set_cookie_value()
 
     async def get_status(self, machine, cookie):
         return await call("GET", PATH + "?machine_code=" + machine, cookie=cookie)
