@@ -15,8 +15,11 @@ def _one(connection, sql: str) -> int:
 
 
 def collect(connection) -> dict:
-    if connection.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] != "on":
-        raise RuntimeError("E1-08 requires a READ ONLY PostgreSQL transaction")
+    config = connection.execute(
+        "SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')"
+    ).fetchone()
+    if config != ("on", "repeatable read"):
+        raise RuntimeError("E1-08 requires a REPEATABLE READ, READ ONLY PostgreSQL transaction")
 
     # Installed objects and migration history are checked separately, to avoid
     # assuming that a manually created table means migration 0013 is applied.
