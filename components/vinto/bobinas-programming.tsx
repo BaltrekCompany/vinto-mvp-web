@@ -7,6 +7,7 @@ import { ActivateAllDialog } from "@/components/vinto/activate-all-dialog";
 import { LineExecutionPanel } from "@/components/vinto/line-execution-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { OrderDraftEditor, type CatalogItem, type MachineOption } from "@/components/vinto/order-draft-editor";
 import { Panel } from "@/components/vinto/panels";
