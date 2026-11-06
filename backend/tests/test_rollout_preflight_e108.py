@@ -33,7 +33,7 @@ class LegacyRolloutPreflightTests(base.SameOrderCase):
 
     def inspect_read_only(self):
         with self.connection.transaction():
-            self.connection.execute("SET TRANSACTION READ ONLY")
+            self.connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             report = rollout_preflight.collect(self.connection)
         return report
 
