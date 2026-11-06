@@ -2,6 +2,41 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## AUTORIZACIÓN G3 VIGENTE — respaldo pre-DDL aprobado, PENDIENTE DE EJECUTAR (06/nov/2026)
+
+**Autorización específica del usuario:** «Ok autorizo» a la pregunta de ejecutar **G3**, un nuevo respaldo verificable del PostgreSQL MVP antes de las migraciones, **sin migración, despliegue, cambios de OT/flags ni intervención sobre TVC**.
+
+**Al momento de registrar:** G2 ya está **PASS** (nuevo release `main@d5bc472b831eae8abd60899296ce8c146c119a5a` preparado con `server.js`; `check-release` exit 2 con solo `0013` y `0014` pendientes). El release activo sigue siendo `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`. **G3 aún NO ejecutado**; esta sesión de ChatGPT no tiene SSH hacia la VPS. Codex Desktop SSH debe ejecutarlo una sola vez y retornar evidencia.
+
+### Preflight obligatorio G3 (solo lectura, fail-closed)
+
+1. Confirmar host `vps-14d8e0ce`, usuario `ubuntu`, `current` EXACTAMENTE antiguo, backend/frontend `active`, `vinto-mvp-postgres` imagen `postgres:17`, Compose `vinto-mvp`, `running/healthy`. No inspeccionar TVC ni recorrer directorios ajenos.
+2. Verificar los scripts instalados en `/home/ubuntu/vinto-mvp-ops/scripts`: `backup.sh` SHA-256 `53bbda26c74b46f3868f239e27385f64d7c7c3d363a4e90a7427fb02259d3a25`; `lib_common.sh` SHA-256 `31696d213baaf5436cc09766327ed6e1f53605802ffce970f89bb2813318c31b`; `bash -n` PASS; `flock` disponible. NO reemplazar scripts ni alterar configuración.
+3. Comprobar historial/schema actual 0001–0012 aplicado y 0013/0014 pendientes **por evidencia G2 `check-release` + revalidación READ ONLY de catálogo**, sin tocar metadatos con identidad `vinto_app` ni acceder a `vinto_meta` sin migrador legítimo. Flag E1 efectivo **OFF** en release activo. Si hay drift STOP.
+4. Revisar directorio de respaldo predeterminado `/home/ubuntu/vinto-mvp-backups` como privado del operador (`700`), filesystem de origen/destino, capacidad e inodos suficientes, además de margen `VINTO_MVP_BACKUP_MIN_FREE_MB=1024` (MiB), proceso y locks. No sobrescribir ni eliminar; comprobar que el anterior P1-B `vinto-mvp-vinto_piloto-20261106-154402-3915284.dump` y `.verified` son válidos, y registrar inventario/hash de los backups históricos **sin imprimir secretos ni contenido de capturas/OT**. Bloquear si hay `backup.sh`, `pg_dump`, `pg_restore`, verificación de restauración, `deploy.sh` o migrador concurrente (incluidas herramientas legadas que no respeten `flock`).
+5. `docker/.env` puede ser consumido **solo por `backup.sh` en su ejecución interna**, no mostrar, abrir ni exportar credenciales, no usar `set -x`, `docker inspect Config.Env` ni contraseñas en la línea de comandos.
+
+### Operación única autorizada
+
+Con todos los guardas PASS, en el VPS y como `ubuntu` (sin `sudo bash backup.sh`):
+
+```bash
+cd /home/ubuntu/vinto-mvp-ops/scripts
+CONFIRM=yes VINTO_MVP_BACKUP_MIN_FREE_MB=1024 bash backup.sh create-and-verify
+```
+
+**Ejecutar una sola vez.** El script dispone de lock `flock` no bloqueante para la operación completa. No reintentar en caso de exit distinto de 0, no crear dump manual ni ejecutar otra operación.
+
+### Postchecks y criterio G3 PASS
+
+- `create-and-verify` **exit 0**, nuevo dump no sobrescrito, manifiesto del mismo snapshot, checksums SHA-256 del dump y manifiesto PASS, marcador nuevo `.verified`, restauración temporal PostgreSQL 17 aislada con `--network none`, todas las tablas del manifiesto conciliadas **sin discrepancias** y ningún contenedor de prueba remanente.
+- Inventario anterior conservado: no cambio de hashes anteriores, 0 `.CORRUPT` y 0 `.partial` atribuibles, sin ejecución de `prune` ni `prune-apply`. La cifra previa era 19 dumps/19 `.verified` según P1-B; si no hubo cambios legítimos, esperar 20/20 después de G3, pero **revalidar inventario real**, no forzar números.
+- `current` continúa en `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`, frontend/backend activos, PostgreSQL MVP healthy; el nuevo release staged sigue intacto; `0013` y `0014` no aplicadas, flag OFF y OT/assignments/capturas intactas.
+- Reportar nombre del nuevo dump, SHA-256 de dump/manifiesto, tabla reconciliadas/diferencias, marcador, limpieza de contenedor, inventario antes/después, capacidad restante, estado de servicios, resultado PASS/FAIL y cualquier observación sin exponer secretos ni IDs.
+- **TVC excluido**: no conectar ni realizar acciones sobre `postgres-vinto`, `vinto-web.service`, `/opt/vinto-web`, `/home/ubuntu/vinto/pgdata`.
+
+**GO consumido al ejecutar G3:** no habilita **G4** (migraciones 0013/0014), despliegue/activación, archivado de OT, limpieza/retención de backups, grants, cambios de flag ni transferencia externa de dumps. La copia off-host sigue **NO VERIFICADA**, y antes de cualquier DDL deben tratarse/aceptarse explícitamente los riesgos de único filesystem. Si falla un guard o la ejecución, detenerse en NO-GO y conservar evidencia para diagnóstico.
+
 ## G2 CERRADO — PASS (06/nov/2026): release preparado sin activación
 
 **Fuente:** informe de Codex Desktop/operador SSH remitido por el usuario. No ejecución directa desde ChatGPT. Se superó el bloqueo previo de permisos en la transferencia/instalación del artefacto.
