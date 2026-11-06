@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
+import { LineSelector } from "@/components/vinto/line-selector";
 import { P110History, P111History, P129History } from "@/components/vinto/central-form-history";
 import { CandidateHistory } from "@/components/vinto/candidate-history";
 import { CentralStatus } from "@/components/vinto/central-status";
@@ -13,6 +14,9 @@ import { Panel } from "@/components/vinto/panels";
 import { CONVERSION_DISABLED_MESSAGE, CONVERSION_DISABLED_TITLE, DISABLED_MESSAGE, DISABLED_TITLE, articlesOf, offeredForms, screenFor, sectorView, type FormScreen, type SectorAvailability } from "@/lib/vinto/availability";
 import { listCapturesOf } from "@/lib/vinto/captures-api";
 import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActive, failureMessage, type CaptureContext } from "@/lib/vinto/orders";
+import { contextFromSelection, selectionKey, validSelection, type Selection } from "@/lib/vinto/active-lines";
+import { operationBlockedMessage, selectedContextAllowed } from "@/lib/vinto/machine-execution";
+import { getLineExecutionCapability } from "@/lib/vinto/line-execution-api";
 import { CONVERSION_CANDIDATES, CONVERSION_CANDIDATE_SCREENS } from "@/lib/vinto/conversion-candidates";
 import { REBOBINADO_CANDIDATES, REBOBINADO_CANDIDATE_SCREENS } from "@/lib/vinto/rebobinado-candidates";
 import { candidateHistoryKey } from "@/lib/vinto/resource-view";
@@ -20,7 +24,7 @@ import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_11_CODE, parseP111List } from "@/lib/vinto/p1-11";
 import { P1_29_CODE, parseP129List } from "@/lib/vinto/p1-29";
 import { onlyEligible } from "@/lib/vinto/eligibility";
-import { useActiveAssignment, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
+import { useMachineExecution, useOperationSelection, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
 
 // Shell CENTRAL por sector (M4-A Rebobinado, M6-A Conversión): Jefatura crea/publica OT, Supervisión activa asignaciones, Operación abre los formularios que el backend publica para la máquina y Seguimiento
 // muestra los registros centrales, TODO contra las APIs centrales. La disponibilidad (sector operativo, concesión, máquinas y formularios vinculados) la verifica el backend (GET /api/production/machines);
@@ -69,36 +73,94 @@ export function SectorCentral(props: Props) {
 function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost }: Inner) {
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const machines = sector.machines.map(m => m.code);
+    // E1-08: exact same Supervisión execution controls for Rebobinado and
+    // Conversión. The capability is authoritative and absent on older servers.
+    const capability = useResource<boolean>(
+        "line-execution-sector-capability:" + scope, canManageAssignments,
+        signal => getLineExecutionCapability(signal), onSessionLost, true);
+    const executionEnabled = canManageAssignments && capability.view.status === "ready" &&
+        capability.view.data === true && !capability.view.refreshing;
     return <div {...tag(code, "programacion")}><BobbinasProgramming machines={machines} sectorLabel={SECTORS[code].label} catalog={machine => articlesOf(sector.machines.find(m => m.code === machine)).map(a => ({ code: a.code, name: a.description }))}
-        workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
+        workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} scope={scope} executionEnabled={executionEnabled}
+        canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
 }
 
 function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost }: Inner) {
     const [machineCode, setMachineCode] = useState(sector.machines[0]?.code ?? "");
+    const [lineChoice, setLineChoice] = useState<Selection | null>(null);
     const machine = sector.machines.find(m => m.code === machineCode) ?? sector.machines[0];
-    const active = useActiveAssignment(machine.code, canReadAssignments, onSessionLost, scope);
+    // E1-08: same selection and independently verified execution as Bobinas.
+    // Both calls use the effective MF13 grants for THIS sector and THIS machine.
+    const active = useOperationSelection(machine.code, canReadAssignments, onSessionLost, scope);
+    const execution = useMachineExecution(machine.code, canReadAssignments && canCapture, onSessionLost, scope);
+    const refresh = () => { active.refresh(); execution.refresh(); };
+    const view = active.view;
+    const snapshot = execution.view.status === "ready" && !execution.view.refreshing ? execution.view.data : null;
+    const verified = snapshot !== null;
+    const key = selectionKey(scope, machine.code);
+    const selectedId = view.status === "ready" && view.data.kind === "multiple"
+        ? validSelection(lineChoice, key, view.data.lines) : null;
     let state: ExecState;
-    if (!canReadAssignments) state = { kind: "error", message: "Acceso no permitido.", retry: active.refresh };
-    else if (active.view.status === "ready") state = { kind: "check", check: contextFromActive(active.view.data) };
-    else if (active.view.status === "error") state = { kind: "error", message: active.view.kind === "forbidden" ? "Acceso no permitido." : failureMessage(active.view.kind), retry: active.refresh };
+    if (!canReadAssignments) state = { kind: "error", message: "Acceso no permitido.", retry: refresh };
+    else if (view.status === "ready" && !view.refreshing)
+        state = { kind: "check", check: view.data.kind === "single"
+            ? contextFromActive(view.data.active) : contextFromSelection(view.data.lines, selectedId) };
+    else if (view.status === "error")
+        state = { kind: "error", message: view.kind === "forbidden" ? "Acceso no permitido." : failureMessage(view.kind), retry: refresh };
     else state = { kind: "loading" };
+
+    if (canCapture) {
+        if (!verified) {
+            state = execution.view.status === "error"
+                ? { kind: "error", message: "No se pudo validar la ejecución con el servidor. Actualiza antes de capturar.", retry: refresh }
+                : { kind: "loading" };
+        } else if (state.kind === "check" && state.check.ok && view.status === "ready") {
+            const assignmentId = state.check.context.assignmentId;
+            if (!selectedContextAllowed(snapshot, view.data, assignmentId))
+                state = { kind: "error", message: operationBlockedMessage(snapshot, assignmentId), retry: refresh };
+        }
+    }
+
     const select = (screen: FormScreen | null) => {
         if (!canCapture) return void toast.error("Tu perfil no tiene permiso para capturar en este frente");
         if (!screen) return void toast.error("Este formulario aún no tiene pantalla central");
-        if (state.kind !== "check") return void toast.error("Aún se está consultando la asignación activa");
+        if (state.kind !== "check") return void toast.error("La ejecución necesita validación de Supervisión. Actualiza los estados.");
         if (!state.check.ok) return void toast.error(CONTEXT_MESSAGES[state.check.reason]);
         onOpenForm(screen, state.check.context);
     };
     const forms = offeredForms(code, machine);
-    return <div {...tag(code, "ejecucion")}><Panel title="Punto de captura" note="La máquina y sus formularios los publica el backend; la OT y el producto llegan desde Supervisión (asignación central).">
-        <div className="flex flex-wrap gap-2">{sector.machines.map(m => <Button key={m.code} size="sm" variant={machine.code === m.code ? "default" : "outline"} className={machine.code === m.code ? "bg-[#146b4f]" : ""} onClick={() => setMachineCode(m.code)}>{m.code}</Button>)}</div></Panel>
-        <ContextBanner state={state} machine={machine.code}/>
-        {!canCapture && <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Tu perfil puede consultar este frente, pero no capturar en él.</div>}
+    const multiple = view.status === "ready" && view.data.kind === "multiple";
+    return <div {...tag(code, "ejecucion")}><Panel title="Punto de captura"
+        note="La máquina y sus formularios los publica el backend; Supervisión habilita e inicia una sola línea para producir.">
+        <div className="flex flex-wrap gap-2">{sector.machines.map(m =>
+            <Button key={m.code} size="sm" variant={machine.code === m.code ? "default" : "outline"}
+                className={machine.code === m.code ? "bg-[#146b4f]" : ""} onClick={() => setMachineCode(m.code)}>{m.code}</Button>)}</div>
+    </Panel>
+        {multiple && <LineSelector machine={machine.code} lines={view.data.lines}
+            selectedId={selectedId} onChoose={id => setLineChoice({ key, assignmentId: id })}
+            onRefresh={refresh} refreshing={!verified || view.refreshing}
+            execution={snapshot} verified={verified}/>}
+        {(!multiple || selectedId !== null) && <ContextBanner state={state} machine={machine.code}/>}
+        {snapshot?.line_execution === true && <p role="status" className="mt-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+            Control de ejecución activo: solo se captura la línea iniciada por Supervisión.
+        </p>}
+        {!canCapture && <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            Tu perfil puede consultar este frente, pero no capturar en él.
+        </div>}
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{forms.length === 0
-            ? <p className="rounded-2xl border bg-white p-5 text-sm text-slate-700 md:col-span-2 xl:col-span-3">El backend no publica formularios centrales para esta máquina.</p>
-            : forms.map(({ form, screen }) => <button key={form.code} data-form={form.code} disabled={screen === null} onClick={() => select(screen)} className="rounded-2xl border bg-white p-5 text-left shadow-sm hover:border-emerald-400 disabled:opacity-60">
-                <Badge variant="outline" className="border-amber-300 text-amber-900">Ficha candidata</Badge><h3 className="mt-4 font-black">{form.name.replace(/^Formulario sintético /, "")}</h3><p className="mt-2 text-sm text-slate-700">{form.code} · v{form.version_number}</p>
-                <p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">{screen ? "Abrir captura central" : "Sin pantalla central"}</p></button>)}</div></div>;
+            ? <p className="rounded-2xl border bg-white p-5 text-sm text-slate-700 md:col-span-2 xl:col-span-3">
+                El backend no publica formularios centrales para esta máquina.</p>
+            : forms.map(({ form, screen }) => <button key={form.code} data-form={form.code}
+                disabled={screen === null || (canCapture && state.kind !== "check")}
+                onClick={() => select(screen)}
+                className="rounded-2xl border bg-white p-5 text-left shadow-sm hover:border-emerald-400 disabled:opacity-60">
+                <Badge variant="outline" className="border-amber-300 text-amber-900">Ficha candidata</Badge>
+                <h3 className="mt-4 font-black">{form.name.replace(/^Formulario sintético /, "")}</h3>
+                <p className="mt-2 text-sm text-slate-700">{form.code} · v{form.version_number}</p>
+                <p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">
+                    {screen ? "Abrir captura central" : "Sin pantalla central"}</p>
+            </button>)}</div>
+    </div>;
 }
 
 function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost }: Inner) {
