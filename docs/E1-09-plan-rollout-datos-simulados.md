@@ -1,9 +1,17 @@
 # VINTO E1-09 — Plan de despliegue condicionado con datos simulados
 
 **Fecha:** 2026-11-06. **Estado:** PLAN DOCUMENTAL; no ejecutado.  
-**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). Siguiente puerta: [P2-A diagnóstico READ ONLY](E1-09-P2A-diseno-pre-migracion-readonly.md), **parcialmente ejecutado**: 20 OT en base (7 draft, 12 in_progress, 1 published), 72 asignaciones, 63 capturas submitted vinculadas y 21 capturas sin assignment; consulta H abortó por falta de USAGE en vinto_meta. Continuación P2-A2 de solo lectura preparada. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
+**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). P2-A: **P2-A1 parcial (consulta H denegada), P2-A2 PASS y P2-A3 PASS**; inventario de dependencias funcionales cerrado. Próximos pasos: determinar OT visibles por sesión y planificar archivado/transición de legado sin modificaciones; auditoría/importaciones y migraciones continúan NO VERIFICADAS bajo vinto_app. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
 **Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado actualmente:** `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (PR #136 backup-flock incluido); VPS app sigue en release previo `86e4ec4` según P0, no desplegado E1.  
 **QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
+
+## Actualización P2-A2/P2-A3 — resultado PASS; no borrar OT masivamente
+
+P2-A2 y P2-A3 terminaron con `COMMIT` bajo `REPEATABLE READ READ ONLY` y guard=1 como `vinto_app`. Distribución por cabecera: BOBINAS MP1 (5 draft, 4 in_progress, 1 published), MP3 (1 draft, 1 in_progress); CONVERSION GAMBINI (1 in_progress), OMET_I (1 in_progress); REBOBINADO BELOIT (1 draft, 1 in_progress), COPASA/OVER/PERICHUN/TUBETERA (1 in_progress cada una). **Total inalterado: 20 OT**, 7 draft, 12 in_progress, 1 published.
+
+La cadena de 63 capturas submitted ligadas a esas OT tiene **1.151 detalles, 19 filas de grupo, 5 bobinas fuente y 5 decisiones de Calidad**. Las **21 capturas submitted sin asignación** (MP1 14, MP3 7) tienen **204 detalles**; no se han asociado a ninguna OT. Lectura efectiva auditoría/importaciones: **NO**; lectura historial `vinto_meta`: **NO** para `vinto_app`; no se solicitó escalamiento.
+
+**Recomendación formal de diseño:** [E1-09 P2-A4 — archivado/ocultamiento con legado separado](E1-09-P2A4-decision-archivo-legado.md). Dos objetivos independientes: sacar las OT ficticias de vistas operativas **conservando historial** y sanear legítimamente los estados `in_progress`/asignaciones `active` para despejar el preflight E1-08; **ocultar NO despeja el preflight**. Historial migrador, conteo audit y visibilidad por usuario **NO VERIFICADOS**. NO autoriza desarrollar/desplegar ni borrar directamente.
 
 ## Nuevo corte P2-A: dependencias de escenarios ficticios (06/nov/2026)
 
