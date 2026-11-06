@@ -1,9 +1,63 @@
 # VINTO E1-09 — P2-A: diagnóstico previo a migración 0013 (SOLO LECTURA)
 
-**Fecha:** 2026-11-06. **Estado:** diagnóstico VPS **PARCIAL** — consultas A–G ejecutadas PASS por Codex SSH; H detenida por permisos en `vinto_meta`, sin escritura; continuación READ ONLY preparada.  
+**Fecha:** 2026-11-06. **Estado actual:** P2-A1 PARCIAL por H (corregida en GitHub), **P2-A2 PASS y P2-A3 PASS por Codex SSH**, inventario de dependencias funcionales obtenido sin escritura; visibilidad efectiva por cuenta, historial migraciones y auditoría/importaciones NO VERIFICADOS.  
 **Fuente:** P1-B verificado en VPS por Codex Desktop: `create-and-verify` una sola vez, exit 0, nuevo `.verified`, restauración temporal sin red, 47 tablas / 0 discrepancias, 18 respaldos anteriores intactos. Ver [P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md).  
 **Repositorio de referencia:** `BaltrekCompany/vinto-mvp-web`, `main@c64893e86a983a86d57f9a7406d0d736417f17e3`.  
 **Alcance de P2-A:** análisis documental y, con SSH autorizado aparte, inspección **READ ONLY**, sin cambio de servicios ni datos. **P2-B (aplicar 0013) NO AUTORIZADO**.
+
+## Cierre funcional P2-A2/P2-A3 — PASS (06/nov/2026)
+
+**Fuente:** resultados del operador Codex Desktop en conexión SSH autorizada, no ejecución de SQL por ChatGPT. P2-A2 y P2-A3: guard=1, transacciones `REPEATABLE READ READ ONLY`, `COMMIT`, rol `vinto_app`, DB `vinto_piloto`; sin cambios, escalamiento de privilegios ni acceso TVC. Auditoría/importaciones NO consultadas.
+
+### Permisos efectivos
+
+| Objetos | USAGE | SELECT | Lectura efectiva |
+|---|---|---|---|
+| `vinto_txn.bobbin`, `bobbin_relation`, `capture_detail`, `capture_group_row`, `quality_release` | Sí | Sí | Sí |
+| `vinto_audit.audit_event`, `import_record` | Sí | No | **No** |
+| `vinto_meta.schema_migration` | No | No | **No** |
+
+P2-A3 guardó exitosamente sus requisitos de lectura de tablas funcionales. **No intentar `GRANT` ni forzar otra identidad** para inspeccionar auditoría o migraciones: dejar NO VERIFICADO hasta autorizar un mecanismo legítimo de inspección.
+
+### Distribución de las 20 OT por sector y máquina de cabecera
+
+| Sector | Máquina | Draft | In progress | Published |
+|---|---|---:|---:|---:|
+| BOBINAS | MP1 | 5 | 4 | 1 |
+| BOBINAS | MP3 | 1 | 1 | 0 |
+| CONVERSION | GAMBINI | 0 | 1 | 0 |
+| CONVERSION | OMET_I | 0 | 1 | 0 |
+| REBOBINADO | BELOIT | 1 | 1 | 0 |
+| REBOBINADO | COPASA | 0 | 1 | 0 |
+| REBOBINADO | OVER | 0 | 1 | 0 |
+| REBOBINADO | PERICHUN | 0 | 1 | 0 |
+| REBOBINADO | TUBETERA | 0 | 1 | 0 |
+| **Total** | | **7** | **12** | **1** |
+
+Esta tabla agrupa por **cabecera**, no por todas las máquinas de línea ni por visibilidad efectiva de una sesión. Las consultas previas daban 12 OT en progreso, 16 líneas baseline y 11 asignaciones activas; **la distribución de 5 líneas sin asignación activa no se revalidó en P2-A2/A3**.
+
+### Dependencias reales (filas vinculadas, no únicamente constraints)
+
+| Tipo | Vinculadas a asignaciones de OT in_progress | Capturas sin assignment_id |
+|---|---:|---:|
+| Capturas submitted | 63 | 21 |
+| `capture_detail` | 1.151 | 204 |
+| `capture_group_row` | 19 | 0 |
+| `bobbin` por `source_capture_id` | 5 | 0 |
+| `bobbin_relation` por `capture_id` | 0 | 0 |
+| `quality_release` sobre bobinas con captura fuente | 5 | 0 |
+
+Las **21 capturas sin asignación** están en BOBINAS: MP1 (14) y MP3 (7), todas `submitted`. No se les puede atribuir una OT solo por máquina o fecha. Las 5 bobinas y sus decisiones de Calidad forman parte de dependencias directas; ausencia de otra relación por una clave analizada **no prueba inexistencia semántica**. No se inspeccionaron eventos de auditoría ni referencias importadas `import_record.target_id`.
+
+### Decisión del diagnóstico
+
+- **P2-A2/P2-A3 PASS**; se obtuvo evidencia suficiente para **rechazar un borrado directo/masivo de OT** en la VPS activa. No se ejecutó eliminación, archivado, migración, deploy o flag.
+- La función de listado actual `work_orders.service.list_work_orders()` filtra sector, baseline de máquina y alcance de permisos; no dispone de `archived_at` ni permite borrar OT mediante la API. Para no exponer OT ficticias se necesita una funcionalidad de visibilidad nueva, no `DELETE`.
+- **Separar dos objetivos:** (A) retirar OT de la vista operativa, conservando capturas/Calidad/auditoría; (B) resolver las OT `in_progress` y asignaciones `active` legadas para que el preflight E1-08 quede limpio. Archivar/ocultar sin abordar (B) **no** habilita E1.
+- Antes de ejecutar cambios: identificar el universo de OT visibles por actor/sector y estado del modo `authz_assignment_reads_mode`; aprobar semántica de histórico/archivo, efecto sobre nuevas capturas y asignaciones, prueba de autorización MF13, y rollback. Auditoría/importaciones y historial migrador deben revisarse mediante su canal ya autorizado, nunca dando privilegios extra a `vinto_app`.
+- **GO para diseño**, no para ejecutar la migración 0013, borrar las 20 OT, reescribir historial, cambiar flags o tocar TVC.
+
+Para las alternativas y criterios técnicos consultar [decisión provisional de archivado/legado](E1-09-P2A4-decision-archivo-legado.md). La documentación previa de P2-A1 se conserva debajo como historial.
 
 ## Resultado remoto P2-A — inspección parcial por permisos (06/nov/2026)
 
