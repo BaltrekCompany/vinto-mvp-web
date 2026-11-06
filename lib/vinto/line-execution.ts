@@ -110,3 +110,32 @@ export function parseExecutionCapability(raw: unknown): boolean | null {
     if (!isRec(raw) || typeof raw.line_execution !== "boolean") return null;
     return raw.line_execution;
 }
+
+// E1-07: full immutable baseline must match the Supervisor projection. UI
+// readiness is a hint only; POST /close rechecks every row transactionally.
+export type CloseReadiness = { total: number; finished: number; canClose: boolean; pending: string[] };
+
+export function closeReadiness(
+    order: { id: string; status: string; baseline: { lines: { id: string; line_code: string; machine: { code: string } }[] } },
+    execution: WorkOrderExecution | null,
+): CloseReadiness {
+    const baseline = order.baseline.lines;
+    if (!execution || execution.work_order_id !== order.id || baseline.length === 0)
+        return { total: baseline.length, finished: 0, canClose: false, pending: baseline.map(x => x.line_code) };
+    const covered = new Set<string>();
+    let finished = 0;
+    const pending: string[] = [];
+    for (const line of baseline) {
+        const state = execution.lines.find(item =>
+            item.baseline_line_id === line.id && item.line_code === line.line_code &&
+            item.machine_code === line.machine.code);
+        if (!state || covered.has(state.baseline_line_id) || state.status !== "finished") {
+            pending.push(line.line_code);
+        } else {
+            finished += 1;
+            covered.add(state.baseline_line_id);
+        }
+    }
+    const complete = baseline.length === execution.lines.length && pending.length === 0;
+    return { total: baseline.length, finished, pending, canClose: order.status === "in_progress" && complete };
+}
