@@ -1,9 +1,28 @@
 # VINTO E1-09 — P2-A: diagnóstico previo a migración 0013 (SOLO LECTURA)
 
-**Fecha:** 2026-11-06. **Estado:** DOCUMENTADO, **NO EJECUTADO**.  
+**Fecha:** 2026-11-06. **Estado:** revisión estática de código/DDL REALIZADA; diagnóstico de datos del VPS aún NO EJECUTADO (sin SSH disponible en esta sesión).  
 **Fuente:** P1-B verificado en VPS por Codex Desktop: `create-and-verify` una sola vez, exit 0, nuevo `.verified`, restauración temporal sin red, 47 tablas / 0 discrepancias, 18 respaldos anteriores intactos. Ver [P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md).  
 **Repositorio de referencia:** `BaltrekCompany/vinto-mvp-web`, `main@c64893e86a983a86d57f9a7406d0d736417f17e3`.  
 **Alcance de P2-A:** análisis documental y, con SSH autorizado aparte, inspección **READ ONLY**, sin cambio de servicios ni datos. **P2-B (aplicar 0013) NO AUTORIZADO**.
+
+## Actualización: usuario autoriza retirar las OT ficticias visibles
+
+El usuario autorizó **aplicar el diagnóstico P2-A** y señaló que **las OT mostradas en la aplicación son ficticias y se pueden retirar**. Se registra esa intención para la fase de saneamiento; **no se interpreta como permiso para eliminar masivamente todas las OT de la base, desactivar triggers, truncar tablas, borrar eventos de auditoría o introducir permisos de superusuario**. El conjunto exacto de "visibles" depende de la cuenta y del filtro de sector/rol en la API, no es equivalente automáticamente a `WHERE status='in_progress'` ni a todas las filas de `work_order`.
+
+**Diagnóstico estático confirmado en GitHub `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (no consulta remota):**
+
+- `vinto_txn.work_order` tiene estados `draft/published/in_progress/closed`, **sin columna de archivado o eliminación lógica** en el esquema actual; `backend/app/work_orders/router.py` no ofrece endpoint normal de borrar OT. La lista del usuario filtra visibilidad por sector/permisos.
+- `vinto_txn.work_order_version.work_order_id`, `work_order_line.work_order_version_id`, `assignment.work_order_line_id` y `capture.assignment_id` usan **FK `ON DELETE RESTRICT`**. También las tablas hijas de captura/bobina/Calidad tienen relaciones restrictivas.
+- Los triggers `guard_order_version` y `guard_order_line` **rechazan DELETE de versiones/líneas publicadas**. `prevent_capture_delete` rechaza DELETE de una captura. `vinto_audit.audit_event` rechaza UPDATE/DELETE/TRUNCATE. El audit trigger `record_change` añade eventos para cambios válidos de tablas del dominio. **No desactivar ninguna de estas protecciones para "limpiar pruebas".**
+- `capture.assignment_id` admite NULL; por tanto la ausencia de capturas enlazadas por FK no prueba que no haya capturas históricas de la misma máquina/fecha o bobinas/Calidad vinculadas por otro camino. Las referencias de auditoría JSON e importaciones pueden no tener FK directa.
+- La migración 0013 también crea referencias con `ON DELETE RESTRICT` y una guarda que prohíbe DELETE de ejecuciones lógicas, si ya estuviese instalada.
+
+**Primera conclusión:** un borrado por `DELETE FROM vinto_txn.work_order` es inadecuado. Para retirar OT visibles, determinar primero si es viable un reinicio controlado de datos, preservación y transición o implementar ocultamiento por interfaz/estado sin suprimir historial. El permiso para eliminar datos ficticios **no hace seguro saltarse restricciones de integridad**.
+
+**Consulta de diagnóstico P2-A lista para Codex Desktop (no ejecutada):**
+[E1-09-P2A-ot-ficticias-diagnostico.sql](E1-09-P2A-ot-ficticias-diagnostico.sql). Exige `vinto_app`, `vinto_piloto`, `REPEATABLE READ READ ONLY`, `statement_timeout=10s`, `lock_timeout=1s`, solo devuelve agregados y catálogo de FKs/triggers. Cuenta OT de **todos** los estados, líneas, asignaciones, capturas con FK y capturas sin FK a asignación; no publica números ni UUID.
+
+**Ejecución solicitada para el operador SSH autorizado:** utilizar exclusivamente el SQL versionado de este PR por stdin contra **`vinto-mvp-postgres`** y devolver agregados. Si falla el guard/permiso o se detecta 0013 inesperadamente, **NO-GO**, no recurrir a superusuario. Repetir SQL-E solo con esquema anterior, manteniendo sus guardas. A continuación informar qué cuentas/sectores ven las OT ficticias **sin publicar filas individuales** y qué referencias impiden saneamiento. No alterar datos, permisos, `.env`, flags, servicios o TVC. **Prohibidos `DELETE`, `TRUNCATE`, `ALTER`, `DROP`, desactivar triggers y ejecutar `migrate.py`.**
 
 ## 1. Dependencias verificadas y límites
 
