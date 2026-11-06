@@ -14,7 +14,8 @@
 
 ## Contratos
 
-- `GET /api/work-orders/capabilities`: ahora también `line_execution: bool`, a partir de `WORK_ORDER_LINE_EXECUTION_ENABLED` (OFF por defecto). Los clientes antiguos siguen aceptando `multi_machine`.
+- `GET /api/work-orders/capabilities`: **sin modificaciones**, mantiene exactamente el JSON histórico `{ "multi_machine": bool }`.
+- `GET /api/work-orders/execution-capabilities`: nuevo contrato independiente `{ "line_execution": bool }`, solo Supervisión; proviene del flag servidor `WORK_ORDER_LINE_EXECUTION_ENABLED` (OFF por defecto). Sin confirmación positiva no hay controles.
 - `GET /api/work-orders/{ot_id}/execution`: solo `assignment.manage` (Supervisión), datos del estado lógico por línea, máquina y `current_assignment_id` cuando coincide con el turno actual. **Si la OT abarca varias máquinas, el actor debe tener alcance sobre todas**; nunca se filtra silenciosamente a una vista parcial.
 - Acciones ya implementadas en E1-03: `POST /api/work-orders/{ot_id}/lines/{line_code}/start` y `/finish`.
 
@@ -32,7 +33,7 @@
 - El cierre manual completo de la OT corresponde a **E1-07**.
 
 ## QA
-- Node: parser/estados/roles/capacidades antiguas + nuevas, botones y errores.
+- Node: parser/estados/capacidades antiguas intactas + nueva capacidad independiente, botones y errores.
 - PostgreSQL 17 aislado: proyección, turnos, scope por sector, asignaciones legadas, flag OFF y regresiones E1-03/04.
 - TypeScript y ESLint de archivos afectados.
 - Workflow `.github/workflows/e1-05-supervision.yml`.
