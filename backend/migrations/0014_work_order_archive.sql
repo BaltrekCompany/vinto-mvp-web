@@ -106,5 +106,63 @@ CREATE TRIGGER a_guard_archive_assignment
   BEFORE INSERT OR UPDATE ON vinto_txn.assignment
   FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_assignment_archive();
 
+-- Guard baseline/operational descendants, even for direct SQL writers.
+-- We do not delete or alter any existing version/line.
+CREATE FUNCTION vinto_txn.guard_work_order_version_archive()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE parent_id uuid; archived timestamptz;
+BEGIN
+  IF TG_OP = 'DELETE' THEN parent_id := OLD.work_order_id;
+  ELSE parent_id := NEW.work_order_id;
+  END IF;
+  SELECT archived_at INTO archived
+    FROM vinto_txn.work_order WHERE id=parent_id FOR SHARE;
+  IF archived IS NOT NULL THEN
+    RAISE EXCEPTION 'Archived work order version is immutable' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.work_order_id IS DISTINCT FROM NEW.work_order_id THEN
+    SELECT archived_at INTO archived
+      FROM vinto_txn.work_order WHERE id=OLD.work_order_id FOR SHARE;
+    IF archived IS NOT NULL THEN
+      RAISE EXCEPTION 'Archived work order version cannot be moved' USING ERRCODE='23514';
+    END IF;
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END $;
+CREATE TRIGGER a_guard_archive_version
+  BEFORE INSERT OR UPDATE OR DELETE ON vinto_txn.work_order_version
+  FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_work_order_version_archive();
+
+CREATE FUNCTION vinto_txn.guard_work_order_line_archive()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE version_id uuid; archived timestamptz;
+BEGIN
+  IF TG_OP = 'DELETE' THEN version_id := OLD.work_order_version_id;
+  ELSE version_id := NEW.work_order_version_id;
+  END IF;
+  SELECT wo.archived_at INTO archived
+  FROM vinto_txn.work_order_version v
+  JOIN vinto_txn.work_order wo ON wo.id=v.work_order_id
+  WHERE v.id=version_id FOR SHARE OF wo;
+  IF archived IS NOT NULL THEN
+    RAISE EXCEPTION 'Archived work order line is immutable' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.work_order_version_id IS DISTINCT FROM NEW.work_order_version_id THEN
+    SELECT wo.archived_at INTO archived
+    FROM vinto_txn.work_order_version v
+    JOIN vinto_txn.work_order wo ON wo.id=v.work_order_id
+    WHERE v.id=OLD.work_order_version_id FOR SHARE OF wo;
+    IF archived IS NOT NULL THEN
+      RAISE EXCEPTION 'Archived work order line cannot be moved' USING ERRCODE='23514';
+    END IF;
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END $;
+CREATE TRIGGER a_guard_archive_line
+  BEFORE INSERT OR UPDATE OR DELETE ON vinto_txn.work_order_line
+  FOR EACH ROW EXECUTE FUNCTION vinto_txn.guard_work_order_line_archive();
+
 -- The work_order table already has UPDATE privileges for vinto_app; no new
 -- table, role or default grant is created. Existing audit_events are immutable.
