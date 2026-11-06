@@ -2,8 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { actionForLine, EXECUTION_LABELS, parseExecutionMutation, parseWorkOrderExecution, safeExecutionMessage } from "../lib/vinto/line-execution.ts";
-import { NO_CAPABILITIES, capabilitiesOf, lineExecutionOffered, parseCapabilities, parseCapabilitiesResponse } from "../lib/vinto/work-order-capabilities.ts";
+import { actionForLine, EXECUTION_LABELS, parseExecutionMutation, parseWorkOrderExecution, parseExecutionCapability, safeExecutionMessage } from "../lib/vinto/line-execution.ts";
+import { NO_CAPABILITIES, capabilitiesOf, parseCapabilities, parseCapabilitiesResponse } from "../lib/vinto/work-order-capabilities.ts";
 
 const line = (n, status = "enabled", machine = "MP3", assignment = "current-1") => ({
   baseline_line_id: "baseline-" + n, line_code: "L" + n, machine_code: machine,
@@ -12,17 +12,17 @@ const line = (n, status = "enabled", machine = "MP3", assignment = "current-1") 
 });
 const response = (lines) => ({ work_order_id: "order-1", lines });
 
-test("new server capability enables controls only for Supervisión", () => {
-  const on = parseCapabilitiesResponse({ multi_machine: true, line_execution: true });
-  assert.equal(lineExecutionOffered(on, true), true);
-  assert.equal(lineExecutionOffered(on, false), false);
-  assert.equal(lineExecutionOffered(NO_CAPABILITIES, true), false);
-  assert.equal(lineExecutionOffered(parseCapabilities({ multi_machine: true }), true), false);
+test("new server capability is independent, historical multi-machine contract remains unchanged", () => {
+  assert.equal(parseExecutionCapability({ line_execution: true }), true);
+  assert.equal(parseExecutionCapability({ line_execution: false }), false);
+  for (const value of [null, {}, { line_execution: "true" }, { line_execution: 1 }]) {
+    assert.equal(parseExecutionCapability(value), null);
+  }
   assert.deepEqual(parseCapabilitiesResponse({ multi_machine: true }), { multiMachine: true });
-  assert.deepEqual(parseCapabilitiesResponse({ multi_machine: false, line_execution: true }), { multiMachine: false, lineExecution: true });
-  assert.equal(parseCapabilitiesResponse({ multi_machine: true, line_execution: "true" }), null);
-  assert.deepEqual(capabilitiesOf({ status: "ready", data: on }).capabilities, on);
-  assert.equal(lineExecutionOffered(capabilitiesOf({ status: "error" }).capabilities, true), false);
+  assert.deepEqual(parseCapabilities({ multi_machine: true }), { multiMachine: true });
+  assert.deepEqual(parseCapabilitiesResponse({ multi_machine: false }), NO_CAPABILITIES);
+  assert.deepEqual(capabilitiesOf({ status: "ready", data: NO_CAPABILITIES }).capabilities, NO_CAPABILITIES);
+  assert.deepEqual(capabilitiesOf({ status: "error" }).capabilities, NO_CAPABILITIES);
 });
 
 test("parse exactly the API line execution projection, no state invention", () => {
