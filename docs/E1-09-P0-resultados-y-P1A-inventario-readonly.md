@@ -46,7 +46,8 @@ BACKUP_DIR=/home/ubuntu/vinto-mvp-backups
 echo "=== Identidad y sintaxis de scripts (lectura) ==="
 test -f "$OPS/backup.sh"
 test -f "$OPS/lib_common.sh"
-bash -n "$OPS/backup.sh" "$OPS/lib_common.sh"
+bash -n "$OPS/backup.sh"
+bash -n "$OPS/lib_common.sh"
 sha256sum "$OPS/backup.sh" "$OPS/lib_common.sh"
 
 echo "=== Overrides sin revelar sus valores ==="
@@ -62,6 +63,13 @@ if [ -L "$BACKUP_DIR" ]; then
   echo "P1A_BLOQUEADO: carpeta de backup es symlink"; exit 1
 elif [ -d "$BACKUP_DIR" ]; then
   stat -c 'tipo=%F propietario=%U permisos=%a' "$BACKUP_DIR"
+  actual_owner="$(stat -c '%U' "$BACKUP_DIR")"
+  actual_perms="$(stat -c '%a' "$BACKUP_DIR")"
+  if [ "$actual_owner" != "$(id -un)" ] || [ "$actual_perms" != "700" ]; then
+    echo "P1A_BLOQUEADO: propietario/permisos del directorio no cumplen el contrato"; exit 1
+  fi
+  df -Pm "$BACKUP_DIR"
+  df -Pi "$BACKUP_DIR"
   du -sm "$BACKUP_DIR"
   echo "conteo_dump=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.dump' -printf '.' | wc -c)"
   echo "conteo_verified=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.verified' -printf '.' | wc -c)"
