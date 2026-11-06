@@ -7,6 +7,9 @@ on:
       - 'components/vinto/sector-central.tsx'
       - 'components/vinto/candidate-form-capture.tsx'
       - 'scripts/e1-08-sector-execution.test.mjs'
+      - 'backend/app/work_orders/rollout_preflight.py'
+      - 'backend/app/work_orders/preflight_cli.py'
+      - 'backend/tests/test_rollout_preflight_e108.py'
       - '.github/workflows/e1-08-sector-integration.yml'
 
 permissions:
@@ -77,3 +80,6 @@ jobs:
       - name: Complete OT close contract
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_work_order_close_api.py' -v
+      - name: READ ONLY legacy preflight on PostgreSQL 17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_rollout_preflight_e108.py' -v
