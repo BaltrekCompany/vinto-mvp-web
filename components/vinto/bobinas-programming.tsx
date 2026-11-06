@@ -188,7 +188,7 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                     <Button size="sm" variant="outline" disabled={locked}
                         onClick={() => { setArchiveCandidate(order); setArchiveReason(""); }}>
                         Archivar OT
-                    </Button>}}</div></div>
+                    </Button>}</div></div>
                 <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Habilitando…" : executionEnabled ? "Habilitar" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
                 {executionEnabled && (order.status === "published" || order.status === "in_progress") &&
                     <LineExecutionPanel key={scope + ":" + order.id} order={order} scope={scope} refreshRevision={executionRevision}
