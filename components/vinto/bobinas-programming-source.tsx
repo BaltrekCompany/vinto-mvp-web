@@ -3,7 +3,8 @@
 import type { ComponentProps } from "react";
 import { BobbinasProgramming, type Creation } from "@/components/vinto/bobinas-programming";
 import { BOBINAS_SECTOR, articlesOf, sectorOf } from "@/lib/vinto/availability";
-import { useAvailability, useWorkOrderCapabilities } from "@/lib/vinto/use-central";
+import { useAvailability, useResource, useWorkOrderCapabilities } from "@/lib/vinto/use-central";
+import { getLineExecutionCapability } from "@/lib/vinto/line-execution-api";
 import { capabilitiesOf } from "@/lib/vinto/work-order-capabilities";
 
 type Props = Omit<ComponentProps<typeof BobbinasProgramming>, "catalog" | "creation"> & { scope: string };
@@ -17,6 +18,12 @@ export function BobbinasProgrammingSource({ scope, ...rest }: Props) {
     // loading/error/401/403/404/5xx/JSON inválido = apagado (flujo tradicional, sin botón masivo).
     const capabilityResource = useWorkOrderCapabilities(rest.canManageOrders || rest.canManageAssignments, rest.onSessionLost, scope);
     const capability = capabilitiesOf(capabilityResource.view);
+    // Separate endpoint preserves the historical /capabilities response exactly.
+    // Missing/invalid/error/unauthorized response leaves all E1-05 controls hidden.
+    const executionCapability = useResource<boolean>(
+        "work-order-line-execution-capability:" + scope,
+        rest.canManageAssignments, signal => getLineExecutionCapability(signal), rest.onSessionLost, true);
+    const executionEnabled = rest.canManageAssignments && executionCapability.view.status === "ready" && executionCapability.view.data === true;
     let creation: Creation | undefined;
     if (rest.canManageOrders) {
         const view = availability.view;
@@ -27,5 +34,5 @@ export function BobbinasProgrammingSource({ scope, ...rest }: Props) {
         else creation = { machines: sector.machines.map(m => ({ code: m.code, name: m.name })), catalog: code => articlesOf(sector.machines.find(m => m.code === code)).map(a => ({ code: a.code, name: a.description })) };
     }
     // `key`: al llegar el catálogo el panel se monta de nuevo para que la primera fila tome la primera máquina ofrecida (el estado inicial del borrador se fija al montar).
-    return <BobbinasProgramming key={typeof creation === "object" ? "catalog" : "wait"} {...rest} creation={creation} capabilities={capability.capabilities} capabilityStatus={capability.status} scope={scope} onCapabilitiesStale={capabilityResource.refresh}/>;
+    return <BobbinasProgramming key={typeof creation === "object" ? "catalog" : "wait"} {...rest} creation={creation} capabilities={capability.capabilities} executionEnabled={executionEnabled} capabilityStatus={capability.status} scope={scope} onCapabilitiesStale={capabilityResource.refresh}/>;
 }

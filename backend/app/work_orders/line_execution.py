@@ -12,7 +12,7 @@ from datetime import datetime
 from app.assignments import service as assignments
 from app.config import settings
 from app.sectors import scoped_sector_codes
-from app.shifts import resolve_shift
+from app.shifts import ShiftResolutionError, resolve_shift
 from app.work_orders.errors import WorkOrderError, WorkOrderNotFoundError
 
 
@@ -227,3 +227,68 @@ def finish_line(connection, *, actor_id, work_order_id, line_code, sectors, requ
                  AND l.line_code=%s AND a.machine_id=%s AND a.status='active'""",
             (work_order_id, line_code, machine_id))
         return _view(connection, baseline_id)
+
+
+def read_work_order_execution(connection, *, work_order_id, sectors):
+    """Read-only Supervisor projection. Never infer production from assignment.active.
+
+    Full baseline scope is required, even for multi-machine orders; a partial
+    projection could expose machine information outside the actor's sectors.
+    Only a current assignment for the same OT, line and machine enables Start.
+    An old active assignment without a logical execution row is 'requires_review'.
+    """
+    require_enabled()
+    work_order_id = _uuid(work_order_id)
+    lines = connection.execute(
+        """SELECT l.id, l.line_code, l.machine_id, m.code, s.id, s.code,
+                  e.status, e.started_at, e.started_by, e.finished_at, e.finished_by
+           FROM vinto_txn.work_order wo
+           JOIN vinto_txn.work_order_version bv ON bv.work_order_id = wo.id
+             AND bv.kind='baseline' AND bv.version_number=1 AND bv.published_at IS NOT NULL
+           JOIN vinto_txn.work_order_line l ON l.work_order_version_id=bv.id
+           JOIN vinto_master.machine m ON m.id=l.machine_id
+           JOIN vinto_master.sector s ON s.id=m.sector_id
+           LEFT JOIN vinto_txn.work_order_line_execution e ON e.baseline_line_id=l.id
+           WHERE wo.id=%s AND wo.status IN ('published','in_progress')
+           ORDER BY l.line_code, l.id""", (work_order_id,)).fetchall()
+    allowed = set(scoped_sector_codes(sectors))
+    if not lines or any(r[5] not in allowed for r in lines):
+        raise WorkOrderNotFoundError()
+    active = connection.execute(
+        """SELECT a.id, l.line_code, a.machine_id, a.shift_schedule_id, a.operating_date
+           FROM vinto_txn.assignment a
+           JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+           JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+           WHERE v.work_order_id=%s AND v.kind='operational' AND a.status='active'
+           ORDER BY a.created_at, a.id""", (work_order_id,)).fetchall()
+    active_by_line = {}
+    for entry in active:
+        active_by_line.setdefault((entry[1], entry[2]), []).append(entry)
+    now = assignments._now(connection)  # PostgreSQL clock in production; same instant source as start_line
+    shifts = {}
+    for row in lines:
+        sector_id = row[4]
+        if sector_id not in shifts:
+            try:
+                shifts[sector_id] = resolve_shift(connection, now, sector_id=sector_id)
+            except ShiftResolutionError:
+                shifts[sector_id] = None
+    result = []
+    for line in lines:
+        baseline_id, code, machine_id, machine_code, sector_id = line[:5]
+        candidates = active_by_line.get((code, machine_id), [])
+        shift = shifts[sector_id]
+        valid = [a for a in candidates if shift is not None
+                 and (a[3], a[4]) == (shift.shift_schedule_id, shift.operating_date)]
+        current_assignment = valid[0][0] if len(valid) == 1 else None
+        # Missing execution + stale/live assignment needs supervisor reconciliation,
+        # never an implicit promotion or a fabricated Start button.
+        status = line[6] if line[6] is not None else ("requires_review" if candidates else "planned")
+        result.append({
+            "baseline_line_id": baseline_id, "line_code": code,
+            "machine_code": machine_code, "status": status,
+            "current_assignment_id": current_assignment,
+            "started_at": line[7], "started_by": line[8],
+            "finished_at": line[9], "finished_by": line[10],
+        })
+    return {"work_order_id": work_order_id, "lines": result}
