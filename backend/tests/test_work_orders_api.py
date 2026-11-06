@@ -335,5 +335,66 @@ class ResponseHygieneTests(WorkOrderApiCase):
         self.assertEqual(date.fromisoformat(reply.json()["baseline"]["lines"][0]["due_date"]), date(2026, 10, 30))
 
 
+
+class ArchiveApiTests(WorkOrderApiCase):
+    async def test_jefatura_archive_and_restore_preserves_history_and_authz(self):
+        order = (await self.create()).json()
+        oid = order["id"]
+        jef = await self.cookie("JEFATURA")
+        op = await self.cookie("OPERACION")
+        supervision = await self.cookie("SUPERVISION")
+
+        for cookie in (op, supervision):
+            result = await call("POST", f"/api/work-orders/{oid}/archive",
+                                json_body={"reason": "Datos ficticios de ejemplo"}, cookie=cookie)
+            self.assertEqual(result.status, 403)
+        self.assertEqual((await call("GET", "/api/work-orders?archived=true", cookie=op)).status, 403)
+        self.assertEqual((await call("GET", f"/api/work-orders/{oid}?include_archived=true", cookie=op)).status, 403)
+        self.assertEqual((await call("POST", f"/api/work-orders/{oid}/archive",
+                                     json_body={"reason": "muy corta"}, cookie=jef)).status, 422)
+
+        done = await call("POST", f"/api/work-orders/{oid}/archive",
+                          json_body={"reason": "Datos ficticios de ejemplo"}, cookie=jef)
+        self.assertEqual(done.status, 200)
+        self.assertEqual(done.json(), order)  # shape backwards-compatible
+        self.assertNotIn(oid, [x["id"] for x in (await call("GET", "/api/work-orders", cookie=jef)).json()])
+        self.assertEqual((await call("GET", f"/api/work-orders/{oid}", cookie=jef)).status, 404)
+        historical = await call("GET", "/api/work-orders?archived=true", cookie=supervision)
+        self.assertEqual(historical.status, 200)
+        self.assertIn(oid, [x["id"] for x in historical.json()])
+        self.assertEqual((await call("GET", f"/api/work-orders/{oid}?include_archived=true",
+                                     cookie=supervision)).status, 200)
+        self.assertEqual((await call("POST", f"/api/work-orders/{oid}/lines",
+                                     json_body=line_body(), cookie=jef)).status, 404)
+        self.assertEqual((await call("POST", f"/api/work-orders/{oid}/publish",
+                                     cookie=jef)).status, 404)
+        self.assertEqual((await call("POST", f"/api/work-orders/{oid}/restore",
+                                     cookie=supervision)).status, 403)
+        restored = await call("POST", f"/api/work-orders/{oid}/restore", cookie=jef)
+        self.assertEqual(restored.status, 200)
+        self.assertEqual(restored.json(), order)
+        self.assertIn(oid, [x["id"] for x in (await call("GET", "/api/work-orders", cookie=jef)).json()])
+        self.assertEqual((await call("POST", f"/api/work-orders/{oid}/restore",
+                                     cookie=jef)).json()["code"], "WORK_ORDER_NOT_ARCHIVED")
+
+    async def test_cannot_archive_in_progress_or_archived_twice(self):
+        order = (await self.create()).json()
+        oid = order["id"]
+        jef = await self.cookie("JEFATURA")
+        await call("POST", f"/api/work-orders/{oid}/publish", cookie=jef)
+        self.connection.execute("UPDATE vinto_txn.work_order SET status='in_progress' WHERE id=%s", (UUID(oid),))
+        blocked = await call("POST", f"/api/work-orders/{oid}/archive",
+                             json_body={"reason": "Test con historial activo"}, cookie=jef)
+        self.assertEqual((blocked.status, blocked.json()["code"]), (409, "WORK_ORDER_ARCHIVE_BLOCKED"))
+        draft = (await self.create()).json()
+        did = draft["id"]
+        self.assertEqual((await call("POST", f"/api/work-orders/{did}/archive",
+                                      json_body={"reason": "Escenario de ejemplo seguro"},
+                                      cookie=jef)).status, 200)
+        self.assertEqual((await call("POST", f"/api/work-orders/{did}/archive",
+                                      json_body={"reason": "Escenario de ejemplo seguro"},
+                                      cookie=jef)).status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
