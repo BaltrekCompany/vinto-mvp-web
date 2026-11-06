@@ -115,6 +115,21 @@ class ArchiveTests(unittest.TestCase):
             self.conn, actor_id=self.actor, work_order_id=order.id, sectors=("BOBINAS",))
         self.assertEqual(restored.status, "published")
 
+    def test_assignment_archive_trigger_only_intercepts_insert(self):
+        """The finish path uses machine -> assignment locks and must not
+        attempt a parent OT lock. Assignment identity UPDATE is immutable in
+        migration 0011, so an UPDATE cannot move a row into an archived OT.
+        """
+        row = self.conn.execute(
+            """SELECT t.tgtype::int FROM pg_trigger t
+               WHERE t.tgrelid = 'vinto_txn.assignment'::regclass
+                 AND t.tgname = 'a_guard_archive_assignment'""").fetchone()
+        self.assertIsNotNone(row)
+        trigger_type = row[0]
+        self.assertNotEqual(trigger_type & 4, 0, "assignment INSERT must be guarded")
+        self.assertEqual(trigger_type & 16, 0, "assignment UPDATE must not lock OT (deadlock)")
+        self.assertNotEqual(trigger_type & 2, 0, "guard must run before insert")
+
     def test_in_progress_order_is_not_archivable_even_without_assignments(self):
         order = self.make()
         service.publish_work_order(self.conn, actor_id=self.actor,
