@@ -1,0 +1,116 @@
+name: E1-08 Sector execution integration QA
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'components/vinto/sector-central.tsx'
+      - 'components/vinto/candidate-form-capture.tsx'
+      - 'scripts/e1-08-sector-execution.test.mjs'
+      - 'backend/app/work_orders/rollout_preflight.py'
+      - 'backend/app/work_orders/preflight_cli.py'
+      - 'backend/tests/test_rollout_preflight_e108.py'
+      - 'docs/E1-08-preflight-legado-readonly.md'
+      - 'docs/E1-08-auditoria-compatibilidad-sectores.md'
+      - 'docs/E1-08-matriz-qa-go-no-go.md'
+      - '.github/workflows/e1-08-sector-integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Sector UI render test (Rebobinado, Conversión and guards)
+        run: node --test scripts/e1-08-sector-execution.test.mjs
+      - name: E1-05/06/07 and historical selector regressions
+        run: |
+          node --test scripts/e1-05-supervision.test.mjs scripts/e1-06-operation.test.mjs scripts/e1-07-work-order-close.test.mjs
+          node --test scripts/pr8-line-selection.test.mjs
+          node --test scripts/pr6-order-draft.test.mjs
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: ESLint
+        run: pnpm exec eslint components/vinto/sector-central.tsx components/vinto/candidate-form-capture.tsx
+      - name: All frontend modules, differential gate against pre-E1 main
+        run: node scripts/e1-broad-regression-gate.mjs
+      - name: Next.js production build (no deployment)
+        if: always()
+        run: pnpm build
+
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: Authoritative machine grants (MF13) and started lines
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_machine_execution_api.py' -v
+      - name: Cross-sector line state and turn
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_machine_execution_read.py' -v
+      - name: Complete OT close contract
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_order_close_api.py' -v
+      - name: READ ONLY legacy preflight on PostgreSQL 17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_rollout_preflight_e108.py' -v
+      - name: E1-07 close service concurrency and idempotency
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_order_close_flow.py' -v
+      - name: E1-03 logical execution state and race regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_line_execution_flow.py' -v
+      - name: E1-04 F3/F6 transactional guard regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_capture_line_execution_guard.py' -v
+      - name: E1-05 supervisor capability, scope and gate regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_line_execution_capabilities_api.py' -v
+      - name: E1-02 existing assignment and multi-machine regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
+      - name: Broad backend differential gate (all unittest modules, historical FAIL/ERROR audited)
+        working-directory: backend
+        env:
+          WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+        run: python -B ../scripts/e1-backend-regression-gate.py

@@ -6,7 +6,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
-  activeAssignmentKey, assignmentsKey, availabilityKey, candidateHistoryKey, deriveView, qualityHistoryKey, qualityInboxKey, sessionScope, workOrdersKey,
+  activeAssignmentKey, assignmentsKey, availabilityKey, candidateHistoryKey, deriveView, machineExecutionKey, operationSelectionKey, qualityHistoryKey, qualityInboxKey, sessionScope, workOrdersKey,
 } from "../lib/vinto/resource-view.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -20,6 +20,8 @@ const keysFor = (user, refresh = 0) => {
   return {
     workOrders: workOrdersKey(scope), assignments: assignmentsKey(scope), activeMP1: activeAssignmentKey("MP1", scope), activeMP3: activeAssignmentKey("MP3", scope),
     availBase: availabilityKey(false, scope), availArticles: availabilityKey(true, scope), f6: candidateHistoryKey("f6", scope, refresh), inbox: qualityInboxKey(scope),
+    operationMP1: operationSelectionKey("MP1", scope), operationMP3: operationSelectionKey("MP3", scope),
+    executionMP1: machineExecutionKey("MP1", scope), executionMP3: machineExecutionKey("MP3", scope),
     historyB1: qualityHistoryKey(scope, BOBBIN_1, 1), historyB2: qualityHistoryKey(scope, BOBBIN_2, 1), historyNone: qualityHistoryKey(scope, null, 0),
     p110: candidateHistoryKey("p110", scope, refresh), p129: candidateHistoryKey("p129", scope, refresh), p111: candidateHistoryKey("p111", scope, refresh), p112: candidateHistoryKey("p112", scope, refresh),
     p113: candidateHistoryKey("p113", scope, refresh), p116: candidateHistoryKey("p116", scope, refresh), p130: candidateHistoryKey("reb-p130", scope, refresh), p107: candidateHistoryKey("reb-p107", scope, refresh),
@@ -44,6 +46,8 @@ test("las claves de todos los recursos sensibles incluyen la identidad de la ses
 test("las claves distinguen máquina, bobina, apertura del historial y refresco dentro de una misma sesión", () => {
   const k = keysFor(A);
   assert.notEqual(k.activeMP1, k.activeMP3);
+  assert.notEqual(k.operationMP1, k.operationMP3);
+  assert.notEqual(k.executionMP1, k.executionMP3);
   assert.notEqual(k.historyB1, k.historyB2);
   assert.notEqual(k.historyB1, qualityHistoryKey(sessionScope(A), BOBBIN_1, 2), "reabrir el historial usa otra clave");
   assert.notEqual(k.machineP122MP1, k.machineP122MP3);
@@ -97,14 +101,30 @@ test("TODOS los recursos centrales del código usan una clave con sesión: no qu
   assert.match(useCentral, /useResource<WorkOrder\[\]>\(workOrdersKey\(scope\)/);
   assert.match(useCentral, /useResource<Assignment\[\]>\(assignmentsKey\(scope\)/);
   assert.match(useCentral, /useResource<ActiveAssignment>\(activeAssignmentKey\(machineCode, scope\)/);
+  assert.match(useCentral, /useResource<OperationSelection>\(operationSelectionKey\(machineCode, scope\)/);
+  assert.match(useCentral, /useResource<MachineExecution>\(machineExecutionKey\(machineCode, scope\)/);
   assert.match(useCentral, /availabilityKey\(withArticles, scope\)/);
   assert.equal(/useResource<[^>]*>\("[^"]*"|useResource\("[^"]*"|`work-orders`|"work-orders"|"assignments"|`active:\$\{machineCode\}`/.test(useCentral), false, "ninguna clave literal en los wrappers");
   const files = ["app/page.tsx", ...readdirSync(join(root, "components/vinto")).filter((f) => f.endsWith(".tsx")).map((f) => `components/vinto/${f}`)];
   let calls = 0;
-  for (const file of files) for (const line of read(file).split("\n")) {
-    if (/^\s*(import|\/\/)/.test(line)) continue;
-    if (/\buseResource\b[<(]/.test(line) && !/^export /.test(line)) { calls++; assert.ok(/scope/i.test(line) || /Key\(/.test(line), `${file}: useResource sin clave de sesión → ${line.trim().slice(0, 140)}`); assert.equal(/useResource(<[^(]*>)?\(\s*["'`][^"'`]*["'`]\s*,/.test(line) && !/\$\{scope\}|scope/.test(line), false, `${file}: clave literal`); }
-    if (/\buse(WorkOrders|Assignments|ActiveAssignment|Availability)\(/.test(line)) { calls++; assert.ok(/scope\)/.test(line) || /scope\)\s*;?\s*(\/\/.*)?$/.test(line.replace(/\/\/.*$/, "").trim()), `${file}: hook sin scope → ${line.trim().slice(0, 140)}`); }
+  for (const file of files) {
+    const lines = read(file).split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*(import|\/\/)/.test(line)) continue;
+      if (/\buseResource\b[<(]/.test(line) && !/^export /.test(line)) {
+        calls++;
+        // E1 capabilities may place the session key on the next line;
+        // verify the call head rather than just its opening line.
+        const callHead = lines.slice(i, i + 5).join(" ");
+        assert.ok(/scope/i.test(callHead) || /Key\(/.test(callHead), `${file}: useResource sin clave de sesión → ${line.trim().slice(0, 140)}`);
+        assert.equal(/useResource(<[^(]*>)?\(\s*["'`][^"'`]*["'`]\s*,/.test(callHead) && !/\$\{scope\}|scope/.test(callHead), false, `${file}: clave literal`);
+      }
+      if (/\buse(WorkOrders|Assignments|ActiveAssignment|Availability|OperationSelection|MachineExecution)\(/.test(line)) {
+        calls++;
+        assert.ok(/scope\)/.test(line), `${file}: hook sin scope → ${line.trim().slice(0, 140)}`);
+      }
+    }
   }
   assert.ok(calls >= 30, `se revisaron ${calls} llamadas`);
 });
@@ -115,7 +135,8 @@ test("el scope llega a TODOS los fronts: Bobinas, Rebobinado y Conversión (Conv
   assert.match(sector, /^    scope: string;/m, "scope es obligatorio en SectorCentralProps");
   assert.equal(/scope\?\s*:/.test(sector), false);
   assert.match(sector, /useAvailability\(canManageOrders && module === "programacion", true, onSessionLost, scope\)/);
-  assert.match(sector, /useActiveAssignment\(machine\.code, canReadAssignments, onSessionLost, scope\)/);
+  assert.match(sector, /useOperationSelection\(machine\.code, canReadAssignments, onSessionLost, scope\)/);
+  assert.match(sector, /useMachineExecution\(machine\.code, canReadAssignments && canCapture, onSessionLost, scope\)/);
   assert.equal((sector.match(/useWorkOrders\(canReadOrders, onSessionLost, scope\)/g) ?? []).length, 2);
   assert.match(sector, /useAssignments\(canReadAssignments, onSessionLost, scope\)/);
   for (const p of ["p110", "p111", "p129"]) assert.match(sector, new RegExp(`candidateHistoryKey\\("${p}", scope, refreshKey\\)`), p);

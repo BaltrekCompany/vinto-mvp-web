@@ -55,6 +55,10 @@ PINNED_MIGRATIONS = [
     ("0011_assignment_same_work_order_lines.sql", "8e1e34fafbefe4bfad9caec9773ba020d595c2137359e214bfd5c5c99ceb07c6"),  # MF-13-03B PR3: several active lines of one work order per machine (index -> trigger)
     ("0012_assignment_single_mode_guard.sql", "59ae36295c8a4ae7948e985b88a514ce03b415a015ca8ddd7f08cd3b09673977"),  # MF-13-03B: single-assignment guard while the multi-line mode is not declared (trigger only)
 ]
+# Pin E1-02 independently: historical 0001-0012 checksums must remain unchanged.
+PINNED_E1_MIGRATIONS = [
+    ("0013_work_order_line_execution.sql", "ef22f54cb53fc6988fd946b05380629e8926f2635500fd4269a133a5b9ceac37"),
+]
 
 
 # ---- 1. configuración -------------------------------------------------------------------------------------------------------
@@ -146,8 +150,9 @@ class StaticScopeTests(unittest.TestCase):
 
     def test_existing_migrations_are_intact_and_only_the_known_ones_exist(self):
         from migrate import read_migrations
-        self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], PINNED_MIGRATIONS)
-        self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in PINNED_MIGRATIONS])
+        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS
+        self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
+        self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 
 
 # ---- 3. escenario de extremo a extremo con un sector futuro SINTÉTICO (solo en la plantilla efímera) -------------------------

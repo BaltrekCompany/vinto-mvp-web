@@ -24,6 +24,7 @@ service, MP1_CODES, MP3_ONLY = base.service, base.MP1_CODES, base.MP3_ONLY
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "0012_assignment_single_mode_guard.sql"
 ROLLBACK = ROOT / "rollbacks" / "0012_assignment_single_mode_guard_rollback.sql"
+ROLLBACK_0013 = ROOT / "rollbacks" / "0013_work_order_line_execution_rollback.sql"
 PREFLIGHT = ROOT / "preflights" / "0012_assignment_single_mode_preflight.sql"
 
 
@@ -398,11 +399,18 @@ class DeploymentTests(GuardCase):
 
     def test_the_runner_registers_0012_with_the_exact_checksum_after_a_rollback(self):
         import migrate
+        # Remove 0013 from the ephemeral database first (history must stay
+        # contiguous); the production rollback refuses this if execution rows exist.
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_line_execution"), 0)
+        self.connection.execute(ROLLBACK_0013.read_text(encoding="utf-8"))
         self.rolled_back_database()
         self.assertEqual(self.scalar("SELECT max(version) FROM vinto_meta.schema_migration"), 11)
-        migrate.apply(self.connection, migrate.read_migrations())
+        migrations = migrate.read_migrations()
+        migrate.apply(self.connection, migrations)
+        migration_0012 = next(item for item in migrations if item.version == 12)
         self.assertEqual(self.connection.execute("SELECT version, filename, checksum FROM vinto_meta.schema_migration WHERE version = 12").fetchone(),
-                         (12, MIGRATION.name, migrate.read_migrations()[-1].checksum))
+                         (12, MIGRATION.name, migration_0012.checksum))
+        self.assertEqual(self.scalar("SELECT max(version) FROM vinto_meta.schema_migration"), len(migrations))
         self.assertEqual(self.trigger_enabled(), ("O",))
         migrate.validate_history(migrate.read_migrations(), migrate.applied_migrations(self.connection))  # what `--check` verifies
 

@@ -25,7 +25,8 @@ SCRIPTS = Path(os.environ.get("VINTO_DEPLOY_SCRIPTS") or BACKEND.parent / "deplo
 OLD_SHA, NEW_SHA, ODD_SHA = "0" * 39 + "a", "0" * 39 + "b", "0" * 39 + "c"
 HAVE_TOOLS = SCRIPTS.joinpath("deploy.sh").is_file() and shutil.which("bash") and shutil.which("flock")
 REAL = migrate.read_migrations()
-NEW_COUNT = len(REAL)  # 0001..0012 in this checkout
+NEW_COUNT = len(REAL)  # includes the E1-02 0013 schema migration
+PROBE_NAME = f"{NEW_COUNT + 1:04d}_prc_probe.sql"  # next available migration for the disposable fault injection
 
 
 def _write(path: Path, text: str, mode=None):
@@ -215,17 +216,18 @@ class CheckAndMigrateTests(ReleaseMigrationCase):
 
     def test_a_failing_migration_rolls_back_only_itself_and_the_command_is_repeatable_after_the_fix(self):
         bad = "CREATE TABLE vinto_txn.prc_probe (id integer);\nSELECT 1/0;\n"
-        self.make_release(NEW_SHA, REAL, extra={"0013_prc_probe.sql": bad})
+        self.make_release(NEW_SHA, REAL, extra={PROBE_NAME: bad})
         self.migrate_database_to(9)
         failed = self.run_phase("migrate-release", NEW_SHA, authorized=NEW_SHA)
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         self.assertIn("la migración en curso se revirtió entera", failed.stderr)
-        self.assertEqual(self.versions(), list(range(1, NEW_COUNT + 1)), "0010-0012 stay applied; 0013 is not registered")
+        self.assertEqual(self.versions(), list(range(1, NEW_COUNT + 1)), "all real migrations stay applied; failed probe is not registered")
+        self.assertNotIn(NEW_COUNT + 1, self.versions())
         self.assertIsNone(self.connection.execute("SELECT to_regclass('vinto_txn.prc_probe')").fetchone()[0], "the failed migration left no partial DDL")
         self.assertEqual(self.current_target(), str(self.app_dir / "releases" / OLD_SHA))
         self.assertEqual(self.systemctl_calls(), "")
         # recovery: the cause is fixed in the release folder (same file name, valid SQL) and the SAME command applies only what is missing
-        (self.app_dir / "releases" / NEW_SHA / "backend" / "migrations" / "0013_prc_probe.sql").write_text("CREATE TABLE vinto_txn.prc_probe (id integer);\n", encoding="utf-8")
+        (self.app_dir / "releases" / NEW_SHA / "backend" / "migrations" / PROBE_NAME).write_text("CREATE TABLE vinto_txn.prc_probe (id integer);\n", encoding="utf-8")
         fixed = self.run_phase("migrate-release", NEW_SHA, authorized=NEW_SHA)
         self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
         self.assertEqual(self.versions(), list(range(1, NEW_COUNT + 2)))

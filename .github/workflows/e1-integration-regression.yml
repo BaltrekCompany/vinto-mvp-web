@@ -1,0 +1,100 @@
+name: E1 integration broad regression (safe CI)
+
+# Only the final E1 stacked branch triggers automatically.
+# Does not deploy, publish or connect to the production VPS.
+on:
+  push:
+    branches:
+      - feature/e1-08-sector-execution-integral-20261105
+    paths:
+      - .github/workflows/e1-integration-regression.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-regression:
+    name: Full backend unittest discovery (PostgreSQL 17 disposable)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-throwaway-e1-regression-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-throwaway-e1-regression-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-throwaway-e1-regression-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-throwaway-e1-regression-only@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+      WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Verify isolated PostgreSQL 17
+        run: |
+          python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://ci_admin:ci-throwaway-e1-regression-only@127.0.0.1:5432/postgres") as cn:
+              version=cn.execute("SHOW server_version").fetchone()[0]
+              assert version.startswith("17."), version
+              print("Disposable PG17:", version)
+          PY
+      - name: Focused migration compatibility regressions (E1-02/08)
+        working-directory: backend
+        env:
+          PYTHONPATH: tests:.
+        run: |
+          python -B -m unittest -v \
+            test_sector_scope.StaticScopeTests.test_existing_migrations_are_intact_and_only_the_known_ones_exist \
+            test_qa_integral_multimachine.PredeployPreflightTests.test_it_flags_operators_without_grants_and_machines_with_several_active_rows_and_changes_nothing \
+            test_assignment_single_mode_guard.DeploymentTests.test_the_runner_registers_0012_with_the_exact_checksum_after_a_rollback \
+            test_deploy_release_migrations.CheckAndMigrateTests.test_a_failing_migration_rolls_back_only_itself_and_the_command_is_repeatable_after_the_fix
+      - name: All backend unit tests, flag OFF
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+
+  frontend-regression:
+    name: All frontend node tests, TypeScript, lint and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install from frozen lockfile
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: All frontend test modules
+        run: node --test scripts/*.test.mjs
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: ESLint changed E1 frontend files
+        run: pnpm exec eslint app/page.tsx components/vinto/activate-all-dialog.tsx components/vinto/bobinas-programming-source.tsx components/vinto/bobinas-programming.tsx components/vinto/candidate-form-capture.tsx components/vinto/f3-bobbin-capture.tsx components/vinto/f6-capture.tsx components/vinto/line-execution-panel.tsx components/vinto/line-selector.tsx components/vinto/sector-central.tsx lib/vinto/line-execution.ts lib/vinto/machine-execution.ts lib/vinto/use-central.ts
+      - name: Next.js production build
+        run: pnpm build
