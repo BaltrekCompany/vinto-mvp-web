@@ -4,6 +4,8 @@ Estado: procedimiento preparado; no se ha ejecutado por ChatGPT. El usuario disp
 
 Ticket: GitHub #131. Base técnica E1-08: PR #130, QA 158/158. Ningún merge ni despliegue autorizado.
 
+**Nota de estado (06/nov/2026):** este runbook de inspección inicial conserva su contexto histórico. La integración GitHub E1-02 a E1-08 fue completada posteriormente en `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`, tras QA diferencial [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786). **No se ha desplegado a la VPS por esa acción**, ni se ha aplicado 0013. Para el siguiente diagnóstico funcional usar [SQL-E de conciliación](E1-09-SQL-E-conciliacion-asignaciones-readonly.md); el objetivo ya no es volver a diseñar SQL-A/B, que cuentan con evidencia histórica en [SQL-A/D](E1-09-resultados-SQL-A-D-legado.md).
+
 ## Alcance
 
 Recoger una línea base NO destructiva del MVP VINTO: SHA activo, salud de servicios propios, contenedor PostgreSQL del MVP y preparación para consultar agregados de asignaciones históricas. No presupone que migración 0013 o el código en PR #130 estén desplegados.
