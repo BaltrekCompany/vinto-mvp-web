@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from app.assignments import execution_read
-from app.assignments.errors import MachineOutsideScopeError
+from app.work_orders.errors import MachineOutsideScopeError
 from app.config import settings
 from app.ephemeral_db import build_reference_template, drop_database
 from app.work_orders import line_execution
