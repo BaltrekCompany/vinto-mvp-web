@@ -2,7 +2,28 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
-## NUEVA AUTORIZACIÓN OPERATIVA — GO CONDICIONADO G4 + G5, E1 OFF (06/nov/2026)
+## Estado posterior — ENOENT intermitente del release; reconstrucción condicional (06/nov/2026)
+
+**Hallazgo informado por Codex Desktop:** cinco `stat` consecutivos como `vinto-mvp` sobre la ruta absoluta `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a` devolvieron ENOENT (no permiso denegado), con componentes y `git` inaccesibles. Host único `vps-14d8e0ce`, raíz `/dev/sda1`, ext4, mismo montaje. Una comprobación separada y posterior sí encontró el directorio (`vinto-mvp:vinto-mvp`, modo 775, dev 2049, inode 2648012). **No se conoce la causa.** Ninguna migración ni activación ejecutada.
+
+**Instrucción del usuario:** «Si no lo encontramos podemos recrearlo nuevamente y asegurarnos?». Se admite **únicamente reconstrucción controlada del release efectivamente ausente**, preservando los existentes. El GO anterior G4/G5 se pone **en pausa hasta verificar estabilidad**, no se extiende automáticamente a migrar/activar durante esta recuperación. Reinstalar no garantiza que no vuelva a desaparecer.
+
+1. **Dos comprobaciones independientes de solo lectura:** host/usuario, `current` aún en `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`; salud MVP PG17 y backend/frontend; `stat` y `git HEAD` **como vinto-mvp**, ruta absoluta literal, desde dos sesiones, timestamps, mount/device/inode, errores completos. Si existe **completo**, conservar e iniciar observación; si existe **incompleto o alterna presente/ausente**, STOP: no sobrescribir ni borrar.
+2. Si está **ausente en ambas sesiones**, verificar sin escritura ausencia de tareas concurrentes de backup, deploy, cleanup, migración y rollback, scripts Ops íntegros, almacenamiento, staging original alternativo `/var/tmp/vinto-g2-d5bc472.KRMA7h` con tarball/manifiesto válidos (SHA256 `fed3605f81b72303d1aa3f3d8e73d0689a627075cfe2f5d2678bb2c3ccf2a88b`, commit completo `d5bc472b831eae8abd60899296ce8c146c119a5a`, dir 750 `ubuntu:vinto-mvp`, files 640). Si no existe artefacto válido, STOP, no compilar frontend en VPS.
+3. **Una sola ejecución por fase** como ubuntu mediante scripts Ops, sin ad hoc:
+```bash
+cd /home/ubuntu/vinto-mvp-ops/scripts
+SHA=d5bc472b831eae8abd60899296ce8c146c119a5a
+CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh checkout "$SHA"
+CONFIRM=yes bash deploy.sh python-venv "$SHA"
+CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA" "/var/tmp/vinto-g2-d5bc472.KRMA7h/vinto-mvp-frontend-$SHA.tar.gz" "/var/tmp/vinto-g2-d5bc472.KRMA7h/vinto-mvp-frontend-$SHA.manifest"
+```
+Si reaparece antes del checkout, STOP; si alguna fase falla, STOP, no reintentar, registrar log privado 600. No `rm -rf`, `mv`, cambios amplios de permisos o reconstrucción sobre ruta existente.
+4. **Verificar estabilidad**: al menos dos sesiones independientes y tres puntos separados durante una ventana de observación razonable (p. ej. 10–15 min) con `stat` dev/inode, git SHA, venv, `server.js`, env symlink como vinto-mvp. Si existe `inotifywait` ya instalado, observar exclusivamente el directorio `/opt/vinto-mvp-web/releases` para delete/move/create durante la ventana, sin instalar software ni crear servicios persistentes. Cualquier alternancia ENOENT, movimiento o cambio inesperado de inode → STOP y conservar evidencia. Un período estable no prueba causa resuelta ni garantiza estabilidad futura.
+5. Comprobar `bash deploy.sh check-release "$SHA"` **solo lectura**, esperado exit 2 con exclusivamente 0013 y 0014 pendientes, flag E1 **efectivo OFF** en release nuevo sin exponer secretos; current viejo y servicios sanos. **Terminar aquí**, sin ejecutar `migrate-release` ni `activate`, y reportar `PRESENTE/RECONSTRUIDO/INCOMPLETO/INTERMITENTE` con timestamps/errores/inodes y recomendaciones.
+6. Prohibidos G4/G5 durante diagnóstico de estabilidad, SQL mutador, backup nuevo, cambios de flags/OT y toda intervención TVC.
+
+## AUTORIZACIÓN OPERATIVA ANTERIOR — GO CONDICIONADO (EN PAUSA) G4 + G5, E1 OFF (06/nov/2026)
 
 **Solicitud explícita del usuario:** «Sabes estamos tomando en consideración mucho las OTs que estan abiertas, autorizemos forzosamente, el despliegue, si ya tenemos todo». Se interpreta y registra como **aprobación expresa de avanzar con las migraciones 0013/0014 (G4) y la activación del release preparado (G5, únicamente binarios)** en una intervención controlada, **SIN exigir reconciliar las transiciones históricas de OT ni cerrar OT abiertas**. **NO** autoriza habilitar el flag `WORK_ORDER_LINE_EXECUTION_ENABLED`, archivar/restaurar OT, borrar/transmutar datos, forzar permisos o sustituir automáticamente un release ausente.
 
