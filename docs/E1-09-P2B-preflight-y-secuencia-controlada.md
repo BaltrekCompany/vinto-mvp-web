@@ -2,7 +2,36 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
-## GO VIGENTE G4 — migraciones 0013/0014 SIN nuevo respaldo G3 (06/nov/2026)
+## G4 — PRECHECK NO-GO (06/nov/2026): **NO SE EJECUTARON MIGRACIONES**
+
+**Evidencia remitida por Codex Desktop SSH**. Este estado **suspende el GO operativo G4** hasta una conciliación read-only y una autorización posterior específica para volver a intentar las migraciones. El antiguo GO G4 y la omisión explícita de G3 se conservan más abajo como histórico de decisiones.
+
+| Control del preflight | Resultado |
+|---|---|
+| Infraestructura MVP | PASS: VPS `vps-14d8e0ce` / `ubuntu`, backend/frontend `active`, `vinto-mvp-postgres` PostgreSQL 17 `running/healthy` |
+| `current` y release staged | PASS: `current` → `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`; staged → `d5bc472b831eae8abd60899296ce8c146c119a5a`, con venv, frontend y enlace de configuración |
+| Ops | PASS: hashes `backup.sh`, `lib_common.sh`, `deploy.sh`, sintaxis bash y `flock` |
+| P1-B | PASS: dump/manifiesto completos y sidecars `sha256sum -c`, `.dump.verified`; un intento de inspección usó primero sufijo incorrecto, se corrigió sin alterar archivos |
+| Esquema previo | PASS: `check-release` exit 2, historia 0001–0012 continua como `vinto_migrator`, únicamente `0013` y `0014` pendientes y hashes correctos |
+| Cambio de conteos SQL-E → preflight | **Desviación sin conciliar:** OT total `20→21` (+1), OT `in_progress 12→13` (+1), assignments `active 11→9` (-2), `finished 61→65` (+4); `active+finished 72→74` (+2) |
+| Flag E1 | **NO VERIFICADO** en entorno efectivo del proceso (aunque binario actual no reconoce flag) |
+| Concurrencia | **NO VERIFICADO**: no se observaron locks relevantes ni sesiones esperando o transacciones >5 minutos; prueba de procesos generó falso positivo por autocoincidencia |
+| Resultado real | **G4 NO-GO; `migrate-release` NO ejecutado.** 0013/0014 NO aplicadas, release NO activado, datos/OT/flags/TVC sin intervenciones reportadas |
+
+**Interpretación:** el drift agregado **no prueba por sí mismo daño o desalineación**: podría reflejar operaciones legítimas durante el intervalo SQL-E→G4. No se puede atribuir una causa exacta sin un diagnóstico dirigido. La actividad reportada sugiere una base viva; 0014 incluye DDL + triggers sobre tablas operativas, por lo que hay riesgo de esperas de locks incluso sin backfill. La falta de verificación del flag y concurrencia son bloqueos adicionales, no superados por constatar que el servicio antiguo está sano. El código del nuevo release (`backend/app/config.py`) tiene default `work_order_line_execution_enabled=False`, pero el valor efectivo puede ser sobrescrito por configuración/entorno, especialmente en una activación posterior; no asumirlo OFF sin verificación cuando corresponda.
+
+### Siguiente fase permitida: G4-R / conciliación **SOLO LECTURA**
+
+1. **Congelar la línea base documental**, no los datos: registrar timestamps/zonas horarias de SQL-E y del nuevo corte y verificar mismo DB, mismo alcance de consulta, mismos predicados para `status`, `active`, `finished`. Un cambio de criterio de filtrado no debe confundirse con movimiento transaccional. Consultar catálogos para verificar nombres de columnas antes de redactar SQL; no suponer `created_at`/ `updated_at` sin comprobar.
+2. Tomar **dos snapshots agregados acotados** en `REPEATABLE READ READ ONLY` (sin retener transacción entre snapshots), `lock_timeout <=1500ms`, `statement_timeout <=15000ms`. Mostrar OT por status, asignaciones por status, total y relaciones por estado de OT, conteos de OT con asignaciones, e información agregada por rangos temporales si columnas verificadas. **No exponer IDs, DNI, nombres, contenido de capturas, auditoría ni datos personales.**
+3. Determinar si `+1` OT in_progress y `+2` asignaciones netas, `-2` activas/`+4` terminadas se explican con altas y transiciones reales, cambios de alcance o error de consulta; si no hay metadatos suficientes para certificar, **NO VERIFICABLE → STOP**, no inventar historia de eventos.
+4. Flag E1: distinguir **old runtime sin soporte** (apagado funcionalmente) de `WORK_ORDER_LINE_EXECUTION_ENABLED` efectivo en configuración compartida y entorno del servicio, y del **default False** en el código nuevo. Ejecutar únicamente controles que muestren el estado `ON/OFF/UNSET/NO_VERIFICABLE` sin volcar `.env` ni `/proc/*/environ` ni otras variables. No cambiar config. Si el flag de nuevo release estaría ON, NO-GO.
+5. Concurrencia: comprobar de forma segura procesos reales, lock Ops, migradores, backups y restores, **excluyendo el propio proceso de inspección** y sin imprimir argumentos/contraseñas; consultar `pg_stat_activity` solo agregada sin `query` de otros usuarios. Si no puede demostrarse ausencia de otra tarea de mantenimiento, NO-GO.
+6. Validar nuevamente `current` y salud después del intento no ejecutado. P1-B sigue siendo el único respaldo nuevo verificado, ubicado en el mismo VPS; aceptación previa de este riesgo **no constituye autorización para cambiar datos/DDL ante preflight fallido**.
+
+**Límite expreso de G4-R:** no ejecutar `migrate-release`, `migrate.py` en modo mutador, `activate`, nuevos backups, archivado de OT, cambios de flags/GRANT, paradas de servicios ni ninguna operación sobre TVC. Registrar hallazgos read-only y proponer GO/NO-GO para reabrir G4 con preflight nuevo y autorización explícita. Conservar los conteos originales y actuales como hechos históricos, sin editarlos para forzar PASS.
+
+## GO HISTÓRICO G4 (SUSPENDIDO POR PRECHECK NO-GO) — migraciones 0013/0014 SIN nuevo respaldo G3 (06/nov/2026)
 
 **Fuente de autorización:** tras autorizar originalmente G3, el usuario solicitó saltar directamente a migraciones; se le explicó el riesgo de depender del backup P1-B guardado solo en el VPS y de perder los cambios posteriores si fuera necesario restaurarlo. El usuario respondió **«Autorizo»** a ejecutar G4 aplicando 0013 y 0014 sin crear otro respaldo. **G3 queda omitido / NO EJECUTAR por decisión posterior del usuario**, y NO debe lanzarse `backup.sh` bajo la autorización anterior.
 
