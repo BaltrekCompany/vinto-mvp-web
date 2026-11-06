@@ -96,3 +96,29 @@ Preparar una matriz funcional interna por OT/línea para que Supervisión valide
 - **VPS:** no se ejecutó despliegue ni migración 0013 por esta integración. Estado actual de la VPS, datos en el momento de corte y bandera real siguen **por reconfirmar**.
 - **Conciliación SQL-A/D:** 11 asignaciones activas con correspondencia única y 5 líneas baseline sin activa, **válido exclusivamente en el snapshot observado**. La nueva lectura [SQL-E](E1-09-SQL-E-conciliacion-asignaciones-readonly.md) determina cuántas de esas líneas tienen `assignment.finished` histórico, sin inferir estado físico.
 - **Decisión:** GO técnico para preparar SQL-E de solo lectura; **NO-GO despliegue/migración/flag ON** hasta conciliación con Supervisión, permisos MF13, verificación de release/privilegios y respaldo/rollback. TVC queda fuera del alcance.
+
+
+## SQL-E — ejecución real y conciliación histórica (06/nov/2026)
+
+**Origen:** resultado agregado reportado por el ejecutor Codex Desktop a través de su conexión SSH ya autorizada; ChatGPT no ejecutó SQL en el VPS ni verificó personalmente los logs crudos. **Dictamen: SQL-E PASS** para el snapshot informado.
+
+- **E0:** `vinto-mvp-postgres` saludable; conexión a `vinto_piloto` con `vinto_app`; aislamiento `REPEATABLE READ READ ONLY`; guard de esquema pre-E1 satisfecho, bloque `E0-E4` con `COMMIT`. No se consultó `vinto_meta`, no se expusieron identificadores ni se realizaron escrituras.
+- **E1:** 11 asignaciones activas; 11 mapeos únicos por OT + `line_code` + máquina; 0 sin baseline, 0 ambiguas, 0 de versión no operativa.
+- **E2:** 16 líneas baseline de OT `in_progress`; 11 con exactamente una asignación activa; 0 con varias activas; 5 sin asignación activa. Las **5/5** sin activa tienen al menos una asignación histórica con `status='finished'`; **0** sin historial relacionado. Total de asignaciones activas mapeadas: 11.
+- **E3:** las cinco líneas sin activa están en **BOBINAS**: **MP1: 4** (las 4 con historial `assignment.finished`); **MP3: 1** (la 1 con ese historial). Sin historial de asignación: 0 en ambas.
+- **E4:** 4 OT sin ninguna activa (5 líneas baseline, 0 activas); 7 OT con una activa (7 líneas, 7 activas); 1 OT con varias activas (4 líneas, 4 activas).
+- **Conciliación cruzada:** E1 = E2 en activas mapeadas (11); E2 = 11+0+5 = 16; E2 sin activa = 5+0 = 5; E3 = 4+1 = 5; E4 = 12 OT, 16 líneas y 11 activas. Todas las igualdades PASS.
+- **Comparación SQL-D → SQL-E:** coinciden los totales centrales (11 activas / 16 líneas / 5 sin activa); **no implica identidad de cada registro entre dos snapshots**. Los nuevos datos clasifican las cinco por historial `finished`, no por estado físico de producción.
+
+### Puertas después de SQL-E
+
+| Control | Estado | Alcance |
+|---|---|---|
+| Integridad referencial / conteos SQL-E | **PASS** | Snapshot agregado de lectura |
+| Estado histórico `assignment.finished` de cinco líneas | **5/5 comprobadas** | Finalización de asignación, no de la línea lógica |
+| Estado físico de las cinco líneas (MP1 4, MP3 1) | **PENDIENTE Supervisión** | Confirmar finalización real, producción actual o continuidad |
+| Estado físico de las once líneas con activa | **PENDIENTE Supervisión** | Confirmar cuál está produciendo, sin deducirlo de `active` |
+| Historial `vinto_meta.schema_migration` | **NO VERIFICADO** | Mantener restricciones del rol `vinto_app` |
+| Migración 0013 / deploy / activación | **NO-GO** | Son decisiones independientes; no ejecutar |
+
+**Decisión:** el bloque técnico SQL-A/B/C/D/E del legado está conciliado al nivel de agregados. No hay evidencia que exija modificar 11 asignaciones activas ni las cinco sin activa. La siguiente intervención **no es una corrección automática**: Supervisión debe revisar privadamente las 16 líneas (priorizando MP1/MP3), asignar un estado físico validado y registrar la continuidad entre turnos. No publicar números de OT, `line_code`, usuarios, capturas ni otras referencias individuales en GitHub. Repetir preflight antes del corte; no asumir que los totales siguen vigentes.
