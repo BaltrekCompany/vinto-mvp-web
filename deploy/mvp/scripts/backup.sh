@@ -570,12 +570,50 @@ phase_list() {
   done
 }
 
+# P1-B: un solo escritor de backups por vez. El candado se adquiere ANTES de
+# acceder a docker/.env o de crear/cambiar cualquier dump y permanece abierto
+# durante TODO create-and-verify (incluida la restauracion efimera). El descriptor
+# se libera al salir, incluso si el proceso falla. 'list' y el dry-run 'prune'
+# no realizan escrituras y no toman el candado.
+#
+# Solo protege invocaciones de esta version del script que respetan el mismo
+# archivo. Antes de P1-B revisar que no haya otro script/operador antiguo que
+# este realizando operaciones sin este candado.
+acquire_backup_lock() {
+  assert_private_dir "$BACKUP_DIR"
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "FALLA: flock no esta disponible; no se permite operar sin candado de respaldo." >&2
+    exit 1
+  fi
+
+  local lock_path="$BACKUP_DIR/.backup-operations.lock"
+  if [ -L "$lock_path" ] || { [ -e "$lock_path" ] && [ ! -f "$lock_path" ]; }; then
+    echo "FALLA: archivo de candado invalido; se exige archivo regular, nunca symlink." >&2
+    exit 1
+  fi
+
+  # Con umask 077 del inicio, el archivo nuevo nace 600 y el existente no
+  # se trunca. El directorio 700 y la comprobacion posterior son fail-closed.
+  exec {BACKUP_OPS_LOCK_FD}<>"$lock_path"
+  local owner perms
+  owner="$(stat -c '%U' "$lock_path" 2>/dev/null || true)"
+  perms="$(stat -c '%a' "$lock_path" 2>/dev/null || true)"
+  if [ -L "$lock_path" ] || [ ! -f "$lock_path" ] || [ "$owner" != "$(id -un)" ] || [ "$perms" != "600" ]; then
+    echo "FALLA: el candado debe ser regular, propio del operador y modo 600." >&2
+    exit 1
+  fi
+  if ! flock -n "$BACKUP_OPS_LOCK_FD"; then
+    echo "FALLA: otra operacion de backup/restore/prune-apply esta en curso; no iniciar ejecucion concurrente." >&2
+    exit 1
+  fi
+}
+
 case "${1:-}" in
-  create) phase_create ;;
-  verify) phase_verify "${2:-}" ;;
-  create-and-verify) phase_create_and_verify ;;
+  create) require_confirm; acquire_backup_lock; phase_create ;;
+  verify) require_confirm; acquire_backup_lock; phase_verify "${2:-}" ;;
+  create-and-verify) require_confirm; acquire_backup_lock; phase_create_and_verify ;;
   prune) phase_prune ;;
-  prune-apply) phase_prune_apply ;;
+  prune-apply) require_confirm; acquire_backup_lock; phase_prune_apply ;;
   list) phase_list ;;
   *)
     echo "Uso: backup.sh {create|verify <ruta-del-.dump>|create-and-verify|prune|prune-apply|list}" >&2
