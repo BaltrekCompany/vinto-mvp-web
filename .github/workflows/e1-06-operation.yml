@@ -1,0 +1,94 @@
+name: E1-06 Operación — machine-scoped execution
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'backend/app/assignments/execution_read.py'
+      - 'backend/app/assignments/router.py'
+      - 'backend/tests/test_machine_execution_read.py'
+      - 'backend/tests/test_machine_execution_api.py'
+      - 'lib/vinto/machine-execution.ts'
+      - 'lib/vinto/machine-execution-api.ts'
+      - 'lib/vinto/resource-view.ts'
+      - 'lib/vinto/use-central.ts'
+      - 'lib/vinto/bobbins.ts'
+      - 'lib/vinto/capture-core.ts'
+      - 'app/page.tsx'
+      - 'components/vinto/line-selector.tsx'
+      - 'components/vinto/f3-bobbin-capture.tsx'
+      - 'components/vinto/f6-capture.tsx'
+      - 'scripts/e1-06-operation.test.mjs'
+      - '.github/workflows/e1-06-operation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22.18.0'}
+      - name: Install pinned dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: New operational selector and F3/F6 error contract
+        run: node --test scripts/e1-06-operation.test.mjs
+      - name: Existing selection and capture regressions
+        run: |
+          node --test scripts/pr8-line-selection.test.mjs
+          node --test scripts/pr6-order-draft.test.mjs
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: ESLint changed modules
+        run: pnpm exec eslint app/page.tsx components/vinto/line-selector.tsx components/vinto/f3-bobbin-capture.tsx components/vinto/f6-capture.tsx lib/vinto/machine-execution.ts lib/vinto/machine-execution-api.ts lib/vinto/resource-view.ts lib/vinto/use-central.ts lib/vinto/bobbins.ts lib/vinto/capture-core.ts
+
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: E1-06 service state and scope
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_machine_execution_read.py' -v
+      - name: E1-06 HTTP grants and functional integration
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_machine_execution_api.py' -v
+      - name: E1-04 F3/F6 capture guard regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_capture_line_execution_guard.py' -v
+      - name: E1-03 lifecycle regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_line_execution_flow.py' -v

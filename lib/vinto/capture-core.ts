@@ -109,6 +109,7 @@ export const SUBMIT_MESSAGES = {
     notFound: "La asignación o contexto ya no existe.",
     stale: "La asignación ya no corresponde al turno o fecha actual. Solicita a Supervisión que la reactive.",
     notActive: "La asignación ya no está activa.",
+    notProducing: "Supervisión aún no ha iniciado esta línea o ya la finalizó. Actualiza la pantalla.",
     idempotency: "No se puede reutilizar este identificador para datos distintos.",
     invalid: "Revisa los campos obligatorios y sus valores.",
     conflict: "El servidor no pudo aceptar el registro. Actualiza y vuelve a intentar.",
@@ -116,7 +117,7 @@ export const SUBMIT_MESSAGES = {
     notSaved: "El registro no se guardó. Puedes reintentar el envío.",
 } as const;
 
-export type RejectReason = "forbidden" | "not_found" | "stale" | "not_active" | "idempotency" | "invalid" | "conflict";
+export type RejectReason = "forbidden" | "not_found" | "stale" | "not_active" | "line_not_producing" | "idempotency" | "invalid" | "conflict";
 
 export function rejectionFor(status: number, code?: string): { reason: RejectReason; message: string } | null {
     if (status === 403) return { reason: "forbidden", message: SUBMIT_MESSAGES.forbidden };
@@ -125,6 +126,7 @@ export function rejectionFor(status: number, code?: string): { reason: RejectRea
     if (status === 409) {
         if (code === "ASSIGNMENT_STALE") return { reason: "stale", message: SUBMIT_MESSAGES.stale };
         if (code === "ASSIGNMENT_NOT_ACTIVE") return { reason: "not_active", message: SUBMIT_MESSAGES.notActive };
+        if (code === "LINE_NOT_IN_PRODUCTION") return { reason: "line_not_producing", message: SUBMIT_MESSAGES.notProducing };
         if (code === "CAPTURE_IDEMPOTENCY_CONFLICT") return { reason: "idempotency", message: SUBMIT_MESSAGES.idempotency };
         if (code === "CORRELATIVE_IN_USE") return { reason: "conflict", message: "Ese número correlativo ya está registrado para esta OT y máquina. Escribe otro número." }; // MF-12B (P1-16 v3)
         return { reason: "conflict", message: SUBMIT_MESSAGES.conflict };

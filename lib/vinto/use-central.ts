@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getActiveAssignment, getOperationSelection, listAssignments } from "@/lib/vinto/assignments-api";
+import { getMachineExecution } from "@/lib/vinto/machine-execution-api";
+import type { MachineExecution } from "@/lib/vinto/machine-execution";
 import type { Availability } from "@/lib/vinto/availability";
 import { getProductionAvailability } from "@/lib/vinto/production-api";
 import type { ApiResult } from "@/lib/vinto/central-http";
 import type { OperationSelection } from "@/lib/vinto/active-lines";
 import type { ActiveAssignment, Assignment, WorkOrder } from "@/lib/vinto/orders";
-import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, operationSelectionKey, workOrderCapabilitiesKey, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
+import { activeAssignmentKey, assignmentsKey, availabilityKey, deriveView, operationSelectionKey, machineExecutionKey, workOrderCapabilitiesKey, workOrdersKey, type Resource, type Stored } from "@/lib/vinto/resource-view";
 import type { WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { subscribeRevalidation } from "@/lib/vinto/revalidation";
 import { getWorkOrderCapabilities, listWorkOrders } from "@/lib/vinto/work-orders-api";
@@ -54,6 +56,12 @@ export const useActiveAssignment = (machineCode: string, enabled: boolean, onUna
 // MF-13-03B PR8: lectura de Ejecución (Operación): `/active` y, solo si hay varias líneas activas, `/active-lines`. Misma disciplina de clave por sesión y máquina.
 export const useOperationSelection = (machineCode: string, enabled: boolean, onUnauthorized: () => void, scope: string) =>
     useResource<OperationSelection>(operationSelectionKey(machineCode, scope), enabled, (signal) => getOperationSelection(machineCode, signal), onUnauthorized);
+
+// E1-06 Operación: no inferir producción de assignment.active. La API de ejecución
+// es independiente; 401/403/404/JSON inválido => no captura nueva.
+export const useMachineExecution = (machineCode: string, enabled: boolean, onUnauthorized: () => void, scope: string) =>
+    useResource<MachineExecution>(machineExecutionKey(machineCode, scope), enabled,
+        signal => getMachineExecution(machineCode, signal), onUnauthorized, true);
 
 // Máquinas y formularios centrales operables por la sesión (solo lectura, verificado por el backend). Con `withArticles` incluye los artículos de cada máquina.
 // `scope` (obligatorio) liga el resultado a la sesión: al cambiar de usuario en el mismo navegador la vista anterior no se reutiliza.

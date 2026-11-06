@@ -235,13 +235,14 @@ export const BOBBIN_MESSAGES = {
     notFound: "La asignación o contexto ya no existe.",
     stale: "La asignación ya no corresponde al turno o fecha actual. Solicita a Supervisión que la reactive.",
     notActive: "La asignación ya no está activa.",
+    notProducing: "Supervisión aún no ha iniciado esta línea o ya la finalizó. Actualiza la pantalla.",
     idempotency: "No se puede reutilizar este identificador para datos distintos.",
     invalid: "Revisa los campos obligatorios y sus valores.",
     conflict: "El servidor no pudo aceptar el registro. Actualiza y vuelve a intentar.",
     uncertain: "No se pudo confirmar el registro de la bobina. Reintenta el envío: se reenvía exactamente el mismo registro y no se duplicará.",
 } as const;
 
-export type BobbinRejectReason = "forbidden" | "not_found" | "stale" | "not_active" | "idempotency" | "invalid" | "conflict";
+export type BobbinRejectReason = "forbidden" | "not_found" | "stale" | "not_active" | "line_not_producing" | "idempotency" | "invalid" | "conflict";
 
 export function bobbinRejectionFor(status: number, code?: string): { reason: BobbinRejectReason; message: string } | null {
     if (status === 403) return { reason: "forbidden", message: BOBBIN_MESSAGES.forbidden };
@@ -250,6 +251,7 @@ export function bobbinRejectionFor(status: number, code?: string): { reason: Bob
     if (status === 409) {
         if (code === "ASSIGNMENT_STALE") return { reason: "stale", message: BOBBIN_MESSAGES.stale };
         if (code === "ASSIGNMENT_NOT_ACTIVE") return { reason: "not_active", message: BOBBIN_MESSAGES.notActive };
+        if (code === "LINE_NOT_IN_PRODUCTION") return { reason: "line_not_producing", message: BOBBIN_MESSAGES.notProducing };
         if (code === "CAPTURE_IDEMPOTENCY_CONFLICT") return { reason: "idempotency", message: BOBBIN_MESSAGES.idempotency };
         return { reason: "conflict", message: BOBBIN_MESSAGES.conflict };
     }
