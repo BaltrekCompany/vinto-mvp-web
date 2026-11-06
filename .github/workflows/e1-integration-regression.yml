@@ -59,6 +59,16 @@ jobs:
               assert version.startswith("17."), version
               print("Disposable PG17:", version)
           PY
+      - name: Focused migration compatibility regressions (E1-02/08)
+        working-directory: backend
+        env:
+          PYTHONPATH: tests:.
+        run: |
+          python -B -m unittest -v \
+            test_sector_scope.StaticScopeTests.test_existing_migrations_are_intact_and_only_the_known_ones_exist \
+            test_qa_integral_multimachine.PredeployPreflightTests.test_it_flags_operators_without_grants_and_machines_with_several_active_rows_and_changes_nothing \
+            test_assignment_single_mode_guard.DeploymentTests.test_the_runner_registers_0012_with_the_exact_checksum_after_a_rollback \
+            test_deploy_release_migrations.CheckAndMigrateTests.test_a_failing_migration_rolls_back_only_itself_and_the_command_is_repeatable_after_the_fix
       - name: All backend unit tests, flag OFF
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_*.py' -v
