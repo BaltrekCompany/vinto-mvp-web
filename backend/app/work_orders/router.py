@@ -18,6 +18,7 @@ from app.config import settings
 from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
+from app.work_orders import close_order
 from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
@@ -114,6 +115,20 @@ def publish_work_order(work_order_id: str, user: AuthenticatedUser = Depends(req
                        connection=Depends(get_connection)):
     return work_order_out(service.publish_work_order(connection, actor_id=user.user_id, work_order_id=work_order_id,
                                                      request_id=_request_id(), sectors=user.sectors))
+
+
+@router.post("/{work_order_id}/close", response_model=WorkOrderOut, responses=_ERRORS)
+def close_work_order(work_order_id: str,
+                     user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+                     connection=Depends(get_connection)):
+    """E1-07: Supervisión alone closes the OT; all baseline lines must be finished.
+
+    Never imply cancellation from a planned-versus-actual deficit. Closing a
+    logical line does NOT close the OT; this is a separate, explicit action.
+    """
+    return work_order_out(close_order.close_work_order(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        sectors=user.sectors, request_id=_request_id()))
 
 
 @router.post("/{work_order_id}/activate-all", response_model=ActivateAllOut,
