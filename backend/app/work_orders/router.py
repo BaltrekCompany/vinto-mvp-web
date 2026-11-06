@@ -40,7 +40,6 @@ class CapabilitiesOut(BaseModel):
     """Lo ÚNICO que se publica: si el servidor acepta OT con líneas en varias máquinas. Sin otros ajustes, versiones ni datos de OT."""
 
     multi_machine: bool
-    line_execution: bool = False  # E1-05: server-confirmed, OFF by default
 
 
 def capabilities_reader(user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_READ))) -> AuthenticatedUser:
@@ -78,8 +77,22 @@ def capabilities(response: Response, user: AuthenticatedUser = Depends(capabilit
     """Capacidades de OT que el SERVIDOR confirma a la sesión (solo lectura). `multi_machine` refleja la compuerta de servidor WORK_ORDERS_MULTI_MACHINE_ENABLED
     (apagada por defecto); el cliente no puede cambiarla con query, cabeceras ni cuerpo, y no es una autorización: el POST de creación vuelve a validarlo todo."""
     response.headers["Cache-Control"] = "private, no-store"
-    return CapabilitiesOut(multi_machine=settings.work_orders_multi_machine_enabled is True,
-                           line_execution=settings.work_order_line_execution_enabled is True)
+    return CapabilitiesOut(multi_machine=settings.work_orders_multi_machine_enabled is True)
+
+
+class ExecutionCapabilitiesOut(BaseModel):
+    line_execution: bool
+
+
+# Independent of the historical /capabilities schema, which must continue to
+# return exactly {"multi_machine": bool} for existing deployed clients.
+@router.get("/execution-capabilities", response_model=ExecutionCapabilitiesOut,
+            responses={401: _ERRORS[401], 403: _ERRORS[403]})
+def execution_capabilities(
+        response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE))):
+    response.headers["Cache-Control"] = "private, no-store"
+    return ExecutionCapabilitiesOut(line_execution=settings.work_order_line_execution_enabled is True)
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
