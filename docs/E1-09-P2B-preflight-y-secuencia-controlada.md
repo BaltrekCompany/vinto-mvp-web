@@ -2,6 +2,21 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## G5 ACTIVADO — PASS técnico de publicación productiva (06/nov/2026)
+
+**Fuente:** salida de PowerShell→SSH en la VPS, remitida directamente por el usuario. El usuario ejecutó el procedimiento oficial de activación después de G4 PASS:
+
+- Pre-G5: `E1_FLAG=OFF` calculado desde Python del release preparado; `bash deploy.sh check-release "$SHA"` mostró 0001–0014 aplicadas, sin pendientes.
+- `bash deploy.sh preflight-startup`: **SIN FALLAS BLOQUEANTES**; avisos esperados de puertos 3100/8100/6544 ocupados por los propios servicios MVP; `current` anterior completo; Node aislado 22.18.0; PostgreSQL MVP respondió `pg_isready`.
+- `PRE-G5=PASS`.
+- `CONFIRM=yes bash deploy.sh activate "$SHA"`: `G5_EXIT=0`, conmutó `current` a `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a`, reinició backend y frontend; reportó `Healthcheck OK tras activar`.
+- Postchecks SSH: `readlink -f .../current` apunta al SHA nuevo, ambos systemd `active`, `http://127.0.0.1:8100/health` **HTTP 200**, `http://127.0.0.1:3100/` **HTTP 200**. Log privado `/home/ubuntu/vinto-g5-hcrZKx6C.log`.
+- No se reportó rollback automático (no requerido por éxito de healthcheck), ni migraciones adicionales, archivado/cambios de OT, activación de E1 o intervención sobre TVC.
+
+**Decisión:** **G4 PASS y G5 PASS técnico** (migraciones, activación, systemd y HTTP). La declaración **NO equivale a QA funcional completo**, seguridad/autorizaciones verificadas en UI, ni a cierre de E1-08 sobre 13 OT `in_progress` y línea de ejecución legado. El flag estaba OFF en el release **antes** de activar; falta atestación explícita después en `current` y API runtime, aunque configuración compartida no se modificó según informe. También faltan smoke funcionales autenticados/read-only y poschequeo independiente de nueva tabla vacía/0 OT archivadas, si forman parte del criterio final de entrega. **No habilitar WORK_ORDER_LINE_EXECUTION_ENABLED ni archivar OT bajo esta autorización**.
+
+**Siguiente acción recomendada, solo lectura:** comprobar `settings.work_order_line_execution_enabled=False` desde `/opt/vinto-mvp-web/current/backend` como `vinto-mvp`; comprobar `/health`, `/api/health` y frontend, `current`, PostgreSQL MVP; revisar interfaz bajo cuentas permitidas sin mutar capturas, OT ni banderas. Documentar resultados PASS/FAIL. No volver a ejecutar activación/migraciones si todo está saludable. En incidentes, evaluar estado real y plan de rollback binario antes de actuar; el esquema nuevo no se revierte con rollback de binarios.
+
 ## G4 APLICADO — PASS técnico en terminal SSH del usuario (06/nov/2026)
 
 **Evidencia recibida:** usuario ejecutó desde SSH sobre `vps-14d8e0ce`, usando los scripts Ops de `/home/ubuntu/vinto-mvp-ops/scripts` y commit `d5bc472b831eae8abd60899296ce8c146c119a5a`. Guardia previa `PRE-G4=PASS`. `CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh migrate-release "$SHA"` exit **0**; produjo:
