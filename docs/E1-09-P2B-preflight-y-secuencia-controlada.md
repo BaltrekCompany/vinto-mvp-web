@@ -2,6 +2,30 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## G1 COMPLETADO — PASS; G2 GO técnico, pendiente de autorización (06/nov/2026)
+
+**Fuente:** evidencia remitida por Codex Desktop/operador SSH, no ejecución directa de ChatGPT. **G1 solo lectura y sin cambios.**
+
+| Control | Resultado |
+|---|---|
+| Host/operador | `vps-14d8e0ce` / `ubuntu`, PASS |
+| Release activo | `/opt/vinto-mvp-web/current` → `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`, PASS |
+| Servicios y DB MVP | Backend/frontend `active`; `vinto-mvp-postgres`, PostgreSQL 17, Compose `vinto-mvp`, `running/healthy`, PASS |
+| Scripts Ops | SHA-256 de `backup.sh` y `lib_common.sh` coinciden con G1, PASS |
+| Backup P1-B | Dump/manifiesto `sha256sum -c` PASS, marcador `.verified` presente |
+| E1 flag release ACTIVO | `WORK_ORDER_LINE_EXECUTION_ENABLED` ausente del entorno y desconocido para release antiguo: **efectivamente OFF para release viejo**. Revalidar flag y default en release nuevo, NO asumir |
+| Historial de migraciones | `vinto_migrator` legítimo verificó 0001–0012 continuas, nombres y checksums iguales a `main@d5bc472b831eae8abd60899296ce8c146c119a5a`. 0013 y 0014 NO APLICADAS |
+| Checksums de nuevos archivos | 0013 `ef22f54c…b9ceac37`, 0014 `33f5a7a8…cd5edc0f` (resumen informado por Codex; utilizar SHA-256 **completo** calculado del checkout para G2/G4) |
+| Objetos de esquema | Sin `work_order_line_execution` y sin `work_order.archived_at`, coherente con historial |
+| Capacidad / procesos | 184 713 MiB disponibles, 25 734 019 inodos; ninguna operación de backup/deploy/migrador detectada |
+| TVC | Fuera de alcance, no consultado/modificado |
+| Datos agregados | 20 OT (7 draft, 12 in_progress, 1 published); 72 asignaciones asociadas a in_progress (11 active, 61 finished); 8 OT técnicamente candidatas sin asignaciones |
+| Escrituras G1 | Ninguna: sin checkout, release preparado, migrations, DB, flags ni cambios de OT |
+
+**Dictamen:** G1 **PASS / CERRADO**. Existe **GO técnico para solicitar autorización específica de G2** (preparar release, escribir solo dentro de nueva ruta versionada). **G2 no se ejecutó ni está autorizado por este informe**. G2 debe detenerse **antes de aplicar migraciones 0013/0014 o activar el release**.
+
+**Conservación:** P1-B fue verificado pero está en filesystem del VPS; copia off-host aún NO VERIFICADA. Las 12 OT in_progress + 11 active siguen bloqueando activación de E1, aunque las 8 candidatas puedan eventualmente archivarse. Los datos son ficticios pero sus capturas/Calidad/auditoría conservan restricciones de integridad.
+
 ## 0. Línea base comprobada y alcance
 
 - Repositorio: `BaltrekCompany/vinto-mvp-web`; merge PR #137 en `main@d5bc472b831eae8abd60899296ce8c146c119a5a`.
