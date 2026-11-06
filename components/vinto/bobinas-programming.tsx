@@ -16,9 +16,9 @@ import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
 import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
-import type { Resource } from "@/lib/vinto/use-central";
+import { useResource, type Resource } from "@/lib/vinto/use-central";
 import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
-import { addWorkOrderLine, createWorkOrderWithLines, publishWorkOrder } from "@/lib/vinto/work-orders-api";
+import { addWorkOrderLine, archiveWorkOrder, createWorkOrderWithLines, listArchivedWorkOrders, publishWorkOrder, restoreWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
 // si rechaza, se muestra el error y NO se crea nada. La pantalla de Bobinas ya entrega el catálogo que el backend publica para la sesión (bobinas-programming-source.tsx).
@@ -67,6 +67,14 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     const [errors, setErrors] = useState<RowError[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [confirming, setConfirming] = useState<WorkOrder | null>(null);
+    const [archiveCandidate, setArchiveCandidate] = useState<WorkOrder | null>(null);
+    const [archiveReason, setArchiveReason] = useState("");
+    const [showArchived, setShowArchived] = useState(false);
+    // The historical resource belongs to the session scope and is loaded only
+    // after Jefatura asks for it. Never put archived OT into browser storage.
+    const archivedOrders = useResource<WorkOrder[]>(
+        "work-order-history:" + scope, canManageOrders && showArchived,
+        signal => listArchivedWorkOrders(signal), onSessionLost);
     // Activación masiva (PR7): el diálogo guarda el plan (y su hash) solo en memoria, ligado a la sesión y a la OT. `blockedBy` recuerda la respuesta de capacidades que el servidor desmintió con
     // MULTI_MACHINE_DISABLED: se vuelve a habilitar únicamente si una nueva consulta al servidor confirma `true` (objeto distinto).
     const [massOrder, setMassOrder] = useState<{ scope: string; id: string; number: string } | null>(null);
@@ -108,6 +116,25 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         if (!canManageOrders) return void toast.error("Tu perfil no puede crear ni modificar OT");
         run(`publish:${order.id}`, () => publishWorkOrder(order.id), (published) => { toast.success(`OT ${published.number}: línea base publicada`); });
     }
+    function archive(order: WorkOrder) {
+        if (!canManageOrders) return void toast.error("Solo Jefatura puede archivar");
+        const reason = archiveReason.trim();
+        if (reason.length < 10 || reason.length > 300) return void toast.error("Escribe un motivo de 10 a 300 caracteres");
+        setArchiveCandidate(null);
+        run(`archive:${order.id}`, () => archiveWorkOrder(order.id, reason), (archived) => {
+            toast.success(`OT ${archived.number} archivada; historial conservado`);
+            archivedOrders.refresh();
+            setArchiveReason("");
+        });
+    }
+    function restore(order: WorkOrder) {
+        if (!canManageOrders) return void toast.error("Solo Jefatura puede restaurar");
+        run(`restore:${order.id}`, () => restoreWorkOrder(order.id), (restored) => {
+            toast.success(`OT ${restored.number} visible nuevamente`);
+            archivedOrders.refresh();
+        });
+    }
+
     function activate(order: WorkOrder, lineId: string) {
         if (!canManageAssignments) return void toast.error("Tu perfil no puede asignar OT");
         run(`activate:${lineId}`, () => activateAssignment(order.id, lineId), (activation) => {
@@ -134,10 +161,33 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                     {!multi && <p data-multi-off="" data-capability={capabilityStatus} className="mt-3 text-xs text-slate-600">OT de una sola máquina. {capabilityNote(capabilityStatus)}</p>}
                 </>}
         </Panel> : <Panel title="Programa base" note="Tu perfil puede consultar las OT; su creación y publicación corresponden a Jefatura."><p className="text-sm text-slate-700">Solo lectura.</p></Panel>}
+        {canManageOrders && <Panel title="Archivo de órdenes de trabajo"
+            note="Las OT archivadas dejan de aparecer en Programación. Las capturas, Calidad y la auditoría permanecen intactas. No se archivan órdenes en ejecución ni con asignaciones.">
+            <Button size="sm" variant="outline" disabled={locked} onClick={() => setShowArchived(value => !value)}
+                data-archive-toggle="">{showArchived ? "Ocultar historial" : "Ver OT archivadas"}</Button>
+            {showArchived && <div className="mt-4" data-archive-history="">
+                {archivedOrders.view.status !== "ready"
+                    ? <CentralStatus state={archivedOrders.view} onRetry={archivedOrders.refresh}/>
+                    : archivedOrders.view.data.filter(o => machines.includes(o.machine.code)).length === 0
+                        ? <p className="text-sm text-slate-600">No hay OT archivadas para este frente.</p>
+                        : <div className="space-y-2">{archivedOrders.view.data
+                            .filter(o => machines.includes(o.machine.code)).map(o =>
+                                <div key={o.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                                    <div><b>{o.number}</b> · {o.machine.code} · {WORK_ORDER_LABELS[o.status]}
+                                        <p className="text-xs text-slate-600">Histórico de solo lectura · {o.baseline.lines.length} línea(s)</p></div>
+                                    <Button size="sm" variant="outline" disabled={locked}
+                                        onClick={() => restore(o)}>{busy === `restore:${o.id}` ? "Restaurando…" : "Restaurar"}</Button>
+                                </div>)}</div>}
+            </div>}
+        </Panel>}
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
         {orders.map(order => {
             const orderMachines = machinesOf(order);
-            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>{executionEnabled ? "Habilitar todas las líneas" : "Activar todas las líneas"}</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}</div></div>
+            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>{executionEnabled ? "Habilitar todas las líneas" : "Activar todas las líneas"}</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>{canManageOrders && (order.status === "draft" || order.status === "published") &&
+                    <Button size="sm" variant="outline" disabled={locked}
+                        onClick={() => { setArchiveCandidate(order); setArchiveReason(""); }}>
+                        Archivar OT
+                    </Button>}}</div></div>
                 <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Habilitando…" : executionEnabled ? "Habilitar" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
                 {executionEnabled && (order.status === "published" || order.status === "in_progress") &&
                     <LineExecutionPanel key={scope + ":" + order.id} order={order} scope={scope} refreshRevision={executionRevision}
@@ -147,6 +197,22 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         })}
         {massOrder && massOrder.scope === scope && <ActivateAllDialog key={`${massOrder.scope}:${massOrder.id}`} lineExecutionEnabled={executionEnabled} orderId={massOrder.id} orderNumber={massOrder.number} onClose={() => setMassOrder(null)} returnFocusTargets={() => [invoker.current, invoker.current?.closest<HTMLElement>("[data-work-order]"), panel.current]} onSessionLost={onSessionLost} onApplied={() => { setExecutionRevision(n => n + 1); onChanged(); }}
             onDisabled={() => { setBlockedBy(capabilities); onCapabilitiesStale?.(); }}/>}
+        <AlertDialog open={archiveCandidate !== null} onOpenChange={open => { if (!open) setArchiveCandidate(null); }}>
+            <AlertDialogContent><AlertDialogHeader>
+                <AlertDialogTitle>Archivar {archiveCandidate?.number}</AlertDialogTitle>
+                <AlertDialogDescription>La OT saldrá de la lista operativa, sin borrar líneas, capturas ni auditoría.
+                    La OT conserva su estado original y se puede restaurar desde el historial.
+                    Solo se aceptan órdenes en borrador o publicadas sin asignaciones.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <label className="block text-sm font-semibold" htmlFor="work-order-archive-reason">Motivo de archivado (10–300 caracteres)</label>
+            <Input id="work-order-archive-reason" autoComplete="off" maxLength={300}
+                value={archiveReason} onChange={event => setArchiveReason(event.target.value)}
+                placeholder="Ej.: Escenario ficticio de prueba validado" />
+            <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction disabled={locked || archiveReason.trim().length < 10 || archiveReason.trim().length > 300}
+                    onClick={() => archiveCandidate && archive(archiveCandidate)}>Archivar sin borrar</AlertDialogAction>
+            </AlertDialogFooter></AlertDialogContent>
+        </AlertDialog>
         <AlertDialog open={confirming !== null} onOpenChange={open => { if (!open) setConfirming(null); }}>
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Publicar la línea base de {confirming?.number}</AlertDialogTitle>
                 <AlertDialogDescription>{confirming ? `La OT tiene ${confirming.baseline.lines.length} línea(s) en ${machinesOf(confirming).length} máquina(s): ${machinesOf(confirming).join(", ")}. ` : ""}Una vez publicada, la línea base es inmutable: no se podrán modificar ni retirar sus líneas. Supervisión operará una copia.</AlertDialogDescription></AlertDialogHeader>
