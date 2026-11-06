@@ -52,7 +52,7 @@ export function F6Capture({ context, online, attempt, setAttempt, back, onSubmit
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
             if (outcome.kind === "rejected") {
                 setAttempt(null); // respuesta definitiva: el intento termina (el formulario se desbloquea salvo stale/no activa)
-                if (outcome.reason === "stale" || outcome.reason === "not_active") { toast.error(outcome.message); return void onAssignmentChanged(); }
+                if (outcome.reason === "stale" || outcome.reason === "not_active" || outcome.reason === "line_not_producing") { toast.error(outcome.message); return void onAssignmentChanged(); }
                 return void setNotice(outcome.message);
             }
             setNotice(outcome.message); // not_saved / uncertain: se conserva el intento y se bloquean los campos
