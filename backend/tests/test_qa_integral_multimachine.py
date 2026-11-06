@@ -251,7 +251,10 @@ class PredeployPreflightTests(Journey):
 
     async def test_it_flags_operators_without_grants_and_machines_with_several_active_rows_and_changes_nothing(self):
         clean = self.run_preflight()
-        self.assertEqual(clean[0][0][:2], (12, 12))
+        from migrate import read_migrations, validate_history, applied_migrations
+        migrations = read_migrations()
+        validate_history(migrations, applied_migrations(self.connection))  # checks every historical checksum
+        self.assertEqual(clean[0][0][:2], (len(migrations), len(migrations)))
         self.assertEqual(clean[0][0][2], "O")
         self.assertTrue(any(row[2] == "OPERACION" for row in clean[1]), "an active OPERACION user with no grant is reported")
         order = await self.order()
