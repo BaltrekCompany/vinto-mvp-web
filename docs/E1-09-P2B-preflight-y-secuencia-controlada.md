@@ -2,6 +2,33 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## AUTORIZACIÓN G2 — vigente, instalación de release NO EJECUTADA (06/nov/2026)
+
+El usuario confirmó explícitamente **«Autorizo ejecutar G2»** tras recibir el resultado G1 PASS. La autorización cubre **exclusivamente crear y preparar** el release inmutable de `main@d5bc472b831eae8abd60899296ce8c146c119a5a` en `/opt/vinto-mvp-web/releases/<SHA>`, sin modificar el enlace `current` ni ejecutar código nuevo en producción.
+
+**Estado al registrar:** ChatGPT no dispone de canal SSH al VPS; no ha ejecutado G2. El operador autorizado Codex Desktop deberá ejecutar las acciones y devolver evidencia PASS/FAIL.
+
+**Fases permitidas, condicionadas a controles PREVIOS otra vez PASS:**
+
+1. Revalidar host `vps-14d8e0ce`, operador `ubuntu`, `current` apuntando a `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`, Docker Compose MVP/servicios sanos, G1 migraciones 0001–0012 y E1 flag efectivo OFF en release actual, capacidad y ausencia de operaciones de despliegue concurrentes. No leer secretos ni consultar/intervenir TVC.
+2. Inspeccionar la **versión efectiva** de `/home/ubuntu/vinto-mvp-ops/scripts/deploy.sh` y `lib_common.sh` sin sobrescribirlos, confirmar que provee `checkout`, `link-backend-env`, `python-venv`, `install-frontend-artifact` y `check-release`. Rechazar drift de script o ruta anómala, no autocorregir Ops.
+3. Confirmar que **no existe** `/opt/vinto-mvp-web/releases/d5bc472b831eae8abd60899296ce8c146c119a5a`. Si existe, **NO repetir `checkout`** ni borrar/sobrescribir el release: hacer solo inventario para evaluar un siguiente paso.
+4. Desde usuario operador `ubuntu` y scripts Ops existentes (sin `sudo bash deploy.sh`), ejecutar exactamente una vez **solo si no existe**:
+   ```bash
+   cd /home/ubuntu/vinto-mvp-ops/scripts
+   SHA=d5bc472b831eae8abd60899296ce8c146c119a5a
+   CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh checkout "$SHA"
+   ```
+   Confirmar origin, `git rev-parse HEAD`, propietario del release y `.previous-release-path`. El checkout puede enlazar `backend/.env` a `shared/backend.env`; permitido solamente si su destino privado, propietario y permiso ya son válidos. Si no enlazó, ejecutar `CONFIRM=yes bash deploy.sh link-backend-env "$SHA"` **solo tras validar el contrato**; nunca mostrar contenido.
+5. Crear el entorno Python dentro del release: `CONFIRM=yes bash deploy.sh python-venv "$SHA"`. Comprobar dependencias y `migrate.py --status` únicamente por el canal de lectura provisto por `check-release` **después de** que el frontend artefacto exista. No ejecutar migrador mutador.
+6. El artefacto frontend debe **construirse fuera del VPS** en Linux x86_64 usando **`deploy/mvp/scripts/build-frontend-artifact.sh` del mismo commit**, con `VINTO_MVP_DOMAIN` autorizado, checkout limpio y Node/pnpm fijados; la prueba real de arranque aislada de ese script debe pasar. El artefacto y manifiesto deben trasladarse por canal validado al staging designado sin alterar `current`. **Jamás instalar Node/pnpm o construir frontend dentro de VPS**. En VPS instalar exclusivamente mediante `CONFIRM=yes bash deploy.sh install-frontend-artifact "$SHA" "<artefacto.tar.gz>" "<manifiesto>"`, que verifica commit y SHA256. Si no hay artefacto conforme, reportar **G2 PARCIAL / BLOQUEADO**, sin improvisar un build local en VPS.
+7. Al quedar el release completo, ejecutar `bash deploy.sh check-release "$SHA"`, **solo lectura**, para comprobar historial/pendientes usando migrador legítimo. Exit **2** con únicamente 0013 y 0014 pendientes = **resultado previsto (no migrar)**; exit 0 inesperado, 1, divergencia o cualquier otra migración = STOP. Registrar hashes completos de 0013/0014 y resultado.
+8. Postchecks: `current` y servicios intactos, release antiguo conservado, no alteración de la base, 0013/0014 sin aplicar, flag E1 OFF, no contenedores nuevos, sin intervención TVC. **Detenerse al finalizar G2.**
+
+**Prohibido expresamente en este GO:** ejecutar `migrate-release`, `migrate.py` mutador, `activate`, `preflight-startup` de primera instalación a ciegas, `postgres-up`, `systemd-install`, backups nuevos, GRANT, DROP/ALTER/INSERT/UPDATE/DELETE de negocio, archivar OT, activar flags o tocar TVC. G3/G4/G5 requieren autorización independiente.
+
+**Notas operativas:** `python-venv` puede instalar paquetes del lock/requirements del release en su propio `.venv`; ello está dentro de G2. Staging de artefactos frontend (fuera de release) debe estar identificado y auditado; no borrar otros artefactos. El comando `check-release` exige que exista el frontend y el venv, por eso NO invocarlo prematuramente. Mantener flag **OFF en configuración efectiva** antes de cualquier activación futura.
+
 ## G1 COMPLETADO — PASS; G2 GO técnico, pendiente de autorización (06/nov/2026)
 
 **Fuente:** evidencia remitida por Codex Desktop/operador SSH, no ejecución directa de ChatGPT. **G1 solo lectura y sin cambios.**
