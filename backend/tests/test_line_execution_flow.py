@@ -145,6 +145,24 @@ class LineExecutionTests(base.SameOrderCase):
         self.assertEqual(sorted(x[0] for x in results),['blocked','ok'],results)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_line_execution WHERE status='in_production'"),1)
 
+    def test_shift_change_cannot_activate_a_new_order_until_previous_line_is_finished(self):
+        """A stale assignment is not proof that its logical execution has ended."""
+        from app.assignments.errors import MachineBusyWithOtherWorkOrderError
+        old_order=self.same_machine_order(1)
+        old_assignment=self.activate(old_order,0).assignment
+        self.start(old_order,'L1',old_assignment)
+        new_order=self.same_machine_order(1)
+        with patch.object(base._assignments, "_now", return_value=base.NIGHT):
+            with self.assertRaises(MachineBusyWithOtherWorkOrderError):
+                self.activate(new_order,0)
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.assignment WHERE id=%s",
+            (old_assignment.id,)), "active")
+        self.finish_line(old_order,'L1')
+        with patch.object(base._assignments, "_now", return_value=base.NIGHT):
+            new_assignment=self.activate(new_order,0).assignment
+        self.assertEqual(new_assignment.status,'active')
+
     def test_two_machines_can_produce_in_parallel(self):
         order=self.mixed_order()
         items=[self.activate(order,i).assignment for i in range(3)]
