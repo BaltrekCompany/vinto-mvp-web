@@ -137,7 +137,7 @@ test("M6-A review: una pantalla solo se ofrece para su sector; los cruces P1-16 
   for (const [sector, code] of [["REBOBINADO", "VINTO-P1-11"], ["REBOBINADO", "VINTO-P1-13"], ["REBOBINADO", "VINTO-P1-12"], ["REBOBINADO", "VINTO-P1-16"], ["CONVERSION", "VINTO-P1-10"], ["CONVERSION", "VINTO-P1-29"], ["BOBINAS", "VINTO-P1-16"], ["", "VINTO-P1-10"], ["rebobinado", "VINTO-P1-10"]]) assert.equal(screenFor(sector, code), null, `${sector}/${code}`);
   // el shell deshabilita el botón sin pantalla, dice «Sin pantalla central» y solo pide los historiales compatibles con el sector
   const shell = read("components/vinto/sector-central.tsx");
-  assert.ok(shell.includes("disabled={screen === null}") && shell.includes("Sin pantalla central"));
+  assert.ok(shell.includes('disabled={screen === null || (canCapture && state.kind !== "check")}') && shell.includes("Sin pantalla central"), "sin pantalla o sin contexto operativo verificado, el formulario no puede abrirse");
   assert.match(shell, /offeredForms\(code, machine\)/);
   assert.match(shell, /filter\(formCode => screenFor\(code, formCode\) !== null\)/);
   assert.equal(/FORM_SCREENS/.test(code("lib/vinto/availability.ts")), false); // ya no hay un mapa global código -> pantalla
