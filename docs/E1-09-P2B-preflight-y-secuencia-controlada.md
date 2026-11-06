@@ -2,6 +2,19 @@
 
 **Estado:** preparación del siguiente paso tras merge del PR #137. **NO constituye autorización para migrar, desplegar o modificar una OT.** Fecha: 2026-11-06.
 
+## G4 APLICADO — PASS técnico en terminal SSH del usuario (06/nov/2026)
+
+**Evidencia recibida:** usuario ejecutó desde SSH sobre `vps-14d8e0ce`, usando los scripts Ops de `/home/ubuntu/vinto-mvp-ops/scripts` y commit `d5bc472b831eae8abd60899296ce8c146c119a5a`. Guardia previa `PRE-G4=PASS`. `CONFIRM=yes AUTHORIZED_COMMIT="$SHA" bash deploy.sh migrate-release "$SHA"` exit **0**; produjo:
+- `Aplicada: 0013_work_order_line_execution.sql`.
+- `Aplicada: 0014_work_order_archive.sql`.
+- Verificación interna de migrador exit 0, sin errores reportados.
+- `bash deploy.sh check-release "$SHA"` posterior exit **0**, con historial 0001–0014 marcado `aplicada` y **0 pendientes**.
+- El script informó `current` todavía en `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` y ningún servicio reiniciado. Log privado `/home/ubuntu/vinto-g4-bqUz6zzt.log`.
+
+**Decisión:** G4 **PASS técnico para migraciones y checksums**. No consta en la salida aún una revisión independiente de 0 OT archivadas, 0 filas en nueva tabla, conteos agregados antes/después ni una inspección de triggers, así que no afirmar esas comprobaciones adicionales. La migración 0014 es aditiva sin backfill y 0013 contiene su propia comprobación de tabla vacía, pero esto no sustituye observaciones post-DDL si se requieren.
+
+**Siguiente puerta G5:** autorización previa del usuario para activar release nuevo **con E1 OFF** continúa vigente. Antes de actuar revalidar `current` antiguo, SHA de release destino, frontend/venv/symlink, flag efectivo OFF en nuevo release, `check-release` exit 0, ausencia de operación de despliegue concurrente y `deploy.sh preflight-startup` exit 0. Si todo PASS, **una única activación** mediante `CONFIRM=yes bash deploy.sh activate "$SHA"` y logs privados; no repetir ante errores, verificar si el script hizo rollback automático de binarios y salud efectiva; no revertir SQL. Tras activar, confirmar `current` nuevo, backend/frontend activos, salud HTTP y flag OFF. No ejecutar acciones OT ni tocar TVC; cerrar G5 solo con postchecks.
+
 ## Evidencia SSH directa del usuario — 5/5 PASS (06/nov/2026, 22:05:15–22:05:28 UTC)
 
 El usuario se conectó a la VPS desde **PowerShell/SSH como `ubuntu`** y ejecutó la verificación con `sudo -n -u vinto-mvp`. Host `vps-14d8e0ce`; filesystem `/dev/sda1` sobre `/`, ext4; `current` sigue apuntando al SHA anterior `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4`.
