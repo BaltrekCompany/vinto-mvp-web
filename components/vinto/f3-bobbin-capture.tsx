@@ -68,7 +68,7 @@ export function F3BobbinCapture({ context, online, attempt, setAttempt, back, on
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
             if (outcome.kind === "rejected") {
                 setAttempt(null); // respuesta definitiva: el intento termina (los campos se desbloquean salvo stale/no activa)
-                if (outcome.reason === "stale" || outcome.reason === "not_active") { toast.error(outcome.message); return void onAssignmentChanged(); }
+                if (outcome.reason === "stale" || outcome.reason === "not_active" || outcome.reason === "line_not_producing") { toast.error(outcome.message); return void onAssignmentChanged(); }
                 return void setNotice(outcome.message);
             }
             setNotice(outcome.message); // incierto: se conserva el MISMO intento y se bloquean los campos
