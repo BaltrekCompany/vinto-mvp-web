@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ActivateAllDialog } from "@/components/vinto/activate-all-dialog";
+import { LineExecutionPanel } from "@/components/vinto/line-execution-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CentralStatus } from "@/components/vinto/central-status";
@@ -16,7 +17,7 @@ import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
 import type { Resource } from "@/lib/vinto/use-central";
-import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
+import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, lineExecutionOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
 import { addWorkOrderLine, createWorkOrderWithLines, publishWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
@@ -58,6 +59,7 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     const optionMachines = typeof options === "string" ? [] : options.machines;
     const optionCatalog = typeof options === "string" ? () => [] : options.catalog;
     const multi = multiMachineOffered(capabilities, canManageOrders, optionMachines.length);
+    const executionEnabled = lineExecutionOffered(capabilities, canManageAssignments);
     const keyCounter = useRef(1);
     const nextKey = () => `r${++keyCounter.current}`;
     const [storedRows, setRows] = useState<DraftRow[]>(() => initialRows ?? [emptyRow("r1", optionMachines[0]?.code ?? "")]);
@@ -71,6 +73,7 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     const invoker = useRef<HTMLElement | null>(null); // PR-A (DEF-1): botón que abrió el diálogo; el foco vuelve a él (o a su tarjeta / al panel si ya no sirve)
     const panel = useRef<HTMLDivElement | null>(null);
     const [blockedBy, setBlockedBy] = useState<WorkOrderCapabilities | null>(null);
+    const [executionRevision, setExecutionRevision] = useState(0);
     const [guard] = useState(createMutationGuard);
     useEffect(() => () => guard.reset(), [guard]); // al desmontar (o perder la sesión) las respuestas tardías se descartan
 
@@ -108,6 +111,7 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     function activate(order: WorkOrder, lineId: string) {
         if (!canManageAssignments) return void toast.error("Tu perfil no puede asignar OT");
         run(`activate:${lineId}`, () => activateAssignment(order.id, lineId), (activation) => {
+            setExecutionRevision(n => n + 1);
             toast.success("OT, línea y producto enviados al punto de captura");
             if (activation.finished_assignment_id) toast.info(`La asignación anterior de ${activation.assignment.machine.code} fue finalizada.`);
             else if (activation.already_active) toast.info("La línea ya estaba activa para este turno.");
@@ -133,12 +137,15 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
         {orders.map(order => {
             const orderMachines = machinesOf(order);
-            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>Activar todas las líneas</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}</div></div>
-                <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Activando…" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
+            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>{executionEnabled ? "Habilitar todas las líneas" : "Activar todas las líneas"}</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}</div></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Habilitando…" : executionEnabled ? "Habilitar" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
+                {executionEnabled && (order.status === "published" || order.status === "in_progress") &&
+                    <LineExecutionPanel key={scope + ":" + order.id} order={order} scope={scope} refreshRevision={executionRevision}
+                        lockedExternal={locked} onChanged={onChanged} onSessionLost={onSessionLost}/>}
                 {canManageOrders && order.status === "draft" && typeof options !== "string" && <AddLine order={order} options={options} multi={multi} disabled={locked} busy={busy === `add:${order.id}`} nextKey={nextKey} onAdd={draft => addLine(order, draft)}/>}
             </div>;
         })}
-        {massOrder && massOrder.scope === scope && <ActivateAllDialog key={`${massOrder.scope}:${massOrder.id}`} orderId={massOrder.id} orderNumber={massOrder.number} onClose={() => setMassOrder(null)} returnFocusTargets={() => [invoker.current, invoker.current?.closest<HTMLElement>("[data-work-order]"), panel.current]} onSessionLost={onSessionLost} onApplied={onChanged}
+        {massOrder && massOrder.scope === scope && <ActivateAllDialog key={`${massOrder.scope}:${massOrder.id}`} lineExecutionEnabled={executionEnabled} orderId={massOrder.id} orderNumber={massOrder.number} onClose={() => setMassOrder(null)} returnFocusTargets={() => [invoker.current, invoker.current?.closest<HTMLElement>("[data-work-order]"), panel.current]} onSessionLost={onSessionLost} onApplied={() => { setExecutionRevision(n => n + 1); onChanged(); }}
             onDisabled={() => { setBlockedBy(capabilities); onCapabilitiesStale?.(); }}/>}
         <AlertDialog open={confirming !== null} onOpenChange={open => { if (!open) setConfirming(null); }}>
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Publicar la línea base de {confirming?.number}</AlertDialogTitle>
