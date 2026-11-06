@@ -5,6 +5,19 @@
 **Código de referencia:** `main@a8a8beaf611e8d892658eeabb5a5e1b972a32316`; VPS sigue en release `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` según P0.  
 **Referencia:** [P0 y P1-A](E1-09-P0-resultados-y-P1A-inventario-readonly.md).
 
+## 0. ACTUALIZACIÓN OPERATIVA — P1-B NO-GO, no ejecutado (06/nov/2026)
+
+El ejecutor SSH realizó las comprobaciones previas sin cambios y **detuvo correctamente P1-B antes de ejecutar create-and-verify** por dos conflictos de procedimiento:
+
+1. **Acceso a secretos:** el mandato decía "no leer secretos", mientras que `backup.sh` requiere leer de manera programática `docker/.env` (variables de autenticación) para que `pg_dump` funcione. Una operación autenticada no puede realizarse bajo prohibición absoluta de *cualquier* lectura de credenciales. Se necesita autorización explícita para **consumo interno por el script**, manteniendo prohibición total de `cat/grep/echo/set -x` de secretos, exposición por terminal/logs/chat y lectura directa por el operador. Si el usuario no autoriza ni siquiera el consumo programático, **NO-GO definitivo para este procedimiento**.
+2. **Concurrencia:** el script instalado en el VPS aún no implementa exclusión `flock`. Una comprobación puntual de procesos vacíos no garantiza que otro backup no arranque inmediatamente después. Se abrió [PR #136](https://github.com/BaltrekCompany/vinto-mvp-web/pull/136) con bloqueo exclusivo para `create`, `verify`, `create-and-verify` y `prune-apply`; la primera prueba de CI se corrigió por crear un lock de prueba modo 644 y la versión corregida **PASS** ([run #42240240275](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42240240275)). El PR sigue DRAFT y **el código Ops del VPS no se ha actualizado**.
+
+**Resultado de comprobaciones previas:** hashes y `bash -n` PASS, contrato de permisos `docker/.env` PASS sin leer contenido, directorio `700`, 18 dumps / 18 verified / 0 corrupt / 0 partial, 184,833 MiB libres y 25,735,732 inodos compartidos, contenedor correcto y saludable, 0 procesos concurrentes detectados en el instante de revisión. No hubo nueva lectura SQL ni backup/restore efímero.
+
+**NO EJECUTAR todavía el comando de la sección 2.** Es una referencia de la solicitud original y requiere primero: revisar y aprobar PR #136, controlar su instalación y SHA final en `/home/ubuntu/vinto-mvp-ops/scripts`, verificar lock privado/mecanismo no-bypass en operadores y documentar autorización específica para uso programático (no exposición) de credenciales. Solo entonces revalidar preflight y repetir P1-B, sin dar por válido el GO anterior como autorización de cambios de scripts.
+
+**Nada de lo anterior habilita migración 0013, limpieza de datos simulados, despliegue ni flag ON.**
+
 ## 1. Decisión derivada de P1-A
 
 **GO condicionado para solicitar autorización explícita de P1-B**. El resultado P1-A muestra:
