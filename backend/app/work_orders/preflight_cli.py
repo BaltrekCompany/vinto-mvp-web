@@ -29,7 +29,7 @@ def main() -> int:
             options="-c default_transaction_read_only=on -c statement_timeout=15000 -c lock_timeout=1500",
         ) as connection:
             with connection.transaction():
-                connection.execute("SET TRANSACTION READ ONLY")
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 result = collect(connection)
     except (psycopg.Error, OSError, RuntimeError):
         print("E108_PREFLIGHT_QUERY_UNAVAILABLE", file=sys.stderr)
