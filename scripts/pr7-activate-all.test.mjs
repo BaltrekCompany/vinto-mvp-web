@@ -504,7 +504,7 @@ test("wiring: session-scoped dialog, hash only in memory, capability refresh aft
   assert.match(prog, /massOrder && massOrder\.scope === scope && <ActivateAllDialog key=\{`\$\{massOrder\.scope\}:\$\{massOrder\.id\}`\}/, "another session or order remounts and discards the plan");
   assert.match(prog, /onDisabled=\{\(\) => \{ setBlockedBy\(capabilities\); onCapabilitiesStale\?\.\(\); \}\}/);
   assert.match(prog, /blockedBy !== capabilities && massActivationOffered\(capabilities, canManageAssignments, order\.status\)/);
-  assert.match(prog, /onApplied=\{onChanged\}/, "the lists are reconciled with the server after a confirmed result");
+  assert.match(prog, /onApplied=\{\(\) => \{ setExecutionRevision\(n => n \+ 1\); onChanged\(\); \}\}/, "the lists and E1 logical execution projection are refreshed only after confirmed activation");
   const sources = ["components/vinto/activate-all-dialog.tsx", "lib/vinto/activate-all.ts", "lib/vinto/activate-all-flow.ts", "components/vinto/bobinas-programming.tsx", "components/vinto/bobinas-programming-source.tsx", "lib/vinto/work-orders-api.ts"].map((f) => noComments(read(f))).join("\n");
   assert.ok(!/localStorage|sessionStorage|indexedDB|document\.cookie|NEXT_PUBLIC|console\./.test(sources), "no storage, no logging, no public flag");
   assert.ok(!/replace_assignment_ids|crypto\.|createHash|sha256|digest\(/i.test(sources), "the browser never builds or recomputes a hash, and has no replacement option");
