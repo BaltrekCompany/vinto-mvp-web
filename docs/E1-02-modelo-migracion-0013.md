@@ -73,3 +73,8 @@ Atención: una línea puede permanecer lógicamente `in_production` después de 
 3. Probar concurrencia inicio/inicio, inicio/fin, captura/fin y captura simultánea; el esquema solo es una capa de protección.
 4. E1-03 debe controlar que `assignment.finish` legado no marque automáticamente la ejecución `finished` ni permita reactivar una línea terminal.
 5. Los 9 tickets de Entrega 1 continúan pendientes hasta las pruebas y su integración en código.
+## I. Aclaración funcional posterior (Sergio, 2026-11-05)
+
+- **Cambio de turno:** no crear lógica de traspaso automático de cantidades/saldos ni fechas. Para el MVP, Jefatura puede crear manualmente otra OT/programación. La continuación física del producto al nuevo turno es posible, pero su automatización queda en backlog y no es requisito para activar E1-02. **La máquina debe liberarse mediante finalización explícita de la ejecución previa** antes de iniciar otra OT.
+- **Producción incompleta:** finalizar una línea con déficit programado-real está permitido, sin motivo textual obligatorio. El déficit se visualiza mediante Seguimiento e indicadores. **No confundir déficit con cantidad cancelada**.
+- **Consecuencia de esquema:** la migración 0013 sigue siendo aditiva; su estado terminal `finished` no depende de alcanzar 100 % de la cantidad programada. El alcance futuro de reprogramación está en Entrega 2.
