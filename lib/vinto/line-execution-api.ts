@@ -1,5 +1,5 @@
 import { requestJson, type ApiResult } from "@/lib/vinto/central-http";
-import { parseExecutionMutation, parseWorkOrderExecution, type ExecutionMutation, type WorkOrderExecution } from "@/lib/vinto/line-execution";
+import { parseExecutionCapability, parseExecutionMutation, parseWorkOrderExecution, type ExecutionMutation, type WorkOrderExecution } from "@/lib/vinto/line-execution";
 
 // The backend enforces role, sector, shift, assignment and single production
 // per machine. The frontend never sends machine/status/actor or writes optimistically.
@@ -16,4 +16,8 @@ export function startWorkOrderLine(workOrderId: string, lineCode: string, assign
 export function finishWorkOrderLine(workOrderId: string, lineCode: string, signal?: AbortSignal): Promise<ApiResult<ExecutionMutation>> {
     return requestJson("/api/work-orders/" + encodeURIComponent(workOrderId) + "/lines/" + encodeURIComponent(lineCode) + "/finish",
         { method: "POST", signal }, parseExecutionMutation);
+}
+
+export function getLineExecutionCapability(signal?: AbortSignal): Promise<ApiResult<boolean>> {
+    return requestJson("/api/work-orders/execution-capabilities", { signal }, parseExecutionCapability);
 }
