@@ -4,6 +4,7 @@ Every diagnostic query must run under SET TRANSACTION READ ONLY. No VPS access.
 """
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app.config import settings
@@ -45,6 +46,7 @@ class LegacyRolloutPreflightTests(base.SameOrderCase):
         report = self.inspect_read_only()
         self.assertEqual(report["preflight"], "VINTO_E1_08_READ_ONLY")
         self.assertTrue(report["schema"]["migration_0013_recorded"])
+        self.assertTrue(report["schema"]["migration_0013_checksum_matches_checkout"])
         self.assertTrue(report["schema"]["execution_table_installed"])
         self.assertTrue(report["schema"]["execution_unique_machine_index"])
         self.assertTrue(report["schema"]["execution_guard_trigger_enabled"])
@@ -52,6 +54,13 @@ class LegacyRolloutPreflightTests(base.SameOrderCase):
         self.assertEqual(report["active_by_sector_machine"], [])
         self.assertEqual(report["blockers"], [])
         self.assertTrue(report["technical_preflight_clear"])
+
+    def test_wrong_or_missing_0013_checksum_blocks_flag_go(self):
+        with patch.object(rollout_preflight, "_MIGRATION_PATH", Path("/not-installed/migration-0013.sql")):
+            report = self.inspect_read_only()
+        self.assertFalse(report["schema"]["migration_0013_checksum_matches_checkout"])
+        self.assertIn("MIGRATION_0013_CHECKSUM_MISMATCH", report["blockers"])
+        self.assertFalse(report["technical_preflight_clear"])
 
     def test_legacy_active_assignment_is_detected_without_backfilling(self):
         order = self.same_machine_order(2)
