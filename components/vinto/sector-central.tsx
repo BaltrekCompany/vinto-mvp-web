@@ -136,7 +136,7 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
             <Button key={m.code} size="sm" variant={machine.code === m.code ? "default" : "outline"}
                 className={machine.code === m.code ? "bg-[#146b4f]" : ""} onClick={() => setMachineCode(m.code)}>{m.code}</Button>)}</div>
     </Panel>
-        {multiple && <LineSelector machine={machine.code} lines={view.data.lines}
+        {view.status === "ready" && view.data.kind === "multiple" && <LineSelector machine={machine.code} lines={view.data.lines}
             selectedId={selectedId} onChoose={id => setLineChoice({ key, assignmentId: id })}
             onRefresh={refresh} refreshing={!verified || view.refreshing}
             execution={snapshot} verified={verified}/>}
