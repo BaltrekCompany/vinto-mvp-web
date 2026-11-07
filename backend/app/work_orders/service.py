@@ -352,11 +352,15 @@ def restore_work_order(connection, *, actor_id, work_order_id, request_id=None, 
             (*_header_params(sectors, True), work_order_id)).fetchall()
         if not headers:
             raise WorkOrderNotFoundError()
-        was_archived = connection.execute(
-            "SELECT archived_at IS NOT NULL FROM vinto_txn.work_order WHERE id=%s",
-            (work_order_id,)).fetchone()[0]
-        if not was_archived:
+        archived, qa_retired = connection.execute(
+            "SELECT archived_at IS NOT NULL, qa_retired FROM vinto_txn.work_order WHERE id=%s",
+            (work_order_id,)).fetchone()
+        if not archived:
             raise WorkOrderNotArchivedError()
+        if qa_retired:
+            # A legacy in-progress QA OT cannot be put back into the operational
+            # UI while the E1 guard is in force; this needs separate repair.
+            raise WorkOrderArchiveBlockedError()
         connection.execute(
             """UPDATE vinto_txn.work_order
                SET archived_at=NULL, archived_by=NULL, archived_reason=NULL
