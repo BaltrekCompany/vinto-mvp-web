@@ -1,0 +1,84 @@
+name: E1-10 QA legacy retirement PostgreSQL 17
+
+on:
+  pull_request:
+    paths:
+      - 'backend/migrations/0015_qa_legacy_retirement.sql'
+      - 'backend/app/work_orders/qa_retirement_cli.py'
+      - 'backend/app/work_orders/qa_retirement_inventory_cli.py'
+      - 'backend/app/work_orders/rollout_preflight.py'
+      - 'backend/app/work_orders/service.py'
+      - 'backend/tests/test_qa_retirement_e110.py'
+      - 'components/vinto/bobinas-programming.tsx'
+      - '.github/workflows/e1-10-qa-retirement.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-retirement-db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-e110-pg17
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-e110-pg17@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-e110-pg17@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-disposable-e110-pg17@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile Python
+        run: |
+          python -B -m compileall -q backend/app/work_orders/qa_retirement_cli.py backend/app/work_orders/qa_retirement_inventory_cli.py backend/app/work_orders/rollout_preflight.py backend/tests/test_qa_retirement_e110.py
+      - name: E1-10 retirement audit, atomicity, legacy guard and preflight
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_qa_retirement_e110.py' -v
+      - name: Existing archive 0014 regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_order_archive.py' -v
+      - name: Existing E1-08 preflight regression
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_rollout_preflight_e108.py' -v
+
+  qa-retirement-frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: TypeScript contract
+        run: pnpm exec tsc --noEmit
+      - name: Lint archive and retirement UI
+        run: pnpm exec eslint components/vinto/bobinas-programming.tsx
