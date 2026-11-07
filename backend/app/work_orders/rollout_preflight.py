@@ -48,14 +48,22 @@ def collect(connection) -> dict:
     # without fetching even one assignment/OT record.
     counts = {
         "orders_in_progress": _one(connection,
-            "SELECT count(*) FROM vinto_txn.work_order WHERE status='in_progress'"),
+            "SELECT count(*) FROM vinto_txn.work_order WHERE status='in_progress' AND archived_at IS NULL"),
         "assignments_active": _one(connection,
             "SELECT count(*) FROM vinto_txn.assignment WHERE status='active'"),
+        "qa_retired_orders": _one(connection,
+            "SELECT count(*) FROM vinto_txn.work_order WHERE qa_retired AND archived_at IS NOT NULL"),
+        "qa_retired_active_assignments": _one(connection,
+            """SELECT count(*) FROM vinto_txn.assignment a
+               JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+               JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+               JOIN vinto_txn.work_order wo ON wo.id=v.work_order_id
+               WHERE a.status='active' AND wo.qa_retired"""),
         "baseline_lines_in_progress": _one(connection,
             """SELECT count(*) FROM vinto_txn.work_order_line bl
                JOIN vinto_txn.work_order_version bv ON bv.id=bl.work_order_version_id
                JOIN vinto_txn.work_order wo ON wo.id=bv.work_order_id
-               WHERE bv.kind='baseline' AND bv.version_number=1 AND wo.status='in_progress'"""),
+               WHERE bv.kind='baseline' AND bv.version_number=1 AND wo.status='in_progress' AND wo.archived_at IS NULL"""),
         "active_assignments_on_closed_orders": _one(connection,
             """SELECT count(*) FROM vinto_txn.assignment a
                JOIN vinto_txn.work_order_line ol ON ol.id=a.work_order_line_id
@@ -133,7 +141,7 @@ def collect(connection) -> dict:
                JOIN vinto_txn.work_order wo ON wo.id=bv.work_order_id
                LEFT JOIN vinto_txn.work_order_line_execution e ON e.baseline_line_id=bl.id
                WHERE bv.kind='baseline' AND bv.version_number=1
-                 AND wo.status='in_progress' AND e.baseline_line_id IS NULL""")
+                 AND wo.status='in_progress' AND wo.archived_at IS NULL AND e.baseline_line_id IS NULL""")
         statuses = connection.execute(
             """SELECT
                 count(*) FILTER (WHERE e.baseline_line_id IS NULL),
@@ -144,12 +152,13 @@ def collect(connection) -> dict:
                FROM vinto_txn.assignment a
                JOIN vinto_txn.work_order_line ol ON ol.id=a.work_order_line_id
                JOIN vinto_txn.work_order_version ov ON ov.id=ol.work_order_version_id
+               JOIN vinto_txn.work_order wo ON wo.id=ov.work_order_id
                LEFT JOIN vinto_txn.work_order_version bv ON bv.work_order_id=ov.work_order_id
                  AND bv.kind='baseline' AND bv.version_number=1
                LEFT JOIN vinto_txn.work_order_line bl ON bl.work_order_version_id=bv.id
                  AND bl.line_code=ol.line_code AND bl.machine_id=a.machine_id
                LEFT JOIN vinto_txn.work_order_line_execution e ON e.baseline_line_id=bl.id
-               WHERE a.status='active' AND ov.kind='operational'"""
+               WHERE a.status='active' AND ov.kind='operational' AND wo.archived_at IS NULL"""
         ).fetchone()
         for key, value in zip(("active_without_execution", "active_with_finished_execution",
                                "active_with_planned_execution", "active_in_production",
@@ -167,6 +176,8 @@ def collect(connection) -> dict:
         blockers.append("MISSING_EXECUTION_GUARD")
     if installed and rollout["vinto_app_privileges"] is False:
         blockers.append("APP_ROLE_WITHOUT_REQUIRED_TABLE_PRIVILEGES")
+    if counts["qa_retired_active_assignments"]:
+        blockers.append("QA_RETIRED_HAS_ACTIVE_ASSIGNMENTS")
     if counts["active_assignments_on_closed_orders"]:
         blockers.append("CLOSED_ORDERS_HAVE_ACTIVE_ASSIGNMENTS")
     if counts["active_assignments_unmapped_to_baseline"]:

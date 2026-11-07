@@ -398,21 +398,51 @@ class DeploymentTests(GuardCase):
         return self.connection.execute("SELECT tgenabled FROM pg_trigger WHERE tgname = 'validate_assignment_single_mode'").fetchone()
 
     def test_the_runner_registers_0012_with_the_exact_checksum_after_a_rollback(self):
+        """Prove historical rollback/reapply at schema 0013, then migrate forward.
+
+        Do not remove 0013/0012 from a modern 0015 database: that leaves
+        downstream migrations registered and would mask an invalid history.
+        """
         import migrate
-        # Remove 0013 from the ephemeral database first (history must stay
-        # contiguous); the production rollback refuses this if execution rows exist.
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_line_execution"), 0)
-        self.connection.execute(ROLLBACK_0013.read_text(encoding="utf-8"))
-        self.rolled_back_database()
-        self.assertEqual(self.scalar("SELECT max(version) FROM vinto_meta.schema_migration"), 11)
+        from uuid import uuid4
+        from app.ephemeral_db import create_database, connect, drop_database
+
         migrations = migrate.read_migrations()
-        migrate.apply(self.connection, migrations)
-        migration_0012 = next(item for item in migrations if item.version == 12)
-        self.assertEqual(self.connection.execute("SELECT version, filename, checksum FROM vinto_meta.schema_migration WHERE version = 12").fetchone(),
-                         (12, MIGRATION.name, migration_0012.checksum))
-        self.assertEqual(self.scalar("SELECT max(version) FROM vinto_meta.schema_migration"), len(migrations))
-        self.assertEqual(self.trigger_enabled(), ("O",))
-        migrate.validate_history(migrate.read_migrations(), migrate.applied_migrations(self.connection))  # what `--check` verifies
+        historical = migrations[:13]
+        self.assertEqual([m.version for m in historical], list(range(1, 14)))
+        database = f"vinto_sm_history_{uuid4().hex[:12]}_test"
+        create_database(database)
+        try:
+            with connect(database) as connection:
+                migrate.apply(connection, historical)
+                self.assertEqual(connection.execute(
+                    "SELECT count(*) FROM vinto_txn.work_order_line_execution"
+                ).fetchone()[0], 0)
+                connection.execute(ROLLBACK_0013.read_text(encoding="utf-8"), prepare=False)
+                self.assertEqual(connection.execute(
+                    "SELECT max(version) FROM vinto_meta.schema_migration"
+                ).fetchone()[0], 12)
+                connection.execute(ROLLBACK.read_text(encoding="utf-8"), prepare=False)
+                self.assertEqual(connection.execute(
+                    "SELECT max(version) FROM vinto_meta.schema_migration"
+                ).fetchone()[0], 11)
+
+                migrate.apply(connection, migrations)
+                migration_0012 = next(m for m in migrations if m.version == 12)
+                self.assertEqual(connection.execute(
+                    "SELECT version, filename, checksum FROM vinto_meta.schema_migration WHERE version = 12"
+                ).fetchone(), (12, MIGRATION.name, migration_0012.checksum))
+                self.assertEqual(connection.execute(
+                    "SELECT max(version) FROM vinto_meta.schema_migration"
+                ).fetchone()[0], len(migrations))
+                self.assertEqual(connection.execute(
+                    "SELECT tgenabled FROM pg_trigger WHERE tgname = 'validate_assignment_single_mode'"
+                ).fetchone(), ("O",))
+                migrate.validate_history(
+                    migrations, migrate.applied_migrations(connection)
+                )
+        finally:
+            drop_database(database)
 
     def test_installing_waits_for_an_in_flight_write_and_then_succeeds(self):
         self.rolled_back_database()

@@ -250,6 +250,7 @@ def read_work_order_execution(connection, *, work_order_id, sectors):
            JOIN vinto_master.sector s ON s.id=m.sector_id
            LEFT JOIN vinto_txn.work_order_line_execution e ON e.baseline_line_id=l.id
            WHERE wo.id=%s AND wo.status IN ('published','in_progress')
+             AND wo.archived_at IS NULL
            ORDER BY l.line_code, l.id""", (work_order_id,)).fetchall()
     allowed = set(scoped_sector_codes(sectors))
     if not lines or any(r[5] not in allowed for r in lines):

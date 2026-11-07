@@ -175,9 +175,9 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                             .filter(o => machines.includes(o.machine.code)).map(o =>
                                 <div key={o.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
                                     <div><b>{o.number}</b> · {o.machine.code} · {WORK_ORDER_LABELS[o.status]}
-                                        <p className="text-xs text-slate-600">Histórico de solo lectura · {o.baseline.lines.length} línea(s)</p></div>
-                                    <Button size="sm" variant="outline" disabled={locked}
-                                        onClick={() => restore(o)}>{busy === `restore:${o.id}` ? "Restaurando…" : "Restaurar"}</Button>
+                                        <p className="text-xs text-slate-600">{o.status === "in_progress" ? "Retirada de QA · historial inmutable" : "Histórico de solo lectura"} · {o.baseline.lines.length} línea(s)</p></div>
+                                    {o.status !== "in_progress" && <Button size="sm" variant="outline" disabled={locked}
+                                        onClick={() => restore(o)}>{busy === `restore:${o.id}` ? "Restaurando…" : "Restaurar"}</Button>}
                                 </div>)}</div>}
             </div>}
         </Panel>}
