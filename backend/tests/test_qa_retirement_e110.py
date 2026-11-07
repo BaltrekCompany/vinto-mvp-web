@@ -300,7 +300,7 @@ class QARetirementTests(base.SameOrderCase):
                         USING ERRCODE='23514';
                 END IF;
                 RETURN NEW;
-            END $e110$;
+            END; $e110$;
         """)
         self.connection.execute("""
             CREATE TRIGGER z_e110_force_abort_test
