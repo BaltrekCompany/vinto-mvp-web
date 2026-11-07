@@ -96,3 +96,23 @@ test("UI wiring includes capability gate and safe mutation refresh", () => {
         assert.ok(sector.includes(required), required);
     assert.match(candidate, /reason === "line_not_producing"/);
 });
+
+test("Rebobinado and Conversion programming use the same fail-closed multi-machine capability as Bobinas", () => {
+    const sector = readFileSync(new URL("../components/vinto/sector-central.tsx", import.meta.url), "utf8");
+    const programming = sector.split("function Programming(")[1]?.split("function Execution(")[0];
+    assert.ok(programming, "shared Programming implementation");
+    for (const required of [
+        "useWorkOrderCapabilities(", "canManageOrders || canManageAssignments",
+        "capabilitiesOf(multiMachineResource.view)",
+        "creation={creation}", "catalog={catalog}",
+        "capabilities={multiMachine.capabilities}", "capabilityStatus={multiMachine.status}",
+        "onCapabilitiesStale={multiMachineResource.refresh}",
+        "executionEnabled={executionEnabled}",
+    ]) assert.ok(programming.includes(required), required);
+    assert.match(programming, /const creation = canManageOrders\s*\?/);
+    assert.match(programming, /machines: sector\.machines\.map/);
+    // The same programming shell is selected by BOTH sector codes.
+    assert.match(sector, /REBOBINADO: \{/);
+    assert.match(sector, /CONVERSION: \{/);
+    assert.match(sector, /module === "programacion"\) return <Programming/);
+});
