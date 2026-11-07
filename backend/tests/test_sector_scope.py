@@ -58,6 +58,8 @@ PINNED_MIGRATIONS = [
 # Pin E1-02 independently: historical 0001-0012 checksums must remain unchanged.
 PINNED_E1_MIGRATIONS = [
     ("0013_work_order_line_execution.sql", "ef22f54cb53fc6988fd946b05380629e8926f2635500fd4269a133a5b9ceac37"),
+    ("0014_work_order_archive.sql", "33f5a7a8a2bbe959ebbf8406fe1ab52da4a14af744b621b53ab0668acd5edc0f"),
+    ("0015_qa_legacy_retirement.sql", "5b37c0a3d6f2c83980f34f1a14da07c064391bdcb772f93a56d620fd889eca4a"),
 ]
 
 
