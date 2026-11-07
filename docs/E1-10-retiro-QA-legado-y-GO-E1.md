@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-11-07  
 **Base congelada:** `d5bc472b831eae8abd60899296ce8c146c119a5a`  
-**Estado:** ESPECIFICACIÓN PREVIA; **NO IMPLEMENTADO / NO APLICADO A PRODUCCIÓN**  
+**Estado:** IMPLEMENTACIÓN CANDIDATA EN PR #139 DRAFT (migración, CLI, preflight, tests); **NO MERGEADO / NO APLICADO A PRODUCCIÓN**  
 **Autorización:** el usuario confirma que las OT activas observadas son exclusivamente de QA y autoriza preparar el método para limpiar las OT ficticias y desbloquear rápidamente E1. **No equivale a autorización para omitir validaciones de integridad, fabricar ejecución productiva ni borrar auditoría.**
 
 ## Resultado del preflight E1-08 en producción
@@ -61,4 +61,14 @@ Abortar si no existe backup actual verificable; si el manifiesto no identifica s
 
 ## Estado de ejecución
 
-Este documento inicia el diseño técnico de E1-10 en rama independiente. **No es código desplegable ni saneamiento ejecutado.** Falta implementar migración 0015, CLI, API/visibilidad, preflight ajustado y tests; ejecutar CI; aprobar PR; crear backup actual; aplicar sobre VPS con observabilidad y luego decidir el encendido de E1. Mantener `main` y `current` productivos sin cambios hasta pasar estas puertas.
+La rama de PR #139 incluye **código candidato** para la migración 0015, el CLI atómico `app.work_orders.qa_retirement_cli`, un generador read-only de manifiesto `app.work_orders.qa_retirement_inventory_cli`, cambios de preflight, protecciones de restauración y tests en base efímera. **NO está mergeado ni desplegado ni se ha aplicado retiro alguno.** Las pruebas CI deben pasar y el código requiere revisión técnica antes de autorizar un merge.
+
+### Contrato de operación del código candidato (solo tras PR aprobado, backup nuevo y despliegue)
+
+1. Ejecutar primero el CLI de inventario **de solo lectura** desde el backend del release aprobado usando la identidad de servicio, `--actor-display-name "QA Jefatura" --output <archivo_privado_nuevo.json>`. El generador es conservador: exige exactamente **13 OT in_progress, 18 líneas baseline, 9 asignaciones activas**, busca un actor Jefatura activo único, y crea un JSON privado con modo 0600. Si el corte difiere, STOP. No asumir que el conteo certifica el carácter ficticio: revisar el manifiesto con el responsable QA.
+2. Ejecutar `python -m app.work_orders.qa_retirement_cli --manifest <archivo_privado.json>` **sin `--apply`** para el DRY RUN, validar todos los conteos y revisar asociaciones sin capturas simultáneas.
+3. El comando `--apply` requiere respaldo actual verificado (incluida copia fuera del host y prueba de restauración), E1 OFF, manifiesto exacto y confirmaciones de operador vía variables `VINTO_QA_RETIREMENT_CONFIRMED=yes`, `VINTO_QA_BACKUP_VERIFIED=yes`, `VINTO_QA_OFFHOST_VERIFIED=yes`. Las variables son **atestaciones adicionales**, no comprobación autónoma de integridad del backup.
+4. La operación en una transacción toma locks en orden OT → máquinas → asignaciones, finaliza solo las asignaciones activas del manifiesto, marca QA-retirada cada OT y verifica que no queden activas; ante cualquier condición inesperada hace ROLLBACK total.
+5. Revalidar el esquema, `check-release`, salud, invariantes y preflight E1-08; luego proceder a evaluación de habilitación del flag ON con QA funcional por sectores, bajo ventana y plan de retorno.
+
+**Importante:** no ejecutar este código directamente desde la rama DRAFT ni sobre el release activo actual `d5bc472b...` porque no incorpora 0015; tampoco copiar archivos aislados al VPS para eludir la instalación por SHA. Mantener `main` y `current` productivos sin cambios hasta revisión, CI y nueva liberación controlada.
