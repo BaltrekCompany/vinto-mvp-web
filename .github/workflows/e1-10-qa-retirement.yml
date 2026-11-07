@@ -9,6 +9,9 @@ on:
       - 'backend/app/work_orders/rollout_preflight.py'
       - 'backend/app/work_orders/service.py'
       - 'backend/tests/test_qa_retirement_e110.py'
+      - 'backend/tests/test_sector_scope.py'
+      - 'backend/tests/test_work_order_line_execution_schema.py'
+      - 'backend/tests/test_assignment_single_mode_guard.py'
       - 'components/vinto/bobinas-programming.tsx'
       - '.github/workflows/e1-10-qa-retirement.yml'
   workflow_dispatch:
@@ -63,6 +66,12 @@ jobs:
       - name: Existing E1-08 preflight regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_rollout_preflight_e108.py' -v
+      - name: Migration 0012/0013 compatibility with 0014/0015 and audited checksums
+        working-directory: backend
+        run: |
+          python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
+          python -B -m unittest discover -s tests -p 'test_work_order_line_execution_schema.py' -v
+          python -B -m unittest discover -s tests -p 'test_assignment_single_mode_guard.py' -v
 
   qa-retirement-frontend:
     runs-on: ubuntu-24.04
