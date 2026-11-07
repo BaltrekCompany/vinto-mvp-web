@@ -137,20 +137,52 @@ class ExecutionSchemaTests(base.SameOrderCase):
 
 
     def test_rollback_empty_history_then_reapply(self):
-        """The manual rollback removes only an unused 0013, then the real migrator can re-apply it."""
+        """Exercise historical 0013 rollback at the 0013 schema boundary.
+
+        Modern checkouts also contain 0014/0015. Removing 0013 from a fully
+        migrated database would leave holes in migration history and break
+        dependent schema. Never run a legacy rollback against later migrations.
+        """
         from pathlib import Path
+        from uuid import uuid4
         from migrate import apply, applied_migrations, read_migrations
+        from app.ephemeral_db import create_database, connect, drop_database
+
         root = Path(__file__).resolve().parents[1]
         sql = (root / 'rollbacks' / '0013_work_order_line_execution_rollback.sql').read_text(encoding='utf-8')
-        self.assertEqual(self.scalar('SELECT count(*) FROM vinto_txn.work_order_line_execution'), 0)
-        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
-        self.connection.execute(sql, prepare=False)
-        self.assertIsNone(self.scalar("SELECT to_regclass('vinto_txn.work_order_line_execution')"))
-        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 12)
-        apply(self.connection, read_migrations())
-        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
-        self.assertIsNotNone(self.scalar("SELECT to_regclass('vinto_txn.work_order_line_execution')"))
-        self.assertEqual(len(applied_migrations(self.connection)), 13)
+        historical = read_migrations()[:13]
+        self.assertEqual([m.version for m in historical], list(range(1, 14)))
+
+        name = f"vinto_e102_rollback_{uuid4().hex[:12]}_test"
+        create_database(name)
+        try:
+            with connect(name) as c:
+                apply(c, historical)
+                self.assertEqual(c.execute(
+                    'SELECT count(*) FROM vinto_txn.work_order_line_execution'
+                ).fetchone()[0], 0)
+                self.assertEqual(c.execute(
+                    'SELECT max(version) FROM vinto_meta.schema_migration'
+                ).fetchone()[0], 13)
+
+                c.execute(sql, prepare=False)
+                self.assertIsNone(c.execute(
+                    "SELECT to_regclass('vinto_txn.work_order_line_execution')"
+                ).fetchone()[0])
+                self.assertEqual(c.execute(
+                    'SELECT max(version) FROM vinto_meta.schema_migration'
+                ).fetchone()[0], 12)
+
+                apply(c, historical)
+                self.assertEqual(c.execute(
+                    'SELECT max(version) FROM vinto_meta.schema_migration'
+                ).fetchone()[0], 13)
+                self.assertIsNotNone(c.execute(
+                    "SELECT to_regclass('vinto_txn.work_order_line_execution')"
+                ).fetchone()[0])
+                self.assertEqual(len(applied_migrations(c)), 13)
+        finally:
+            drop_database(name)
 
     def test_rollback_refuses_real_history_without_deleting_anything(self):
         """A planned line is already history; no rollback is permitted."""
@@ -167,7 +199,11 @@ class ExecutionSchemaTests(base.SameOrderCase):
             # The rollback script started BEGIN, which must be cancelled on failure.
             self.connection.execute('ROLLBACK')
         self.assertEqual(self.scalar('SELECT count(*) FROM vinto_txn.work_order_line_execution'), 1)
-        self.assertEqual(self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'), 13)
+        from migrate import read_migrations
+        self.assertEqual(
+            self.scalar('SELECT max(version) FROM vinto_meta.schema_migration'),
+            len(read_migrations()),
+        )
 
     def test_app_role_can_read_write_but_not_delete_or_truncate(self):
         """Only applies when an isolated test cluster explicitly provisions vinto_app."""
