@@ -293,14 +293,14 @@ class QARetirementTests(base.SameOrderCase):
         # attempts to archive. A complete rollback must restore both phases.
         self.connection.execute("""
             CREATE FUNCTION vinto_txn.e110_force_abort_test()
-            RETURNS trigger LANGUAGE plpgsql AS $
+            RETURNS trigger LANGUAGE plpgsql AS $e110$
             BEGIN
                 IF NEW.qa_retired THEN
                     RAISE EXCEPTION 'synthetic E1-10 rollback test'
                         USING ERRCODE='23514';
                 END IF;
                 RETURN NEW;
-            END $;
+            END $e110$;
         """)
         self.connection.execute("""
             CREATE TRIGGER z_e110_force_abort_test
