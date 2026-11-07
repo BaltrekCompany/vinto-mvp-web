@@ -17,6 +17,7 @@ import { ASSIGNMENT_LABELS, CONTEXT_MESSAGES, WORK_ORDER_LABELS, contextFromActi
 import { contextFromSelection, selectionKey, validSelection, type Selection } from "@/lib/vinto/active-lines";
 import { operationBlockedMessage, selectedContextAllowed } from "@/lib/vinto/machine-execution";
 import { getLineExecutionCapability } from "@/lib/vinto/line-execution-api";
+import { capabilitiesOf } from "@/lib/vinto/work-order-capabilities";
 import { CONVERSION_CANDIDATES, CONVERSION_CANDIDATE_SCREENS } from "@/lib/vinto/conversion-candidates";
 import { REBOBINADO_CANDIDATES, REBOBINADO_CANDIDATE_SCREENS } from "@/lib/vinto/rebobinado-candidates";
 import { candidateHistoryKey } from "@/lib/vinto/resource-view";
@@ -24,7 +25,7 @@ import { P1_10_CODE, parseP110List } from "@/lib/vinto/p1-10";
 import { P1_11_CODE, parseP111List } from "@/lib/vinto/p1-11";
 import { P1_29_CODE, parseP129List } from "@/lib/vinto/p1-29";
 import { onlyEligible } from "@/lib/vinto/eligibility";
-import { useMachineExecution, useOperationSelection, useAssignments, useAvailability, useResource, useWorkOrders } from "@/lib/vinto/use-central";
+import { useMachineExecution, useOperationSelection, useAssignments, useAvailability, useResource, useWorkOrders, useWorkOrderCapabilities } from "@/lib/vinto/use-central";
 
 // Shell CENTRAL por sector (M4-A Rebobinado, M6-A Conversión): Jefatura crea/publica OT, Supervisión activa asignaciones, Operación abre los formularios que el backend publica para la máquina y Seguimiento
 // muestra los registros centrales, TODO contra las APIs centrales. La disponibilidad (sector operativo, concesión, máquinas y formularios vinculados) la verifica el backend (GET /api/production/machines);
@@ -73,6 +74,18 @@ export function SectorCentral(props: Props) {
 function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost }: Inner) {
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const machines = sector.machines.map(m => m.code);
+    // Keep the same server-authoritative multi-machine gate used by Bobinas:
+    // no UI override, and a failed/invalid/unauthorized capability stays OFF.
+    // Multi-product orders on one machine remain available with the gate OFF.
+    const multiMachineResource = useWorkOrderCapabilities(
+        canManageOrders || canManageAssignments, onSessionLost, scope);
+    const multiMachine = capabilitiesOf(multiMachineResource.view);
+    const catalog = (machine: string) =>
+        articlesOf(sector.machines.find(m => m.code === machine))
+            .map(a => ({ code: a.code, name: a.description }));
+    const creation = canManageOrders
+        ? { machines: sector.machines.map(m => ({ code: m.code, name: m.name })), catalog }
+        : undefined;
     // E1-08: exact same Supervisión execution controls for Rebobinado and
     // Conversión. The capability is authoritative and absent on older servers.
     const capability = useResource<boolean>(
@@ -80,7 +93,9 @@ function Programming({ code, sector, canManageOrders, canManageAssignments, canR
         signal => getLineExecutionCapability(signal), onSessionLost, true);
     const executionEnabled = canManageAssignments && capability.view.status === "ready" &&
         capability.view.data === true && !capability.view.refreshing;
-    return <div {...tag(code, "programacion")}><BobbinasProgramming machines={machines} sectorLabel={SECTORS[code].label} catalog={machine => articlesOf(sector.machines.find(m => m.code === machine)).map(a => ({ code: a.code, name: a.description }))}
+    return <div {...tag(code, "programacion")}><BobbinasProgramming machines={machines} sectorLabel={SECTORS[code].label}
+        creation={creation} catalog={catalog} capabilities={multiMachine.capabilities}
+        capabilityStatus={multiMachine.status} onCapabilitiesStale={multiMachineResource.refresh}
         workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} scope={scope} executionEnabled={executionEnabled}
         canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
 }
