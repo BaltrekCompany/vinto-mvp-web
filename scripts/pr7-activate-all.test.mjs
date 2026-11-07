@@ -513,9 +513,15 @@ test("wiring: session-scoped dialog, hash only in memory, capability refresh aft
   assert.match(source, /onCapabilitiesStale=\{capabilityResource\.refresh\}/);
 });
 
-test("scope of the stage: only Bobinas renders the mass button; Rebobinado and Conversión keep their shell without capabilities", () => {
+test("Rebobinado and Conversión use the same backend-confirmed multi-machine and mass-activation gate as Bobinas", () => {
   const shell = noComments(read("components/vinto/sector-central.tsx"));
-  assert.ok(!/capabilities|ActivateAll|useWorkOrderCapabilities/.test(shell), "the sector shell is not wired in PR7");
+  assert.match(shell, /useWorkOrderCapabilities\(/, "sector programming reads the server capability");
+  assert.match(shell, /capabilitiesOf\(multiMachineResource\.view\)/, "invalid responses remain OFF");
+  assert.match(shell, /capabilities=\{multiMachine\.capabilities\}/, "shared programming receives only confirmed values");
+  assert.match(shell, /capabilityStatus=\{multiMachine\.status\}/, "fail-closed on loading/error");
+  assert.match(shell, /onCapabilitiesStale=\{multiMachineResource\.refresh\}/, "422 triggers refresh");
+  assert.match(shell, /canManageOrders \|\| canManageAssignments/, "only permitted roles read capability");
+  assert.match(shell, /module === "programacion"\) return <Programming/, "both sectors share the programming implementation");
   const page = noComments(read("app/page.tsx"));
-  assert.match(page, /<BobbinasProgrammingSource scope=\{scope\}/);
+  assert.match(page, /<BobbinasProgrammingSource scope=\{scope\}/, "Bobinas retains its existing source");
 });
