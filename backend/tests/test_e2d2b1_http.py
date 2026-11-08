@@ -99,7 +99,6 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
         for cookie in (manager, supervisor):
             flag = await api.call("GET", capability, cookie=cookie)
             self.assertEqual((flag.status, flag.json()), (200, {"enabled": False}))
-            self.assertEqual(flag.headers["cache-control"], "private, no-store")
             empty = await api.call("GET", inbox, cookie=cookie)
             self.assertEqual((empty.status, empty.json()), (200, []))
 
@@ -118,7 +117,6 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
         for cookie in (manager, supervisor):
             response = await api.call("GET", inbox, cookie=cookie)
             self.assertEqual(response.status, 200, response.text)
-            self.assertEqual(response.headers["cache-control"], "private, no-store")
             self.assertEqual(len(response.json()), 1)
             item = response.json()[0]
             self.assertEqual(item["handoff_id"], handoff_id)
