@@ -17,8 +17,11 @@ from app.work_orders.errors import (
 )
 
 
-def _require():
-    if settings.work_order_reprogram_handoff_enabled is not True:
+def _require(*, allow_existing_recovery=False):
+    # Existing published handoffs may be completed under flag OFF, but
+    # creating a NEW operational revision while OFF remains forbidden.
+    if (not allow_existing_recovery and
+            settings.work_order_reprogram_handoff_enabled is not True):
         raise WorkOrderHandoffDisabledError()
     if settings.work_order_line_execution_enabled is not True:
         raise WorkOrderHandoffBlockedError()
@@ -200,12 +203,13 @@ def publish(connection, *, actor_id, handoff_id, expected,
 
 
 def reassign(connection, *, actor_id, handoff_id, sectors, request_id=None):
-    """Supervisión: retire old active assignment and create new-version one.
+    """Retry a published handoff, even with D2 flag OFF, under original locks.
 
-    This intentionally leaves handoff status 'reassigned', which B0 still
-    blocks from starting until B2 makes receipt mandatory and resolves it.
+    The existing published snapshot is NEVER deleted or rewritten. The prior
+    assignment is retired only with the replacement in the SAME transaction.
+    Operator acknowledgement is still mandatory before E1 start.
     """
-    _require()
+    _require(allow_existing_recovery=True)
     with connection.transaction():
         service._context(connection, actor_id, request_id,
                          "E2-D2 supervision explicit reassign")
