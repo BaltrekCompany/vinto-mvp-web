@@ -334,6 +334,28 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     else:
         replaced = current  # semántica histórica: la anterior se sustituye
     finished = [row[0] for row in (*stale, *replaced)]
+    if settings.work_order_line_execution_enabled is True and finished:
+        # Single-assignment mode must not silently end the shift assignment of
+        # a *different logical line* that is still in production. A fresh shift
+        # assignment for the SAME line is legitimate and remains allowed.
+        affected_codes = sorted({
+            row[5] for row in (*stale, *replaced)
+            if row[4] == work_order_id and row[5] != target.line_code
+        })
+        if affected_codes:
+            producing_to_replace = connection.execute(
+                """SELECT EXISTS (
+                     SELECT 1 FROM vinto_txn.work_order_line_execution e
+                     JOIN vinto_txn.work_order_line baseline
+                       ON baseline.id=e.baseline_line_id
+                     WHERE e.work_order_id=%s AND e.machine_id=%s
+                       AND e.status='in_production'
+                       AND baseline.line_code=ANY(%s)
+                   )""", (work_order_id, target.machine_id, affected_codes)).fetchone()[0]
+            if producing_to_replace:
+                from app.work_orders.line_execution import ExecutionStateConflictError
+                raise ExecutionStateConflictError(
+                    "Otra linea esta en produccion; finalice su ejecucion logica antes de sustituir su asignacion")
     if finished:
         _reason(connection, _tagged("finish previous assignment", batch_tag))
         for assignment_id in finished:
