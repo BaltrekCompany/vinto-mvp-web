@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +20,7 @@ from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import reprogramming
+from app.work_orders import supervision_revision_notices
 from app.work_orders import close_order
 from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
 
@@ -101,6 +102,65 @@ def execution_capabilities(
         user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE))):
     response.headers["Cache-Control"] = "private, no-store"
     return ExecutionCapabilitiesOut(line_execution=settings.work_order_line_execution_enabled is True)
+
+
+
+class SupervisionFieldsOut(BaseModel):
+    pv_reference: str
+    article_code: str
+    quantity: str
+    due_date: date
+
+
+class SupervisionRevisionNoticeOut(BaseModel):
+    work_order_id: uuid.UUID
+    work_order_number: str
+    status: Literal["published", "in_progress"]
+    version_number: int
+    line_code: str
+    reason: str
+    revised_at: datetime
+    changed_by: str | None
+    machine_code: str
+    before: SupervisionFieldsOut
+    after: SupervisionFieldsOut
+    acknowledged_at: datetime | None
+
+
+class SupervisionRevisionAckIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1)
+
+
+class SupervisionRevisionAckOut(BaseModel):
+    work_order_id: uuid.UUID
+    version_number: int
+    acknowledged_at: datetime
+
+
+@router.get("/supervision-revision-notices",
+            response_model=list[SupervisionRevisionNoticeOut], responses=_ERRORS)
+def supervision_revision_notices_list(
+        response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    """Manager inbox: last published OT revision, including before first assignment."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return supervision_revision_notices.list_supervision_notices(
+        connection, user_id=user.user_id, sectors=user.sectors)
+
+
+@router.post("/{work_order_id}/acknowledge-supervision-revision",
+             response_model=SupervisionRevisionAckOut, responses=_ERRORS)
+def supervision_revision_ack(
+        work_order_id: str, body: SupervisionRevisionAckIn, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return supervision_revision_notices.acknowledge_supervision_revision(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        expected_version=body.expected_version, sectors=user.sectors,
+        request_id=_request_id())
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)
