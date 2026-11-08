@@ -299,7 +299,8 @@ def edit_draft_line(connection, *, actor_id, work_order_id, line_code, expected:
         if status != "draft" or published_at is not None:
             raise WorkOrderNotDraftError()
         row = connection.execute(
-            """SELECT l.id, l.machine_id, l.pv_reference, a.code, l.quantity, l.due_date
+            """SELECT l.id, l.machine_id, l.pv_reference, a.code, l.quantity, l.due_date,
+                      l.article_version_id, l.unit_id
                FROM vinto_txn.work_order_line l
                JOIN vinto_master.article_version av ON av.id=l.article_version_id
                JOIN vinto_master.article a ON a.id=av.article_id
@@ -310,7 +311,7 @@ def edit_draft_line(connection, *, actor_id, work_order_id, line_code, expected:
         if tuple(row[2:]) != old_fields:
             raise WorkOrderDraftChangedError()
         if old_fields != new_fields:
-            article_version_id, unit_id = _resolve_article(connection, row[1], new_fields[1])
+            article_version_id, unit_id = (row[6], row[7]) if new_fields[1] == row[3] else _resolve_article(connection, row[1], new_fields[1])
             connection.execute(
                 """UPDATE vinto_txn.work_order_line
                    SET pv_reference=%s, article_version_id=%s, unit_id=%s,
