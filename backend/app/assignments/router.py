@@ -1,19 +1,20 @@
 """API de asignaciones de Bobinas. Lectura: assignment.read. Activar y finalizar: assignment.manage (Supervisión)."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.assignments import service
 from app.assignments import execution_read
+from app.assignments import revision_notices
 from app.assignments.schemas import (ActivateIn, ActivationOut, ActiveLinesOut, ActiveOut, AssignmentOut, OperationalLinesOut,
                                      activation_out, active_lines_out, active_out, assignment_out, operational_lines_out)
 from app.auth.dependencies import require_permission
-from app.auth.permissions import ASSIGNMENT_MANAGE, ASSIGNMENT_READ
+from app.auth.permissions import ASSIGNMENT_MANAGE, ASSIGNMENT_READ, PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
 from app.authz import visibility
 from app.database import get_connection
@@ -69,6 +70,55 @@ def machine_execution_status(
     return execution_read.read_machine_execution(
         connection, machine_code=machine_code, sectors=user.sectors,
         machine_codes=visibility.operational_scope(connection, user))
+
+
+
+class RevisionNoticeOut(BaseModel):
+    assignment_id: UUID
+    version_number: int
+    work_order_number: str
+    line_code: str
+    machine_code: str
+    reason: str
+    revised_at: datetime
+    acknowledged_at: datetime | None
+
+
+class AcknowledgeRevisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=2)
+
+
+class RevisionReceiptOut(BaseModel):
+    assignment_id: UUID
+    version_number: int
+    acknowledged_at: datetime
+
+
+@router.get("/revision-notices", response_model=list[RevisionNoticeOut], responses=_ERRORS)
+def list_revision_notices(
+        response: Response,
+        user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)),
+        connection=Depends(get_connection)):
+    """Operator inbox: only active assignments on machines currently granted by MF13."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return revision_notices.list_revision_notices(
+        connection, user_id=user.user_id, sectors=user.sectors,
+        machine_codes=visibility.authorized_machine_codes(connection, user))
+
+
+@router.post("/{assignment_id}/acknowledge-revision", response_model=RevisionReceiptOut, responses=_ERRORS)
+def acknowledge_revision(
+        assignment_id: str, body: AcknowledgeRevisionIn, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)),
+        connection=Depends(get_connection)):
+    """Operator only: records exactly their own acknowledgement, never changes assignment/capture."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return revision_notices.acknowledge_revision(
+        connection, actor_id=user.user_id, assignment_id=assignment_id,
+        expected_version=body.expected_version, sectors=user.sectors,
+        machine_codes=visibility.authorized_machine_codes(connection, user),
+        request_id=_request_id())
 
 
 @router.get("/active", response_model=ActiveOut, responses=_ERRORS)
