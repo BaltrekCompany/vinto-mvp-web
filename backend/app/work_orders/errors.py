@@ -44,6 +44,12 @@ class WorkOrderReprogramConflictError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_REPROGRAM_CONFLICT", "La programación cambió; vuelve a consultar la versión vigente"
 
 
+class SupervisionRevisionConflictError(WorkOrderError):
+    http_status, code, public_message = (
+        409, "SUPERVISION_REVISION_CHANGED",
+        "La version vigente cambió; actualiza los avisos antes de confirmar")
+
+
 class WorkOrderNotDraftError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_NOT_DRAFT", "La orden no está en borrador; la línea base publicada no se modifica"
 
