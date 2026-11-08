@@ -19,8 +19,9 @@ from app.config import settings
 from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
+from app.work_orders import reprogramming
 from app.work_orders import close_order
-from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, WorkOrderOut, work_order_out
+from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
 
@@ -160,6 +161,27 @@ def edit_draft_line(work_order_id: str, line_code: str, body: EditDraftLineIn,
         line_code=line_code, expected=body.expected.to_domain(),
         replacement=body.replacement.to_domain(), reason=body.reason,
         request_id=_request_id(), sectors=user.sectors))
+
+
+@router.post("/{work_order_id}/lines/{line_code}/reprogram", response_model=WorkOrderOut, responses=_ERRORS)
+def reprogram_published_line(work_order_id: str, line_code: str, body: ReprogramPublishedLineIn,
+                             user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                             connection=Depends(get_connection)):
+    """E2-B: only a published OT WITHOUT ANY assignment/execution history."""
+    return work_order_out(reprogramming.reprogram_published_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, expected_version=body.expected_version,
+        expected=body.expected.to_domain(), replacement=body.replacement.to_domain(),
+        reason=body.reason, request_id=_request_id(), sectors=user.sectors))
+
+
+@router.get("/{work_order_id}/revisions", response_model=list[RevisionOut], responses=_ERRORS)
+def list_revisions(work_order_id: str,
+                   user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                   connection=Depends(get_connection)):
+    """Jefatura-only immutable version history: before/after, reason, actor, timestamp."""
+    return reprogramming.revision_history(
+        connection, work_order_id=work_order_id, sectors=user.sectors)
 
 
 @router.post("/{work_order_id}/publish", response_model=WorkOrderOut, responses=_ERRORS)
