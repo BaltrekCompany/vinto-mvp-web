@@ -1,0 +1,85 @@
+name: VINTO E2-D2 B3 visual handoff gates
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/work_orders/router.py'
+      - 'backend/app/work_orders/handoff_listing.py'
+      - 'backend/tests/test_e2d2b1_http.py'
+      - 'lib/vinto/handoff.ts'
+      - 'lib/vinto/handoff-api.ts'
+      - 'components/vinto/handoff-publish-form.tsx'
+      - 'components/vinto/supervised-handoff-panel.tsx'
+      - 'components/vinto/bobinas-programming.tsx'
+      - 'scripts/e2d2-b3.test.mjs'
+      - '.github/workflows/e2d2-b3-visual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-pg17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned Python dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Python syntax
+        run: |
+          python -B -m compileall -q backend/app/work_orders/router.py             backend/app/work_orders/handoff_listing.py backend/tests/test_e2d2b1_http.py
+      - name: B3 HTTP roles, scoped inbox and capabilities (real PostgreSQL 17)
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VINTO_MVP_DOMAIN: vinto-mvp.baltrekservices.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frontend dependencies
+        run: |
+          corepack enable
+          pnpm --version
+          pnpm install --frozen-lockfile
+      - name: Pure D2 parsing and fail-closed tests
+        run: node --test scripts/e2d2-b3.test.mjs
+      - name: TypeScript and frontend lint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm exec eslint             components/vinto/supervised-handoff-panel.tsx             components/vinto/handoff-publish-form.tsx             components/vinto/bobinas-programming.tsx             lib/vinto/handoff.ts lib/vinto/handoff-api.ts
+      - name: Build frontend
+        run: pnpm run build
