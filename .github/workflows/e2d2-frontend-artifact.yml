@@ -1,0 +1,109 @@
+name: VINTO E2-D2 portable frontend artifact
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/e2d2-frontend-artifact.yml'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Immutable 40-character release SHA'
+        required: true
+        default: '88f4ee85dc50e3806dfd6f12d24cc002e858ad83'
+        type: string
+      domain:
+        description: 'Production MVP hostname, without https://'
+        required: true
+        default: 'vinto-mvp.baltrekservices.com'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2d2-frontend-artifact-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TARGET_SHA: ${{ inputs.target_sha || '88f4ee85dc50e3806dfd6f12d24cc002e858ad83' }}
+      VINTO_MVP_DOMAIN: ${{ inputs.domain || 'vinto-mvp.baltrekservices.com' }}
+    steps:
+      - name: Validate immutable input and domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VINTO_MVP_DOMAIN" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]
+          test "$(uname -m)" = x86_64
+          echo "SOURCE_SHA=$TARGET_SHA"
+          echo "BUILD_DOMAIN=$VINTO_MVP_DOMAIN"
+
+      - name: Checkout exact release, without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Node.js 22.18.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+
+      - name: Enable project pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack pnpm --version
+          test "$(corepack pnpm --version)" = "11.25.0"
+          pnpm --version
+          test "$(pnpm --version)" = "11.25.0"
+
+      - name: Verify checked-out source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
+          echo "E2D2_BUILD_SOURCE=PASS"
+
+      - name: Build and isolated-boot-test portable frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash deploy/mvp/scripts/build-frontend-artifact.sh \
+            "$GITHUB_WORKSPACE" "$TARGET_SHA" "$RUNNER_TEMP/vinto-artifacts"
+
+      - name: Validate tarball and manifest checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/vinto-artifacts/vinto-mvp-frontend-$TARGET_SHA.tar.gz"
+          manifest="$RUNNER_TEMP/vinto-artifacts/vinto-mvp-frontend-$TARGET_SHA.manifest"
+          test -s "$artifact"
+          test -s "$manifest"
+          grep -Fxq "VINTO_MVP_ARTIFACT_COMMIT=$TARGET_SHA" "$manifest"
+          expected="$(sed -n 's/^VINTO_MVP_ARTIFACT_SHA256=//p' "$manifest")"
+          actual="$(sha256sum "$artifact" | cut -d' ' -f1)"
+          test -n "$expected"
+          test "$actual" = "$expected"
+          echo "E2D2_ARTIFACT_BUILD=PASS"
+          echo "E2D2_ARTIFACT_CHECKSUM=PASS"
+          printf '### VINTO portable frontend\n\nSource: %s\nDomain: %s\nSHA-256: %s\n' \
+            "$TARGET_SHA" "$VINTO_MVP_DOMAIN" "$actual" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact-sha release artifact and manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: vinto-mvp-frontend-e2d2-${{ env.TARGET_SHA }}
+          path: |
+            ${{ runner.temp }}/vinto-artifacts/vinto-mvp-frontend-${{ env.TARGET_SHA }}.tar.gz
+            ${{ runner.temp }}/vinto-artifacts/vinto-mvp-frontend-${{ env.TARGET_SHA }}.manifest
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
