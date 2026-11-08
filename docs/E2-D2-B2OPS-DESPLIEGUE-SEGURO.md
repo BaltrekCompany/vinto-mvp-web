@@ -20,7 +20,7 @@ El preflight verifica hashes exactos de migraciones 0019–0022, trigger E1 habi
 
 En el primer corte, el release activo E2-D1 **no contiene** el CLI D2. La función usa el CLI del release candidato **solo si se instaló correctamente**. En consecuencia, los pasos requeridos son: checkout/venv/artefacto, backup y ensayo de restauración, aplicación controlada de migraciones `0019–0022`, `check-release` PASS, después `activate` protegido; D2 sigue OFF. No ejecutar `d2-gate enable` antes de que el release compatible quede activo.
 
-Cuando **ni el release activo ni el destino** contengan la migración `0019`, el gate permite el camino legado que no puede crear handoffs. Si alguno contiene escritor D2 pero no hay CLI confiable, el gate se niega a continuar. El rollback a un release que **no conoce** la variable `WORK_ORDER_REPROGRAM_HANDOFF_ENABLED` se rechaza si dicha clave existe en `shared/backend.env`, incluso cuando no hay handoffs.
+Cuando **ni el release activo ni el destino** contengan la migración `0019`, el gate ejecuta igualmente un probe PostgreSQL de solo lectura a través del Python del release activo: comprueba si hay una tabla de handoffs heredada y rechaza si existen reservas abiertas o la base no responde. Solo en una primera instalación **sin release activo** admite el camino legado sin probe (todavía no puede existir un escritor D2). Si alguno contiene escritor D2 pero no hay CLI confiable, el gate se niega a continuar. El rollback a un release que **no conoce** la variable `WORK_ORDER_REPROGRAM_HANDOFF_ENABLED` se rechaza si dicha clave existe en `shared/backend.env`, incluso cuando no hay handoffs.
 
 ### Instalar realmente los scripts OPS (no automático)
 
