@@ -36,7 +36,7 @@ El módulo se ejecuta en **REPEATABLE READ READ ONLY**, valida checksums de migr
 - `2`: existen reservas abiertas, falta una migración/checksum o trigger exigido: NO-GO.
 - `3`: no hay acceso seguro a base de datos/configuración: NO-GO.
 
-**Limitación conocida:** el CLI todavía no está conectado automáticamente a `deploy/mvp/scripts/rollback.sh` ni a cualquier cambio de `.env` o de systemd que desactive flags. Hasta integrar y probar esa puerta operativa de extremo a extremo, el rollback/habilitación D2 es **NO-GO**. Ejecutar el preflight manual no elimina la necesidad de esa integración.
+**B2-OPS (PR #155):** el gate se conecta en el código de `deploy.sh activate` y `rollback.sh version`, incluso al rollback automático; `deploy.sh d2-gate enable|disable|rollback` proporciona consulta de solo lectura. **Sin embargo, el merge no instala automáticamente los scripts en `/home/ubuntu/vinto-mvp-ops/scripts`**, y el comando de bandera no modifica `.env` ni intercepta ediciones manuales. Hasta instalar el paquete completo de OPS, completar el ensayo real y aprobar QA, la habilitación D2 sigue **NO-GO**. Ver `docs/E2-D2-B2OPS-DESPLIEGUE-SEGURO.md`.
 
 ## Puertas previas a habilitar D2
 
