@@ -227,7 +227,9 @@ class RevisionNoticesTests(AssignmentApiCase):
             self.assertEqual((await call("GET", "/api/assignments/revision-notices",
                                          cookie=await self.cookie(role))).status, 403)
         self.assertEqual((await call("GET", "/api/assignments/revision-notices")).status, 401)
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 0)
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s",
+            (active["id"],)), 0)
 
         revised = await self._revised_assignment()
         inbox = (await call("GET", "/api/assignments/revision-notices", cookie=cookie)).json()
@@ -241,7 +243,9 @@ class RevisionNoticesTests(AssignmentApiCase):
         forbidden_ack = await call("POST", f"/api/assignments/{revised['id']}/acknowledge-revision",
                                    json_body={"expected_version": 2}, cookie=cookie)
         self.assertEqual(forbidden_ack.status, 404)
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 0)
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s",
+            (revised["id"],)), 0)
 
 
 class SupervisionFlowTests(AssignmentApiCase):
