@@ -1,0 +1,135 @@
+"""E2-D2-B1.1 HTTP authorization on disposable PostgreSQL17 databases."""
+import secrets
+from datetime import datetime, timezone
+from unittest.mock import patch
+from uuid import uuid4
+
+from pydantic import SecretStr
+from app.assignments import service as assignment_service
+from app.config import settings
+
+try:
+    import test_work_orders_api as api
+except ModuleNotFoundError:
+    from tests import test_work_orders_api as api
+
+
+def setUpModule():
+    api.STATE["template"] = api.build_reference_template("vinto_e2d2b1http_tpl")
+
+
+def tearDownModule():
+    template = api.STATE.pop("template", None)
+    if template:
+        api.drop_database(template)
+
+
+class E2D2B1HttpTests(api.WorkOrderApiCase):
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        self.database = api.copy_database(api.STATE["template"], "vinto_e2d2b1http")
+        self.addCleanup(api.drop_database, self.database)
+        self.connection = api.connect(self.database)
+        self.addCleanup(self.connection.close)
+        p = patch.object(settings, "database_url", SecretStr(api.database_url(self.database)))
+        p.start()
+        self.addCleanup(p.stop)
+        self.users, self.cookies = {}, {}
+        for profile in api.PROFILES:
+            pwd = "pw-" + secrets.token_urlsafe(18)
+            actor = api.create_user(
+                self.connection, username=f"b11.{profile.lower()}.{uuid4().hex[:6]}",
+                display_name=f"B1 {profile}", profile_code=profile,
+                password=pwd, sectors=("BOBINAS",))
+            self.users[profile] = (actor, pwd)
+        for target, name, value in (
+            (settings, "work_order_line_execution_enabled", True),
+            (settings, "work_orders_multi_machine_enabled", True),
+            (assignment_service, "_now", datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)),
+        ):
+            q = patch.object(target, name, return_value=value) if name == "_now" else patch.object(target, name, value)
+            q.start()
+            self.addCleanup(q.stop)
+
+    async def target(self):
+        jef, sup = await self.cookie("JEFATURA"), await self.cookie("SUPERVISION")
+        created = await self.create(body=api.payload(lines=[
+            api.line_body(api.MP1_CODES[0], "PV-B1", 50, "2026-11-10")]))
+        self.assertEqual(created.status, 201, created.text)
+        order = created.json()
+        published = await api.call(
+            "POST", f"/api/work-orders/{order['id']}/publish", cookie=jef)
+        self.assertEqual(published.status, 200, published.text)
+        order = published.json()
+        activation = await api.call(
+            "POST", "/api/assignments/activate",
+            json_body={"work_order_id": order["id"],
+                       "baseline_line_id": order["baseline"]["lines"][0]["id"]},
+            cookie=sup)
+        self.assertEqual(activation.status, 201, activation.text)
+        return order, activation.json()["assignment"], sup
+
+    def reserve_url(self, order):
+        return f"/api/work-orders/{order['id']}/lines/L1/reserve-handoff"
+
+    def reserve_body(self, assignment):
+        return {"assignment_id": assignment["id"],
+                "expected_version": 2,
+                "reason": "Reserva supervisada de linea sin iniciar"}
+
+    async def test_permission_validation_and_disabled_flag(self):
+        order, a, sup = await self.target()
+        url, body = self.reserve_url(order), self.reserve_body(a)
+        self.assertEqual((await api.call("POST", url, json_body=body)).status, 401)
+        for profile in ("JEFATURA", "OPERACION", "CALIDAD", "DATA_BALTREK"):
+            r = await api.call("POST", url, json_body=body,
+                               cookie=await self.cookie(profile))
+            self.assertEqual(r.status, 403, (profile, r.text))
+        r = await api.call("POST", url, json_body=body, cookie=sup)
+        self.assertEqual((r.status, r.json()["code"]),
+                         (409, "WORK_ORDER_HANDOFF_DISABLED"))
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_line_reprogram_handoff"), 0)
+
+        with patch.object(settings, "work_order_reprogram_handoff_enabled", True):
+            for extra in ({"requested_by": str(uuid4())}, {"status": "published"},
+                          {"machine_code": "MP1"}):
+                r = await api.call(
+                    "POST", url, json_body={**body, **extra}, cookie=sup)
+                self.assertEqual(r.status, 422, r.text)
+
+    async def test_reservation_blocks_start_then_cancel_releases(self):
+        order, a, sup = await self.target()
+        url, body = self.reserve_url(order), self.reserve_body(a)
+        with patch.object(settings, "work_order_reprogram_handoff_enabled", True):
+            reserved = await api.call("POST", url, json_body=body, cookie=sup)
+            self.assertEqual(reserved.status, 200, reserved.text)
+            info = reserved.json()
+            self.assertEqual(info["status"], "pending")
+            self.assertEqual(info["prior_assignment_id"], a["id"])
+            blocked = await api.call(
+                "POST", f"/api/work-orders/{order['id']}/lines/L1/start",
+                json_body={"assignment_id": a["id"]}, cookie=sup)
+            self.assertEqual((blocked.status, blocked.json()["code"]),
+                             (409, "WORK_ORDER_HANDOFF_PENDING"))
+            cancel = await api.call(
+                "POST", f"/api/work-orders/handoffs/{info['handoff_id']}/cancel",
+                json_body={"reason": "Cancelacion supervisada registrada"}, cookie=sup)
+            self.assertEqual(cancel.status, 200, cancel.text)
+            self.assertEqual(cancel.json()["status"], "cancelled")
+            repeat = await api.call(
+                "POST", f"/api/work-orders/handoffs/{info['handoff_id']}/cancel",
+                json_body={"reason": "Cancelacion supervisada registrada"}, cookie=sup)
+            self.assertEqual(repeat.status, 200)
+            started = await api.call(
+                "POST", f"/api/work-orders/{order['id']}/lines/L1/start",
+                json_body={"assignment_id": a["id"]}, cookie=sup)
+            self.assertEqual(started.status, 200, started.text)
+            self.assertEqual(started.json()["status"], "in_production")

@@ -20,6 +20,7 @@ from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import reprogramming
+from app.work_orders import handoff_service
 from app.work_orders import supervision_revision_notices
 from app.work_orders import close_order
 from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
@@ -161,6 +162,60 @@ def supervision_revision_ack(
         connection, actor_id=user.user_id, work_order_id=work_order_id,
         expected_version=body.expected_version, sectors=user.sectors,
         request_id=_request_id())
+
+
+# E2-D2-B1.1: preliminary Supervisor-only reservation protocol, OFF by default.
+# B1.2/B2 will add Jefatura publication, explicit reassign and operator
+# acknowledgement. Never expose a reserve button until that flow is complete.
+class ReserveHandoffIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignment_id: uuid.UUID
+    expected_version: int = Field(ge=2)
+    reason: str = Field(min_length=10, max_length=300)
+
+
+class CancelHandoffIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=10, max_length=300)
+
+
+class HandoffOut(BaseModel):
+    handoff_id: uuid.UUID
+    work_order_id: uuid.UUID
+    line_code: str
+    prior_assignment_id: uuid.UUID
+    expected_version: int
+    status: Literal["pending", "published", "reassigned", "acknowledged", "cancelled"]
+    requested_by: uuid.UUID
+    created_at: datetime
+    completed_at: datetime | None
+
+
+@router.post("/{work_order_id}/lines/{line_code}/reserve-handoff",
+             response_model=HandoffOut, responses=_ERRORS)
+def reserve_supervised_handoff(
+        work_order_id: str, line_code: str, body: ReserveHandoffIn,
+        response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_service.reserve(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, assignment_id=body.assignment_id,
+        expected_version=body.expected_version, reason=body.reason,
+        sectors=user.sectors, request_id=_request_id())
+
+
+@router.post("/handoffs/{handoff_id}/cancel", response_model=HandoffOut,
+             responses=_ERRORS)
+def cancel_supervised_handoff(
+        handoff_id: str, body: CancelHandoffIn, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_service.cancel(
+        connection, actor_id=user.user_id, handoff_id=handoff_id,
+        reason=body.reason, sectors=user.sectors, request_id=_request_id())
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)

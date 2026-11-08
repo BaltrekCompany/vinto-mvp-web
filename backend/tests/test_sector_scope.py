@@ -167,7 +167,9 @@ class StaticScopeTests(unittest.TestCase):
         expected = (PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS
                     + PINNED_E2C_MIGRATIONS + PINNED_E2C2_MIGRATIONS
                     + [("0019_work_order_line_reprogram_handoff.sql",
-                        "3b25d488db510192d5de9a0ea3b45f3d675e8a143f65a7f6661829de4c286826")])
+                        "3b25d488db510192d5de9a0ea3b45f3d675e8a143f65a7f6661829de4c286826"),
+                       ("0020_e2d2_supervisor_reservation.sql",
+                        "082bc4a41586dac2e846a7db852c609f7c349f0bf2e4023da9091180ba7f71f5")])
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

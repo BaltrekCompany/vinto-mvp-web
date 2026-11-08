@@ -120,24 +120,26 @@ class HandoffB0Tests(base.SameOrderCase):
             line_execution.start_line(
                 self.connection, actor_id=self.supervisor, work_order_id=order.id,
                 line_code="L1", assignment_id=a.id, sectors=("BOBINAS",))
-            # Deliberately inject a synthetic impossible-at-B1 reservation to
-            # prove that BOTH capture writers apply the same protective guard.
-            self.reserve(order, a)
-            with self.assertRaises(WorkOrderHandoffPendingError):
-                capture_service.submit_production_capture(
-                    self.connection, actor_id=self.jefatura, capture_id=uuid4(),
-                    form_code="VINTO-P1-06", assignment_id=a.id,
-                    device_key=str(uuid4()), sectors=("BOBINAS",),
-                    values={"cantidad_fardos": 10, "punto_merma": "recorte_maquina",
-                            "tipo_producto": "hoja_doble", "peso_kg": "125.50"})
-            with self.assertRaises(WorkOrderHandoffPendingError):
-                bobbins.submit_bobbin_production(
-                    self.connection, actor_id=self.jefatura, capture_id=uuid4(),
-                    assignment_id=a.id, device_key=str(uuid4()),
-                    sectors=("BOBINAS",),
-                    values={"hora_inicio": "07:15", "hora_fin": "08:40",
-                            "diametro": "1200.5", "peso_kg": "845.25",
-                            "numero_de_cortes": "3"})
+            # B1.1 now forbids any impossible pending reservation for a line
+            # already producing. Inject the guard exception at the service
+            # seam to verify both F3 and F6 call it before any data writes.
+            with patch("app.work_orders.handoff_guard.require_assignment_unreserved",
+                       side_effect=WorkOrderHandoffPendingError()):
+                with self.assertRaises(WorkOrderHandoffPendingError):
+                    capture_service.submit_production_capture(
+                        self.connection, actor_id=self.jefatura, capture_id=uuid4(),
+                        form_code="VINTO-P1-06", assignment_id=a.id,
+                        device_key=str(uuid4()), sectors=("BOBINAS",),
+                        values={"cantidad_fardos": 10, "punto_merma": "recorte_maquina",
+                                "tipo_producto": "hoja_doble", "peso_kg": "125.50"})
+                with self.assertRaises(WorkOrderHandoffPendingError):
+                    bobbins.submit_bobbin_production(
+                        self.connection, actor_id=self.jefatura, capture_id=uuid4(),
+                        assignment_id=a.id, device_key=str(uuid4()),
+                        sectors=("BOBINAS",),
+                        values={"hora_inicio": "07:15", "hora_fin": "08:40",
+                                "diametro": "1200.5", "peso_kg": "845.25",
+                                "numero_de_cortes": "3"})
         self.assertEqual(self.count("vinto_txn.capture"), 0)
         self.assertEqual(self.count("vinto_txn.bobbin"), 0)
         self.assertEqual(self.count("vinto_txn.bobbin_sequence"), 0)
@@ -177,15 +179,20 @@ class HandoffB0Tests(base.SameOrderCase):
 
     def test_no_writer_permission_is_planned_until_b1(self):
         self.assertEqual(self.count("vinto_txn.work_order_line_reprogram_handoff"), 0)
-        # Nonexistent production app-role is valid in isolated CI; if the role
-        # exists, migration 0019 must NOT grant it INSERT/UPDATE/DELETE.
+        # Tests run on latest schema. B1.1 deliberately grants INSERT and
+        # narrow column UPDATE, still never DELETE. Check B1's least privilege.
         exists = self.scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='vinto_app')")
         if exists:
             self.assertTrue(self.scalar(
                 "SELECT has_table_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff','SELECT')"))
-            for op in ("INSERT", "UPDATE", "DELETE"):
-                self.assertFalse(self.scalar(
-                    "SELECT has_table_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff',%s)", (op,)))
+            self.assertTrue(self.scalar(
+                "SELECT has_table_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff','INSERT')"))
+            self.assertTrue(self.scalar(
+                "SELECT has_column_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff','status','UPDATE')"))
+            self.assertFalse(self.scalar(
+                "SELECT has_column_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff','reason','UPDATE')"))
+            self.assertFalse(self.scalar(
+                "SELECT has_table_privilege('vinto_app','vinto_txn.work_order_line_reprogram_handoff','DELETE')"))
 
 
 if __name__ == "__main__":
