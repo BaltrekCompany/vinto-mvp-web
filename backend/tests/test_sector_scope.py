@@ -162,7 +162,12 @@ class StaticScopeTests(unittest.TestCase):
 
     def test_existing_migrations_are_intact_and_only_the_known_ones_exist(self):
         from migrate import read_migrations
-        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS + PINNED_E2C_MIGRATIONS + PINNED_E2C2_MIGRATIONS
+        # E2-D2-B0: pin the *new* additive migration without weakening checksums
+        # of any already-deployed 0001-0018 migration.
+        expected = (PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS
+                    + PINNED_E2C_MIGRATIONS + PINNED_E2C2_MIGRATIONS
+                    + [("0019_work_order_line_reprogram_handoff.sql",
+                        "3b25d488db510192d5de9a0ea3b45f3d675e8a143f65a7f6661829de4c286826")])
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

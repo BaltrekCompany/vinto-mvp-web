@@ -599,6 +599,11 @@ def lock_active_assignment(connection, assignment_id, sectors) -> ActiveContext:
     if (shift.shift_schedule_id, shift.operating_date) != (schedule_id, operating_date):
         raise AssignmentStaleError()
     _require_line_in_production(connection, assignment_id, machine_id)
+    # E2-D2-B0: shared F3/F6 path; machine and assignment locks are already held.
+    # Idempotent retries of existing captures return before this new-capture path.
+    from app.work_orders import handoff_guard
+    handoff_guard.require_assignment_unreserved(
+        connection, assignment_id=assignment_id)
     return ActiveContext(machine_id, schedule_id, operating_date, article_version_id, now)
 
 

@@ -287,6 +287,10 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     """Activa un destino ya validado. Exige la OT bloqueada; toma el lock de la máquina (re-entrante si el llamador ya lo tiene)."""
     multi = _multi_machine_enabled()
     _lock_machines(connection, [target.machine_id])
+    # E2-D2-B0: machine lock precedes reservation row read; no D2 writers yet.
+    from app.work_orders import handoff_guard
+    handoff_guard.require_line_unreserved(
+        connection, work_order_id=work_order_id, line_code=target.line_code)
     # A turn change may make prior assignments stale while their logical line
     # remains in production. Never activate a different OT on that machine
     # until Supervisión explicitly finishes the prior logical line.
@@ -334,6 +338,12 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     else:
         replaced = current  # semántica histórica: la anterior se sustituye
     finished = [row[0] for row in (*stale, *replaced)]
+    # An unrelated activation/shift rollover must not silently finish a line
+    # reserved by Supervisión (including assignments of another OT).
+    affected = {(row[4], row[5]) for row in (*stale, *replaced)}
+    for affected_order_id, affected_code in sorted(affected, key=lambda x: (str(x[0]), x[1])):
+        handoff_guard.require_line_unreserved(
+            connection, work_order_id=affected_order_id, line_code=affected_code)
     if settings.work_order_line_execution_enabled is True and finished:
         # Single-assignment mode must not silently end the shift assignment of
         # a *different logical line* that is still in production. A fresh shift
@@ -406,6 +416,9 @@ def finish(connection, *, actor_id, assignment_id, request_id=None, sectors) -> 
         if state is None:
             raise AssignmentNotFoundError()
         if state[0] == "active":
+            from app.work_orders import handoff_guard
+            handoff_guard.require_assignment_unreserved(
+                connection, assignment_id=assignment_id)
             if settings.work_order_line_execution_enabled is True:
                 from app.work_orders.line_execution import ExecutionStateConflictError
                 producing = connection.execute(
