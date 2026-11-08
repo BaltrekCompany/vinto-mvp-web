@@ -225,7 +225,7 @@ class RevisionNoticesTests(AssignmentApiCase):
         post = f"/api/assignments/{assigned['id']}/acknowledge-revision"
         stale = await call("POST", post, json_body={"expected_version": 1}, cookie=cookie)
         self.assertEqual((stale.status, stale.json()["code"]), (409, "REVISION_NOTICE_CHANGED"))
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 0)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],)), 0)
         for injected in ({"user_id": str(uuid4())}, {"version_id": str(uuid4())},
                          {"machine_code": "MP3"}, {"acknowledged_at": "2000-01-01T00:00:00Z"}):
             response = await call("POST", post, json_body={"expected_version": 2, **injected}, cookie=cookie)
@@ -237,10 +237,11 @@ class RevisionNoticesTests(AssignmentApiCase):
         second = await call("POST", post, json_body={"expected_version": 2}, cookie=cookie)
         self.assertEqual(second.status, 200, second.text)
         self.assertEqual(second.json(), created.json())
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 1)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],)), 1)
         actor, reason = self.connection.execute(
             """SELECT actor_id,reason FROM vinto_audit.audit_event
-               WHERE entity_table='work_order_revision_receipt' AND action='INSERT'""").fetchone()
+               WHERE entity_table='work_order_revision_receipt' AND action='INSERT'
+                 AND new_data->>'assignment_id'=%s""", (assigned["id"],)).fetchone()
         self.assertEqual(actor, self.users["OPERACION"][0].user_id)
         self.assertEqual(reason, "operator acknowledged assigned OT revision")
         afterward = (await call("GET", url, cookie=cookie)).json()[0]
@@ -248,7 +249,7 @@ class RevisionNoticesTests(AssignmentApiCase):
         self.assertEqual(self.scalar("SELECT status FROM vinto_txn.assignment WHERE id=%s", (assigned["id"],)), "active")
 
         import psycopg
-        receipt_id = self.scalar("SELECT id FROM vinto_txn.work_order_revision_receipt")
+        receipt_id = self.scalar("SELECT id FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],))
         with self.assertRaises(psycopg.errors.CheckViolation):
             self.connection.execute(
                 "UPDATE vinto_txn.work_order_revision_receipt SET acknowledged_at=clock_timestamp() WHERE id=%s",
