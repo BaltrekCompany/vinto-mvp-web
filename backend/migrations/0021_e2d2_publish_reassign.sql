@@ -136,7 +136,7 @@ CREATE UNIQUE INDEX e2d2_one_open_handoff_per_order
  ON vinto_txn.work_order_line_reprogram_handoff (work_order_id)
  WHERE status IN ('pending','published','reassigned');
 
-DO $
+DO $$
 BEGIN
  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='vinto_app') THEN
   GRANT UPDATE (published_version_id,replacement_assignment_id)
