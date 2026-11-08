@@ -127,13 +127,13 @@ class HandoffB0Tests(base.SameOrderCase):
                 capture_service.submit_production_capture(
                     self.connection, actor_id=self.jefatura, capture_id=uuid4(),
                     form_code="VINTO-P1-06", assignment_id=a.id,
-                    device_key=f"e2d2-f6-{uuid4().hex}", sectors=("BOBINAS",),
+                    device_key=str(uuid4()), sectors=("BOBINAS",),
                     values={"cantidad_fardos": 10, "punto_merma": "recorte_maquina",
                             "tipo_producto": "hoja_doble", "peso_kg": "125.50"})
             with self.assertRaises(WorkOrderHandoffPendingError):
                 bobbins.submit_bobbin_production(
                     self.connection, actor_id=self.jefatura, capture_id=uuid4(),
-                    assignment_id=a.id, device_key=f"e2d2-f3-{uuid4().hex}",
+                    assignment_id=a.id, device_key=str(uuid4()),
                     sectors=("BOBINAS",),
                     values={"hora_inicio": "07:15", "hora_fin": "08:40",
                             "diametro": "1200.5", "peso_kg": "845.25",
