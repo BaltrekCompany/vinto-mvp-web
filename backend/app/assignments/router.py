@@ -90,7 +90,7 @@ class RevisionNoticeOut(BaseModel):
 
 class AcknowledgeRevisionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    expected_version: int = Field(ge=2)
+    expected_version: int = Field(ge=1)  # version 1 is valid input but conflicts with any revised assignment (409)
 
 
 class RevisionReceiptOut(BaseModel):
