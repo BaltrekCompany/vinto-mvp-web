@@ -9,6 +9,7 @@ on:
       - 'backend/app/work_orders/handoff_rollout_cli.py'
       - 'backend/tests/test_e2d2_b2ops_identity.py'
       - 'deploy/mvp/scripts/tests/test_d2_ops_gate.sh'
+      - 'deploy/mvp/scripts/tests/test_healthcheck_fail_closed.sh'
       - 'docs/E2-D2-B2OPS-DESPLIEGUE-SEGURO.md'
       - '.github/workflows/e2d2-b2ops-gate.yml'
   workflow_dispatch:
@@ -31,12 +32,15 @@ jobs:
           bash -n deploy/mvp/scripts/lib_common.sh
           bash -n deploy/mvp/scripts/tests/test_d2_ops_gate.sh
           bash deploy/mvp/scripts/tests/test_d2_ops_gate.sh
+          bash -n deploy/mvp/scripts/tests/test_healthcheck_fail_closed.sh
+          bash deploy/mvp/scripts/tests/test_healthcheck_fail_closed.sh
       - name: Static shellcheck
         run: |
           shellcheck --severity=error -x \
             deploy/mvp/scripts/deploy.sh \
             deploy/mvp/scripts/rollback.sh \
-            deploy/mvp/scripts/tests/test_d2_ops_gate.sh
+            deploy/mvp/scripts/tests/test_d2_ops_gate.sh \
+            deploy/mvp/scripts/tests/test_healthcheck_fail_closed.sh
 
   postgres-gate:
     runs-on: ubuntu-24.04

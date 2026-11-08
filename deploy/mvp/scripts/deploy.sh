@@ -1176,14 +1176,24 @@ phase_d2_gate() {
 }
 
 phase_healthcheck() {
-  # Versión verbosa de uso manual (muestra cada respuesta). La MISMA comprobación, en forma
-  # silenciosa para decidir pass/fail programáticamente, vive en lib_common.sh::mvp_healthcheck
-  # y es la que usan "activate" y rollback.sh "version" para decidir si una activación/reversión
-  # fue realmente exitosa — un único criterio de salud, nunca dos copias que puedan divergir
-  # (CLOUD-DEP-02A.2-R2-2).
-  curl -fsS http://127.0.0.1:8100/health && echo
-  curl -fsS http://127.0.0.1:8100/api/health && echo
-  curl -fsS http://127.0.0.1:3100/ >/dev/null && echo "frontend OK (127.0.0.1:3100)"
+  # Un solo criterio para operador, activate y rollback: no permitir que el
+  # frontend sano oculte fallas del backend o de PostgreSQL. mvp_healthcheck
+  # valida los tres endpoints con una cadena && y devuelve falla si falta uno.
+  # Reintentos acotados cubren el arranque asincrono tras reiniciar systemd.
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if mvp_healthcheck; then
+      echo "backend /health: OK"
+      echo "backend /api/health (database): OK"
+      echo "frontend OK (127.0.0.1:3100)"
+      return 0
+    fi
+    if [ "$attempt" -lt 6 ]; then
+      sleep 2
+    fi
+  done
+  echo "FALLA: healthcheck MVP incompleto tras 6 intentos (backend, base de datos o frontend)." >&2
+  return 1
 }
 
 case "${1:-}" in
