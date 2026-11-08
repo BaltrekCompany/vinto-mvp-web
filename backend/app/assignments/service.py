@@ -550,11 +550,14 @@ def _digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _plan_hash(work_order_id, lines, expired, conflicts) -> str:
-    """64 hex = 32 de ESTADO FINAL aprobado + 32 de ACCIONES. Ver docs: el reintento tras una respuesta perdida conserva la mitad de estado."""
-    state = _digest({"v": 1, "work_order": str(work_order_id), "lines": [
+def _plan_hash(work_order_id, lines, expired, conflicts, reprogram_version=None) -> str:
+    """Retain all legacy hashes; a revised published OT binds confirmation to the CURRENT version."""
+    state_data = {"v": 1, "work_order": str(work_order_id), "lines": [
         [str(l.baseline_line_id), str(l.machine_id), None if l.shift_schedule_id is None else str(l.shift_schedule_id),
-         None if l.operating_date is None else l.operating_date.isoformat()] for l in lines]})
+         None if l.operating_date is None else l.operating_date.isoformat()] for l in lines]}
+    if reprogram_version is not None:
+        state_data["reprogram_version"] = reprogram_version
+    state = _digest(state_data)
     actions = _digest({"v": 1, "lines": [[str(l.baseline_line_id), l.action, l.reason, None if l.assignment_id is None else str(l.assignment_id)] for l in lines],
                        "expired": sorted(str(e.assignment_id) for e in expired), "conflicts": sorted(str(c.assignment_id) for c in conflicts)})
     return state[:32] + actions[:32]
@@ -591,10 +594,20 @@ def _build_plan(connection, *, work_order_id, sectors, now, lock) -> ActivationP
            FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
            JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id JOIN vinto_txn.work_order wo ON wo.id = v.work_order_id
            WHERE a.machine_id = ANY(%s) AND a.status = 'active' ORDER BY a.id""" + (" FOR UPDATE OF a" if lock else ""), (machine_ids,)).fetchall()
-    operational = dict(connection.execute(
-        """SELECT l.line_code, l.id FROM vinto_txn.work_order_line l JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
+    operational_rows = connection.execute(
+        """SELECT l.line_code, l.id, l.pv_reference, ar.code, av.description,
+                  v.version_number, v.reprogram_reason
+           FROM vinto_txn.work_order_line l
+           JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+           JOIN vinto_master.article_version av ON av.id=l.article_version_id
+           JOIN vinto_master.article ar ON ar.id=av.article_id
            WHERE v.id = (SELECT id FROM vinto_txn.work_order_version WHERE work_order_id = %s AND kind = 'operational' AND published_at IS NOT NULL
-                         ORDER BY version_number DESC LIMIT 1)""", (work_order_id,)).fetchall())
+                         ORDER BY version_number DESC LIMIT 1)""", (work_order_id,)).fetchall()
+    operational = {item[0]: item[1] for item in operational_rows}
+    current_program = {item[0]: item for item in operational_rows}
+    reprogram_version = next((item[5] for item in operational_rows if item[6] is not None), None)
+    if reprogram_version is not None and set(current_program) != {item[1] for item in rows}:
+        raise OperationalVersionError("La programación vigente no contiene las líneas de la base")
     shifts = {}
     for sector_id in {row[8] for row in rows}:
         try:
@@ -612,6 +625,9 @@ def _build_plan(connection, *, work_order_id, sectors, now, lock) -> ActivationP
         elif current is False:
             expired.append(PlanExpired(a_id, *machine_info[machine_id], line_code))
     for l_id, line_code, pv, version_id, machine_id, m_code, m_name, m_active, sector_id, _, a_code, a_desc in rows:
+        if reprogram_version is not None:
+            source_line = current_program[line_code]
+            pv, a_code, a_desc = source_line[2], source_line[3], source_line[4]
         shift = shifts[sector_id]
         resolved = isinstance(shift, ResolvedShift)
         existing = None
@@ -631,7 +647,7 @@ def _build_plan(connection, *, work_order_id, sectors, now, lock) -> ActivationP
                               shift.shift_code if resolved else None, shift.shift_name if resolved else None,
                               shift.operating_date if resolved else None, shift.shift_schedule_id if resolved else None))
     return ActivationPlan(work_order_id, number, status, tuple(lines), tuple(expired), tuple(conflicts),
-                          _plan_hash(work_order_id, lines, expired, conflicts), shifts)
+                          _plan_hash(work_order_id, lines, expired, conflicts, reprogram_version), shifts)
 
 
 def preview_activate_all(connection, *, work_order_id, sectors) -> BulkResult:
