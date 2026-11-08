@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     # Environment: WORK_ORDER_LINE_EXECUTION_ENABLED, never user-controlled.
     work_order_line_execution_enabled: bool = False
 
+    # E2-D1: authorizes only a never-assigned/unexecuted line in an in_progress OT.
+    # Strictly OFF by default. Independent from E1 and E2-B1 flags.
+    work_order_reprogram_unassigned_in_progress_enabled: bool = False
+
     # MF-13-03B PR5: visibilidad de LECTURA por máquina para perfiles que no gestionan (asignaciones, OT, capturas centrales; ver app/authz/visibility.py). Variable
     # AUTHZ_ASSIGNMENT_READS_MODE. off = alcance por sector (comportamiento anterior); observe = registra lo que se ocultaría sin cambiar la respuesta; enforce = filtra por
     # máquinas autorizadas. Con la compuerta multimáquina encendida las rutas históricas ya filtran, sea cual sea este modo. El contrato nuevo (`/active-lines`,

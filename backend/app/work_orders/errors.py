@@ -40,6 +40,14 @@ class WorkOrderReprogramBlockedError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_REPROGRAM_BLOCKED", "La OT no admite reprogramación ordinaria: debe estar publicada y sin asignaciones ni ejecución"
 
 
+class WorkOrderD1DisabledError(WorkOrderError):
+    http_status, code, public_message = 409, "WORK_ORDER_D1_DISABLED", "La reprogramacion controlada de lineas sin iniciar no esta habilitada"
+
+
+class WorkOrderD1BlockedError(WorkOrderError):
+    http_status, code, public_message = 409, "WORK_ORDER_D1_BLOCKED", "La linea no admite reprogramacion D1; comprobar estado e historial"
+
+
 class WorkOrderReprogramConflictError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_REPROGRAM_CONFLICT", "La programación cambió; vuelve a consultar la versión vigente"
 

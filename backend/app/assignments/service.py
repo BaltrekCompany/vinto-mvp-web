@@ -309,7 +309,7 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         raise OperationalVersionError(f"La línea operativa {target.line_code} no está en la misma máquina que su baseline")
     operational_line_id = operational_line[0]
     actives = connection.execute(
-        """SELECT a.id, a.work_order_line_id, a.shift_schedule_id, a.operating_date, v.work_order_id
+        """SELECT a.id, a.work_order_line_id, a.shift_schedule_id, a.operating_date, v.work_order_id, l.line_code
            FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
            JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
            WHERE a.machine_id = %s AND a.status = 'active' ORDER BY a.created_at, a.id FOR UPDATE OF a""", (target.machine_id,)).fetchall()
@@ -317,7 +317,7 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     current = [row for row in actives if (row[2], row[3]) == context]
     stale = [row for row in actives if (row[2], row[3]) != context]
     for row in current:
-        if row[1] == operational_line_id:  # same assignment: keep old idempotency semantics
+        if row[4] == work_order_id and row[5] == target.line_code:  # logical line stable across E2-D snapshots
             if settings.work_order_line_execution_enabled is True:
                 from app.work_orders.line_execution import enable_from_activation
                 enable_from_activation(
