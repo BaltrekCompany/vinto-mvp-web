@@ -131,6 +131,155 @@ class WorkOrderApiCase(unittest.IsolatedAsyncioTestCase):
         return self.connection.execute(query, params).fetchone()[0]
 
 
+class SupervisionRevisionNoticesTests(WorkOrderApiCase):
+    """E2-C2 end-to-end against a disposable PostgreSQL 17 test database."""
+
+    async def _reprogram(self, order, *, expected_version=1, quantity=120):
+        original = order["programming"]["lines"][0] if order.get("programming") else order["baseline"]["lines"][0]
+        fields = {
+            "pv_reference": original["pv_reference"], "article_code": original["article"]["code"],
+            "quantity": original["quantity"], "due_date": original["due_date"],
+        }
+        reply = await call(
+            "POST", f"/api/work-orders/{order['id']}/lines/L1/reprogram",
+            json_body={"expected_version": expected_version, "expected": fields,
+                       "replacement": {**fields, "quantity": quantity},
+                       "reason": "Ajuste autorizado por Jefatura para QA"},
+            cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(reply.status, 200, reply.text)
+        return reply.json()
+
+    async def _create_revision(self):
+        initial = (await self.create()).json()
+        published = (await call("POST", f"/api/work-orders/{initial['id']}/publish",
+                                cookie=await self.cookie("JEFATURA"))).json()
+        return await self._reprogram(published)
+
+    async def _notice(self, order, cookie=None):
+        resp = await call("GET", "/api/work-orders/supervision-revision-notices",
+                          cookie=cookie or await self.cookie("SUPERVISION"))
+        self.assertEqual(resp.status, 200, resp.text)
+        self.assertEqual(dict(resp.headers).get(b"cache-control"), b"private, no-store")
+        return next((n for n in resp.json() if n["work_order_id"] == order["id"]), None)
+
+    async def test_revision_notice_before_assignment_receipt_idempotency_and_audit(self):
+        order = await self._create_revision()
+        notice = await self._notice(order)
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice["version_number"], 2)
+        self.assertEqual(notice["status"], "published")
+        self.assertEqual(notice["line_code"], "L1")
+        self.assertEqual(notice["work_order_number"], order["number"])
+        self.assertEqual(notice["machine_code"], "MP1")
+        self.assertEqual(notice["reason"], "Ajuste autorizado por Jefatura para QA")
+        self.assertEqual(notice["before"]["quantity"], "100")
+        self.assertEqual(notice["after"]["quantity"], "120")
+        self.assertIsNone(notice["acknowledged_at"])
+
+        url = f"/api/work-orders/{order['id']}/acknowledge-supervision-revision"
+        cookie = await self.cookie("SUPERVISION")
+        old = await call("POST", url, json_body={"expected_version": 1}, cookie=cookie)
+        self.assertEqual((old.status, old.json()["code"]), (409, "SUPERVISION_REVISION_CHANGED"))
+
+        for injected in ({"user_id": str(uuid4())}, {"version_id": str(uuid4())},
+                         {"machine_code": "MP1"}, {"acknowledged_at": "2020-01-01T00:00:00Z"}):
+            bad = await call("POST", url, json_body={"expected_version": 2, **injected}, cookie=cookie)
+            self.assertEqual(bad.status, 422)
+
+        first = await call("POST", url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(first.status, 200, first.text)
+        repeated = await call("POST", url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(repeated.status, 200, repeated.text)
+        self.assertEqual(first.json(), repeated.json())
+
+        version_id = self.scalar(
+            "SELECT id FROM vinto_txn.work_order_version WHERE work_order_id=%s AND version_number=2",
+            (order["id"],))
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_supervision_revision_receipt WHERE version_id=%s",
+            (version_id,)), 1)
+        actor, reason = self.connection.execute(
+            """SELECT actor_id, reason FROM vinto_audit.audit_event
+               WHERE entity_table='work_order_supervision_revision_receipt'
+                 AND action='INSERT' AND new_data->>'version_id'=%s""",
+            (str(version_id),)).fetchone()
+        self.assertEqual(actor, self.users["SUPERVISION"][0].user_id)
+        self.assertEqual(reason, "supervisor acknowledged current published OT revision")
+
+        afterward = await self._notice(order)
+        self.assertEqual(afterward["acknowledged_at"], first.json()["acknowledged_at"])
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.assignment a "
+            "JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id "
+            "JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id "
+            "WHERE v.work_order_id=%s", (order["id"],)), 0)
+
+        import psycopg
+        rid = self.scalar(
+            "SELECT id FROM vinto_txn.work_order_supervision_revision_receipt WHERE version_id=%s",
+            (version_id,))
+        with self.assertRaises(psycopg.errors.CheckViolation):
+            self.connection.execute(
+                "UPDATE vinto_txn.work_order_supervision_revision_receipt SET acknowledged_at=clock_timestamp() WHERE id=%s",
+                (rid,))
+        with self.assertRaises(psycopg.errors.CheckViolation):
+            self.connection.execute(
+                "DELETE FROM vinto_txn.work_order_supervision_revision_receipt WHERE id=%s",
+                (rid,))
+
+    async def test_newer_revision_requires_new_ack_without_erasing_prior_receipt(self):
+        order = await self._create_revision()
+        cookie = await self.cookie("SUPERVISION")
+        url = f"/api/work-orders/{order['id']}/acknowledge-supervision-revision"
+        first = await call("POST", url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(first.status, 200, first.text)
+
+        latest = await self._reprogram(order, expected_version=2, quantity=130)
+        new_notice = await self._notice(latest)
+        self.assertEqual(new_notice["version_number"], 3)
+        self.assertIsNone(new_notice["acknowledged_at"])
+        self.assertEqual(new_notice["before"]["quantity"], "120")
+        self.assertEqual(new_notice["after"]["quantity"], "130")
+        stale = await call("POST", url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual((stale.status, stale.json()["code"]), (409, "SUPERVISION_REVISION_CHANGED"))
+        third = await call("POST", url, json_body={"expected_version": 3}, cookie=cookie)
+        self.assertEqual(third.status, 200, third.text)
+        self.assertEqual(self.scalar(
+            """SELECT count(*) FROM vinto_txn.work_order_supervision_revision_receipt r
+               JOIN vinto_txn.work_order_version v ON v.id=r.version_id
+               WHERE v.work_order_id=%s AND r.user_id=%s""",
+            (order["id"], self.users["SUPERVISION"][0].user_id)), 2)
+
+    async def test_permissions_unrevised_and_archived_orders_fail_closed(self):
+        base = (await self.create()).json()
+        published = (await call("POST", f"/api/work-orders/{base['id']}/publish",
+                                cookie=await self.cookie("JEFATURA"))).json()
+        url = f"/api/work-orders/{published['id']}/acknowledge-supervision-revision"
+        cookie = await self.cookie("SUPERVISION")
+        no_change = await call("POST", url, json_body={"expected_version": 1}, cookie=cookie)
+        self.assertEqual(no_change.status, 404)
+
+        for role in ("JEFATURA", "OPERACION", "CALIDAD", "DATA_BALTREK"):
+            wrong = await call("GET", "/api/work-orders/supervision-revision-notices",
+                               cookie=await self.cookie(role))
+            self.assertEqual(wrong.status, 403, role)
+            cannot_ack = await call("POST", url, json_body={"expected_version": 1},
+                                    cookie=await self.cookie(role))
+            self.assertEqual(cannot_ack.status, 403, role)
+        self.assertEqual((await call("GET", "/api/work-orders/supervision-revision-notices")).status, 401)
+
+        revised = await self._reprogram(published)
+        self.assertIsNotNone(await self._notice(revised))
+        archived = await call("POST", f"/api/work-orders/{revised['id']}/archive",
+                              json_body={"reason": "Retiro de OT ficticia durante QA"},
+                              cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(archived.status, 200, archived.text)
+        self.assertIsNone(await self._notice(revised))
+        denied = await call("POST", f"/api/work-orders/{revised['id']}/acknowledge-supervision-revision",
+                            json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(denied.status, 404)
+
+
 class JefaturaFlowTests(WorkOrderApiCase):
     async def test_jefatura_creates_adds_a_line_publishes_and_everybody_can_read_it(self):
         created = await self.create()
