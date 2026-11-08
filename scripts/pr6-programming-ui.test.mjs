@@ -166,7 +166,7 @@ test("E2-B shows current revision without changing baseline line identity or ena
   assert.ok(!supervisor.includes("data-reprogram-line"), "only Jefatura may edit");
   const operator = html(props({ workOrders: ready([revised]), canManageOrders: false, canManageAssignments: false }));
   assert.ok(!operator.includes("data-reprogram-line"));
-  const running = html(props({ workOrders: ready([order("in_progress", base)] }));
+  const running = html(props({ workOrders: ready([order("in_progress", base)]) }));
   assert.ok(!running.includes("data-reprogram-line"), "in-production OT remains read-only");
 });
 
