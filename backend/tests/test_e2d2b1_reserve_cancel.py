@@ -1,4 +1,5 @@
 """E2-D2-B1.1: supervised reserve/cancel against disposable PG17 *_test only."""
+import threading
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -6,6 +7,7 @@ from uuid import uuid4
 import psycopg
 
 from app.config import settings
+from app.ephemeral_db import connect
 from app.work_orders import handoff_service, line_execution
 from app.work_orders.errors import (
     WorkOrderHandoffBlockedError, WorkOrderHandoffChangedError,
@@ -174,6 +176,56 @@ class ReserveCancelTests(base.SameOrderCase):
         with self.assertRaises(WorkOrderHandoffBlockedError):
             self.reserve(order, assigned)
         self.assertEqual(self.count("vinto_txn.work_order_line_reprogram_handoff"), 0)
+
+
+    def test_reserve_races_with_start_without_deadlock_or_partial_state(self):
+        order = self.same_machine_order(1)
+        a = self.activate(order, 0).assignment
+        barrier = threading.Barrier(2)
+        outcomes = [None, None]
+
+        def run(i, action):
+            try:
+                with connect(self.database) as conn:
+                    barrier.wait(timeout=10)
+                    action(conn)
+                    outcomes[i] = ("ok", None)
+            except Exception as err:
+                outcomes[i] = ("error", err)
+
+        def reserve(conn):
+            return handoff_service.reserve(
+                conn, actor_id=self.supervisor, work_order_id=order.id,
+                line_code="L1", assignment_id=a.id, expected_version=2,
+                reason="Reserva concurrente supervisada de linea",
+                sectors=("BOBINAS",))
+
+        def start(conn):
+            return line_execution.start_line(
+                conn, actor_id=self.supervisor, work_order_id=order.id,
+                line_code="L1", assignment_id=a.id, sectors=("BOBINAS",))
+
+        pair = [
+            threading.Thread(target=run, args=(0, reserve), daemon=True),
+            threading.Thread(target=run, args=(1, start), daemon=True),
+        ]
+        for thread in pair:
+            thread.start()
+        for thread in pair:
+            thread.join(timeout=45)
+        self.assertFalse(any(thread.is_alive() for thread in pair), "deadlock")
+        self.assertEqual(sorted(result[0] for result in outcomes), ["error", "ok"])
+        if outcomes[0][0] == "ok":
+            self.assertIsInstance(outcomes[1][1], WorkOrderHandoffPendingError)
+            self.assertEqual(self.count("vinto_txn.work_order_line_reprogram_handoff"), 1)
+            expected = "enabled"
+        else:
+            self.assertIsInstance(outcomes[0][1], WorkOrderHandoffBlockedError)
+            self.assertEqual(self.count("vinto_txn.work_order_line_reprogram_handoff"), 0)
+            expected = "in_production"
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.work_order_line_execution WHERE baseline_line_id=%s",
+            (order.baseline.lines[0].id,)), expected)
 
 
 if __name__ == "__main__":
