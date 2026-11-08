@@ -250,6 +250,48 @@ class AddLineTests(WorkOrderCase):
         self.assertEqual(self.counts(), before)
 
 
+class EditDraftLineTests(WorkOrderCase):
+    def test_quantity_only_preserves_article_version_and_machine(self):
+        first = self.create([line(MP1_CODES[0], "PV-A", 120)])
+        line_id = first.baseline.lines[0].id
+        old_version, old_machine = self.connection.execute(
+            "SELECT article_version_id, machine_id FROM vinto_txn.work_order_line WHERE id=%s", (line_id,)).fetchone()
+        article_id = self.scalar("SELECT id FROM vinto_master.article WHERE code=%s", (MP1_CODES[0],))
+        self.connection.execute(
+            """INSERT INTO vinto_master.article_version(article_id,version_number,description,unit_id)
+               SELECT article_id,max(version_number)+1,'VERSIÓN NUEVA',max(unit_id::text)::uuid
+               FROM vinto_master.article_version WHERE article_id=%s GROUP BY article_id""", (article_id,))
+        updated = service.edit_draft_line(self.connection, actor_id=self.actor, work_order_id=first.id,
+                                          line_code="L1", expected=line(MP1_CODES[0], "PV-A", 120),
+                                          replacement=line(MP1_CODES[0], "PV-B", 150),
+                                          reason="Ajuste QA de cantidad programada")
+        self.assertEqual((updated.status, updated.baseline.lines[0].pv_reference, updated.baseline.lines[0].quantity),
+                         ("draft", "PV-B", Decimal("150")))
+        version, machine = self.connection.execute(
+            "SELECT article_version_id, machine_id FROM vinto_txn.work_order_line WHERE id=%s", (line_id,)).fetchone()
+        self.assertEqual((version, machine), (old_version, old_machine))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_version WHERE work_order_id=%s", (first.id,)), 1)
+
+    def test_stale_edit_and_published_edit_fail_without_changes(self):
+        first = self.create([line(MP1_CODES[0], "PV-ORIG", 120)])
+        service.edit_draft_line(self.connection, actor_id=self.actor, work_order_id=first.id,
+                                line_code="L1", expected=line(MP1_CODES[0], "PV-ORIG", 120),
+                                replacement=line(MP1_CODES[0], "PV-NUEVO", 150),
+                                reason="Ajuste QA del cronograma")
+        from app.work_orders.errors import WorkOrderDraftChangedError, WorkOrderNotDraftError
+        with self.assertRaises(WorkOrderDraftChangedError):
+            service.edit_draft_line(self.connection, actor_id=self.actor, work_order_id=first.id,
+                                    line_code="L1", expected=line(MP1_CODES[0], "PV-ORIG", 120),
+                                    replacement=line(MP1_CODES[0], "PV-ERROR", 180),
+                                    reason="Cambio concurrente debe rechazarse")
+        service.publish_work_order(self.connection, actor_id=self.actor, work_order_id=first.id)
+        with self.assertRaises(WorkOrderNotDraftError):
+            service.edit_draft_line(self.connection, actor_id=self.actor, work_order_id=first.id,
+                                    line_code="L1", expected=line(MP1_CODES[0], "PV-NUEVO", 150),
+                                    replacement=line(MP1_CODES[0], "PV-ERROR", 180),
+                                    reason="No editar una OT publicada")
+        self.assertEqual(service.get_work_order(self.connection, first.id).baseline.lines[0].quantity, Decimal("150"))
+
 class PublishTests(WorkOrderCase):
     def test_publish_sets_published_at_and_status(self):
         view = self.create([line(), line(MP1_CODES[1], "PV-2")])
