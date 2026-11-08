@@ -160,7 +160,8 @@ test("E2-B shows current revision without changing baseline line identity or ena
   assert.ok(manager.includes("data-reprogram-line=\"L1\""));
   assert.ok(manager.includes("Consultar historial de versiones"));
   assert.ok(!manager.includes("data-edit-draft-line"), "do not reuse draft editing");
-  assert.ok(isDisabled(selectTag(manager, "Máquina de la fila 1")), "machine is fixed");
+  const revisedEditor = manager.split('data-reprogram-line="L1"')[1];
+  assert.ok(revisedEditor && isDisabled(selectTag(revisedEditor, "Máquina de la fila 1")), "the persisted revision machine is fixed (not the separate new-OT form)");
   const supervisor = html(props({ workOrders: ready([revised]), canManageOrders: false, canManageAssignments: true }));
   assert.ok(supervisor.includes("150 KG"), "supervision sees current programmed quantity");
   assert.ok(!supervisor.includes("data-reprogram-line"), "only Jefatura may edit");
