@@ -202,7 +202,13 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                 {executionEnabled && (order.status === "published" || order.status === "in_progress") &&
                     <LineExecutionPanel key={scope + ":" + order.id} order={order} scope={scope} refreshRevision={executionRevision}
                         lockedExternal={locked} onChanged={onChanged} onSessionLost={onSessionLost}/>}
-                {canManageOrders && order.status === "draft" && typeof options !== "string" && <AddLine order={order} options={options} multi={multi} disabled={locked} busy={busy === `add:${order.id}`} nextKey={nextKey} onAdd={draft => addLine(order, draft)}/>}
+                {canManageOrders && order.status === "draft" && typeof options !== "string" && <>
+                    {order.baseline.lines.map(line => <EditDraftLine
+                        key={`${line.id}:${line.pv_reference}:${line.article.code}:${line.quantity}:${line.due_date}`}
+                        line={line} options={options} disabled={locked}
+                        onSave={(replacement, reason) => editLine(order, line, replacement, reason)}/>)}
+                    <AddLine order={order} options={options} multi={multi} disabled={locked} busy={busy === `add:${order.id}`} nextKey={nextKey} onAdd={draft => addLine(order, draft)}/>
+                </>}
             </div>;
         })}
         {massOrder && massOrder.scope === scope && <ActivateAllDialog key={`${massOrder.scope}:${massOrder.id}`} lineExecutionEnabled={executionEnabled} orderId={massOrder.id} orderNumber={massOrder.number} onClose={() => setMassOrder(null)} returnFocusTargets={() => [invoker.current, invoker.current?.closest<HTMLElement>("[data-work-order]"), panel.current]} onSessionLost={onSessionLost} onApplied={() => { setExecutionRevision(n => n + 1); onChanged(); }}
@@ -247,4 +253,48 @@ function AddLine({ order, options, multi, disabled, busy, nextKey, onAdd }: { or
     return <details className="border-t p-4"><summary className="cursor-pointer text-sm font-bold">Añadir una línea a este borrador</summary>
         <div className="mt-3 space-y-3"><OrderDraftEditor rows={[row]} onRows={next => setRow(next[0])} machines={machines} catalog={options.catalog} multi={multi} disabled={disabled} errors={errors} nextKey={nextKey} fixedRows/>
             <Button size="sm" variant="outline" disabled={disabled} onClick={submit}>{busy ? "Añadiendo…" : "Añadir línea"}</Button></div></details>;
+}
+
+// E2-A: editar una línea persistida SOLO antes de publicar; no cambia máquina ni identidad.
+function EditDraftLine({ line, options, disabled, onSave }: {
+    line: WorkOrderLine;
+    options: { machines: readonly MachineOption[]; catalog: (machine: string) => readonly CatalogItem[] };
+    disabled: boolean;
+    onSave: (replacement: LineDraft, reason: string) => void;
+}) {
+    const machine = line.machine.code;
+    const [row, setRow] = useState<DraftRow>(() => ({
+        key: line.id, machine, pv: line.pv_reference, code: line.article.code,
+        qty: String(line.quantity), date: line.due_date,
+    }));
+    const [reason, setReason] = useState("");
+    const [errors, setErrors] = useState<RowError[]>([]);
+    const changed = row.pv.trim() !== line.pv_reference || row.code !== line.article.code
+        || Number(row.qty) !== line.quantity || row.date !== line.due_date;
+    function save() {
+        const checked = validateRows([row], {
+            multi: false, machines: [machine], catalog: options.catalog,
+        });
+        if (!checked.ok) { setErrors(checked.errors); return void toast.error(checked.message); }
+        if (!changed) return void toast.error("No hay cambios para guardar");
+        if (reason.trim().length < 10 || reason.trim().length > 300)
+            return void toast.error("Indica un motivo de 10 a 300 caracteres");
+        setErrors([]);
+        onSave(checked.lines[0], reason.trim());
+    }
+    return <details className="border-t p-4" data-edit-draft-line={line.line_code}>
+        <summary className="cursor-pointer text-sm font-bold">Editar {line.line_code} · {machine} (solo borrador)</summary>
+        <div className="mt-3 space-y-3">
+            <OrderDraftEditor rows={[row]} onRows={next => setRow(next[0])} machines={[line.machine]}
+                catalog={options.catalog} multi={false} lockMachine fixedRows disabled={disabled}
+                errors={errors} nextKey={() => line.id}/>
+            <label className="block text-sm font-semibold" htmlFor={`draft-edit-reason-${line.id}`}>Motivo de la corrección (obligatorio)</label>
+            <Input id={`draft-edit-reason-${line.id}`} value={reason} maxLength={300} disabled={disabled}
+                placeholder="Ej.: Ajuste de cantidad solicitado por Jefatura"
+                onChange={event => setReason(event.target.value)}/>
+            <Button type="button" size="sm" variant="outline" disabled={disabled || !changed || reason.trim().length < 10}
+                onClick={save}>Guardar cambios de {line.line_code}</Button>
+            <p className="text-xs text-slate-600">La máquina, el código de línea y la OT no cambian. Una OT publicada no admite esta operación.</p>
+        </div>
+    </details>;
 }
