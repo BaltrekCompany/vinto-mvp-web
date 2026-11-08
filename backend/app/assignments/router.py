@@ -82,6 +82,10 @@ class RevisionNoticeOut(BaseModel):
     reason: str
     revised_at: datetime
     acknowledged_at: datetime | None
+    pv_reference: str
+    article_code: str
+    quantity: str
+    due_date: date
 
 
 class AcknowledgeRevisionIn(BaseModel):
