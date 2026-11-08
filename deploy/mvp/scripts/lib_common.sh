@@ -93,6 +93,128 @@ run_with_lock_fd_closed() {
   eval "$quoted $MVP_ACTIVATE_LOCK_FD>&-"
 }
 
+# E2-D2-B2-OPS: release-aware, READ-ONLY safety gate shared by activation,
+# rollback, and explicit flag-change preflight. The existing backend CLI
+# connects with the *service user's* backend/.env; no password is passed in
+# argv or emitted. A failure (including unavailable database) always blocks.
+#
+# The first B2 deployment is special: current is pre-D2 and has no CLI, so
+# use the fully prepared TARGET release CLI. Subsequent rollbacks use the
+# CURRENT release. A legacy-to-legacy switch may skip the gate ONLY when
+# neither checkout even contains migration 0019 (neither can create D2
+# handoffs). This preserves E2-D1 rollback before D2 has been deployed.
+# NOTE: This is a necessary preflight, not an atomic pause of all HTTP writes.
+d2_ops_gate() {
+  local operation="${1:?d2_ops_gate <activate|rollback|enable|disable> [target-release]}"
+  local destination="${2:-}"
+  local current="$MVP_APP_DIR/current"
+  local runner="" mode="$operation"
+
+  case "$operation" in
+    activate|rollback) mode="rollback" ;;
+    enable|disable) ;;
+    *) echo "D2_OPS_GATE_INVALID_OPERATION" >&2; return 3 ;;
+  esac
+  assert_can_read_mvp_private_paths
+
+  if mvp_test -f "$current/backend/app/work_orders/handoff_rollout_cli.py"; then
+    runner="$(mvp_readlink_f "$current")"
+  elif [ -n "$destination" ] &&
+       mvp_test -f "$destination/backend/app/work_orders/handoff_rollout_cli.py"; then
+    runner="$(mvp_readlink_f "$destination")"
+  else
+    # Never bypass B2 if any checkout has a D2 writer but its safety
+    # preflight is missing. Never bypass for enable, even on legacy.
+    if [ "$operation" != "enable" ] &&
+       ! mvp_test -f "$current/backend/migrations/0019_work_order_line_reprogram_handoff.sql" &&
+       { [ -z "$destination" ] ||
+         ! mvp_test -f "$destination/backend/migrations/0019_work_order_line_reprogram_handoff.sql"; }; then
+      # Legacy code has no D2 writer, but a PREVIOUS newer release might
+      # have left D2 rows. Check the actual DB instead of blindly skipping.
+      if ! mvp_test -e "$current"; then
+        echo "D2_OPS_GATE_FIRST_INSTALL_NO_CURRENT=PASS"
+        return 0
+      fi
+      if ! mvp_test -x "$current/backend/.venv/bin/python"; then
+        echo "D2_OPS_GATE_LEGACY_PYTHON_MISSING: NO-GO" >&2
+        return 3
+      fi
+      if ! run_with_lock_fd_closed sudo -u "$MVP_SERVICE_USER" \
+          env PYTHONPATH="$current/backend" "$current/backend/.venv/bin/python" -B -c '
+import sys
+try:
+    import psycopg
+    from app.config import settings
+    value = settings.database_url
+    if value is None or not value.get_secret_value():
+        sys.exit(3)
+    with psycopg.connect(
+        value.get_secret_value(), connect_timeout=5, autocommit=True,
+        options="-c default_transaction_read_only=on -c statement_timeout=15000 -c lock_timeout=1500",
+    ) as db:
+        with db.transaction():
+            db.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            exists = db.execute(
+                "SELECT to_regclass(\047vinto_txn.work_order_line_reprogram_handoff\047)"
+            ).fetchone()[0]
+            if exists is not None:
+                count = db.execute(
+                    "SELECT count(*) FROM vinto_txn.work_order_line_reprogram_handoff "
+                    "WHERE status IN (\047pending\047,\047published\047,\047reassigned\047)"
+                ).fetchone()[0]
+                if count:
+                    sys.exit(2)
+except Exception:
+    sys.exit(3)
+' ; then
+        echo "D2_OPS_GATE_LEGACY_DB_UNVERIFIED_OR_OPEN: NO-GO" >&2
+        return 3
+      fi
+      echo "D2_OPS_GATE_LEGACY_DATABASE_VERIFIED=PASS"
+      return 0
+    fi
+    echo "D2_OPS_GATE_NO_TRUSTED_RUNNER: NO-GO" >&2
+    return 3
+  fi
+
+  if ! mvp_test -x "$runner/backend/.venv/bin/python"; then
+    echo "D2_OPS_GATE_PYTHON_MISSING: NO-GO" >&2
+    return 3
+  fi
+
+  # Rollback to a checkout that cannot parse the shared backend flag would
+  # fail Pydantic startup even if zero handoffs exist. Fail BEFORE symlink.
+  if { [ "$operation" = "rollback" ] || [ "$operation" = "activate" ]; } &&
+     [ -n "$destination" ] && mvp_test -f "$MVP_APP_DIR/shared/backend.env"; then
+    local configured="" flag_present=0
+    configured="$(mvp_env_value "$MVP_APP_DIR/shared/backend.env" WORK_ORDER_REPROGRAM_HANDOFF_ENABLED 2>/dev/null || true)"
+    if sudo -u "$MVP_SERVICE_USER" grep -q '^WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=' "$MVP_APP_DIR/shared/backend.env"; then
+      flag_present=1
+    fi
+    if [ "$flag_present" -eq 1 ] &&
+       ! sudo -u "$MVP_SERVICE_USER" grep -qF "work_order_reprogram_handoff_enabled" "$destination/backend/app/config.py"; then
+      echo "D2_OPS_GATE_TARGET_CANNOT_PARSE_FLAG: NO-GO" >&2
+      return 3
+    fi
+    if mvp_test -f "$destination/backend/migrations/0019_work_order_line_reprogram_handoff.sql" &&
+       ! mvp_test -f "$destination/backend/app/work_orders/handoff_rollout_cli.py"; then
+      case "$configured" in
+        ""|0|false|False|FALSE|off|OFF|no|NO) ;;
+        *) echo "D2_OPS_GATE_TARGET_LACKS_RECEIPT_WHILE_FLAG_ON: NO-GO" >&2
+           return 3 ;;
+      esac
+    fi
+  fi
+
+  if ! run_with_lock_fd_closed sudo -u "$MVP_SERVICE_USER" \
+      env PYTHONPATH="$runner/backend" \
+      "$runner/backend/.venv/bin/python" -m app.work_orders.handoff_rollout_cli "$mode"; then
+    echo "D2_OPS_GATE_BLOCKED ($operation): NO-GO" >&2
+    return 2
+  fi
+  echo "D2_OPS_GATE_${operation^^}=PASS"
+}
+
 # Comprueba /health, /api/health y la raíz del frontend. Usada por deploy.sh (fase "healthcheck" y
 # dentro de "activate") Y por rollback.sh ("version", CLOUD-DEP-02A.2-R2-2: "comprobar salud tras
 # reiniciar, nunca afirmar éxito sin comprobarlo"). Un único lugar evita que las dos copias diverjan.

@@ -61,7 +61,14 @@ def baseline_statements(role):
     schema = re.search(r"GRANT USAGE ON SCHEMA [^;]+TO vinto_app;", (roles_dir / "02_schema_grants.sql").read_text(encoding="utf-8")).group(0)
     function = re.search(r"GRANT EXECUTE ON FUNCTION vinto_txn\.management_start_year\(date\) TO vinto_app;", (roles_dir / "04_function_grants.sql").read_text(encoding="utf-8")).group(0)
     grants_0007 = re.search(r'GRANT SELECT, INSERT, UPDATE ON vinto_master\."user_machine_form_grant" TO vinto_app;', (BACKEND / "migrations/0007_user_machine_form_grants.sql").read_text(encoding="utf-8")).group(0)
-    return [s.replace("vinto_app", role) for s in [schema, function, grants_0007] + statements]
+    # E2-D2 (0019) grants SELECT to the real vinto_app. Mirrored roles in
+    # D3B tests must receive the same read-only grant: central/F3 captures
+    # query open handoffs even while D2 is OFF. Never add DML to this fixture.
+    grants_0019 = re.search(
+        r"GRANT SELECT ON vinto_txn\.work_order_line_reprogram_handoff TO vinto_app;",
+        (BACKEND / "migrations/0019_work_order_line_reprogram_handoff.sql").read_text(encoding="utf-8"),
+    ).group(0)
+    return [s.replace("vinto_app", role) for s in [schema, function, grants_0007, grants_0019] + statements]
 
 
 FORWARD_PHASES = ("D3B1", "D3B2", "D3B4")
