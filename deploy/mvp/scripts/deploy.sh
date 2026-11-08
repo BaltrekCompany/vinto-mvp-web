@@ -668,6 +668,13 @@ phase_activate() {
     done
   fi
 
+  # E2-D2-B2-OPS: validate the exact live DB state before changing
+  # current, even when the candidate is a rollback/older checkout.
+  if ! d2_ops_gate activate "$release_dir"; then
+    echo "FALLA D2: la activación queda bloqueada; current intacto." >&2
+    exit 1
+  fi
+
   local previous_target=""
   if mvp_test -e "$APP_DIR/current"; then
     previous_target="$(mvp_readlink_f "$APP_DIR/current")"
@@ -755,6 +762,14 @@ phase_activate() {
   rm -f "$hc_log"
   if [ -n "$previous_target" ] && mvp_test -d "$previous_target"; then
     echo "Revirtiendo 'current' automáticamente a la versión anterior ($previous_target)..." >&2
+    # A new D2 handoff may have appeared during restart/healthcheck. Do NOT
+    # auto-downgrade to an older backend unless the live DB is still clear.
+    # On NO-GO leave the new current unchanged and fail for manual recovery.
+    if ! d2_ops_gate rollback "$previous_target"; then
+      trap - INT TERM
+      echo "FALLA D2: rollback automático bloqueado. current queda en $commit; investigar el servicio y recuperar el relevo sin borrar datos." >&2
+      exit 1
+    fi
     # CLOUD-DEP-02B.2-G.12-B4-P3-H1-R1, puntos 4/6/9: si la PROPIA reversión no logra conmutar el
     # symlink, antes "set -e" terminaba el script en silencio, sin un mensaje que diga que ni
     # siquiera se puede garantizar un estado consistente. Ahora se detecta explícitamente y se
@@ -1148,6 +1163,18 @@ phase_migrate_release() {
   echo "Siguiente paso: bash deploy.sh preflight-startup && CONFIRM=yes bash deploy.sh activate $commit"
 }
 
+phase_d2_gate() {
+  # Read-only mandatory preflight before an operator-approved flag change.
+  # This command intentionally NEVER edits backend.env or restarts services.
+  # There must be no flag-off "escape hatch" around persisted handoffs.
+  local action="${1:?Uso: deploy.sh d2-gate <enable|disable|rollback>}"
+  case "$action" in enable|disable|rollback) ;; *)
+    echo "D2_OPS_GATE_INVALID_OPERATION" >&2; exit 2 ;;
+  esac
+  acquire_activate_lock
+  d2_ops_gate "$action" "$APP_DIR/current"
+}
+
 phase_healthcheck() {
   # Versión verbosa de uso manual (muestra cada respuesta). La MISMA comprobación, en forma
   # silenciosa para decidir pass/fail programáticamente, vive en lib_common.sh::mvp_healthcheck
@@ -1181,9 +1208,10 @@ case "${1:-}" in
   import-reference) phase_import_reference ;;
   import-reference-apply) phase_import_reference_apply ;;
   systemd-install) phase_systemd_install ;;
+  d2-gate) phase_d2_gate "${2:-}" ;;
   healthcheck) phase_healthcheck ;;
   *)
-    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|link-backend-env <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|check-release <sha>|migrate-release <sha>|postgres-grants|import-reference|import-reference-apply|systemd-install|healthcheck}" >&2
+    echo "Uso: deploy.sh {preflight|preflight-build-deps|preflight-startup|user-and-dirs|checkout <sha>|link-backend-env <sha>|python-venv <sha>|install-frontend-artifact <sha> <tar.gz> <manifiesto>|install-node-runtime <version> <tarball>|validate-compose|activate <sha>|postgres-up|postgres-bootstrap-db|postgres-roles|migrate|check-release <sha>|migrate-release <sha>|postgres-grants|import-reference|import-reference-apply|systemd-install|d2-gate <enable|disable|rollback>|healthcheck}" >&2
     exit 1
     ;;
 esac
