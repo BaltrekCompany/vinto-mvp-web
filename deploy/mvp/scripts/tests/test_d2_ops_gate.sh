@@ -130,11 +130,10 @@ assert activate.index("d2_ops_gate activate") < activate.index('ln -sfn "$releas
 assert activate.index('d2_ops_gate rollback "$previous_target"') < activate.index('ln -sfn "$previous_target"')
 assert manual.index('d2_ops_gate rollback "$release_dir"') < manual.index('ln -sfn "$release_dir"')
 assert "d2-gate) phase_d2_gate" in d
-import re
 lib=(scripts/"lib_common.sh").read_text()
-m=re.search(r"-B -c '\\n(.*?)\\n' ; then",lib,re.DOTALL)
-assert m is not None, "Legacy probe must be present and single-quoted"
-compile(m.group(1), "<d2-legacy-probe>", "exec")
+start=lib.index("-B -c '")+len("-B -c '")
+end=lib.index("' ; then",start)
+compile(lib[start:end], "<d2-legacy-probe>", "exec")
 print("PASS gate ordering and legacy probe Python syntax")
 PY
 pass=$((pass+1))
