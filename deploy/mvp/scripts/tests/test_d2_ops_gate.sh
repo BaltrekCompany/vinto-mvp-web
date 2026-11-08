@@ -93,6 +93,9 @@ printf 'WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=true\n' > "$ROOT/shared/backend.env
 assert_fail "legacy target cannot parse D2 flag" d2_ops_gate rollback "$LEGACY"
 : > "$LEGACY/backend/app/config.py"
 assert_fail "legacy still lacks D2 flag field" d2_ops_gate rollback "$LEGACY"
+printf 'WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=\n' > "$ROOT/shared/backend.env"
+assert_fail "empty D2 env key still breaks legacy Pydantic" d2_ops_gate rollback "$LEGACY"
+printf 'WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=true\n' > "$ROOT/shared/backend.env"
 printf 'work_order_reprogram_handoff_enabled: bool = False\n' > "$LEGACY/backend/app/config.py"
 assert_pass "compatible legacy target after no-open gate" d2_ops_gate rollback "$LEGACY"
 
