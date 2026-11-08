@@ -174,6 +174,11 @@ def start_line(connection, *, actor_id, work_order_id, line_code, assignment_id,
             (baseline_id,)).fetchone()
         if state is None or state[0] == "planned":
             raise ExecutionNotReadyError()
+        # E2-D2-B0: never start (or silently advance) a reserved logical line.
+        # OT -> machine -> assignment -> E1 -> handoff is the required order.
+        from app.work_orders import handoff_guard
+        handoff_guard.require_line_unreserved(
+            connection, work_order_id=work_order_id, line_code=line_code)
         if state[0] == "in_production":
             return _view(connection, baseline_id)
         if state[0] != "enabled":
