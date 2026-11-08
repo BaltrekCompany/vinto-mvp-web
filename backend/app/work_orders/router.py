@@ -21,9 +21,10 @@ from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import reprogramming
 from app.work_orders import handoff_service
+from app.work_orders import handoff_publication
 from app.work_orders import supervision_revision_notices
 from app.work_orders import close_order
-from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
+from app.work_orders.schemas import CreateWorkOrderIn, DraftLineFieldsIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
 
@@ -216,6 +217,59 @@ def cancel_supervised_handoff(
     return handoff_service.cancel(
         connection, actor_id=user.user_id, handoff_id=handoff_id,
         reason=body.reason, sectors=user.sectors, request_id=_request_id())
+
+
+# E2-D2-B1.2 (flag OFF): separate privileges for Jefatura and
+# Supervisión. No implicit reassignment during Jefatura publication.
+class HandoffPublishIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected: DraftLineFieldsIn
+    replacement: DraftLineFieldsIn
+    reason: str = Field(min_length=10, max_length=300)
+
+
+class HandoffPublishedOut(BaseModel):
+    handoff_id: uuid.UUID
+    work_order_id: uuid.UUID
+    line_code: str
+    version_number: int
+    published_version_id: uuid.UUID
+    status: Literal["published"]
+
+
+class HandoffReassignedOut(BaseModel):
+    handoff_id: uuid.UUID
+    work_order_id: uuid.UUID
+    previous_assignment_id: uuid.UUID
+    replacement_assignment_id: uuid.UUID
+    version_number: int
+    status: Literal["reassigned"]
+
+
+@router.post("/handoffs/{handoff_id}/publish",
+             response_model=HandoffPublishedOut, responses=_ERRORS)
+def publish_supervised_handoff(
+        handoff_id: str, body: HandoffPublishIn, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+        connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_publication.publish(
+        connection, actor_id=user.user_id, handoff_id=handoff_id,
+        expected=body.expected.to_domain(),
+        replacement=body.replacement.to_domain(), reason=body.reason,
+        sectors=user.sectors, request_id=_request_id())
+
+
+@router.post("/handoffs/{handoff_id}/reassign",
+             response_model=HandoffReassignedOut, responses=_ERRORS)
+def reassign_supervised_handoff(
+        handoff_id: str, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_publication.reassign(
+        connection, actor_id=user.user_id, handoff_id=handoff_id,
+        sectors=user.sectors, request_id=_request_id())
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderOut, responses=_ERRORS)

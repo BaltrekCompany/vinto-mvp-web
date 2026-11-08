@@ -88,6 +88,17 @@ def reserve(connection, *, actor_id, work_order_id, line_code,
         # MUST take machine lock before any assignment or E1 row lock:
         # capture F3/F6 use machine -> assignment and never lock OT first.
         assignments._machine_lock(connection, machine_id)
+        # Only one open D2 reservation may own the OT's global version chain.
+        # This mirrors 0021's partial unique index with a clean API 409,
+        # rather than exposing a database UniqueViolation as HTTP 500.
+        other_open = connection.execute(
+            """SELECT EXISTS (
+                 SELECT 1 FROM vinto_txn.work_order_line_reprogram_handoff
+                 WHERE work_order_id=%s AND status IN
+                   ('pending','published','reassigned')
+               )""", (work_order_id,)).fetchone()[0]
+        if other_open:
+            raise WorkOrderHandoffPendingError()
         handoff_guard.require_line_unreserved(
             connection, work_order_id=work_order_id, line_code=line_code)
 

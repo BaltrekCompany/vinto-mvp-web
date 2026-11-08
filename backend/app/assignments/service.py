@@ -371,10 +371,10 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         for assignment_id in finished:
             connection.execute("UPDATE vinto_txn.assignment SET status = 'finished', finished_at = clock_timestamp() WHERE id = %s", (assignment_id,))
     _reason(connection, _tagged("activate assignment", batch_tag))
-    new_id = connection.execute(
-        """INSERT INTO vinto_txn.assignment (work_order_line_id, machine_id, shift_schedule_id, operating_date, assigned_by)
-           VALUES (%s,%s,%s,%s,%s) RETURNING id""",
-        (operational_line_id, target.machine_id, shift.shift_schedule_id, shift.operating_date, actor_id)).fetchone()[0]
+    new_id = _insert_assignment_record(
+        connection, operational_line_id=operational_line_id,
+        machine_id=target.machine_id, shift_schedule_id=shift.shift_schedule_id,
+        operating_date=shift.operating_date, actor_id=actor_id)
     if settings.work_order_line_execution_enabled is True:
         from app.work_orders.line_execution import enable_from_activation
         enable_from_activation(
@@ -385,6 +385,21 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         connection.execute("UPDATE vinto_txn.work_order SET status = 'in_progress' WHERE id = %s", (work_order_id,))
     return ActivationResult(get_assignment(connection, new_id, sectors=sectors), created=True, already_active=False,
                             finished_assignment_id=finished[0] if len(finished) == 1 else None, finished_assignment_ids=tuple(finished))
+
+
+def _insert_assignment_record(connection, *, operational_line_id, machine_id,
+                              shift_schedule_id, operating_date, actor_id):
+    """One auditable assignment insertion point for standard and D2 flows.
+
+    Caller MUST first hold machine advisory lock, guard conflicting assignments,
+    declare vinto.assignment_multi_line transaction-locally and set audit context.
+    Trigger 0012 remains authoritative for uniqueness/mode constraints.
+    """
+    return connection.execute(
+        """INSERT INTO vinto_txn.assignment (work_order_line_id, machine_id, shift_schedule_id, operating_date, assigned_by)
+           VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+        (operational_line_id, machine_id, shift_schedule_id,
+         operating_date, actor_id)).fetchone()[0]
 
 
 def activate(connection, *, actor_id, work_order_id, baseline_line_id, request_id=None, sectors) -> ActivationResult:

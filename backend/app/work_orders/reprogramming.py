@@ -152,6 +152,19 @@ def reprogram_unassigned_in_progress_line(connection, *, actor_id, work_order_id
         status, _, baseline_id, baseline_published = service._lock_baseline(connection, work_order_id, sectors)
         if status != "in_progress" or baseline_published is None:
             raise WorkOrderD1BlockedError()
+        # D2 reservations lock an OT's global operational version chain.
+        # D1 may still revise an unrelated line when D2 is OFF. When ON,
+        # never let another revision invalidate an active D2 handoff.
+        if service.settings.work_order_reprogram_handoff_enabled is True:
+            from app.work_orders.errors import WorkOrderHandoffPendingError
+            reserved = connection.execute(
+                """SELECT EXISTS (
+                    SELECT 1 FROM vinto_txn.work_order_line_reprogram_handoff
+                    WHERE work_order_id=%s AND status IN
+                      ('pending','published','reassigned')
+                )""", (work_order_id,)).fetchone()[0]
+            if reserved:
+                raise WorkOrderHandoffPendingError()
         retired = connection.execute(
             "SELECT qa_retired FROM vinto_txn.work_order WHERE id=%s",
             (work_order_id,)).fetchone()

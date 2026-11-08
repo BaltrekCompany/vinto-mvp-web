@@ -133,3 +133,62 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
                 json_body={"assignment_id": a["id"]}, cookie=sup)
             self.assertEqual(started.status, 200, started.text)
             self.assertEqual(started.json()["status"], "in_production")
+
+    
+    async def test_role_separated_publish_reassign_and_no_early_start(self):
+        order,a,sup=await self.target()
+        jef=await self.cookie("JEFATURA")
+        reserve_body=self.reserve_body(a)
+        with patch.object(settings,"work_order_reprogram_handoff_enabled",True):
+            reserved=await api.call(
+                "POST",self.reserve_url(order),json_body=reserve_body,cookie=sup)
+            self.assertEqual(reserved.status,200,reserved.text)
+            h=reserved.json()["handoff_id"]
+            line=order["baseline"]["lines"][0]
+            expected={
+                "pv_reference":line["pv_reference"],
+                "article_code":line["article"]["code"],
+                "quantity":line["quantity"],
+                "due_date":line["due_date"],
+            }
+            publish_body={
+                "expected":expected,
+                "replacement":{**expected,"quantity":expected["quantity"]+5},
+                "reason":"Jefatura confirma nueva version tras relevo",
+            }
+            publish_url=f"/api/work-orders/handoffs/{h}/publish"
+            reassign_url=f"/api/work-orders/handoffs/{h}/reassign"
+            self.assertEqual((await api.call(
+                "POST",publish_url,json_body=publish_body)).status,401)
+            self.assertEqual((await api.call(
+                "POST",publish_url,json_body=publish_body,cookie=sup)).status,403)
+            self.assertEqual((await api.call(
+                "POST",reassign_url,cookie=jef)).status,403)
+            invalid=await api.call(
+                "POST",publish_url,json_body={
+                    **publish_body,"machine_code":"MP1"},cookie=jef)
+            self.assertEqual(invalid.status,422,invalid.text)
+            published=await api.call(
+                "POST",publish_url,json_body=publish_body,cookie=jef)
+            self.assertEqual(published.status,200,published.text)
+            self.assertEqual(published.json()["version_number"],3)
+            self.assertEqual(published.json()["status"],"published")
+            self.assertEqual(self.scalar(
+                "SELECT status FROM vinto_txn.assignment WHERE id=%s",
+                (a["id"],)),"active")
+            reassigned=await api.call("POST",reassign_url,cookie=sup)
+            self.assertEqual(reassigned.status,200,reassigned.text)
+            info=reassigned.json()
+            self.assertEqual(info["status"],"reassigned")
+            self.assertEqual(info["previous_assignment_id"],a["id"])
+            self.assertNotEqual(info["replacement_assignment_id"],a["id"])
+            self.assertEqual(self.scalar(
+                "SELECT status FROM vinto_txn.assignment WHERE id=%s",
+                (a["id"],)),"finished")
+            start=await api.call(
+                "POST",f"/api/work-orders/{order['id']}/lines/L1/start",
+                json_body={"assignment_id":info["replacement_assignment_id"]},
+                cookie=sup)
+            self.assertEqual((start.status,start.json()["code"]),
+                             (409,"WORK_ORDER_HANDOFF_PENDING"))
+

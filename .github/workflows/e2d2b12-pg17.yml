@@ -1,0 +1,71 @@
+name: E2-D2-B1.2 publish reassign PostgreSQL17
+
+on:
+  pull_request:
+    paths:
+      - 'backend/migrations/0021_e2d2_publish_reassign.sql'
+      - 'backend/app/work_orders/handoff_publication.py'
+      - 'backend/app/work_orders/handoff_service.py'
+      - 'backend/app/work_orders/router.py'
+      - 'backend/app/work_orders/reprogramming.py'
+      - 'backend/tests/test_e2d2b12_publish_reassign.py'
+      - 'backend/tests/test_e2d2b1_http.py'
+      - 'backend/tests/test_sector_scope.py'
+      - '.github/workflows/e2d2b12-pg17.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2d2b12-pg17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned deps
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile changed modules
+        run: |
+          python -B -m compileall -q backend/app/work_orders/handoff_publication.py \
+             backend/app/work_orders/handoff_service.py backend/app/work_orders/router.py \
+             backend/tests/test_e2d2b12_publish_reassign.py
+      - name: B1.2 version and assignment invariants
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b12_publish_reassign.py' -v
+      - name: B1.1 HTTP role and reserve cancel regressions
+        working-directory: backend
+        run: |
+          python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d2b1_reserve_cancel.py' -v
+      - name: B0 reservation guards
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b0_handoff_guard.py' -v
+      - name: Historical migration SHA and sector scope
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
