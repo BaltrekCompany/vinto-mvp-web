@@ -85,6 +85,7 @@ class WorkOrderView:
     machine_code: str
     machine_name: str
     baseline: BaselineView
+    programming: BaselineView | None = None  # Latest published revision, when Jefatura has reprogrammed.
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -444,7 +445,21 @@ def _machine_filter(machine_codes):
 def _hydrate(connection, headers) -> list[WorkOrderView]:
     version_ids = [row[5] for row in headers]
     lines: dict = {version_id: [] for version_id in version_ids}
+    revisions = {}
     if version_ids:
+        work_order_ids = [row[0] for row in headers]
+        latest = connection.execute(
+            """SELECT DISTINCT ON (v.work_order_id)
+                      v.work_order_id, v.id, v.version_number, v.published_at
+               FROM vinto_txn.work_order_version v
+               WHERE v.work_order_id=ANY(%s) AND v.kind='operational'
+                 AND v.reprogram_reason IS NOT NULL AND v.published_at IS NOT NULL
+               ORDER BY v.work_order_id, v.version_number DESC""",
+            (work_order_ids,)).fetchall()
+        revisions = {row[0]: row[1:] for row in latest}
+        version_ids += [row[1] for row in latest]
+        for version_id in (row[1] for row in latest):
+            lines[version_id] = []
         rows = connection.execute(
             """SELECT l.work_order_version_id, l.id, l.line_code, l.pv_reference, a.code, av.description, l.quantity, u.code, l.due_date, lm.code, lm.name
                FROM vinto_txn.work_order_line l
@@ -456,7 +471,10 @@ def _hydrate(connection, headers) -> list[WorkOrderView]:
         for version_id, *rest in rows:
             lines[version_id].append(LineView(*rest))
     return [WorkOrderView(wo_id, number, status, machine_code, machine_name,
-                          BaselineView(version_id, version_number, published_at, tuple(lines[version_id])))
+                          BaselineView(version_id, version_number, published_at, tuple(lines[version_id])),
+                          (BaselineView(revisions[wo_id][0], revisions[wo_id][1], revisions[wo_id][2],
+                                        tuple(lines[revisions[wo_id][0]]))
+                           if wo_id in revisions else None))
             for wo_id, number, status, machine_code, machine_name, version_id, version_number, published_at in headers]
 
 
