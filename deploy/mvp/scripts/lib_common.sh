@@ -186,9 +186,12 @@ except Exception:
   # fail Pydantic startup even if zero handoffs exist. Fail BEFORE symlink.
   if { [ "$operation" = "rollback" ] || [ "$operation" = "activate" ]; } &&
      [ -n "$destination" ] && mvp_test -f "$MVP_APP_DIR/shared/backend.env"; then
-    local configured=""
+    local configured="" flag_present=0
     configured="$(mvp_env_value "$MVP_APP_DIR/shared/backend.env" WORK_ORDER_REPROGRAM_HANDOFF_ENABLED 2>/dev/null || true)"
-    if [ -n "$configured" ] &&
+    if sudo -u "$MVP_SERVICE_USER" grep -q '^WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=' "$MVP_APP_DIR/shared/backend.env"; then
+      flag_present=1
+    fi
+    if [ "$flag_present" -eq 1 ] &&
        ! sudo -u "$MVP_SERVICE_USER" grep -qF "work_order_reprogram_handoff_enabled" "$destination/backend/app/config.py"; then
       echo "D2_OPS_GATE_TARGET_CANNOT_PARSE_FLAG: NO-GO" >&2
       return 3
