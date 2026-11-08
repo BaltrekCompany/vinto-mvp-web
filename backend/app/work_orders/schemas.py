@@ -27,6 +27,30 @@ class LineIn(BaseModel):
         return LineInput(self.pv_reference, self.article_code, self.quantity, self.due_date, self.machine_code)
 
 
+class DraftLineFieldsIn(BaseModel):
+    """Solo cuatro campos editables; la máquina no forma parte de este contrato."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pv_reference: str = Field(min_length=1, max_length=100)
+    article_code: str = Field(min_length=1, max_length=64)
+    quantity: Decimal = Field(gt=0, max_digits=15, decimal_places=3)
+    due_date: date
+
+    def to_domain(self) -> LineInput:
+        return LineInput(self.pv_reference, self.article_code, self.quantity, self.due_date)
+
+
+class EditDraftLineIn(BaseModel):
+    """CAS contra la última línea leída: ningún cambio silencioso entre dos jefaturas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected: DraftLineFieldsIn
+    replacement: DraftLineFieldsIn
+    reason: str = Field(min_length=10, max_length=300)
+
+
 class CreateWorkOrderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
