@@ -20,10 +20,12 @@ from app.work_orders.errors import (
 _LINE = re.compile(r"^L[1-9][0-9]*$")
 
 
-def _validate(reason, version):
-    if settings.work_order_reprogram_handoff_enabled is not True:
+def _validate(reason, version, *, require_new_work=True):
+    # Cancel of an EXISTING pending reservation must remain possible after
+    # disabling new D2 work, otherwise the system can become stuck forever.
+    if require_new_work and settings.work_order_reprogram_handoff_enabled is not True:
         raise WorkOrderHandoffDisabledError()
-    if settings.work_order_line_execution_enabled is not True:
+    if require_new_work and settings.work_order_line_execution_enabled is not True:
         raise WorkOrderHandoffBlockedError()
     if not isinstance(reason, str) or not 10 <= len(reason.strip()) <= 300:
         raise WorkOrderHandoffBlockedError()
@@ -175,7 +177,7 @@ def reserve(connection, *, actor_id, work_order_id, line_code,
 def cancel(connection, *, actor_id, handoff_id, reason, sectors,
            request_id=None):
     """Cancel only pending reservation. No finishing, reassignment, or OT edit."""
-    reason = _validate(reason, None)
+    reason = _validate(reason, None, require_new_work=False)
     try:
         handoff_id = uuid.UUID(str(handoff_id))
     except (TypeError, ValueError, AttributeError):
