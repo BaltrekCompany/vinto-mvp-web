@@ -1,9 +1,9 @@
-"""E2-C1: read-only notices and optional operator acknowledgement.
+"""E2-C1/B2: read-only notices and operator acknowledgement.
 
 Only an active assignment of an ALREADY revised published OT qualifies.
 Receipt is per authenticated user + assignment + exact assigned version.
 No changes to captures, production state, assignment pointers or E1.
-E2-D must separately design reprogramming of OTs with live assignments.
+E2-D2 uses the same immutable receipt to complete a supervised handoff.
 """
 import uuid
 
@@ -61,6 +61,24 @@ def acknowledge_revision(connection, *, actor_id, assignment_id, expected_versio
     if not machine_codes:
         raise AssignmentNotFoundError()
     with connection.transaction():
+        # D2 acknowledgement is machine -> assignment -> handoff. Take the
+        # advisory machine lock BEFORE FOR SHARE OF assignment to serialize
+        # against Supervisor reassign and concurrent E1 start/capture paths.
+        # Never take an OT row lock after a machine/assignment lock.
+        locator = connection.execute(
+            """SELECT a.machine_id
+               FROM vinto_txn.assignment a
+               JOIN vinto_master.machine m ON m.id=a.machine_id
+               JOIN vinto_master.sector s ON s.id=m.sector_id
+               WHERE a.id=%s AND a.status='active'
+                 AND s.code=ANY(%s) AND m.code=ANY(%s)""",
+            (assignment_id, list(scoped_sector_codes(sectors)),
+             sorted(machine_codes))).fetchone()
+        if locator is None:
+            raise AssignmentNotFoundError()
+        from app.assignments import service as assignments
+        assignments._machine_lock(connection, locator[0])
+
         row = connection.execute(
             """SELECT v.id, v.version_number, v.reprogram_reason, a.id
                FROM vinto_txn.assignment a
@@ -95,5 +113,27 @@ def acknowledge_revision(connection, *, actor_id, assignment_id, expected_versio
                 """SELECT acknowledged_at FROM vinto_txn.work_order_revision_receipt
                    WHERE assignment_id=%s AND version_id=%s AND user_id=%s""",
                 (assignment_id, version_id, actor_id)).fetchone()
+
+        # B2: only the operator holding PRODUCTION_CAPTURE can complete D2.
+        # The assignment and version MUST match the new published snapshot.
+        # The database trigger independently checks actor's immutable E2-C1
+        # receipt; a direct forged UPDATE cannot acknowledge the handoff.
+        handoff = connection.execute(
+            """SELECT h.id, h.status
+               FROM vinto_txn.work_order_line_reprogram_handoff h
+               WHERE h.replacement_assignment_id=%s
+                 AND h.published_version_id=%s
+                 AND h.status IN ('reassigned','acknowledged')
+               FOR UPDATE OF h""",
+            (assignment_id, version_id)).fetchone()
+        if handoff is not None and handoff[1] == "reassigned":
+            connection.execute(
+                """SELECT set_config('vinto.reason',%s,true)""",
+                ("D2 operator receipt acknowledged replacement assignment",))
+            connection.execute(
+                """UPDATE vinto_txn.work_order_line_reprogram_handoff
+                   SET status='acknowledged', completed_at=clock_timestamp()
+                   WHERE id=%s AND status='reassigned'""",
+                (handoff[0],))
         return dict(assignment_id=assignment_id, version_number=version_number,
                     acknowledged_at=receipt[0])
