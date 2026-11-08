@@ -131,12 +131,25 @@ test("a draft can be published (with confirmation) and receive another line; a p
   const draft = html(props({ workOrders: ready([order("draft", MULTI_LINES)]), capabilities: { multiMachine: true } }));
   assert.ok(draft.includes("Publicar base"));
   assert.ok(draft.includes("Añadir una línea a este borrador"));
-  assert.equal(count(draft, "<details"), 1);
+  assert.equal(count(draft, "<details"), 4, "three editable persisted lines and one add-line form");
+  assert.ok(draft.includes("Editar L1") && draft.includes("Guardar cambios de L1"), "Jefatura can edit saved draft fields");
+  assert.ok(draft.includes("data-edit-draft-line=\"L1\""), "editor identifies the persisted line");
+  assert.ok(draft.includes("Motivo de la corrección (obligatorio)"));
   const published = html(props({ workOrders: ready([order("published", MULTI_LINES)]), capabilities: { multiMachine: true } }));
   assert.ok(!published.includes("Publicar base") && !published.includes("Añadir una línea"), "the published baseline is immutable");
-  assert.ok(!/Editar|Eliminar línea|Retirar línea/.test(published + draft), "no edit/delete of persisted lines: the backend has no such contract");
+  assert.ok(!published.includes("data-edit-draft-line") && !published.includes("Guardar cambios"), "published orders cannot edit persisted lines");
+  assert.ok(!draft.includes("Eliminar línea") && !draft.includes("Retirar línea"), "E2-A does not delete persisted lines");
 });
 
+
+test("E2-A frontend never permits machine edits on a persisted draft line", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../components/vinto/bobinas-programming.tsx", import.meta.url), "utf8");
+  assert.match(source, /multi=\{false\} lockMachine fixedRows/);
+  assert.match(source, /order\.status === "draft"/);
+  assert.match(source, /editDraftWorkOrderLine\(order\.id, line\.line_code, expected, replacement, reason\)/);
+  const orderDraft = (await import("node:fs")).readFileSync(new URL("../components/vinto/order-draft-editor.tsx", import.meta.url), "utf8");
+  assert.match(orderDraft, /disabled=\{disabled \|\| shared \|\| lockMachine\}/);
+});
 test("the publish confirmation warns that the baseline becomes immutable", async () => {
   const source = (await import("node:fs")).readFileSync(new URL("../components/vinto/bobinas-programming.tsx", import.meta.url), "utf8");
   assert.ok(source.includes("Una vez publicada, la línea base es inmutable"));
