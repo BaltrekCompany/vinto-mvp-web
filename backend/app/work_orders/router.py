@@ -20,6 +20,7 @@ from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import reprogramming
+from app.work_orders import handoff_service
 from app.work_orders import supervision_revision_notices
 from app.work_orders import close_order
 from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, ReprogramPublishedLineIn, RevisionOut, WorkOrderOut, work_order_out
