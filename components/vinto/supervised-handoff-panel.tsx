@@ -112,10 +112,13 @@ export function SupervisedHandoffPanel({
     const [reserveConfirm, setReserveConfirm] = useState(false);
     useEffect(() => () => { guard.reset(); seq.current += 1; }, [guard, scope]);
 
-    const capReady = capability.view.status === "ready";
-    const enabled = capReady && capability.view.data === true;
-    const listReady = inbox.view.status === "ready" && !inbox.view.refreshing;
-    const active = listReady ? inbox.view.data : [];
+    const capabilityView = capability.view;
+    const inboxView = inbox.view;
+    const capReady = capabilityView.status === "ready";
+    const enabled = capabilityView.status === "ready" && capabilityView.data === true;
+    const listReady = inboxView.status === "ready" && !inboxView.refreshing;
+    const active: OpenHandoff[] = inboxView.status === "ready" && !inboxView.refreshing
+        ? inboxView.data : [];
     const pendingOrders = orders.filter(order => order.status === "in_progress");
     const selectedOrder = pendingOrders.find(order => order.id === orderId);
     const selectedLine = (selectedOrder?.programming?.lines ?? selectedOrder?.baseline.lines ?? [])
