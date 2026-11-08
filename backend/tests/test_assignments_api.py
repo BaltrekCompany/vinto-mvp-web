@@ -160,6 +160,47 @@ class RevisionNoticesTests(AssignmentApiCase):
             machine_code="MP1", form_code="VINTO-P1-03",
             actor_id=self.users["JEFATURA"][0].user_id)
 
+    async def test_combined_operation_quality_profile_quality_grant_cannot_read_production_notices(self):
+        # A combined-profile user has production.capture from OPERACION but
+        # only a QUALITY form grant on MP1. Generic machine visibility admits
+        # Quality; E2-C1 must require the production-specific authorization.
+        from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
+
+        assigned = await self._revised_assignment()
+        actor = self.users["OPERACION"][0].user_id
+        self.connection.execute(
+            "INSERT INTO vinto_master.user_profile (user_id, profile_id) "
+            "SELECT %s, id FROM vinto_master.profile WHERE code='CALIDAD'", (actor,))
+        grant_machine_form(
+            self.connection, user_id=actor, machine_code="MP1",
+            form_code="VINTO-P1-19", actor_id=self.users["JEFATURA"][0].user_id)
+
+        cookie = await self.cookie("OPERACION")
+        inbox_url = "/api/assignments/revision-notices"
+        ack_url = f"/api/assignments/{assigned['id']}/acknowledge-revision"
+        self.assertEqual((await call("GET", inbox_url, cookie=cookie)).json(), [])
+        denied = await call("POST", ack_url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(denied.status, 404)
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s",
+            (assigned["id"],)), 0)
+
+        # Granting P1-03 restores E2-C1 notices, without affecting Quality.
+        self._grant()
+        self.assertEqual([item["assignment_id"] for item in
+            (await call("GET", inbox_url, cookie=cookie)).json()], [assigned["id"]])
+        ack = await call("POST", ack_url, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(ack.status, 200, ack.text)
+
+        # Revoking just production returns 0 notices and 404 on acknowledgement
+        # even though the same user still has an active Quality grant on MP1.
+        revoke_machine_form(
+            self.connection, user_id=actor, machine_code="MP1",
+            form_code="VINTO-P1-03", actor_id=self.users["JEFATURA"][0].user_id)
+        self.assertEqual((await call("GET", inbox_url, cookie=cookie)).json(), [])
+        self.assertEqual((await call("POST", ack_url,
+            json_body={"expected_version": 2}, cookie=cookie)).status, 404)
+
     async def test_inbox_acknowledges_exact_assigned_version_once_and_audits_actor(self):
         assigned = await self._revised_assignment()
         cookie = await self.cookie("OPERACION")
@@ -184,7 +225,7 @@ class RevisionNoticesTests(AssignmentApiCase):
         post = f"/api/assignments/{assigned['id']}/acknowledge-revision"
         stale = await call("POST", post, json_body={"expected_version": 1}, cookie=cookie)
         self.assertEqual((stale.status, stale.json()["code"]), (409, "REVISION_NOTICE_CHANGED"))
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 0)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],)), 0)
         for injected in ({"user_id": str(uuid4())}, {"version_id": str(uuid4())},
                          {"machine_code": "MP3"}, {"acknowledged_at": "2000-01-01T00:00:00Z"}):
             response = await call("POST", post, json_body={"expected_version": 2, **injected}, cookie=cookie)
@@ -196,10 +237,11 @@ class RevisionNoticesTests(AssignmentApiCase):
         second = await call("POST", post, json_body={"expected_version": 2}, cookie=cookie)
         self.assertEqual(second.status, 200, second.text)
         self.assertEqual(second.json(), created.json())
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 1)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],)), 1)
         actor, reason = self.connection.execute(
             """SELECT actor_id,reason FROM vinto_audit.audit_event
-               WHERE entity_table='work_order_revision_receipt' AND action='INSERT'""").fetchone()
+               WHERE entity_table='work_order_revision_receipt' AND action='INSERT'
+                 AND new_data->>'assignment_id'=%s""", (assigned["id"],)).fetchone()
         self.assertEqual(actor, self.users["OPERACION"][0].user_id)
         self.assertEqual(reason, "operator acknowledged assigned OT revision")
         afterward = (await call("GET", url, cookie=cookie)).json()[0]
@@ -207,7 +249,7 @@ class RevisionNoticesTests(AssignmentApiCase):
         self.assertEqual(self.scalar("SELECT status FROM vinto_txn.assignment WHERE id=%s", (assigned["id"],)), "active")
 
         import psycopg
-        receipt_id = self.scalar("SELECT id FROM vinto_txn.work_order_revision_receipt")
+        receipt_id = self.scalar("SELECT id FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s", (assigned["id"],))
         with self.assertRaises(psycopg.errors.CheckViolation):
             self.connection.execute(
                 "UPDATE vinto_txn.work_order_revision_receipt SET acknowledged_at=clock_timestamp() WHERE id=%s",
