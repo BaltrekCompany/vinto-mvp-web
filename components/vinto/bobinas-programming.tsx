@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ActivateAllDialog } from "@/components/vinto/activate-all-dialog";
 import { LineExecutionPanel } from "@/components/vinto/line-execution-panel";
+import { SupervisedHandoffPanel } from "@/components/vinto/supervised-handoff-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -202,6 +203,11 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
                                 </div>)}</div>}
             </div>}
         </Panel>}
+        {(canManageOrders || canManageAssignments) && <SupervisedHandoffPanel
+            key={"e2d2:" + scope} orders={orders} scope={scope}
+            canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}
+            catalog={optionCatalog} catalogReady={typeof options !== "string"}
+            lockedExternal={locked} onChanged={onChanged} onSessionLost={onSessionLost}/>}
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
         {orders.map(order => {
             const orderMachines = machinesOf(order);
