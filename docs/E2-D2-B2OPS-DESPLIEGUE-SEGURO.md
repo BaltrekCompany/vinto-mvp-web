@@ -6,6 +6,8 @@
 
 Los scripts de operador `deploy/mvp/scripts/{lib_common.sh,deploy.sh,rollback.sh}` comparten la función `d2_ops_gate`, ejecutada con el mismo `flock` exclusivo que serializa `activate` y `rollback.sh version`. Siempre valida el estado real de PostgreSQL mediante el preflight **solo lectura** `app.work_orders.handoff_rollout_cli` y la identidad `vinto-mvp`; no imprime ni pasa credenciales por argv.
 
+**Identidad de base de datos:** el preflight necesita consultar el historial `vinto_meta.schema_migration`; `vinto_app` no tiene, ni debe recibir, USAGE sobre `vinto_meta`. El CLI utiliza `MIGRATOR_DATABASE_URL` cuando está definida, mediante el resolvedor de identidades existente. En `PG_PRIVILEGE_MODE=hardened` la exige y falla cerrado si falta; en `legacy` el fallback antiguo a `DATABASE_URL` puede fallar por permisos, lo cual es **NO-GO**, no un motivo para dar permisos a `vinto_app`. La sesión SQL está limitada a `REPEATABLE READ READ ONLY`. No pasar URLs ni claves en comandos.
+
 | Operación | Lugar del gate | Resultado con pending/published/reassigned |
 | --- | --- | --- |
 | `deploy.sh activate <SHA>` | **Antes** de crear `current.tmp` o mover `current` | NO-GO |
