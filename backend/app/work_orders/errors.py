@@ -40,6 +40,21 @@ class WorkOrderReprogramBlockedError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_REPROGRAM_BLOCKED", "La OT no admite reprogramación ordinaria: debe estar publicada y sin asignaciones ni ejecución"
 
 
+class WorkOrderHandoffDisabledError(WorkOrderError):
+    http_status, code, public_message = (409, "WORK_ORDER_HANDOFF_DISABLED",
+                                        "El relevo supervisado D2 no esta habilitado")
+
+
+class WorkOrderHandoffBlockedError(WorkOrderError):
+    http_status, code, public_message = (409, "WORK_ORDER_HANDOFF_BLOCKED",
+                                        "La linea no cumple las condiciones de relevo D2")
+
+
+class WorkOrderHandoffChangedError(WorkOrderError):
+    http_status, code, public_message = (409, "WORK_ORDER_HANDOFF_CHANGED",
+                                        "La version o la reserva cambio; consultar de nuevo")
+
+
 class WorkOrderHandoffPendingError(WorkOrderError):
     http_status, code, public_message = (409, "WORK_ORDER_HANDOFF_PENDING",
                                         "La linea esta reservada para un relevo supervisado")
