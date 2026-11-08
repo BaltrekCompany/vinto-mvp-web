@@ -198,6 +198,45 @@ class IsolationTests(MultiMachineApiCase):
         self.assertEqual(reply.status, 200, user)
         return {o["id"] for o in reply.json()}
 
+    async def test_supervision_revision_inbox_and_ack_never_leak_a_cross_sector_order(self):
+        """E2-C2: a supervisor with BOBINAS only must never see a revised MP1+RB1 OT."""
+        old = self.cross["baseline"]["lines"][0]
+        before = {"pv_reference": old["pv_reference"], "article_code": old["article"]["code"],
+                  "quantity": old["quantity"], "due_date": old["due_date"]}
+        revised = await self.post(
+            f"/api/work-orders/{self.cross['id']}/lines/L1/reprogram",
+            {"expected_version": 1, "expected": before,
+             "replacement": {**before, "quantity": 20},
+             "reason": "Reprogramacion multimaquina controlada para QA"})
+        self.assertEqual(revised.status, 200, revised.text)
+
+        full = await self.get("/api/work-orders/supervision-revision-notices", "SUPERVISION")
+        self.assertEqual(full.status, 200, full.text)
+        self.assertIn(self.cross["id"], [item["work_order_id"] for item in full.json()])
+
+        partial_password = "pw-" + secrets.token_urlsafe(18)
+        partial = create_user(
+            self.connection, username="wmapi.partial.supervisor." + uuid4().hex[:12],
+            display_name="Supervisor Parcial QA", profile_code="SUPERVISION",
+            password=partial_password, sectors=("BOBINAS",))
+        login = await call("POST", "/api/auth/login",
+                           json_body={"username": partial.username, "password": partial_password})
+        self.assertEqual(login.status, 200, login.text)
+        cookie = login.set_cookie_value()
+        scoped = await call("GET", "/api/work-orders/supervision-revision-notices", cookie=cookie)
+        self.assertEqual(scoped.status, 200, scoped.text)
+        self.assertNotIn(self.cross["id"], [item["work_order_id"] for item in scoped.json()])
+        self.assertNotIn(self.cross["number"], scoped.text)
+        denied = await call(
+            "POST", f"/api/work-orders/{self.cross['id']}/acknowledge-supervision-revision",
+            json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual((denied.status, denied.json()["code"]), (404, "WORK_ORDER_NOT_FOUND"))
+        self.assertEqual(self.scalar(
+            """SELECT count(*) FROM vinto_txn.work_order_supervision_revision_receipt r
+               JOIN vinto_txn.work_order_version v ON v.id=r.version_id
+               WHERE v.work_order_id=%s AND r.user_id=%s""",
+            (self.cross["id"], partial.user_id)), 0)
+
     async def test_managers_with_full_scope_see_the_complete_orders(self):
         for user in ("JEFATURA", "SUPERVISION"):
             self.assertTrue({self.cross["id"], self.same_sector["id"], self.single["id"]} <= await self.ids(user), user)
