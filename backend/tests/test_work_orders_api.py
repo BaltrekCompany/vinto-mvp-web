@@ -374,6 +374,33 @@ class PublishedRevisionTests(WorkOrderApiCase):
         self.assertEqual((await call("GET", f"/api/work-orders/{order['id']}/revisions",
                                     cookie=await self.cookie("SUPERVISION"))).status, 403)
 
+    async def test_valid_product_correction_and_quantity_decrease_before_any_production(self):
+        order = await self.published()
+        original = order["baseline"]["lines"][0]
+        url = f"/api/work-orders/{order['id']}/lines/L1/reprogram"
+        corrected = await call("POST", url,
+                               json_body=self.revision_body(order, article=MP1_CODES[1], quantity=120),
+                               cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(corrected.status, 200, corrected.text)
+        second = corrected.json()
+        self.assertEqual(second["programming"]["lines"][0]["article"]["code"], MP1_CODES[1])
+        self.assertEqual(second["baseline"]["lines"][0]["article"]["code"], original["article"]["code"])
+        reduced = await call("POST", url,
+                             json_body=self.revision_body(second, quantity=80, pv="PV-REDUCCION"),
+                             cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(reduced.status, 200, reduced.text)
+        updated = reduced.json()
+        self.assertEqual(updated["programming"]["version_number"], 3)
+        self.assertEqual(updated["programming"]["lines"][0]["quantity"], 80)
+        self.assertEqual(updated["programming"]["lines"][0]["machine"], original["machine"])
+        self.assertEqual(updated["baseline"]["lines"][0], original)
+        history = (await call("GET", f"/api/work-orders/{order['id']}/revisions",
+                              cookie=await self.cookie("JEFATURA"))).json()
+        self.assertEqual(history[0]["before"]["quantity"], 120)
+        self.assertEqual(history[0]["after"]["quantity"], 80)
+        self.assertEqual(history[1]["before"]["article_code"], original["article"]["code"])
+        self.assertEqual(history[1]["after"]["article_code"], MP1_CODES[1])
+
     async def test_any_execution_history_blocks_revision_before_writing(self):
         order = await self.published()
         baseline_line = order["baseline"]["lines"][0]
