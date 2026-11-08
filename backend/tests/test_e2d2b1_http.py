@@ -84,6 +84,53 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
                 "expected_version": 2,
                 "reason": "Reserva supervisada de linea sin iniciar"}
 
+    async def test_b3_recovery_inbox_and_capability_are_scoped_and_flag_aware(self):
+        order, assignment, supervisor = await self.target()
+        manager = await self.cookie("JEFATURA")
+        capability = "/api/work-orders/handoff-capabilities"
+        inbox = "/api/work-orders/handoffs"
+
+        for url in (capability, inbox):
+            self.assertEqual((await api.call("GET", url)).status, 401)
+            for profile in ("OPERACION", "CALIDAD", "DATA_BALTREK"):
+                denied = await api.call("GET", url, cookie=await self.cookie(profile))
+                self.assertEqual(denied.status, 403, (profile, denied.text))
+
+        for cookie in (manager, supervisor):
+            flag = await api.call("GET", capability, cookie=cookie)
+            self.assertEqual((flag.status, flag.json()), (200, {"enabled": False}))
+            self.assertEqual(flag.headers["cache-control"], "private, no-store")
+            empty = await api.call("GET", inbox, cookie=cookie)
+            self.assertEqual((empty.status, empty.json()), (200, []))
+
+        with patch.object(settings, "work_order_reprogram_handoff_enabled", True):
+            for cookie in (manager, supervisor):
+                flag = await api.call("GET", capability, cookie=cookie)
+                self.assertEqual((flag.status, flag.json()), (200, {"enabled": True}))
+            reservation = await api.call(
+                "POST", self.reserve_url(order),
+                json_body=self.reserve_body(assignment), cookie=supervisor)
+            self.assertEqual(reservation.status, 200, reservation.text)
+        handoff_id = reservation.json()["handoff_id"]
+
+        # The flag may be OFF again: recovery remains visible, not a secret
+        # identifier stored in a browser or sent to the other profile.
+        for cookie in (manager, supervisor):
+            response = await api.call("GET", inbox, cookie=cookie)
+            self.assertEqual(response.status, 200, response.text)
+            self.assertEqual(response.headers["cache-control"], "private, no-store")
+            self.assertEqual(len(response.json()), 1)
+            item = response.json()[0]
+            self.assertEqual(item["handoff_id"], handoff_id)
+            self.assertEqual(item["work_order_id"], order["id"])
+            self.assertEqual(item["work_order_number"], order["number"])
+            self.assertEqual(item["status"], "pending")
+            self.assertEqual(item["line_code"], "L1")
+            self.assertEqual(item["machine_code"], "MP1")
+            self.assertEqual(item["expected_version"], 2)
+            self.assertEqual(item["prior_assignment_id"], assignment["id"])
+            self.assertNotIn("requested_by", item)
+
     async def test_permission_validation_and_disabled_flag(self):
         order, a, sup = await self.target()
         url, body = self.reserve_url(order), self.reserve_body(a)
