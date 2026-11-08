@@ -497,7 +497,8 @@ class ResponseHygieneTests(WorkOrderApiCase):
         published = (await call("POST", f"/api/work-orders/{order['id']}/publish", cookie=await self.cookie("JEFATURA"))).json()
         listing = (await call("GET", "/api/work-orders", cookie=await self.cookie("CALIDAD"))).json()
         for model in (order, published, listing[0]):
-            self.assertEqual(sorted(model), ["baseline", "id", "machine", "number", "status"])
+            self.assertEqual(sorted(model), ["baseline", "id", "machine", "number", "programming", "status"])
+            self.assertIsNone(model["programming"], "unrevised OTs retain the original public baseline model")
             self.assertEqual(sorted(model["baseline"]), ["id", "lines", "published_at", "version_number"])
             self.assertEqual(sorted(model["machine"]), ["code", "name"])
             for item in model["baseline"]["lines"]:
