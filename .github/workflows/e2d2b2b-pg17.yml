@@ -9,6 +9,7 @@ on:
       - 'backend/app/work_orders/handoff_rollout_cli.py'
       - 'backend/app/work_orders/handoff_rollout_preflight.py'
       - 'backend/tests/test_e2d2b2b_recovery_gate.py'
+      - 'backend/tests/test_e2d2b1_http.py'
       - '.github/workflows/e2d2b2b-pg17.yml'
   workflow_dispatch:
 
@@ -67,6 +68,7 @@ jobs:
         run: |
           python -B -m unittest discover -s tests -p 'test_e2d2b1_reserve_cancel.py' -v
           python -B -m unittest discover -s tests -p 'test_e2d2b12_publish_reassign.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
           python -B -m unittest discover -s tests -p 'test_assignments_api.py' -v
       - name: Migration checksums and sector scope
         working-directory: backend
