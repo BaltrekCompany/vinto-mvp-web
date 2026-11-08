@@ -26,7 +26,7 @@ import logging
 
 from app.auth.permissions import ASSIGNMENT_MANAGE, WORK_ORDER_MANAGE
 from app.authz.engine import authorize
-from app.authz.policies import POLICIES
+from app.authz.policies import POLICIES, Operation
 from app.config import settings
 
 logger = logging.getLogger("vinto.authz")
@@ -38,9 +38,13 @@ def unrestricted(user) -> bool:
     return user.can(WORK_ORDER_MANAGE) or user.can(ASSIGNMENT_MANAGE)
 
 
-def authorized_machine_codes(connection, user) -> frozenset:
+def authorized_machine_codes(connection, user, *, operations=None) -> frozenset:
     """Códigos de las máquinas cuyas líneas puede ver el usuario según el motor (ver el módulo). Solo se evalúan las ternas con concesión ACTIVA: condición
     necesaria del paso 7 del motor, así que es una poda y no una decisión; la decisión final es SIEMPRE del motor."""
+    # With operations=None, keep ALL historic MF13 visibility paths unchanged.
+    # E2-C1 explicitly restricts to production operations: a Quality-only
+    # machine/form grant can never expose an OT production notice.
+    policy_items = POLICIES.items() if operations is None else tuple((op, POLICIES[op]) for op in operations)
     pairs = connection.execute(
         """SELECT m.code, f.code FROM vinto_master.user_machine_form_grant g JOIN vinto_master.machine m ON m.id = g.machine_id
            JOIN vinto_config.form f ON f.id = g.form_id WHERE g.user_id = %s AND g.revoked_at IS NULL ORDER BY m.code, f.code""", (user.user_id,)).fetchall()
@@ -48,11 +52,16 @@ def authorized_machine_codes(connection, user) -> frozenset:
     for machine_code, form_code in pairs:
         if machine_code in visible:
             continue
-        for operation, policy in POLICIES.items():
+        for operation, policy in policy_items:
             if form_code in policy.admitted() and authorize(connection, user, operation, machine_code, form_code, lock=False).allowed:
                 visible.add(machine_code)
                 break
     return frozenset(visible)
+
+
+def authorized_production_machine_codes(connection, user) -> frozenset:
+    """Only MF13 permissions to PRODUCTION capture forms (never Quality-only grants)."""
+    return authorized_machine_codes(connection, user, operations=(Operation.PRODUCTION_CAPTURE, Operation.BOBBIN_PRODUCTION))
 
 
 def operational_scope(connection, user):
