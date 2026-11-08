@@ -23,6 +23,7 @@ export type WorkOrder = {
     status: WorkOrderStatus;
     machine: { code: string; name: string };
     baseline: { id: string; version_number: number; published_at: string | null; lines: WorkOrderLine[] };
+    programming?: { id: string; version_number: number; published_at: string | null; lines: WorkOrderLine[] } | null;
 };
 
 export type Assignment = {
@@ -87,8 +88,22 @@ export function parseWorkOrder(value: unknown): WorkOrder | null {
     if (!Array.isArray(baseline.lines)) return null;
     const lines = baseline.lines.map((line) => parseLine(line, machine));
     if (lines.some((line) => line === null)) return null;
+    const version = value.programming;
+    let programming: WorkOrder["programming"] = null;
+    if (version !== undefined && version !== null) {
+        if (!isRec(version) || !isStr(version.id) || typeof version.version_number !== "number"
+            || version.version_number <= baseline.version_number || !isStr(version.published_at)
+            || !Array.isArray(version.lines) || version.lines.length !== lines.length) return null;
+        const parsed = version.lines.map((line) => parseLine(line, machine));
+        if (parsed.some(line => line === null)) return null;
+        const first = lines as WorkOrderLine[], newer = parsed as WorkOrderLine[];
+        if (first.some((base, i) => base.line_code !== newer[i].line_code || base.machine.code !== newer[i].machine.code))
+            return null; // no partial or remapped machine across versions
+        programming = { id: version.id, version_number: version.version_number, published_at: version.published_at, lines: newer };
+    }
     return { id: value.id, number: value.number, status: value.status as WorkOrderStatus, machine,
-        baseline: { id: baseline.id, version_number: baseline.version_number, published_at: baseline.published_at, lines: lines as WorkOrderLine[] } };
+        baseline: { id: baseline.id, version_number: baseline.version_number, published_at: baseline.published_at, lines: lines as WorkOrderLine[] },
+        ...(version !== undefined ? { programming } : {}) };
 }
 
 export function parseWorkOrderList(value: unknown): WorkOrder[] | null {
