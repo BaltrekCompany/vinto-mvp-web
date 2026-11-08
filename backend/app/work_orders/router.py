@@ -146,6 +146,22 @@ def add_line(work_order_id: str, body: LineIn, user: AuthenticatedUser = Depends
                                            line=body.to_domain(), request_id=_request_id(), sectors=user.sectors))
 
 
+@router.post("/{work_order_id}/lines/{line_code}/edit-draft", response_model=WorkOrderOut, responses=_ERRORS)
+def edit_draft_line(work_order_id: str, line_code: str, body: EditDraftLineIn,
+                    user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                    connection=Depends(get_connection)):
+    """Edición exclusiva de borradores, sin cambiar máquina ni identidad.
+
+    La operación nunca acepta OT publicadas o en producción. La autorización
+    efectiva, el bloqueo y la comprobación de la versión leída son del servidor.
+    """
+    return work_order_out(service.edit_draft_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, expected=body.expected.to_domain(),
+        replacement=body.replacement.to_domain(), reason=body.reason,
+        request_id=_request_id(), sectors=user.sectors))
+
+
 @router.post("/{work_order_id}/publish", response_model=WorkOrderOut, responses=_ERRORS)
 def publish_work_order(work_order_id: str, user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
                        connection=Depends(get_connection)):
