@@ -51,6 +51,47 @@ function lineBodyNoMachine(line: LineDraft) {
     return { pv_reference: line.pvReference.trim(), article_code: line.articleCode, quantity: line.quantity, due_date: line.dueDate };
 }
 
+// E2-B: versioned revision of a published OT BEFORE its first assignment.
+// The server retains every previous snapshot. Machine and baseline identifiers
+// never appear in this payload. Any historic assignment returns 409.
+export function reprogramPublishedLine(workOrderId: string, lineCode: string, expectedVersion: number,
+                                       expected: LineDraft, replacement: LineDraft, reason: string,
+                                       signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
+    return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/lines/${encodeURIComponent(lineCode)}/reprogram`,
+        { method: "POST", body: { expected_version: expectedVersion, expected: lineBodyNoMachine(expected),
+            replacement: lineBodyNoMachine(replacement), reason: reason.trim() }, signal }, parseWorkOrder);
+}
+
+export type RevisionFields = { pv_reference: string; article_code: string; quantity: number; due_date: string };
+export type WorkOrderRevision = {
+    version_number: number; previous_version: number; line_code: string;
+    reason: string; changed_at: string; changed_by_id: string; changed_by_name: string;
+    before: RevisionFields; after: RevisionFields;
+};
+function isRevisionFields(value: unknown): value is RevisionFields {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const v = value as Record<string, unknown>;
+    return typeof v.pv_reference === "string" && typeof v.article_code === "string"
+        && typeof v.quantity === "number" && Number.isFinite(v.quantity) && v.quantity > 0
+        && typeof v.due_date === "string";
+}
+function parseRevisions(value: unknown): WorkOrderRevision[] | null {
+    if (!Array.isArray(value)) return null;
+    if (!value.every(item => {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
+        const r = item as Record<string, unknown>;
+        return Number.isInteger(r.version_number) && Number.isInteger(r.previous_version)
+            && typeof r.line_code === "string" && typeof r.reason === "string"
+            && typeof r.changed_at === "string" && typeof r.changed_by_id === "string"
+            && typeof r.changed_by_name === "string"
+            && isRevisionFields(r.before) && isRevisionFields(r.after);
+    })) return null;
+    return value as WorkOrderRevision[];
+}
+export function listWorkOrderRevisions(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<WorkOrderRevision[]>> {
+    return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/revisions`, { signal }, parseRevisions);
+}
+
 export function publishWorkOrder(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
     return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/publish`, { method: "POST", signal }, parseWorkOrder);
 }
