@@ -113,5 +113,57 @@ class E2D1RaceTests(base.SameOrderCase):
         self.assertEqual(self.active_codes(), ["L1"])
 
 
+    def test_single_mode_does_not_orphan_producing_line_on_replacement(self):
+        from app.work_orders import line_execution
+        from app.work_orders.line_execution import ExecutionStateConflictError
+
+        self.gate(False)
+        order = self.same_machine_order(2)
+        first = self.activate(order, 0).assignment
+        line_execution.start_line(
+            self.connection, actor_id=self.supervisor, work_order_id=order.id,
+            line_code="L1", assignment_id=first.id, sectors=("BOBINAS",))
+        revised = self.revise(self.connection, order)
+        self.assertEqual(revised.programming.version_number, 3)
+        with self.assertRaises(ExecutionStateConflictError):
+            self.activate(order, 1)
+        self.assertEqual(self.active_codes(), ["L1"])
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.assignment WHERE id=%s", (first.id,)), "active")
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.work_order_line_execution WHERE baseline_line_id=%s",
+            (order.baseline.lines[0].id,)), "in_production")
+
+        # After an explicit E1 finish, replacement is legitimate.
+        line_execution.finish_line(
+            self.connection, actor_id=self.supervisor,
+            work_order_id=order.id, line_code="L1", sectors=("BOBINAS",))
+        second = self.activate(order, 1)
+        self.assertTrue(second.created)
+        self.assertEqual(second.assignment.operational_version_number, 3)
+        self.assertEqual(self.active_codes(), ["L2"])
+
+    def test_single_mode_shift_rollover_of_same_producing_line_is_allowed(self):
+        from app.work_orders import line_execution
+
+        self.gate(False)
+        order = self.same_machine_order(2)
+        first = self.activate(order, 0).assignment
+        line_execution.start_line(
+            self.connection, actor_id=self.supervisor, work_order_id=order.id,
+            line_code="L1", assignment_id=first.id, sectors=("BOBINAS",))
+        self.revise(self.connection, order)
+        self.patch_now(base.NIGHT)
+        renewed = self.activate(order, 0)
+        self.assertTrue(renewed.created)
+        self.assertNotEqual(first.id, renewed.assignment.id)
+        self.assertEqual(self.active_codes(), ["L1"])
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.work_order_line_execution WHERE baseline_line_id=%s",
+            (order.baseline.lines[0].id,)), "in_production")
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
