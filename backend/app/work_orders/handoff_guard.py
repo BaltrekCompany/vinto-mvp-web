@@ -1,6 +1,7 @@
-"""E2-D2-B0: read-only reservation guards. No reservation writers/API in this phase.
+"""E2-D2: durable read-only reservation guards, independent of feature flag.
 
-All callers MUST already hold the machine advisory lock for the affected line
+NEVER bypass a persisted reservation when the D2 feature flag is OFF.
+That flag controls new workflow writes, not safety. All callers MUST already hold the machine advisory lock for the affected line
 (and for start_line/activate, the OT row lock first). That lock serializes future
 supervised reservation creation with F3/F6 and assignment transitions without
 introducing an OT lock into capture's machine -> assignment path.
@@ -23,8 +24,6 @@ def require_line_unreserved(connection, *, work_order_id, line_code):
     lock serializes this read with B1's future audited reservation writer,
     which MUST acquire the same machine lock before INSERT/UPDATE.
     """
-    if not enabled():
-        return
     row = connection.execute(
         """SELECT h.id
            FROM vinto_txn.work_order_line_reprogram_handoff h
@@ -43,8 +42,6 @@ def require_line_unreserved(connection, *, work_order_id, line_code):
 
 def require_assignment_unreserved(connection, *, assignment_id):
     """Use persisted assignment to resolve logical identity, never client fields."""
-    if not enabled():
-        return
     row = connection.execute(
         """SELECT v.work_order_id, l.line_code
            FROM vinto_txn.assignment a
