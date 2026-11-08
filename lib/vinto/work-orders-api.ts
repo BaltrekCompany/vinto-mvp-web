@@ -80,7 +80,8 @@ function parseRevisions(value: unknown): WorkOrderRevision[] | null {
     if (!value.every(item => {
         if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
         const r = item as Record<string, unknown>;
-        return Number.isInteger(r.version_number) && Number.isInteger(r.previous_version)
+        return typeof r.version_number === "number" && Number.isInteger(r.version_number)
+            && typeof r.previous_version === "number" && Number.isInteger(r.previous_version)
             && typeof r.line_code === "string" && typeof r.reason === "string"
             && typeof r.changed_at === "string" && typeof r.changed_by_id === "string"
             && typeof r.changed_by_name === "string"
