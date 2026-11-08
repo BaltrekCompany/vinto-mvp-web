@@ -1,9 +1,11 @@
 """E2-D1 HTTP and E2-C2 tests against disposable PostgreSQL 17 databases."""
+import secrets
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
+from pydantic import SecretStr
 from app.assignments import service as assignment_service
 from app.config import settings
 
@@ -24,7 +26,33 @@ def tearDownModule():
 
 
 class E2D1HttpTests(api.WorkOrderApiCase):
+    # The shared database in the generic API fixture would retain an active
+    # machine assignment across test methods. E2-D1 requires a fresh database
+    # for EACH test to prevent false MACHINE_ACTIVE_WITH_OTHER_WORK_ORDER errors.
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
     def setUp(self):
+        self.database = api.copy_database(api.STATE["template"], "vinto_e2d1http")
+        self.addCleanup(api.drop_database, self.database)
+        self.connection = api.connect(self.database)
+        self.addCleanup(self.connection.close)
+        db_patcher = patch.object(settings, "database_url", SecretStr(api.database_url(self.database)))
+        db_patcher.start()
+        self.addCleanup(db_patcher.stop)
+        self.users, self.cookies = {}, {}
+        for profile in api.PROFILES:
+            password = "pw-" + secrets.token_urlsafe(18)
+            actor = api.create_user(
+                self.connection, username=f"d1.{profile.lower()}",
+                display_name=f"D1 {profile}", profile_code=profile,
+                password=password, sectors=("BOBINAS",))
+            self.users[profile] = (actor, password)
         for target, name, value in (
             (settings, "work_order_line_execution_enabled", True),
             (settings, "work_orders_multi_machine_enabled", True),
