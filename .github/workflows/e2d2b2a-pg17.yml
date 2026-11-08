@@ -65,7 +65,7 @@ jobs:
           python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
       - name: E2-C1 revision receipts PG17
         working-directory: backend
-        run: python -B -m unittest discover -s tests -p 'test_revision_notices.py' -v
+        run: python -B -m unittest discover -s tests -p 'test_assignments_api.py' -v
       - name: Migration SHA256 and permissions
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
