@@ -192,3 +192,39 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
             self.assertEqual((start.status,start.json()["code"]),
                              (409,"WORK_ORDER_HANDOFF_PENDING"))
 
+    async def test_b2_recovery_read_only_supervisor_scope_with_flag_off(self):
+        order, a, sup = await self.target()
+        with patch.object(settings, "work_order_reprogram_handoff_enabled", True):
+            res = await api.call(
+                "POST", self.reserve_url(order),
+                json_body=self.reserve_body(a), cookie=sup)
+            self.assertEqual(res.status, 200, res.text)
+        handoff_id = res.json()["handoff_id"]
+        url = f"/api/work-orders/handoffs/{handoff_id}"
+        self.assertEqual((await api.call("GET", url)).status, 401)
+        for profile in ("JEFATURA", "OPERACION", "CALIDAD", "DATA_BALTREK"):
+            denied = await api.call(
+                "GET", url, cookie=await self.cookie(profile))
+            self.assertEqual(denied.status, 403, (profile, denied.text))
+        # OFF does not hide or unfreeze the existing reservation.
+        with patch.object(settings, "work_order_reprogram_handoff_enabled", False):
+            found = await api.call("GET", url, cookie=sup)
+            self.assertEqual(found.status, 200, found.text)
+            self.assertEqual(found.json()["status"], "pending")
+            self.assertEqual(found.json()["recovery_action"],
+                             "cancel_pending_or_publish")
+            self.assertEqual(found.json()["prior_assignment_id"], a["id"])
+            self.assertEqual(found.json()["work_order_id"], order["id"])
+            missing = await api.call(
+                "GET", f"/api/work-orders/handoffs/{uuid4()}", cookie=sup)
+            self.assertEqual(missing.status, 404, missing.text)
+            cancel = await api.call(
+                "POST", f"{url}/cancel",
+                json_body={"reason": "Cancelacion de reserva tras desactivar D2"},
+                cookie=sup)
+            self.assertEqual(cancel.status, 200, cancel.text)
+            after = await api.call("GET", url, cookie=sup)
+            self.assertEqual(after.status, 200, after.text)
+            self.assertEqual(after.json()["status"], "cancelled")
+
+
