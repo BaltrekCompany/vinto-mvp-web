@@ -33,7 +33,7 @@ from app.work_orders.errors import (ArticleNotAllowedForMachineError, ArticleNot
                                     MachineNotFoundError, MachineOutsideScopeError, MultiMachineDisabledError,
                                     WorkOrderAlreadyPublishedError,
                                     WorkOrderNotDraftError, WorkOrderNotFoundError, WorkOrderNotPublishableError,
-                                    WorkOrderArchiveBlockedError, WorkOrderNotArchivedError)
+                                    WorkOrderArchiveBlockedError, WorkOrderNotArchivedError, WorkOrderDraftChangedError)
 
 MAX_PV_LENGTH = 100
 MAX_ARTICLE_CODE_LENGTH = 64
@@ -272,6 +272,51 @@ def add_line(connection, *, actor_id, work_order_id, line: LineInput, request_id
         header_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (machine_id,)).fetchone()[0]
         (line_machine_id,) = _line_machines(connection, machine_id, header_code, [line], sectors)
         _insert_line(connection, version_id, line_machine_id, line)
+    return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
+
+
+def edit_draft_line(connection, *, actor_id, work_order_id, line_code, expected: LineInput,
+                    replacement: LineInput, reason: str, request_id=None, sectors) -> WorkOrderView:
+    """Jefatura: edita SOLO los cuatro campos de una línea no publicada.
+
+    Identidad, máquina, line_code y versión permanecen intactos. La comparación
+    bajo bloqueo de OT + línea evita sobrescribir cambios de otra sesión. La
+    auditoría existente conserva antes/después, actor, fecha y motivo.
+    """
+    work_order_id = _as_uuid(work_order_id)
+    if not isinstance(line_code, str) or not line_code or len(line_code) > 64:
+        raise WorkOrderNotFoundError()
+    if expected.machine_code is not None or replacement.machine_code is not None:
+        raise InvalidWorkOrderLineError("La máquina de la línea no se puede modificar")
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if len(reason) < 10 or len(reason) > 300:
+        raise InvalidWorkOrderLineError("Se requiere motivo de 10 a 300 caracteres")
+    old_fields = clean_line(expected)
+    new_fields = clean_line(replacement)
+    with connection.transaction():
+        _context(connection, actor_id, request_id, "work order edit draft line: " + reason)
+        status, _, version_id, published_at = _lock_baseline(connection, work_order_id, sectors)
+        if status != "draft" or published_at is not None:
+            raise WorkOrderNotDraftError()
+        row = connection.execute(
+            """SELECT l.id, l.machine_id, l.pv_reference, a.code, l.quantity, l.due_date
+               FROM vinto_txn.work_order_line l
+               JOIN vinto_master.article_version av ON av.id=l.article_version_id
+               JOIN vinto_master.article a ON a.id=av.article_id
+               WHERE l.work_order_version_id=%s AND l.line_code=%s
+               FOR UPDATE OF l""", (version_id, line_code)).fetchone()
+        if row is None:
+            raise WorkOrderNotFoundError()
+        if tuple(row[2:]) != old_fields:
+            raise WorkOrderDraftChangedError()
+        if old_fields != new_fields:
+            article_version_id, unit_id = _resolve_article(connection, row[1], new_fields[1])
+            connection.execute(
+                """UPDATE vinto_txn.work_order_line
+                   SET pv_reference=%s, article_version_id=%s, unit_id=%s,
+                       quantity=%s, due_date=%s
+                   WHERE id=%s""",
+                (new_fields[0], article_version_id, unit_id, new_fields[2], new_fields[3], row[0]))
     return get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
 
 
