@@ -143,12 +143,13 @@ class PublishReassignTests(base.SameOrderCase):
 
     def test_other_open_handoff_same_OT_denied(self):
         order,prior,h,expected,new=self.case(lines=2)
-        # May use second active line only when multi-line is enabled, but
-        # a second D2 reservation on same OT must be rejected nonetheless.
+        # L2 has its own eligible active assignment; only the OT-wide
+        # open-revision invariant prevents a second simultaneous reserve.
+        second=self.activate(order,1).assignment
         with self.assertRaises(WorkOrderHandoffPendingError):
             handoff_service.reserve(
                 self.connection,actor_id=self.supervisor,work_order_id=order.id,
-                line_code="L2",assignment_id=prior.id,expected_version=2,
+                line_code="L2",assignment_id=second.id,expected_version=2,
                 reason="Otra reserva sobre la misma orden",
                 sectors=("BOBINAS",))
         self.assertEqual(self.scalar(
