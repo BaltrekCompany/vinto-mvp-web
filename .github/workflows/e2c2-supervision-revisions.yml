@@ -6,6 +6,7 @@ on:
       - 'backend/migrations/0018_supervision_revision_receipts.sql'
       - 'backend/app/work_orders/**'
       - 'backend/tests/test_work_orders_api.py'
+      - 'backend/tests/test_work_orders_multimachine_api.py'
       - 'backend/tests/test_sector_scope.py'
       - 'lib/vinto/supervision-revision-api.ts'
       - 'components/vinto/supervision-revision-inbox.tsx'
@@ -55,6 +56,9 @@ jobs:
       - name: PG17 supervisor notices, receipts and work order regressions
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_work_orders_api.py' -v
+      - name: Cross-sector mixed-machine revision scope
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_work_orders_multimachine_api.py' -v
       - name: Historical migration checksums and sector scope
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
