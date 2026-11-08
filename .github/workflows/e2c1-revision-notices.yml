@@ -1,0 +1,79 @@
+name: E2-C1 revision notices CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/migrations/0017_work_order_revision_receipts.sql'
+      - 'backend/app/assignments/**'
+      - 'backend/tests/test_assignments_api.py'
+      - 'backend/tests/test_sector_scope.py'
+      - 'lib/vinto/revision-notices-api.ts'
+      - 'components/vinto/revision-notice-inbox.tsx'
+      - 'app/page.tsx'
+      - 'scripts/e2c1-revision-notices.test.mjs'
+      - '.github/workflows/e2c1-revision-notices.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2c1-frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: E2C1 HTTP and UI
+        run: node --test scripts/e2c1-revision-notices.test.mjs
+      - name: Types
+        run: pnpm exec tsc --noEmit
+      - name: Lint
+        run: pnpm exec eslint components/vinto/revision-notice-inbox.tsx lib/vinto/revision-notices-api.ts app/page.tsx
+
+  e2c1-backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile
+        run: python -B -m compileall -q backend/app/assignments backend/tests/test_assignments_api.py
+      - name: PG17 notice and receipt API
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_assignments_api.py' -v
+      - name: Migration checksums
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v

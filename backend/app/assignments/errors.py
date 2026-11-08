@@ -39,5 +39,9 @@ class ActivationBlockedError(AssignmentError):
     http_status, code, public_message = 409, "ACTIVATION_BLOCKED", "La activación masiva tiene bloqueos; no se activó ninguna línea"
 
 
+class RevisionNoticeConflictError(AssignmentError):
+    http_status, code, public_message = 409, "REVISION_NOTICE_CHANGED", "La versión asignada cambió; vuelve a consultar el aviso"
+
+
 class InvalidAssignmentFilterError(AssignmentError):
     http_status, code, public_message = 422, "INVALID_FILTER", "Filtro inválido"

@@ -65,6 +65,9 @@ PINNED_E1_MIGRATIONS = [
 PINNED_E2_MIGRATIONS = [
     ("0016_work_order_reprogramming.sql", "a7e9d09f81d5c67e7e36e11bd6230faeaff6b88a3ccc7b8ad6772dc4c64ca186"),
 ]
+PINNED_E2C_MIGRATIONS = [
+    ("0017_work_order_revision_receipts.sql", "d039f055f4eefba3087509573e1b0fb8ae2db1b0eb22e230e729e876b110ad2c"),
+]
 
 
 # ---- 1. configuración -------------------------------------------------------------------------------------------------------
@@ -156,7 +159,7 @@ class StaticScopeTests(unittest.TestCase):
 
     def test_existing_migrations_are_intact_and_only_the_known_ones_exist(self):
         from migrate import read_migrations
-        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS
+        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS + PINNED_E2C_MIGRATIONS
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

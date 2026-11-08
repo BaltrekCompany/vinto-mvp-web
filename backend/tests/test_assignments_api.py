@@ -134,6 +134,120 @@ class AssignmentApiCase(unittest.IsolatedAsyncioTestCase):
         return self.connection.execute(query, params).fetchone()[0]
 
 
+class RevisionNoticesTests(AssignmentApiCase):
+    """E2-C1: actionable notice, operator identity, grants, audit and replay."""
+
+    async def _revised_assignment(self):
+        original = await self.published_order(lines=1)
+        old = original["baseline"]["lines"][0]
+        prev = {"pv_reference": old["pv_reference"], "article_code": old["article"]["code"],
+                "quantity": old["quantity"], "due_date": old["due_date"]}
+        response = await call("POST", f"/api/work-orders/{original['id']}/lines/L1/reprogram",
+                              json_body={"expected_version": 1, "expected": prev,
+                                         "replacement": {**prev, "quantity": 120},
+                                         "reason": "Ajuste programado antes del primer turno"},
+                              cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(response.status, 200, response.text)
+        assigned = await self.activate(original)
+        self.assertEqual(assigned.status, 201, assigned.text)
+        self.assertEqual(assigned.json()["assignment"]["operational"]["version_number"], 2)
+        return assigned.json()["assignment"]
+
+    def _grant(self, profile="OPERACION"):
+        from app.auth.machine_form_grants import grant_machine_form
+        return grant_machine_form(
+            self.connection, user_id=self.users[profile][0].user_id,
+            machine_code="MP1", form_code="VINTO-P1-03",
+            actor_id=self.users["JEFATURA"][0].user_id)
+
+    async def test_inbox_acknowledges_exact_assigned_version_once_and_audits_actor(self):
+        assigned = await self._revised_assignment()
+        cookie = await self.cookie("OPERACION")
+        url = "/api/assignments/revision-notices"
+        # A sector permission alone is never a machine grant.
+        before = await call("GET", url, cookie=cookie)
+        self.assertEqual((before.status, before.json()), (200, []))
+        self._grant()
+        found = await call("GET", url, cookie=cookie)
+        self.assertEqual(found.status, 200, found.text)
+        notices = found.json()
+        self.assertEqual(len(notices), 1)
+        notice = notices[0]
+        self.assertEqual((notice["assignment_id"], notice["version_number"],
+                          notice["line_code"], notice["machine_code"]),
+                         (assigned["id"], 2, "L1", "MP1"))
+        self.assertEqual(notice["work_order_number"], assigned["work_order"]["number"])
+        self.assertEqual(notice["reason"], "Ajuste programado antes del primer turno")
+        self.assertIsNone(notice["acknowledged_at"])
+        self.assertTrue(notice["revised_at"])
+        self.assertEqual(dict(found.headers).get(b"cache-control"), b"private, no-store")
+        post = f"/api/assignments/{assigned['id']}/acknowledge-revision"
+        stale = await call("POST", post, json_body={"expected_version": 1}, cookie=cookie)
+        self.assertEqual((stale.status, stale.json()["code"]), (409, "REVISION_NOTICE_CHANGED"))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 0)
+        for injected in ({"user_id": str(uuid4())}, {"version_id": str(uuid4())},
+                         {"machine_code": "MP3"}, {"acknowledged_at": "2000-01-01T00:00:00Z"}):
+            response = await call("POST", post, json_body={"expected_version": 2, **injected}, cookie=cookie)
+            self.assertEqual(response.status, 422)
+        created = await call("POST", post, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(created.status, 200, created.text)
+        self.assertEqual(created.json()["assignment_id"], assigned["id"])
+        self.assertEqual(created.json()["version_number"], 2)
+        second = await call("POST", post, json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(second.status, 200, second.text)
+        self.assertEqual(second.json(), created.json())
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_revision_receipt"), 1)
+        actor, reason = self.connection.execute(
+            """SELECT actor_id,reason FROM vinto_audit.audit_event
+               WHERE entity_table='work_order_revision_receipt' AND action='INSERT'""").fetchone()
+        self.assertEqual(actor, self.users["OPERACION"][0].user_id)
+        self.assertEqual(reason, "operator acknowledged assigned OT revision")
+        afterward = (await call("GET", url, cookie=cookie)).json()[0]
+        self.assertEqual(afterward["acknowledged_at"], created.json()["acknowledged_at"])
+        self.assertEqual(self.scalar("SELECT status FROM vinto_txn.assignment WHERE id=%s", (assigned["id"],)), "active")
+
+        import psycopg
+        receipt_id = self.scalar("SELECT id FROM vinto_txn.work_order_revision_receipt")
+        with self.assertRaises(psycopg.errors.CheckViolation):
+            self.connection.execute(
+                "UPDATE vinto_txn.work_order_revision_receipt SET acknowledged_at=clock_timestamp() WHERE id=%s",
+                (receipt_id,))
+        with self.assertRaises(psycopg.errors.CheckViolation):
+            self.connection.execute("DELETE FROM vinto_txn.work_order_revision_receipt WHERE id=%s", (receipt_id,))
+
+    async def test_permissions_revocations_and_no_revisions_fail_closed(self):
+        active = (await self.activate(await self.published_order(lines=1))).json()["assignment"]
+        self._grant()
+        cookie = await self.cookie("OPERACION")
+        self.assertEqual((await call("GET", "/api/assignments/revision-notices", cookie=cookie)).json(), [])
+        self.assertEqual((await call("POST",
+            f"/api/assignments/{active['id']}/acknowledge-revision",
+            json_body={"expected_version": 2}, cookie=cookie)).status, 404)
+        for role in ("JEFATURA", "SUPERVISION", "CALIDAD", "DATA_BALTREK"):
+            self.assertEqual((await call("GET", "/api/assignments/revision-notices",
+                                         cookie=await self.cookie(role))).status, 403)
+        self.assertEqual((await call("GET", "/api/assignments/revision-notices")).status, 401)
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s",
+            (active["id"],)), 0)
+
+        revised = await self._revised_assignment()
+        inbox = (await call("GET", "/api/assignments/revision-notices", cookie=cookie)).json()
+        self.assertEqual([x["assignment_id"] for x in inbox], [revised["id"]])
+        from app.auth.machine_form_grants import revoke_machine_form
+        revoke_machine_form(
+            self.connection, user_id=self.users["OPERACION"][0].user_id,
+            machine_code="MP1", form_code="VINTO-P1-03",
+            actor_id=self.users["JEFATURA"][0].user_id)
+        self.assertEqual((await call("GET", "/api/assignments/revision-notices", cookie=cookie)).json(), [])
+        forbidden_ack = await call("POST", f"/api/assignments/{revised['id']}/acknowledge-revision",
+                                   json_body={"expected_version": 2}, cookie=cookie)
+        self.assertEqual(forbidden_ack.status, 404)
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_txn.work_order_revision_receipt WHERE assignment_id=%s",
+            (revised["id"],)), 0)
+
+
 class SupervisionFlowTests(AssignmentApiCase):
     async def test_supervision_activates_reuses_and_finishes(self):
         order = await self.published_order()
