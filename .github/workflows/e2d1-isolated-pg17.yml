@@ -6,6 +6,8 @@ on:
       - 'backend/app/assignments/service.py'
       - 'backend/app/work_orders/**'
       - 'backend/tests/test_e2d1_unassigned_in_progress.py'
+      - 'backend/tests/test_e2d1_http.py'
+      - 'backend/tests/test_e2d1_concurrency.py'
       - '.github/workflows/e2d1-isolated-pg17.yml'
   workflow_dispatch:
 permissions:
@@ -44,11 +46,13 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r backend/requirements.txt
       - name: Compile
-        run: python -B -m compileall -q backend/app/work_orders/reprogramming.py backend/app/work_orders/router.py backend/app/assignments/service.py backend/tests/test_e2d1_unassigned_in_progress.py
+        run: python -B -m compileall -q backend/app/work_orders/reprogramming.py backend/app/work_orders/router.py backend/app/assignments/service.py backend/tests/test_e2d1_unassigned_in_progress.py backend/tests/test_e2d1_http.py backend/tests/test_e2d1_concurrency.py
       - name: PG17 D1 tests and regressions
         working-directory: backend
         run: |
           python -B -m unittest discover -s tests -p 'test_e2d1_unassigned_in_progress.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d1_http.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d1_concurrency.py' -v
           python -B -m unittest discover -s tests -p 'test_e2d_readiness.py' -v
           python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
           python -B -m unittest discover -s tests -p 'test_assignments_service.py' -v
