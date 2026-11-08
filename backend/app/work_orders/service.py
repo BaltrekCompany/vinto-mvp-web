@@ -308,7 +308,7 @@ def edit_draft_line(connection, *, actor_id, work_order_id, line_code, expected:
                FOR UPDATE OF l""", (version_id, line_code)).fetchone()
         if row is None:
             raise WorkOrderNotFoundError()
-        if tuple(row[2:]) != old_fields:
+        if tuple(row[2:6]) != old_fields:  # only the four editable fields; 6/7 are frozen article version/unit
             raise WorkOrderDraftChangedError()
         if old_fields != new_fields:
             article_version_id, unit_id = (row[6], row[7]) if new_fields[1] == row[3] else _resolve_article(connection, row[1], new_fields[1])
