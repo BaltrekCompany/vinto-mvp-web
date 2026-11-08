@@ -90,6 +90,14 @@ rollback_version() {
     assert_unit_is_ours "$unit"
   done
 
+  # D2-B2-OPS: no code downgrade while pending/published/reassigned
+  # handoffs exist. Check before writing current.tmp or restarting services;
+  # this uses the live release's read-only PG17 preflight.
+  if ! d2_ops_gate rollback "$release_dir"; then
+    echo "FALLA D2: rollback de código no autorizado; current intacto." >&2
+    exit 1
+  fi
+
   local previous_target
   previous_target="$(mvp_readlink_f "$MVP_APP_DIR/current" 2>/dev/null || true)"
   echo "Revirtiendo 'current' de '${previous_target:-?}' a '$release_dir'."
