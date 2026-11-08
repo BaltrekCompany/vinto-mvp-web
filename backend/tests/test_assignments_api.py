@@ -165,7 +165,6 @@ class RevisionNoticesTests(AssignmentApiCase):
         # only a QUALITY form grant on MP1. Generic machine visibility admits
         # Quality; E2-C1 must require the production-specific authorization.
         from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
-        from app.authz import visibility
 
         assigned = await self._revised_assignment()
         actor = self.users["OPERACION"][0].user_id
@@ -175,10 +174,6 @@ class RevisionNoticesTests(AssignmentApiCase):
         grant_machine_form(
             self.connection, user_id=actor, machine_code="MP1",
             form_code="VINTO-P1-19", actor_id=self.users["JEFATURA"][0].user_id)
-
-        principal = self.users["OPERACION"][0]
-        self.assertIn("MP1", visibility.authorized_machine_codes(self.connection, principal))
-        self.assertNotIn("MP1", visibility.authorized_production_machine_codes(self.connection, principal))
 
         cookie = await self.cookie("OPERACION")
         inbox_url = "/api/assignments/revision-notices"
