@@ -4,7 +4,7 @@
 -- assignment links. B2 is responsible for operator acknowledgement.
 CREATE OR REPLACE FUNCTION vinto_txn.guard_e2d2_handoff_b11()
 RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE actor uuid; line_code text;
+DECLARE actor uuid; handoff_code text;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'Handoff history cannot be deleted' USING ERRCODE='23514';
@@ -82,7 +82,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  SELECT bl.line_code INTO line_code
+  SELECT bl.line_code INTO handoff_code
     FROM vinto_txn.work_order_line bl WHERE bl.id=OLD.baseline_line_id;
 
   IF OLD.status='pending' AND NEW.status='published' THEN
@@ -94,7 +94,7 @@ BEGIN
           AND v.kind='operational'
           AND v.published_at IS NOT NULL
           AND v.version_number=OLD.expected_version_number+1
-          AND v.reprogram_line_code=line_code
+          AND v.reprogram_line_code=handoff_code
           AND EXISTS (
             SELECT 1 FROM vinto_txn.work_order_version base
             WHERE base.id=v.based_on_version_id
@@ -116,7 +116,7 @@ BEGIN
         WHERE a.id=NEW.replacement_assignment_id AND a.status='active'
           AND a.machine_id=OLD.machine_id AND ol.machine_id=OLD.machine_id
           AND ol.work_order_version_id=OLD.published_version_id
-          AND ol.line_code=line_code
+          AND ol.line_code=handoff_code
       ) OR EXISTS (
         SELECT 1 FROM vinto_txn.assignment a
         WHERE a.id=OLD.prior_assignment_id AND a.status='active'
