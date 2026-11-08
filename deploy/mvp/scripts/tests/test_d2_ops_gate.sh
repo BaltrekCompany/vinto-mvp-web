@@ -12,10 +12,12 @@ source "$SCRIPT_DIR/lib_common.sh"
 
 LEGACY="$ROOT/releases/legacy"
 NEW="$ROOT/releases/new"
-mkdir -p "$LEGACY/backend/app" "$NEW/backend/app/work_orders" \
-  "$NEW/backend/.venv/bin" "$NEW/backend/migrations" "$ROOT/shared"
+mkdir -p "$LEGACY/backend/app" "$LEGACY/backend/.venv/bin" \
+  "$NEW/backend/app/work_orders" "$NEW/backend/.venv/bin" \
+  "$NEW/backend/migrations" "$ROOT/shared"
+printf '#!/bin/sh\nexit 0\n' > "$LEGACY/backend/.venv/bin/python"
 printf '#!/bin/sh\nexit 0\n' > "$NEW/backend/.venv/bin/python"
-chmod 700 "$NEW/backend/.venv/bin/python"
+chmod 700 "$LEGACY/backend/.venv/bin/python" "$NEW/backend/.venv/bin/python"
 : > "$NEW/backend/app/work_orders/handoff_rollout_cli.py"
 : > "$NEW/backend/migrations/0019_work_order_line_reprogram_handoff.sql"
 ln -s "$LEGACY" "$ROOT/current"
@@ -62,8 +64,12 @@ assert_fail() {
   fi
 }
 
-assert_pass "legacy-to-legacy needs no D2 CLI" d2_ops_gate rollback "$LEGACY"
-[ ! -s "$CALLS" ] || exit 1
+assert_pass "legacy-to-legacy probes DB without D2 CLI" d2_ops_gate rollback "$LEGACY"
+grep -Fq "$LEGACY/backend/.venv/bin/python -B -c" "$CALLS"
+MOCK_RC=3
+assert_fail "legacy DB unavailable fails closed" d2_ops_gate rollback "$LEGACY"
+MOCK_RC=0
+: > "$CALLS"
 assert_fail "enable requires installed B2 runner" d2_ops_gate enable "$LEGACY"
 assert_pass "first B2 activation uses prepared new release" d2_ops_gate activate "$NEW"
 grep -Fq "$NEW/backend/.venv/bin/python -m app.work_orders.handoff_rollout_cli rollback" "$CALLS"
@@ -89,6 +95,16 @@ assert_fail "legacy target cannot parse D2 flag" d2_ops_gate rollback "$LEGACY"
 assert_fail "legacy still lacks D2 flag field" d2_ops_gate rollback "$LEGACY"
 printf 'work_order_reprogram_handoff_enabled: bool = False\n' > "$LEGACY/backend/app/config.py"
 assert_pass "compatible legacy target after no-open gate" d2_ops_gate rollback "$LEGACY"
+
+# Rollback to a pre-B2 D2 writer is dangerous with the flag ON even when
+# the current B2 preflight says there are no handoffs.
+B1="$ROOT/releases/b1"
+mkdir -p "$B1/backend/migrations" "$B1/backend/app"
+: > "$B1/backend/migrations/0019_work_order_line_reprogram_handoff.sql"
+printf 'work_order_reprogram_handoff_enabled: bool = False\n' > "$B1/backend/app/config.py"
+assert_fail "flag ON rejects downgrade to B1-only writer" d2_ops_gate rollback "$B1"
+printf 'WORK_ORDER_REPROGRAM_HANDOFF_ENABLED=false\n' > "$ROOT/shared/backend.env"
+assert_pass "flag OFF and zero handoffs permits B1-only checkout" d2_ops_gate rollback "$B1"
 
 # With migration 0019, missing preflight code must NEVER be mistaken for
 # pre-D2 legacy. A DB connection failure must also block.
