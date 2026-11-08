@@ -115,7 +115,8 @@ export function SupervisedHandoffPanel({
     const capabilityView = capability.view;
     const inboxView = inbox.view;
     const capReady = capabilityView.status === "ready";
-    const enabled = capabilityView.status === "ready" && capabilityView.data === true;
+    const enabled = capabilityView.status === "ready" &&
+        !capabilityView.refreshing && capabilityView.data === true;
     const listReady = inboxView.status === "ready" && !inboxView.refreshing;
     const active: OpenHandoff[] = inboxView.status === "ready" && !inboxView.refreshing
         ? inboxView.data : [];
@@ -128,7 +129,8 @@ export function SupervisedHandoffPanel({
         verified.workOrderId === orderId && verified.lineCode === lineCode &&
         selectedLine?.machine.code === verified.machine &&
         (selectedOrder?.programming?.version_number ?? 2) === verified.version;
-    const reservationReady = enabled && listReady && !blocked && selectionMatches &&
+    const reservationReady = enabled && listReady && active.length < 100 &&
+        !blocked && selectionMatches &&
         reserveReason.trim().length >= 10 && reserveReason.trim().length <= 300 &&
         !active.some(item => item.work_order_id === orderId);
 
