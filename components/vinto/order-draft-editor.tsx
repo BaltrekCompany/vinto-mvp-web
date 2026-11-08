@@ -18,6 +18,7 @@ type Props = {
     errors: readonly RowError[];
     nextKey: () => string;
     fixedRows?: boolean; // una sola fila sin agregar ni retirar (formulario de «añadir línea»)
+    lockMachine?: boolean; // E2-A: edición de línea persistida, máquina inmutable
 };
 
 const field = "h-10 w-full rounded-md border bg-white px-3 text-sm text-slate-950";
@@ -25,7 +26,7 @@ const invalid = "border-red-500";
 
 // Tabla EDITABLE del borrador local de una OT: máquina, PV, producto, cantidad y entrega por fila. Agregar o retirar filas solo cambia el borrador del navegador: no toca nada persistido.
 // Cuando cambia la máquina de una fila se invalida su producto si ya no corresponde. El número de OT y el código de línea NO existen aquí: los asigna el servidor.
-export function OrderDraftEditor({ rows, onRows, machines, catalog, multi, disabled, errors, nextKey, fixedRows = false }: Props) {
+export function OrderDraftEditor({ rows, onRows, machines, catalog, multi, disabled, errors, nextKey, fixedRows = false, lockMachine = false }: Props) {
     const catalogOf: CatalogOf = (machine) => catalog(machine);
     const errorOf = (key: string, name: RowError["field"]) => errors.find(error => error.key === key && error.field === name);
     const cell = (row: DraftRow, name: DraftField, label: string, type: string) => {
@@ -40,7 +41,7 @@ export function OrderDraftEditor({ rows, onRows, machines, catalog, multi, disab
                 const shared = !multi && index > 0; // en una OT tradicional la máquina la fija la primera fila
                 return <tr key={row.key} data-draft-row="" className="border-t">
                     <td className="p-2 align-top font-bold">{index + 1}</td>
-                    <td className="p-2 align-top"><select aria-label={`Máquina de la fila ${index + 1}`} aria-invalid={machineError ? true : undefined} disabled={disabled || shared} className={`${field} ${machineError ? invalid : ""}`} value={row.machine} onChange={e => onRows(setMachine(rows, row.key, e.target.value, catalogOf, multi))}><option value="">Seleccionar…</option>{machines.map(m => <option key={m.code} value={m.code}>{m.code}</option>)}</select>{machineError && <p role="alert" className="mt-1 text-xs text-red-700">{machineError.message}</p>}</td>
+                    <td className="p-2 align-top"><select aria-label={`Máquina de la fila ${index + 1}`} aria-invalid={machineError ? true : undefined} disabled={disabled || shared || lockMachine} className={`${field} ${machineError ? invalid : ""}`} value={row.machine} onChange={e => onRows(setMachine(rows, row.key, e.target.value, catalogOf, multi))}><option value="">Seleccionar…</option>{machines.map(m => <option key={m.code} value={m.code}>{m.code}</option>)}</select>{machineError && <p role="alert" className="mt-1 text-xs text-red-700">{machineError.message}</p>}</td>
                     {cell(row, "pv", `PV de la fila ${index + 1}`, "text")}
                     <td className="p-2 align-top"><select aria-label={`Producto de la fila ${index + 1}`} aria-invalid={codeError ? true : undefined} disabled={disabled || !row.machine} className={`${field} ${codeError ? invalid : ""}`} value={row.code} onChange={e => onRows(setField(rows, row.key, "code", e.target.value))}><option value="">Seleccionar…</option>{catalog(row.machine).map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}</select>{codeError && <p role="alert" className="mt-1 text-xs text-red-700">{codeError.message}</p>}</td>
                     {cell(row, "qty", `Cantidad de la fila ${index + 1}`, "number")}
