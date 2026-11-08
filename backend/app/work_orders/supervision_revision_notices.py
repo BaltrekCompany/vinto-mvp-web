@@ -11,24 +11,6 @@ from app.sectors import scoped_sector_codes
 from app.work_orders.errors import WorkOrderNotFoundError, SupervisionRevisionConflictError
 
 
-# Both the header machine and EVERY baseline line's sector must belong to
-# the authenticated supervisor's scope. A multi-sector OT is not partially
-# disclosed. This deliberately matches Jefatura/Supervisión OT visibility.
-_FULL_SCOPE = """
-    JOIN vinto_master.machine header_machine ON header_machine.id=w.machine_id
-    JOIN vinto_master.sector header_sector ON header_sector.id=header_machine.sector_id
-    WHERE header_sector.code=ANY(%s)
-      AND NOT EXISTS (
-        SELECT 1 FROM vinto_txn.work_order_version baseline
-        JOIN vinto_txn.work_order_line bl ON bl.work_order_version_id=baseline.id
-        JOIN vinto_master.machine bm ON bm.id=bl.machine_id
-        JOIN vinto_master.sector bs ON bs.id=bm.sector_id
-        WHERE baseline.work_order_id=w.id AND baseline.version_number=1
-          AND NOT (bs.code=ANY(%s))
-      )
-"""
-
-
 def _as_uuid(value):
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
