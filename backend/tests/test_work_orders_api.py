@@ -197,6 +197,90 @@ class JefaturaFlowTests(WorkOrderApiCase):
         self.assertEqual(len({r.json()["number"] for r in replies}), 4)
 
 
+class DraftLineEditTests(WorkOrderApiCase):
+    """E2-A: ediciones de borrador con MF13 y control de escritura concurrente."""
+
+    async def test_edit_four_fields_keeps_machine_and_writes_audit(self):
+        created = (await self.create()).json()
+        original = created["baseline"]["lines"][0]
+        expected = line_body(code=original["article"]["code"], pv=original["pv_reference"],
+                             quantity=original["quantity"], due=original["due_date"])
+        replacement = line_body(code=MP1_CODES[1], pv="PV-CORREGIDO", quantity=150, due="2026-12-15")
+        url = f"/api/work-orders/{created['id']}/lines/L1/edit-draft"
+        reply = await call("POST", url, json_body={"expected": expected, "replacement": replacement,
+                                                  "reason": "Corrección de programación QA"},
+                           cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(reply.status, 200, reply.text)
+        updated = reply.json()
+        item = updated["baseline"]["lines"][0]
+        self.assertEqual((item["pv_reference"], item["article"]["code"], item["quantity"], item["due_date"]),
+                         ("PV-CORREGIDO", MP1_CODES[1], 150, "2026-12-15"))
+        self.assertEqual(item["machine"], original["machine"])
+        self.assertEqual(item["id"], original["id"])
+        self.assertEqual((updated["baseline"]["id"], updated["baseline"]["version_number"], updated["status"]),
+                         (created["baseline"]["id"], 1, "draft"))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_version WHERE work_order_id=%s", (created["id"],)), 1)
+        audit = self.connection.execute(
+            """SELECT reason,actor_id,old_data,new_data FROM vinto_audit.audit_event
+               WHERE entity_table='work_order_line' AND entity_key->>'id'=%s AND action='UPDATE'
+               ORDER BY occurred_at DESC LIMIT 1""", (original["id"],)).fetchone()
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit[0], "work order edit draft line: Corrección de programación QA")
+        self.assertEqual(audit[1], self.users["JEFATURA"][0].user_id)
+        self.assertEqual(audit[2]["pv_reference"], "PV-001")
+        self.assertEqual(audit[3]["pv_reference"], "PV-CORREGIDO")
+        self.assertEqual(audit[2]["machine_id"], audit[3]["machine_id"])
+
+        stale = await call("POST", url, json_body={"expected": expected, "replacement": replacement,
+                                                  "reason": "Segundo intento con valores anteriores"},
+                           cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((stale.status, stale.json()["code"]), (409, "WORK_ORDER_DRAFT_CHANGED"))
+        current = (await call("GET", f"/api/work-orders/{created['id']}", cookie=await self.cookie("JEFATURA"))).json()
+        self.assertEqual(current["baseline"]["lines"][0], item)
+
+    async def test_published_line_edit_is_rejected_without_side_effects(self):
+        created = (await self.create()).json()
+        existing = created["baseline"]["lines"][0]
+        expected = line_body(code=existing["article"]["code"], pv=existing["pv_reference"],
+                             quantity=existing["quantity"], due=existing["due_date"])
+        body = {"expected": expected, "replacement": {**expected, "quantity": 200},
+                "reason": "Incremento posterior a publicación QA"}
+        url = f"/api/work-orders/{created['id']}/lines/L1/edit-draft"
+        await call("POST", f"/api/work-orders/{created['id']}/publish", cookie=await self.cookie("JEFATURA"))
+        reply = await call("POST", url, json_body=body, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((reply.status, reply.json()["code"]), (409, "WORK_ORDER_NOT_DRAFT"))
+        detail = (await call("GET", f"/api/work-orders/{created['id']}", cookie=await self.cookie("JEFATURA"))).json()
+        self.assertEqual(detail["baseline"]["lines"][0], existing)
+
+    async def test_permissions_machine_restriction_and_invalid_product(self):
+        created = (await self.create()).json()
+        line = created["baseline"]["lines"][0]
+        expected = line_body(code=line["article"]["code"], pv=line["pv_reference"],
+                             quantity=line["quantity"], due=line["due_date"])
+        body = {"expected": expected, "replacement": {**expected, "quantity": 120},
+                "reason": "Corrección operativa de cantidades QA"}
+        url = f"/api/work-orders/{created['id']}/lines/L1/edit-draft"
+        for profile in ("SUPERVISION", "OPERACION", "CALIDAD", "DATA_BALTREK"):
+            reply = await call("POST", url, json_body=body, cookie=await self.cookie(profile))
+            self.assertEqual(reply.status, 403, profile)
+        self.assertEqual((await call("POST", url, json_body=body)).status, 401)
+        bad = [
+            {**body, "replacement": {**body["replacement"], "machine_code": "MP3"}},
+            {**body, "replacement": {**body["replacement"], "quantity": 0}},
+            {**body, "reason": "corto"},
+        ]
+        for payload in bad:
+            self.assertEqual((await call("POST", url, json_body=payload,
+                                         cookie=await self.cookie("JEFATURA"))).status, 422)
+        wrong_machine = {**body, "replacement": {**body["replacement"], "article_code": MP3_CODES[0]}}
+        reply = await call("POST", url, json_body=wrong_machine, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((reply.status, reply.json()["code"]), (422, "ARTICLE_NOT_ALLOWED_FOR_MACHINE"))
+        missing = {**body, "replacement": {**body["replacement"], "article_code": "NO-EXISTE"}}
+        reply = await call("POST", url, json_body=missing, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((reply.status, reply.json()["code"]), (404, "ARTICLE_NOT_FOUND"))
+        detail = (await call("GET", f"/api/work-orders/{created['id']}", cookie=await self.cookie("JEFATURA"))).json()
+        self.assertEqual(detail["baseline"]["lines"][0], line)
+
 class PermissionTests(WorkOrderApiCase):
     async def test_without_a_session_every_endpoint_is_401(self):
         order = (await self.create()).json()

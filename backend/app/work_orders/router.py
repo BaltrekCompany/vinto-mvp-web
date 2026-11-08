@@ -20,7 +20,7 @@ from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import close_order
-from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
+from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
 
@@ -144,6 +144,22 @@ def add_line(work_order_id: str, body: LineIn, user: AuthenticatedUser = Depends
              connection=Depends(get_connection)):
     return work_order_out(service.add_line(connection, actor_id=user.user_id, work_order_id=work_order_id,
                                            line=body.to_domain(), request_id=_request_id(), sectors=user.sectors))
+
+
+@router.post("/{work_order_id}/lines/{line_code}/edit-draft", response_model=WorkOrderOut, responses=_ERRORS)
+def edit_draft_line(work_order_id: str, line_code: str, body: EditDraftLineIn,
+                    user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+                    connection=Depends(get_connection)):
+    """Edición exclusiva de borradores, sin cambiar máquina ni identidad.
+
+    La operación nunca acepta OT publicadas o en producción. La autorización
+    efectiva, el bloqueo y la comprobación de la versión leída son del servidor.
+    """
+    return work_order_out(service.edit_draft_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, expected=body.expected.to_domain(),
+        replacement=body.replacement.to_domain(), reason=body.reason,
+        request_id=_request_id(), sectors=user.sectors))
 
 
 @router.post("/{work_order_id}/publish", response_model=WorkOrderOut, responses=_ERRORS)

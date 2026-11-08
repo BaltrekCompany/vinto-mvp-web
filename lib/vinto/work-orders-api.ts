@@ -39,6 +39,18 @@ export function addWorkOrderLine(workOrderId: string, line: LineDraft, signal?: 
     return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/lines`, { method: "POST", body: addLinePayload(line), signal }, parseWorkOrder);
 }
 
+// E2-A: edición de los cuatro datos programados de una línea guardada, SOLO en borrador.
+ // expected hace la escritura condicional: un cambio concurrente devuelve 409, nunca sobrescribe en silencio.
+export function editDraftWorkOrderLine(workOrderId: string, lineCode: string, expected: LineDraft,
+                                       replacement: LineDraft, reason: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
+    return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/lines/${encodeURIComponent(lineCode)}/edit-draft`,
+        { method: "POST", body: { expected: lineBodyNoMachine(expected), replacement: lineBodyNoMachine(replacement), reason: reason.trim() }, signal }, parseWorkOrder);
+}
+
+function lineBodyNoMachine(line: LineDraft) {
+    return { pv_reference: line.pvReference.trim(), article_code: line.articleCode, quantity: line.quantity, due_date: line.dueDate };
+}
+
 export function publishWorkOrder(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<WorkOrder>> {
     return requestJson(`/api/work-orders/${encodeURIComponent(workOrderId)}/publish`, { method: "POST", signal }, parseWorkOrder);
 }

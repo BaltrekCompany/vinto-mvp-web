@@ -40,6 +40,10 @@ class WorkOrderNotDraftError(WorkOrderError):
     http_status, code, public_message = 409, "WORK_ORDER_NOT_DRAFT", "La orden no está en borrador; la línea base publicada no se modifica"
 
 
+class WorkOrderDraftChangedError(WorkOrderError):
+    http_status, code, public_message = 409, "WORK_ORDER_DRAFT_CHANGED", "La línea fue modificada; actualiza la OT antes de volver a editar"
+
+
 class WorkOrderAlreadyPublishedError(WorkOrderNotDraftError):
     code, public_message = "WORK_ORDER_ALREADY_PUBLISHED", "La línea base ya está publicada y no admite cambios"
 

@@ -131,12 +131,25 @@ test("a draft can be published (with confirmation) and receive another line; a p
   const draft = html(props({ workOrders: ready([order("draft", MULTI_LINES)]), capabilities: { multiMachine: true } }));
   assert.ok(draft.includes("Publicar base"));
   assert.ok(draft.includes("Añadir una línea a este borrador"));
-  assert.equal(count(draft, "<details"), 1);
+  assert.equal(count(draft, "<details"), 4, "three editable persisted lines and one add-line form");
+  assert.ok(draft.includes("Editar L1") && draft.includes("Guardar cambios de L1"), "Jefatura can edit saved draft fields");
+  assert.ok(draft.includes("data-edit-draft-line=\"L1\""), "editor identifies the persisted line");
+  assert.ok(draft.includes("Motivo de la corrección (obligatorio)"));
   const published = html(props({ workOrders: ready([order("published", MULTI_LINES)]), capabilities: { multiMachine: true } }));
   assert.ok(!published.includes("Publicar base") && !published.includes("Añadir una línea"), "the published baseline is immutable");
-  assert.ok(!/Editar|Eliminar línea|Retirar línea/.test(published + draft), "no edit/delete of persisted lines: the backend has no such contract");
+  assert.ok(!published.includes("data-edit-draft-line") && !published.includes("Guardar cambios"), "published orders cannot edit persisted lines");
+  assert.ok(!draft.includes("Eliminar línea") && !draft.includes("Retirar línea"), "E2-A does not delete persisted lines");
 });
 
+
+test("E2-A frontend never permits machine edits on a persisted draft line", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../components/vinto/bobinas-programming.tsx", import.meta.url), "utf8");
+  assert.match(source, /multi=\{false\} lockMachine fixedRows/);
+  assert.match(source, /order\.status === "draft"/);
+  assert.match(source, /editDraftWorkOrderLine\(order\.id, line\.line_code, expected, replacement, reason\)/);
+  const orderDraft = (await import("node:fs")).readFileSync(new URL("../components/vinto/order-draft-editor.tsx", import.meta.url), "utf8");
+  assert.match(orderDraft, /disabled=\{disabled \|\| shared \|\| lockMachine\}/);
+});
 test("the publish confirmation warns that the baseline becomes immutable", async () => {
   const source = (await import("node:fs")).readFileSync(new URL("../components/vinto/bobinas-programming.tsx", import.meta.url), "utf8");
   assert.ok(source.includes("Una vez publicada, la línea base es inmutable"));
@@ -192,6 +205,21 @@ test("creating a three-line multi-machine order is ONE POST /api/work-orders and
   assert.deepEqual(result.data.baseline.lines.map((l) => l.machine.code), ["MP1", "MP1", "MP3"]);
 });
 
+test("E2-A draft edit sends exactly four fields and never sends machine or IDs", async () => {
+  const expected = LINES[0];
+  const replacement = { ...expected, quantity: 150, pvReference: "PV-CORREGIDO" };
+  const { result, calls } = await withFetch(() => json(200, serverOrder()),
+    () => api.editDraftWorkOrderLine("22222222-2222-4222-8222-222222222222", "L1", expected, replacement, "Corrección QA de Jefatura"));
+  assert.ok(result.ok);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "POST");
+  assert.match(calls[0].url, /\/api\/work-orders\/22222222-2222-4222-8222-222222222222\/lines\/L1\/edit-draft$/);
+  assert.deepEqual(Object.keys(calls[0].body).sort(), ["expected", "reason", "replacement"]);
+  assert.deepEqual(Object.keys(calls[0].body.expected).sort(), ["article_code", "due_date", "pv_reference", "quantity"]);
+  assert.deepEqual(Object.keys(calls[0].body.replacement).sort(), ["article_code", "due_date", "pv_reference", "quantity"]);
+  assert.equal(calls[0].body.replacement.quantity, 150);
+  assert.equal(calls[0].body.reason, "Corrección QA de Jefatura");
+});
 test("every backend error is reported once, with no retry and no second request (no partial orders)", async () => {
   const expected = { 401: "session", 403: "forbidden", 404: "not_found", 409: "conflict", 422: "invalid", 500: "unavailable" };
   for (const [status, kind] of Object.entries(expected)) {
