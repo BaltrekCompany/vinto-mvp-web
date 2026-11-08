@@ -16,10 +16,10 @@ import type { ApiResult } from "@/lib/vinto/central-http";
 import { PRODUCTS_BY_MACHINE } from "@/lib/vinto/catalogs";
 import { createMutationGuard, runGuarded } from "@/lib/vinto/mutation-guard";
 import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type DraftRow, type RowError } from "@/lib/vinto/order-draft";
-import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder } from "@/lib/vinto/orders";
+import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder, type WorkOrderLine } from "@/lib/vinto/orders";
 import { useResource, type Resource } from "@/lib/vinto/use-central";
 import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
-import { addWorkOrderLine, archiveWorkOrder, createWorkOrderWithLines, listArchivedWorkOrders, publishWorkOrder, restoreWorkOrder } from "@/lib/vinto/work-orders-api";
+import { addWorkOrderLine, archiveWorkOrder, createWorkOrderWithLines, editDraftWorkOrderLine, listArchivedWorkOrders, publishWorkOrder, restoreWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
 // si rechaza, se muestra el error y NO se crea nada. La pantalla de Bobinas ya entrega el catálogo que el backend publica para la sesión (bobinas-programming-source.tsx).
@@ -111,6 +111,15 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
     function addLine(order: WorkOrder, draft: LineDraft) {
         if (!canManageOrders) return void toast.error("Tu perfil no puede crear ni modificar OT");
         run(`add:${order.id}`, () => addWorkOrderLine(order.id, draft), () => { toast.success("Línea añadida a la misma OT"); });
+    }
+    function editLine(order: WorkOrder, line: WorkOrderLine, replacement: LineDraft, reason: string) {
+        if (!canManageOrders || order.status !== "draft") return void toast.error("Solo Jefatura puede editar líneas en borrador");
+        const expected: LineDraft = {
+            pvReference: line.pv_reference, articleCode: line.article.code,
+            quantity: line.quantity, dueDate: line.due_date,
+        };
+        run(`edit:${line.id}`, () => editDraftWorkOrderLine(order.id, line.line_code, expected, replacement, reason),
+            () => toast.success(`OT ${order.number}: línea ${line.line_code} actualizada`));
     }
     function publish(order: WorkOrder) {
         setConfirming(null);
