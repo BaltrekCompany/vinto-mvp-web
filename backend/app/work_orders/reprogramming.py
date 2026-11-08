@@ -128,6 +128,10 @@ def reprogram_unassigned_in_progress_line(connection, *, actor_id, work_order_id
     """
     if service.settings.work_order_reprogram_unassigned_in_progress_enabled is not True:
         raise WorkOrderD1DisabledError()
+    # An active OT without the E1 lifecycle enabled is an unreconciled legacy
+    # configuration, never evidence that its other lines are safe to revise.
+    if service.settings.work_order_line_execution_enabled is not True:
+        raise WorkOrderD1BlockedError()
     work_order_id = service._as_uuid(work_order_id)
     if not isinstance(line_code, str) or not _LINE_CODE.fullmatch(line_code):
         raise WorkOrderNotFoundError()
@@ -190,6 +194,32 @@ def reprogram_unassigned_in_progress_line(connection, *, actor_id, work_order_id
                 WHERE v.work_order_id=%s AND l.line_code<>%s AND a.status='active'
                )""", (work_order_id, line_code)).fetchone()[0]
         if not other_active:
+            raise WorkOrderD1BlockedError()
+
+        # Fail closed on ANY legacy assignment belonging to this order,
+        # including a FINISHED historical assignment on an unrelated line.
+        # An active assignment also requires an actual enabled/producing E1
+        # state; a missing/planned/finished E1 cannot masquerade as readiness.
+        legacy = connection.execute(
+            """SELECT EXISTS (
+                 SELECT 1 FROM vinto_txn.assignment a
+                 JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+                 JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+                 JOIN vinto_txn.work_order_version baseline
+                   ON baseline.work_order_id=v.work_order_id
+                  AND baseline.kind='baseline' AND baseline.version_number=1
+                 LEFT JOIN vinto_txn.work_order_line bl
+                   ON bl.work_order_version_id=baseline.id AND bl.line_code=l.line_code
+                 LEFT JOIN vinto_txn.work_order_line_execution e
+                   ON e.baseline_line_id=bl.id
+                 WHERE v.work_order_id=%s
+                   AND (bl.id IS NULL OR e.baseline_line_id IS NULL
+                        OR e.work_order_id<>v.work_order_id
+                        OR e.machine_id<>a.machine_id
+                        OR (a.status='active'
+                            AND e.status NOT IN ('enabled','in_production')))
+               )""", (work_order_id,)).fetchone()[0]
+        if legacy:
             raise WorkOrderD1BlockedError()
 
         source = connection.execute(

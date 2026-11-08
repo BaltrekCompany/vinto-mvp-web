@@ -96,6 +96,28 @@ class E2D1Tests(base.SameOrderCase):
             self.revise(order, version=999)
         self.assertEqual(self.versions(order), 2)
 
+    def test_legacy_active_assignment_without_e1_is_not_reprogrammable(self):
+        self.enable_d1()
+        order = self.same_machine_order(2)
+        with patch.object(settings, "work_order_line_execution_enabled", False):
+            self.activate(order, 0)
+        with self.assertRaises(WorkOrderD1BlockedError):
+            self.revise(order)
+        self.assertEqual(self.versions(order), 2)
+
+    def test_historical_legacy_assignment_on_another_line_blocks_d1(self):
+        self.enable_d1()
+        order = self.same_machine_order(3)
+        with patch.object(settings, "work_order_line_execution_enabled", False):
+            old = self.activate(order, 2).assignment
+            base.service.finish(
+                self.connection, actor_id=self.supervisor,
+                assignment_id=old.id, sectors=("BOBINAS",))
+        self.activate(order, 0)
+        with self.assertRaises(WorkOrderD1BlockedError):
+            self.revise(order, index=1)
+        self.assertEqual(self.versions(order), 2)
+
     def test_no_other_active_assignment_is_blocked(self):
         self.enable_d1()
         order = self.same_machine_order(2)
