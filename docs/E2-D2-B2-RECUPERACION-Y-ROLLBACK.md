@@ -23,10 +23,11 @@ No existe transición de `published` a `cancelled`; esa acción perdería la rel
 Con la versión y sus migraciones ya instaladas, un operador autorizado ejecuta el módulo del backend **como el usuario de servicio**, con su configuración existente y sin argumentos secretos:
 
 ```bash
-cd /opt/vinto-mvp-web/current/backend
-./.venv/bin/python -m app.work_orders.handoff_rollout_cli rollback
-./.venv/bin/python -m app.work_orders.handoff_rollout_cli disable
-./.venv/bin/python -m app.work_orders.handoff_rollout_cli enable
+sudo -u vinto-mvp env PYTHONPATH=/opt/vinto-mvp-web/current/backend \
+  /opt/vinto-mvp-web/current/backend/.venv/bin/python \
+  -m app.work_orders.handoff_rollout_cli rollback
+
+# Cambiar solo el ultimo argumento por disable o enable en los otros casos.
 ```
 
 El módulo se ejecuta en **REPEATABLE READ READ ONLY**, valida checksums de migraciones 0019–0022, trigger SQL de E1 y estado agregado de reservas. No imprime URLs, contraseñas, IDs de OT, usuarios ni capturas.
