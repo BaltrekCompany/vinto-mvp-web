@@ -128,6 +128,18 @@ class E2D2B1HttpTests(api.WorkOrderApiCase):
             self.assertEqual(item["expected_version"], 2)
             self.assertEqual(item["prior_assignment_id"], assignment["id"])
             self.assertNotIn("requested_by", item)
+            self.assertEqual(dict(response.headers).get(b"cache-control"), b"private, no-store")
+
+        # Same functional role, different sector: no order or handoff leak.
+        password = "pw-" + secrets.token_urlsafe(18)
+        outsider = api.create_user(
+            self.connection, username=f"b3.outside.{uuid4().hex[:6]}",
+            display_name="Other sector QA", profile_code="SUPERVISION",
+            password=password, sectors=("REBOBINADO",))
+        self.users["B3_OUTSIDE"] = (outsider, password)
+        outside = await self.cookie("B3_OUTSIDE")
+        hidden = await api.call("GET", inbox, cookie=outside)
+        self.assertEqual((hidden.status, hidden.json()), (200, []))
 
     async def test_permission_validation_and_disabled_flag(self):
         order, a, sup = await self.target()
