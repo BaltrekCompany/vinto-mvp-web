@@ -16,7 +16,13 @@ def enabled() -> bool:
 
 
 def require_line_unreserved(connection, *, work_order_id, line_code):
-    """Read-only, fail closed on DB errors. Call after machine lock, before writes."""
+    """Read-only, fail closed on DB errors. Call after machine lock, before writes.
+
+    Do not SELECT FOR SHARE: PostgreSQL requires UPDATE privilege even for
+    shared row locking. B0 grants vinto_app SELECT only. The machine advisory
+    lock serializes this read with B1's future audited reservation writer,
+    which MUST acquire the same machine lock before INSERT/UPDATE.
+    """
     if not enabled():
         return
     row = connection.execute(
@@ -28,7 +34,7 @@ def require_line_unreserved(connection, *, work_order_id, line_code):
              AND bv.work_order_id=h.work_order_id
              AND bv.kind='baseline' AND bv.version_number=1
              AND h.status = ANY(%s)
-           FOR SHARE OF h""",
+           """,
         (work_order_id, line_code, list(_BLOCKING)),
     ).fetchone()
     if row is not None:
