@@ -65,7 +65,7 @@ assert_fail() {
 }
 
 assert_pass "legacy-to-legacy probes DB without D2 CLI" d2_ops_gate rollback "$LEGACY"
-grep -Fq "$LEGACY/backend/.venv/bin/python -B -c" "$CALLS"
+grep -Fq "$ROOT/current/backend/.venv/bin/python -B -c" "$CALLS"
 MOCK_RC=3
 assert_fail "legacy DB unavailable fails closed" d2_ops_gate rollback "$LEGACY"
 MOCK_RC=0
