@@ -108,7 +108,7 @@ def list_revision_notices(
     response.headers["Cache-Control"] = "private, no-store"
     return revision_notices.list_revision_notices(
         connection, user_id=user.user_id, sectors=user.sectors,
-        machine_codes=visibility.authorized_machine_codes(connection, user))
+        machine_codes=visibility.authorized_production_machine_codes(connection, user))
 
 
 @router.post("/{assignment_id}/acknowledge-revision", response_model=RevisionReceiptOut, responses=_ERRORS)
@@ -121,7 +121,7 @@ def acknowledge_revision(
     return revision_notices.acknowledge_revision(
         connection, actor_id=user.user_id, assignment_id=assignment_id,
         expected_version=body.expected_version, sectors=user.sectors,
-        machine_codes=visibility.authorized_machine_codes(connection, user),
+        machine_codes=visibility.authorized_production_machine_codes(connection, user),
         request_id=_request_id())
 
 
