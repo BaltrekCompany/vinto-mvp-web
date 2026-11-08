@@ -173,7 +173,7 @@ class StaticScopeTests(unittest.TestCase):
                        ("0021_e2d2_publish_reassign.sql",
                         "c1759ba64f0b91176728d5c06b813ed01b357bf79c22cf260d99944c97b72c0c"),
                        ("0022_e2d2_operator_receipt_and_e1_barrier.sql",
-                        "00000000000000000000000000000000fd8f4205f70e65228c09dece1942dc6e")])
+                        "99408823f34d424e0d1c78fd01187cc392c1484f1c03ea981dc50a880694129d")])
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 
