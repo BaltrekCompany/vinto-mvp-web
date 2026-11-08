@@ -81,6 +81,36 @@ class BulkCase(base.SameOrderCase):
         return outcomes
 
 
+class ReprogrammedPreviewTests(BulkCase):
+    """A preview approved before reprogramming must never confirm newer content."""
+
+    def test_revision_changes_preview_and_stale_plan_is_rejected(self):
+        from app.work_orders import reprogramming
+        from app.work_orders.service import LineInput
+        initial = self.preview().plan
+        self.assertTrue(initial.can_confirm)
+        first = self.order3.baseline.lines[0]
+        new_quantity = first.quantity + 30
+        reprogramming.reprogram_published_line(
+            self.connection, actor_id=self.jefatura, work_order_id=self.order3.id,
+            line_code=first.line_code, expected_version=1,
+            expected=LineInput(first.pv_reference, first.article_code, first.quantity, first.due_date),
+            replacement=LineInput("PV-CORREGIDO", first.article_code, new_quantity, first.due_date),
+            reason="Incremento de programación antes de habilitar la línea",
+            sectors=("BOBINAS",))
+        new_plan = self.preview().plan
+        self.assertNotEqual(initial.plan_hash, new_plan.plan_hash)
+        self.assertEqual(new_plan.lines[0].pv_reference, "PV-CORREGIDO")
+        self.assertEqual(new_plan.lines[0].article_code, first.article_code)
+        with self.assertRaises(ActivationPlanChangedError):
+            self.confirm(initial.plan_hash)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.assignment"), 0)
+        activated = self.confirm(new_plan.plan_hash)
+        self.assertEqual(activated.outcome, "applied")
+        self.assertEqual(activated.activated[0].line.quantity, new_quantity)
+        self.assertEqual(activated.activated[0].operational_version_number, 2)
+
+
 class PreviewTests(BulkCase):
     def test_the_preview_lists_the_three_lines_with_machines_shift_and_hash(self):
         plan = self.preview().plan

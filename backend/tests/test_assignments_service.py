@@ -98,6 +98,38 @@ class AssignmentCase(unittest.TestCase):
             """SELECT a.status FROM vinto_txn.assignment a JOIN vinto_master.machine m ON m.id=a.machine_id WHERE m.code=%s ORDER BY a.created_at""", (machine,)).fetchall()
 
 
+class ReprogrammingAssignmentIntegrationTests(AssignmentCase):
+    """E2-B must feed the newest version to the first activation without changing E1."""
+
+    def test_reprogrammed_published_order_activates_latest_snapshot(self):
+        from app.work_orders import reprogramming
+        order = self.make_order(lines=2)
+        original = self.snapshot_baseline(order)
+        first = order.baseline.lines[0]
+        updated = reprogramming.reprogram_published_line(
+            self.connection, actor_id=self.jefatura, work_order_id=order.id,
+            line_code="L1", expected_version=1,
+            expected=LineInput(first.pv_reference, first.article_code, first.quantity, first.due_date),
+            replacement=LineInput(first.pv_reference, first.article_code, 150, first.due_date),
+            reason="Incremento de producción antes de asignar", sectors=("BOBINAS",))
+        self.assertEqual(updated.programming.version_number, 2)
+        self.assertEqual(updated.programming.lines[0].quantity, 150)
+        self.assertEqual(self.snapshot_baseline(order), original)
+        active = self.activate(order, 0)
+        self.assertEqual(active.assignment.operational_version_number, 2)
+        self.assertEqual(active.assignment.line.quantity, 150)
+        self.assertEqual(self.versions(order), [(1, "baseline", True), (2, "operational", True)])
+        with self.assertRaises(Exception) as error:
+            reprogramming.reprogram_published_line(
+                self.connection, actor_id=self.jefatura, work_order_id=order.id,
+                line_code="L1", expected_version=2,
+                expected=LineInput(first.pv_reference, first.article_code, 150, first.due_date),
+                replacement=LineInput(first.pv_reference, first.article_code, 180, first.due_date),
+                reason="No modificar después de asignar", sectors=("BOBINAS",))
+        self.assertEqual(error.exception.code, "WORK_ORDER_REPROGRAM_BLOCKED")
+        self.assertEqual(self.versions(order), [(1, "baseline", True), (2, "operational", True)])
+
+
 class OperationalVersionTests(AssignmentCase):
     def test_baseline_stays_identical_after_activations(self):
         order = self.make_order()

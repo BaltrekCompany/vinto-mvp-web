@@ -19,7 +19,7 @@ import { emptyRow, normalizeForMode, summarize, summaryText, validateRows, type 
 import { WORK_ORDER_LABELS, failureMessage, type FailureKind, type LineDraft, type WorkOrder, type WorkOrderLine } from "@/lib/vinto/orders";
 import { useResource, type Resource } from "@/lib/vinto/use-central";
 import { NO_CAPABILITIES, massActivationOffered, multiMachineOffered, type CapabilityStatus, type WorkOrderCapabilities } from "@/lib/vinto/work-order-capabilities";
-import { addWorkOrderLine, archiveWorkOrder, createWorkOrderWithLines, editDraftWorkOrderLine, listArchivedWorkOrders, publishWorkOrder, restoreWorkOrder } from "@/lib/vinto/work-orders-api";
+import { addWorkOrderLine, archiveWorkOrder, createWorkOrderWithLines, editDraftWorkOrderLine, listArchivedWorkOrders, listWorkOrderRevisions, reprogramPublishedLine, publishWorkOrder, restoreWorkOrder } from "@/lib/vinto/work-orders-api";
 
 // TEMPORAL (solo cuando el llamador no entrega `creation`): lista estática de Bobinas. NO es fuente de autorización: el backend valida máquina, artículo y relación artículo-máquina y,
 // si rechaza, se muestra el error y NO se crea nada. La pantalla de Bobinas ya entrega el catálogo que el backend publica para la sesión (bobinas-programming-source.tsx).
@@ -121,6 +121,18 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         run(`edit:${line.id}`, () => editDraftWorkOrderLine(order.id, line.line_code, expected, replacement, reason),
             () => toast.success(`OT ${order.number}: línea ${line.line_code} actualizada`));
     }
+    function reprogramLine(order: WorkOrder, line: WorkOrderLine, replacement: LineDraft, reason: string) {
+        if (!canManageOrders || order.status !== "published")
+            return void toast.error("Solo Jefatura puede reprogramar una OT publicada");
+        const expectedVersion = order.programming?.version_number ?? order.baseline.version_number;
+        const expected: LineDraft = {
+            pvReference: line.pv_reference, articleCode: line.article.code,
+            quantity: line.quantity, dueDate: line.due_date,
+        };
+        run(`reprogram:${line.line_code}`, () =>
+            reprogramPublishedLine(order.id, line.line_code, expectedVersion, expected, replacement, reason),
+            (updated) => toast.success(`OT ${updated.number}: programación v${updated.programming?.version_number ?? "?"} publicada`));
+    }
     function publish(order: WorkOrder) {
         setConfirming(null);
         if (!canManageOrders) return void toast.error("Tu perfil no puede crear ni modificar OT");
@@ -193,15 +205,23 @@ export function BobbinasProgramming({ machines, catalog: catalogOfMachine = cata
         {orders.length === 0 && <Panel title="Sin órdenes de trabajo" note={`Todavía no hay OT de ${sectorLabel} en el servidor.`}><p className="text-sm text-slate-700">Jefatura puede crear la primera.</p></Panel>}
         {orders.map(order => {
             const orderMachines = machinesOf(order);
-            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>{executionEnabled ? "Habilitar todas las líneas" : "Activar todas las líneas"}</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}{canManageOrders && (order.status === "draft" || order.status === "published") &&
+            return <div key={order.id} data-work-order={order.number} tabIndex={-1} className="overflow-hidden rounded-2xl border bg-white shadow-sm outline-none"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div><h3 className="font-black">{order.number} · {order.machine.code}</h3><p className="text-sm text-slate-600">Base v{order.baseline.version_number}{order.programming ? ` · Programación vigente v${order.programming.version_number}` : ""} · {order.baseline.lines.length} producto(s) · {new Set(order.baseline.lines.map(l => l.pv_reference)).size} PV · máquina(s): {orderMachines.join(", ")}</p>{orderMachines.length > 1 && <p className="text-xs text-slate-500">Máquina principal de la OT: {order.machine.code}</p>}</div><div className="flex flex-wrap items-center gap-2"><Badge>{WORK_ORDER_LABELS[order.status]}</Badge>{canManageAssignments && blockedBy !== capabilities && massActivationOffered(capabilities, canManageAssignments, order.status) && <Button size="sm" className="bg-[#146b4f]" disabled={locked} onClick={event => { invoker.current = event.currentTarget; setMassOrder({ scope, id: order.id, number: order.number }); }}>{executionEnabled ? "Habilitar todas las líneas" : "Activar todas las líneas"}</Button>}{canManageOrders && order.status === "draft" && <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirming(order)}>{busy === `publish:${order.id}` ? "Publicando…" : "Publicar base"}</Button>}{canManageOrders && (order.status === "draft" || order.status === "published") &&
                     <Button size="sm" variant="outline" disabled={locked}
                         onClick={() => { setArchiveCandidate(order); setArchiveReason(""); }}>
                         Archivar OT
                     </Button>}</div></div>
-                <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(l => <tr key={l.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, l.id)}>{busy === `activate:${l.id}` ? "Habilitando…" : executionEnabled ? "Habilitar" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>)}</tbody></table></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-sm"><thead className="bg-slate-50 text-left"><tr><th className="p-3">Línea</th><th className="p-3">Máquina</th><th className="p-3">PV</th><th className="p-3">Producto</th><th className="p-3">Cantidad</th><th className="p-3">Entrega</th><th className="p-3">Gestión</th></tr></thead><tbody>{order.baseline.lines.map(base => { const l = order.programming?.lines.find(line => line.line_code === base.line_code) ?? base; return <tr key={base.id} className="border-t"><td className="p-3 font-bold">{l.line_code}</td><td className="p-3" data-line-machine="">{l.machine.code}</td><td className="p-3">{l.pv_reference}</td><td className="p-3"><b>{l.article.code}</b><br />{l.article.description}</td><td className="p-3">{l.quantity} {l.unit}</td><td className="p-3">{l.due_date}</td><td className="p-3">{canManageAssignments ? <Button size="sm" className="bg-[#146b4f]" disabled={locked || (order.status !== "published" && order.status !== "in_progress")} onClick={() => activate(order, base.id)}>{busy === `activate:${l.id}` ? "Habilitando…" : executionEnabled ? "Habilitar" : "Activar"}</Button> : <span className="text-slate-500">—</span>}</td></tr>; })}</tbody></table></div>
                 {executionEnabled && (order.status === "published" || order.status === "in_progress") &&
                     <LineExecutionPanel key={scope + ":" + order.id} order={order} scope={scope} refreshRevision={executionRevision}
                         lockedExternal={locked} onChanged={onChanged} onSessionLost={onSessionLost}/>}
+                {canManageOrders && order.status === "published" && typeof options !== "string" && <>
+                    <p className="border-t px-4 pt-3 text-sm text-slate-600">Reprogramación controlada: conserva la base original y crea una nueva versión. Solo disponible antes de la primera asignación; con una línea habilitada, en ejecución o finalizada, el servidor rechaza el cambio.</p>
+                    {(order.programming?.lines ?? order.baseline.lines).map(line => <EditDraftLine
+                        key={`revision:${line.id}:${line.quantity}:${line.pv_reference}`}
+                        line={line} options={options} disabled={locked} reprogram
+                        onSave={(replacement, reason) => reprogramLine(order, line, replacement, reason)}/>)}
+                    <RevisionHistory key={`history:${scope}:${order.id}:${order.programming?.version_number ?? 1}`} order={order} onSessionLost={onSessionLost}/>
+                </>}
                 {canManageOrders && order.status === "draft" && typeof options !== "string" && <>
                     {order.baseline.lines.map(line => <EditDraftLine
                         key={`${line.id}:${line.pv_reference}:${line.article.code}:${line.quantity}:${line.due_date}`}
@@ -256,11 +276,12 @@ function AddLine({ order, options, multi, disabled, busy, nextKey, onAdd }: { or
 }
 
 // E2-A: editar una línea persistida SOLO antes de publicar; no cambia máquina ni identidad.
-function EditDraftLine({ line, options, disabled, onSave }: {
+function EditDraftLine({ line, options, disabled, onSave, reprogram = false }: {
     line: WorkOrderLine;
     options: { machines: readonly MachineOption[]; catalog: (machine: string) => readonly CatalogItem[] };
     disabled: boolean;
     onSave: (replacement: LineDraft, reason: string) => void;
+    reprogram?: boolean;
 }) {
     const machine = line.machine.code;
     const [row, setRow] = useState<DraftRow>(() => ({
@@ -282,8 +303,8 @@ function EditDraftLine({ line, options, disabled, onSave }: {
         setErrors([]);
         onSave(checked.lines[0], reason.trim());
     }
-    return <details className="border-t p-4" data-edit-draft-line={line.line_code}>
-        <summary className="cursor-pointer text-sm font-bold">Editar {line.line_code} · {machine} (solo borrador)</summary>
+    return <details className="border-t p-4" data-edit-draft-line={reprogram ? undefined : line.line_code} data-reprogram-line={reprogram ? line.line_code : undefined}>
+        <summary className="cursor-pointer text-sm font-bold">{reprogram ? "Reprogramar" : "Editar"} {line.line_code} · {machine} {reprogram ? "(versión controlada)" : "(solo borrador)"}</summary>
         <div className="mt-3 space-y-3">
             <OrderDraftEditor rows={[row]} onRows={next => setRow(next[0])} machines={[line.machine]}
                 catalog={options.catalog} multi={false} lockMachine fixedRows disabled={disabled}
@@ -293,8 +314,37 @@ function EditDraftLine({ line, options, disabled, onSave }: {
                 placeholder="Ej.: Ajuste de cantidad solicitado por Jefatura"
                 onChange={event => setReason(event.target.value)}/>
             <Button type="button" size="sm" variant="outline" disabled={disabled || !changed || reason.trim().length < 10}
-                onClick={save}>Guardar cambios de {line.line_code}</Button>
-            <p className="text-xs text-slate-600">La máquina, el código de línea y la OT no cambian. Una OT publicada no admite esta operación.</p>
+                onClick={save}>{reprogram ? "Publicar nueva versión de" : "Guardar cambios de"} {line.line_code}</Button>
+            <p className="text-xs text-slate-600">{reprogram ? "Se conservarán la base original y todas las versiones anteriores. No disponible si existe cualquier asignación." : "La máquina, el código de línea y la OT no cambian. Una OT publicada no admite esta operación."}</p>
         </div>
     </details>;
+}
+
+// Historial de correcciones consultado bajo demanda. No se mezcla con la baseline.
+function RevisionHistory({ order, onSessionLost }: { order: WorkOrder; onSessionLost: () => void }) {
+    const [history, setHistory] = useState<Awaited<ReturnType<typeof listWorkOrderRevisions>> | null>(null);
+    const [loading, setLoading] = useState(false);
+    async function load() {
+        if (loading) return;
+        setLoading(true);
+        try {
+            const response = await listWorkOrderRevisions(order.id);
+            if (!response.ok && response.kind === "session") onSessionLost();
+            setHistory(response);
+        } catch { setHistory({ ok: false, kind: "unavailable", status: 0 }); }
+        finally { setLoading(false); }
+    }
+    return <div className="border-t p-4 space-y-2">
+        <Button type="button" size="sm" variant="outline" disabled={loading} onClick={() => void load()}>
+            {loading ? "Consultando historial..." : "Consultar historial de versiones"}</Button>
+        {history && !history.ok && <p role="alert" className="text-sm text-red-700">No se pudo consultar el historial. Vuelve a intentar.</p>}
+        {history?.ok && (history.data.length === 0 ?
+            <p className="text-sm text-slate-600">Sin reprogramaciones registradas.</p> :
+            <div className="space-y-2">{history.data.map(r => <div key={r.version_number} className="rounded-md border p-3 text-sm">
+                <b>v{r.previous_version} → v{r.version_number} · {r.line_code}</b>
+                <p>{r.reason} · {r.changed_by_name} · {new Date(r.changed_at).toLocaleString("es-PE")}</p>
+                <p>PV: {r.before.pv_reference} → {r.after.pv_reference} · Producto: {r.before.article_code} → {r.after.article_code}</p>
+                <p>Cantidad: {r.before.quantity} → {r.after.quantity} · Entrega: {r.before.due_date} → {r.after.due_date}</p>
+            </div>)}</div>)}
+    </div>;
 }
