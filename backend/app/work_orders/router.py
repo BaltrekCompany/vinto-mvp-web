@@ -207,6 +207,35 @@ def reserve_supervised_handoff(
         sectors=user.sectors, request_id=_request_id())
 
 
+class HandoffRecoveryOut(BaseModel):
+    handoff_id: uuid.UUID
+    work_order_id: uuid.UUID
+    line_code: str
+    status: Literal["pending", "published", "reassigned", "acknowledged", "cancelled"]
+    expected_version: int
+    published_version: int | None
+    prior_assignment_id: uuid.UUID
+    replacement_assignment_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+    recovery_action: Literal[
+        "cancel_pending_or_publish", "retry_supervisor_reassign",
+        "operator_acknowledge_exact_revision", "completed", "cancelled"]
+
+
+@router.get("/handoffs/{handoff_id}", response_model=HandoffRecoveryOut,
+            responses=_ERRORS)
+def read_handoff_recovery(
+        handoff_id: str, response: Response,
+        user: AuthenticatedUser = Depends(require_permission(ASSIGNMENT_MANAGE)),
+        connection=Depends(get_connection)):
+    """Supervisión-only recovery status; scoped even when D2 flag is OFF."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_service.read_handoff(
+        connection, handoff_id=handoff_id, sectors=user.sectors)
+
+
 @router.post("/handoffs/{handoff_id}/cancel", response_model=HandoffOut,
              responses=_ERRORS)
 def cancel_supervised_handoff(
