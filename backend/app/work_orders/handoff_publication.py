@@ -66,10 +66,10 @@ def _load_locked(connection, *, handoff_id, actor_id, sectors, request_id, reaso
            FROM vinto_txn.work_order_line
            WHERE id=%s AND work_order_version_id=%s""",
         (baseline_line_id, baseline_version_id)).fetchone()
-    if (prior is None or prior[0] != "active" or prior[1] != machine_id
-        or prior[5] != work_order_id or prior[6] != machine_id
-        or prior[7] != "operational" or line is None
-        or line[1] != prior[4] or line[2] != machine_id):
+    if (prior is None or prior[0] not in ("active", "finished")
+        or prior[1] != machine_id or prior[5] != work_order_id
+        or prior[6] != machine_id or prior[7] != "operational"
+        or line is None or line[1] != prior[4] or line[2] != machine_id):
         raise WorkOrderHandoffBlockedError()
     execution = connection.execute(
         """SELECT status, started_at, finished_at
@@ -87,6 +87,13 @@ def _load_locked(connection, *, handoff_id, actor_id, sectors, request_id, reaso
     if h is None or tuple(h[1:5]) != (
         work_order_id, baseline_line_id, machine_id, assignment_id):
         raise WorkOrderHandoffChangedError()
+    # A repeated reassign after the atomic transition must produce a CAS
+    # conflict (409 CHANGED), not an eligibility error. Other changes to
+    # the old assignment still fail closed.
+    if prior[0] == "finished" and h[6] == "reassigned":
+        raise WorkOrderHandoffChangedError()
+    if prior[0] != "active":
+        raise WorkOrderHandoffBlockedError()
 
     captured = connection.execute(
         """SELECT EXISTS (
@@ -252,13 +259,10 @@ def reassign(connection, *, actor_id, handoff_id, sectors, request_id=None):
                WHERE id=%s AND status='active'""", (h[4],))
         service._context(connection, actor_id, request_id,
                          "E2-D2 supervision create replacement assignment")
-        new_id = connection.execute(
-            """INSERT INTO vinto_txn.assignment
-                 (work_order_line_id,machine_id,shift_schedule_id,
-                  operating_date,assigned_by)
-               VALUES (%s,%s,%s,%s,%s) RETURNING id""",
-            (current[0],h[3],shift.shift_schedule_id,
-             shift.operating_date,actor_id)).fetchone()[0]
+        new_id = assignments._insert_assignment_record(
+            connection, operational_line_id=current[0], machine_id=h[3],
+            shift_schedule_id=shift.shift_schedule_id,
+            operating_date=shift.operating_date, actor_id=actor_id)
         service._context(connection, actor_id, request_id,
                          "E2-D2 handoff marked reassigned")
         connection.execute(
