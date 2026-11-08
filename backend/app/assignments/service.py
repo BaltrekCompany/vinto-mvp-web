@@ -309,7 +309,7 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
         raise OperationalVersionError(f"La línea operativa {target.line_code} no está en la misma máquina que su baseline")
     operational_line_id = operational_line[0]
     actives = connection.execute(
-        """SELECT a.id, a.work_order_line_id, a.shift_schedule_id, a.operating_date, v.work_order_id
+        """SELECT a.id, a.work_order_line_id, a.shift_schedule_id, a.operating_date, v.work_order_id, l.line_code
            FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
            JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id
            WHERE a.machine_id = %s AND a.status = 'active' ORDER BY a.created_at, a.id FOR UPDATE OF a""", (target.machine_id,)).fetchall()
@@ -317,7 +317,7 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     current = [row for row in actives if (row[2], row[3]) == context]
     stale = [row for row in actives if (row[2], row[3]) != context]
     for row in current:
-        if row[1] == operational_line_id:  # same assignment: keep old idempotency semantics
+        if row[4] == work_order_id and row[5] == target.line_code:  # logical line stable across E2-D snapshots
             if settings.work_order_line_execution_enabled is True:
                 from app.work_orders.line_execution import enable_from_activation
                 enable_from_activation(
@@ -334,6 +334,28 @@ def _activate_target(connection, *, actor_id, work_order_id, order_status, targe
     else:
         replaced = current  # semántica histórica: la anterior se sustituye
     finished = [row[0] for row in (*stale, *replaced)]
+    if settings.work_order_line_execution_enabled is True and finished:
+        # Single-assignment mode must not silently end the shift assignment of
+        # a *different logical line* that is still in production. A fresh shift
+        # assignment for the SAME line is legitimate and remains allowed.
+        affected_codes = sorted({
+            row[5] for row in (*stale, *replaced)
+            if row[4] == work_order_id and row[5] != target.line_code
+        })
+        if affected_codes:
+            producing_to_replace = connection.execute(
+                """SELECT EXISTS (
+                     SELECT 1 FROM vinto_txn.work_order_line_execution e
+                     JOIN vinto_txn.work_order_line baseline
+                       ON baseline.id=e.baseline_line_id
+                     WHERE e.work_order_id=%s AND e.machine_id=%s
+                       AND e.status='in_production'
+                       AND baseline.line_code=ANY(%s)
+                   )""", (work_order_id, target.machine_id, affected_codes)).fetchone()[0]
+            if producing_to_replace:
+                from app.work_orders.line_execution import ExecutionStateConflictError
+                raise ExecutionStateConflictError(
+                    "Otra linea esta en produccion; finalice su ejecucion logica antes de sustituir su asignacion")
     if finished:
         _reason(connection, _tagged("finish previous assignment", batch_tag))
         for assignment_id in finished:

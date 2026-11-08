@@ -11,6 +11,7 @@ from app.work_orders import service
 from app.work_orders.errors import (
     InvalidWorkOrderLineError, WorkOrderNotFoundError,
     WorkOrderReprogramConflictError, WorkOrderReprogramBlockedError,
+    WorkOrderD1DisabledError, WorkOrderD1BlockedError,
 )
 
 _LINE_CODE = re.compile(r"^L[1-9][0-9]*$")
@@ -111,6 +112,177 @@ def reprogram_published_line(connection, *, actor_id, work_order_id, line_code,
             (new_version_id,))
 
     return service.get_work_order(connection, work_order_id, sectors=sectors, multi_machine_visible=True)
+
+
+def reprogram_unassigned_in_progress_line(connection, *, actor_id, work_order_id,
+                                          line_code, expected_version,
+                                          expected: service.LineInput,
+                                          replacement: service.LineInput,
+                                          reason, request_id=None, sectors) -> service.WorkOrderView:
+    """E2-D1: append-only revision of a never-assigned line inside a running OT.
+
+    Do not acquire machine/assignment locks or update current assignments.
+    OT FOR UPDATE serializes this revision with assignment activation/start.
+    A published complete snapshot retains untouched lines and their historical
+    pointers; activation uses the latest snapshot only for newly assigned lines.
+    """
+    if service.settings.work_order_reprogram_unassigned_in_progress_enabled is not True:
+        raise WorkOrderD1DisabledError()
+    # An active OT without the E1 lifecycle enabled is an unreconciled legacy
+    # configuration, never evidence that its other lines are safe to revise.
+    if service.settings.work_order_line_execution_enabled is not True:
+        raise WorkOrderD1BlockedError()
+    work_order_id = service._as_uuid(work_order_id)
+    if not isinstance(line_code, str) or not _LINE_CODE.fullmatch(line_code):
+        raise WorkOrderNotFoundError()
+    if expected.machine_code is not None or replacement.machine_code is not None:
+        raise InvalidWorkOrderLineError("La maquina es inmodificable")
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if not 10 <= len(reason) <= 300:
+        raise InvalidWorkOrderLineError("Se requiere un motivo de 10 a 300 caracteres")
+    if not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 2:
+        raise InvalidWorkOrderLineError("La version esperada es invalida")
+    old_fields = service.clean_line(expected)
+    new_fields = service.clean_line(replacement)
+    if old_fields == new_fields:
+        raise InvalidWorkOrderLineError("No hay diferencias para registrar")
+
+    with connection.transaction():
+        service._context(connection, actor_id, request_id, "E2-D1 reprogram unassigned line: " + reason)
+        status, _, baseline_id, baseline_published = service._lock_baseline(connection, work_order_id, sectors)
+        if status != "in_progress" or baseline_published is None:
+            raise WorkOrderD1BlockedError()
+        retired = connection.execute(
+            "SELECT qa_retired FROM vinto_txn.work_order WHERE id=%s",
+            (work_order_id,)).fetchone()
+        if retired is None or retired[0]:
+            raise WorkOrderD1BlockedError()
+        baseline_line = connection.execute(
+            """SELECT id, machine_id FROM vinto_txn.work_order_line
+               WHERE work_order_version_id=%s AND line_code=%s""",
+            (baseline_id, line_code)).fetchone()
+        if baseline_line is None:
+            raise WorkOrderNotFoundError()
+
+        # All versions of this logical line are checked; finished assignments,
+        # planned E1 states and legacy records are NOT treated as unassigned.
+        history = connection.execute(
+            """SELECT
+                  EXISTS (
+                    SELECT 1 FROM vinto_txn.assignment a
+                    JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+                    JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+                    WHERE v.work_order_id=%s AND l.line_code=%s
+                  ) OR EXISTS (
+                    SELECT 1 FROM vinto_txn.work_order_line_execution e
+                    WHERE e.baseline_line_id=%s OR
+                          (e.work_order_id=%s AND e.machine_id=%s
+                           AND e.baseline_line_id=%s)
+                  )""",
+            (work_order_id, line_code, baseline_line[0],
+             work_order_id, baseline_line[1], baseline_line[0])).fetchone()[0]
+        if history:
+            raise WorkOrderD1BlockedError()
+
+        # D1 specifically applies to an OT with an active, DIFFERENT line.
+        # Do not use an orphaned in_progress status as proof of production.
+        other_active = connection.execute(
+            """SELECT EXISTS (
+                SELECT 1 FROM vinto_txn.assignment a
+                JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+                JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+                WHERE v.work_order_id=%s AND l.line_code<>%s AND a.status='active'
+               )""", (work_order_id, line_code)).fetchone()[0]
+        if not other_active:
+            raise WorkOrderD1BlockedError()
+
+        # Fail closed on ANY legacy assignment belonging to this order,
+        # including a FINISHED historical assignment on an unrelated line.
+        # An active assignment also requires an actual enabled/producing E1
+        # state; a missing/planned/finished E1 cannot masquerade as readiness.
+        legacy = connection.execute(
+            """SELECT EXISTS (
+                 SELECT 1 FROM vinto_txn.assignment a
+                 JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
+                 JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
+                 JOIN vinto_txn.work_order_version baseline
+                   ON baseline.work_order_id=v.work_order_id
+                  AND baseline.kind='baseline' AND baseline.version_number=1
+                 LEFT JOIN vinto_txn.work_order_line bl
+                   ON bl.work_order_version_id=baseline.id AND bl.line_code=l.line_code
+                 LEFT JOIN vinto_txn.work_order_line_execution e
+                   ON e.baseline_line_id=bl.id
+                 WHERE v.work_order_id=%s
+                   AND (bl.id IS NULL OR e.baseline_line_id IS NULL
+                        OR e.work_order_id<>v.work_order_id
+                        OR e.machine_id<>a.machine_id
+                        OR (a.status='active'
+                            AND e.status NOT IN ('enabled','in_production')))
+               )""", (work_order_id,)).fetchone()[0]
+        if legacy:
+            raise WorkOrderD1BlockedError()
+
+        source = connection.execute(
+            """SELECT id, version_number FROM vinto_txn.work_order_version
+               WHERE work_order_id=%s AND kind='operational'
+                 AND published_at IS NOT NULL
+               ORDER BY version_number DESC LIMIT 1""",
+            (work_order_id,)).fetchone()
+        if source is None:
+            raise WorkOrderD1BlockedError()
+        if source[1] != expected_version:
+            raise WorkOrderReprogramConflictError()
+        old = connection.execute(
+            """SELECT l.id, l.machine_id, l.pv_reference, a.code, l.quantity,
+                      l.due_date, l.article_version_id, l.unit_id
+               FROM vinto_txn.work_order_line l
+               JOIN vinto_master.article_version av ON av.id=l.article_version_id
+               JOIN vinto_master.article a ON a.id=av.article_id
+               WHERE l.work_order_version_id=%s AND l.line_code=%s
+               FOR UPDATE OF l""", (source[0], line_code)).fetchone()
+        if old is None:
+            raise WorkOrderNotFoundError()
+        if old[1] != baseline_line[1]:
+            raise WorkOrderD1BlockedError()
+        if tuple(old[2:6]) != old_fields:
+            raise WorkOrderReprogramConflictError()
+        article_version_id, unit_id = (
+            (old[6], old[7]) if new_fields[1] == old[3]
+            else service._resolve_article(connection, old[1], new_fields[1])
+        )
+
+        new_version_id = connection.execute(
+            """INSERT INTO vinto_txn.work_order_version
+                 (work_order_id, version_number, kind, based_on_version_id,
+                  reprogram_line_code, reprogram_reason)
+               VALUES (%s,%s,'operational',%s,%s,%s) RETURNING id""",
+            (work_order_id, expected_version + 1, source[0],
+             line_code, reason)).fetchone()[0]
+        copied = connection.execute(
+            """INSERT INTO vinto_txn.work_order_line
+                 (work_order_version_id,line_code,pv_reference,article_version_id,
+                  unit_id,quantity,due_date,machine_id)
+               SELECT %s,line_code,pv_reference,article_version_id,unit_id,
+                      quantity,due_date,machine_id
+               FROM vinto_txn.work_order_line
+               WHERE work_order_version_id=%s
+               ORDER BY length(line_code),line_code""",
+            (new_version_id, source[0])).rowcount
+        if not copied:
+            raise WorkOrderD1BlockedError()
+        connection.execute(
+            """UPDATE vinto_txn.work_order_line SET
+                 pv_reference=%s, article_version_id=%s, unit_id=%s,
+                 quantity=%s, due_date=%s
+               WHERE work_order_version_id=%s AND line_code=%s""",
+            (new_fields[0], article_version_id, unit_id, new_fields[2],
+             new_fields[3], new_version_id, line_code))
+        connection.execute(
+            "UPDATE vinto_txn.work_order_version SET published_at=clock_timestamp() WHERE id=%s",
+            (new_version_id,))
+
+    return service.get_work_order(connection, work_order_id, sectors=sectors,
+                                  multi_machine_visible=True)
 
 
 def revision_history(connection, *, work_order_id, sectors) -> list[dict]:

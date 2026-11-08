@@ -1,0 +1,58 @@
+name: E2-D1 isolated PG17
+on:
+  pull_request:
+    paths:
+      - 'backend/app/config.py'
+      - 'backend/app/assignments/service.py'
+      - 'backend/app/work_orders/**'
+      - 'backend/tests/test_e2d1_unassigned_in_progress.py'
+      - 'backend/tests/test_e2d1_http.py'
+      - 'backend/tests/test_e2d1_concurrency.py'
+      - '.github/workflows/e2d1-isolated-pg17.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e2d1-pg17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile
+        run: python -B -m compileall -q backend/app/work_orders/reprogramming.py backend/app/work_orders/router.py backend/app/assignments/service.py backend/tests/test_e2d1_unassigned_in_progress.py backend/tests/test_e2d1_http.py backend/tests/test_e2d1_concurrency.py
+      - name: PG17 D1 tests and regressions
+        working-directory: backend
+        run: |
+          python -B -m unittest discover -s tests -p 'test_e2d1_unassigned_in_progress.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d1_http.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d1_concurrency.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d_readiness.py' -v
+          python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
+          python -B -m unittest discover -s tests -p 'test_assignments_service.py' -v

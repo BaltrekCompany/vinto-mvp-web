@@ -235,6 +235,20 @@ def reprogram_published_line(work_order_id: str, line_code: str, body: Reprogram
         reason=body.reason, request_id=_request_id(), sectors=user.sectors))
 
 
+@router.post("/{work_order_id}/lines/{line_code}/reprogram-unassigned-in-progress",
+             response_model=WorkOrderOut, responses=_ERRORS)
+def reprogram_unassigned_in_progress_line(
+        work_order_id: str, line_code: str, body: ReprogramPublishedLineIn,
+        user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
+        connection=Depends(get_connection)):
+    """E2-D1: guarded separately from published-only E2-B, flag OFF by default."""
+    return work_order_out(reprogramming.reprogram_unassigned_in_progress_line(
+        connection, actor_id=user.user_id, work_order_id=work_order_id,
+        line_code=line_code, expected_version=body.expected_version,
+        expected=body.expected.to_domain(), replacement=body.replacement.to_domain(),
+        reason=body.reason, request_id=_request_id(), sectors=user.sectors))
+
+
 @router.get("/{work_order_id}/revisions", response_model=list[RevisionOut], responses=_ERRORS)
 def list_revisions(work_order_id: str,
                    user: AuthenticatedUser = Depends(require_permission(WORK_ORDER_MANAGE)),
