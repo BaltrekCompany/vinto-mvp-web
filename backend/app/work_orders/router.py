@@ -20,7 +20,7 @@ from app.database import get_connection
 from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import close_order
-from app.work_orders.schemas import CreateWorkOrderIn, LineIn, WorkOrderOut, work_order_out
+from app.work_orders.schemas import CreateWorkOrderIn, EditDraftLineIn, LineIn, WorkOrderOut, work_order_out
 
 router = APIRouter(prefix="/api/work-orders", tags=["Órdenes de trabajo"])
 
