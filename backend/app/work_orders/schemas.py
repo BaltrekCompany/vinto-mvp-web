@@ -51,6 +51,40 @@ class EditDraftLineIn(BaseModel):
     reason: str = Field(min_length=10, max_length=300)
 
 
+class ReprogramPublishedLineIn(BaseModel):
+    """E2-B: explicit revision expected; no machine or identity fields accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    expected: DraftLineFieldsIn
+    replacement: DraftLineFieldsIn
+    reason: str = Field(min_length=10, max_length=300)
+
+
+class RevisionFieldsOut(BaseModel):
+    pv_reference: str
+    article_code: str
+    quantity: Decimal
+    due_date: date
+
+    @field_serializer("quantity", when_used="json")
+    def quantity_as_number(self, value: Decimal) -> float:
+        return float(value)
+
+
+class RevisionOut(BaseModel):
+    version_number: int
+    previous_version: int
+    line_code: str
+    reason: str
+    changed_at: datetime
+    changed_by_id: UUID
+    changed_by_name: str
+    before: RevisionFieldsOut
+    after: RevisionFieldsOut
+
+
 class CreateWorkOrderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,15 +130,24 @@ class WorkOrderOut(BaseModel):
     status: str
     machine: MachineOut
     baseline: BaselineOut
+    programming: BaselineOut | None = None  # E2-B: latest versioned program, baseline remains original
+
+
+def _version_out(version) -> BaselineOut:
+    return BaselineOut(
+        id=version.id, version_number=version.version_number, published_at=version.published_at,
+        lines=[LineOut(
+            id=l.id, line_code=l.line_code, pv_reference=l.pv_reference,
+            article=ArticleOut(code=l.article_code, description=l.article_description),
+            quantity=l.quantity, unit=l.unit, due_date=l.due_date,
+            machine=MachineOut(code=l.machine_code, name=l.machine_name),
+        ) for l in version.lines])
 
 
 def work_order_out(view: WorkOrderView) -> WorkOrderOut:
     return WorkOrderOut(
         id=view.id, number=view.number, status=view.status,
         machine=MachineOut(code=view.machine_code, name=view.machine_name),
-        baseline=BaselineOut(
-            id=view.baseline.id, version_number=view.baseline.version_number, published_at=view.baseline.published_at,
-            lines=[LineOut(id=l.id, line_code=l.line_code, pv_reference=l.pv_reference,
-                           article=ArticleOut(code=l.article_code, description=l.article_description),
-                           quantity=l.quantity, unit=l.unit, due_date=l.due_date,
-                           machine=MachineOut(code=l.machine_code, name=l.machine_name)) for l in view.baseline.lines]))
+        baseline=_version_out(view.baseline),
+        programming=_version_out(view.programming) if view.programming is not None else None,
+    )
