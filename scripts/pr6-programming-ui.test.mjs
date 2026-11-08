@@ -150,6 +150,43 @@ test("E2-A frontend never permits machine edits on a persisted draft line", asyn
   const orderDraft = (await import("node:fs")).readFileSync(new URL("../components/vinto/order-draft-editor.tsx", import.meta.url), "utf8");
   assert.match(orderDraft, /disabled=\{disabled \|\| shared \|\| lockMachine\}/);
 });
+test("E2-B shows current revision without changing baseline line identity or enabling other roles", () => {
+  const base = [line(1, MP1, { article: { code: "A", description: "Producto A" }, quantity: 120 })];
+  const current = [line(1, MP1, { id: "aaaa0000-0000-4000-8000-000000000001", article: { code: "B", description: "Producto B" }, quantity: 150 })];
+  const revised = order("published", base, { programming: { id: "44444444-4444-4444-8444-444444444444", version_number: 2, published_at: "2026-11-07T18:00:00Z", lines: current } });
+  const manager = html(props({ workOrders: ready([revised]), canManageAssignments: true }));
+  assert.ok(manager.includes("Programación vigente v2"));
+  assert.ok(manager.includes("150 KG") && manager.includes("Producto B"));
+  assert.ok(manager.includes("data-reprogram-line=\"L1\""));
+  assert.ok(manager.includes("Consultar historial de versiones"));
+  assert.ok(!manager.includes("data-edit-draft-line"), "do not reuse draft editing");
+  assert.ok(isDisabled(selectTag(manager, "Máquina de la fila 1")), "machine is fixed");
+  const supervisor = html(props({ workOrders: ready([revised]), canManageOrders: false, canManageAssignments: true }));
+  assert.ok(supervisor.includes("150 KG"), "supervision sees current programmed quantity");
+  assert.ok(!supervisor.includes("data-reprogram-line"), "only Jefatura may edit");
+  const operator = html(props({ workOrders: ready([revised]), canManageOrders: false, canManageAssignments: false }));
+  assert.ok(!operator.includes("data-reprogram-line"));
+  const running = html(props({ workOrders: ready([order("in_progress", base)] }));
+  assert.ok(!running.includes("data-reprogram-line"), "in-production OT remains read-only");
+});
+
+test("E2-B HTTP sends expected_version and just four fields; no machine or baseline IDs", async () => {
+  const expected = LINES[0];
+  const revised = { ...expected, quantity: 150, pvReference: "PV-NEW" };
+  const { result, calls } = await withFetch(() => json(200, serverOrder()),
+    () => api.reprogramPublishedLine("22222222-2222-4222-8222-222222222222", "L1", 1, expected, revised, "Cambio registrado por Jefatura"));
+  assert.ok(result.ok);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/work-orders\/22222222-2222-4222-8222-222222222222\/lines\/L1\/reprogram$/);
+  assert.deepEqual(Object.keys(calls[0].body).sort(), ["expected", "expected_version", "reason", "replacement"]);
+  assert.equal(calls[0].body.expected_version, 1);
+  assert.deepEqual(Object.keys(calls[0].body.replacement).sort(), ["article_code", "due_date", "pv_reference", "quantity"]);
+  assert.equal(calls[0].body.replacement.quantity, 150);
+  const blocked = await withFetch(() => json(409, { code: "WORK_ORDER_REPROGRAM_BLOCKED" }),
+    () => api.reprogramPublishedLine("22222222-2222-4222-8222-222222222222", "L1", 1, expected, revised, "Cambio registrado por Jefatura"));
+  assert.equal(blocked.calls.length, 1, "failed reprogramming is never retried automatically");
+  assert.equal(blocked.result.kind, "conflict");
+});
 test("the publish confirmation warns that the baseline becomes immutable", async () => {
   const source = (await import("node:fs")).readFileSync(new URL("../components/vinto/bobinas-programming.tsx", import.meta.url), "utf8");
   assert.ok(source.includes("Una vez publicada, la línea base es inmutable"));
