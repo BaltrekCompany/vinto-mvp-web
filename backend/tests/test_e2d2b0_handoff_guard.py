@@ -144,15 +144,18 @@ class HandoffB0Tests(base.SameOrderCase):
         self.assertEqual(self.count("vinto_txn.bobbin"), 0)
         self.assertEqual(self.count("vinto_txn.bobbin_sequence"), 0)
 
-    def test_flag_off_retains_existing_start_semantics(self):
+    def test_flag_off_never_bypasses_persisted_reservation(self):
         self.guard(False)
         order = self.same_machine_order(1)
         a = self.activate(order, 0).assignment
         self.reserve(order, a)
-        result = line_execution.start_line(
-            self.connection, actor_id=self.supervisor, work_order_id=order.id,
-            line_code="L1", assignment_id=a.id, sectors=("BOBINAS",))
-        self.assertEqual(result.status, "in_production")
+        with self.assertRaises(WorkOrderHandoffPendingError):
+            line_execution.start_line(
+                self.connection, actor_id=self.supervisor, work_order_id=order.id,
+                line_code="L1", assignment_id=a.id, sectors=("BOBINAS",))
+        self.assertEqual(self.scalar(
+            "SELECT status FROM vinto_txn.work_order_line_execution WHERE baseline_line_id=%s",
+            (order.baseline.lines[0].id,)), "enabled")
 
     def test_unique_open_reservation_per_baseline(self):
         self.guard()
