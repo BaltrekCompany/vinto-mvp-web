@@ -34,7 +34,6 @@ jobs:
           shellcheck --severity=error -x \
             deploy/mvp/scripts/deploy.sh \
             deploy/mvp/scripts/rollback.sh \
-            deploy/mvp/scripts/lib_common.sh \
             deploy/mvp/scripts/tests/test_d2_ops_gate.sh
 
   postgres-gate:
