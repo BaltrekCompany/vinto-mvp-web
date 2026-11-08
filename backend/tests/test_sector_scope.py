@@ -61,6 +61,10 @@ PINNED_E1_MIGRATIONS = [
     ("0014_work_order_archive.sql", "33f5a7a8a2bbe959ebbf8406fe1ab52da4a14af744b621b53ab0668acd5edc0f"),
     ("0015_qa_legacy_retirement.sql", "5b37c0a3d6f2c83980f34f1a14da07c064391bdcb772f93a56d620fd889eca4a"),
 ]
+# E2-B is a new forward-only migration; 0001-0015 checksums stay pinned.
+PINNED_E2_MIGRATIONS = [
+    ("0016_work_order_reprogramming.sql", "a7e9d09f81d5c67e7e36e11bd6230faeaff6b88a3ccc7b8ad6772dc4c64ca186"),
+]
 
 
 # ---- 1. configuración -------------------------------------------------------------------------------------------------------
@@ -152,7 +156,7 @@ class StaticScopeTests(unittest.TestCase):
 
     def test_existing_migrations_are_intact_and_only_the_known_ones_exist(self):
         from migrate import read_migrations
-        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS
+        expected = PINNED_MIGRATIONS + PINNED_E1_MIGRATIONS + PINNED_E2_MIGRATIONS
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 
