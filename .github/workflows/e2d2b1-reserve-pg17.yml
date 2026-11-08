@@ -8,6 +8,8 @@ on:
       - 'backend/app/work_orders/router.py'
       - 'backend/app/work_orders/errors.py'
       - 'backend/tests/test_e2d2b1_reserve_cancel.py'
+      - 'backend/tests/test_e2d2b1_http.py'
+      - 'backend/tests/test_e2d2b0_handoff_guard.py'
       - 'backend/tests/test_sector_scope.py'
       - '.github/workflows/e2d2b1-reserve-pg17.yml'
   workflow_dispatch:
@@ -52,10 +54,13 @@ jobs:
         run: |
           python -B -m compileall -q backend/app/work_orders/handoff_service.py \
             backend/app/work_orders/router.py backend/app/work_orders/errors.py \
-            backend/tests/test_e2d2b1_reserve_cancel.py
+            backend/tests/test_e2d2b1_reserve_cancel.py backend/tests/test_e2d2b1_http.py
       - name: B1 isolated PG17 supervisor reserve/cancel
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_e2d2b1_reserve_cancel.py' -v
+      - name: B1 HTTP roles and gates
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
       - name: B0 guard regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_e2d2b0_handoff_guard.py' -v
