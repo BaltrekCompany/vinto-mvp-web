@@ -26,11 +26,14 @@ def list_revision_notices(connection, *, user_id, sectors, machine_codes):
     rows = connection.execute(
         """SELECT a.id, v.id, v.version_number, w.number,
                   l.line_code, m.code, v.reprogram_reason,
-                  v.created_at, receipt.acknowledged_at
+                  v.created_at, receipt.acknowledged_at,
+                  l.pv_reference, ar.code, l.quantity, l.due_date
            FROM vinto_txn.assignment a
            JOIN vinto_txn.work_order_line l ON l.id=a.work_order_line_id
            JOIN vinto_txn.work_order_version v ON v.id=l.work_order_version_id
            JOIN vinto_txn.work_order w ON w.id=v.work_order_id
+           JOIN vinto_master.article_version av ON av.id=l.article_version_id
+           JOIN vinto_master.article ar ON ar.id=av.article_id
            JOIN vinto_master.machine m ON m.id=a.machine_id
            JOIN vinto_master.sector s ON s.id=m.sector_id
            LEFT JOIN vinto_txn.work_order_revision_receipt receipt
@@ -45,7 +48,8 @@ def list_revision_notices(connection, *, user_id, sectors, machine_codes):
     return [
         dict(assignment_id=r[0], version_number=r[2], work_order_number=r[3],
              line_code=r[4], machine_code=r[5], reason=r[6],
-             revised_at=r[7], acknowledged_at=r[8])
+             revised_at=r[7], acknowledged_at=r[8],
+             pv_reference=r[9], article_code=r[10], quantity=str(r[11]), due_date=r[12])
         for r in rows
     ]
 
@@ -65,6 +69,7 @@ def acknowledge_revision(connection, *, actor_id, assignment_id, expected_versio
                JOIN vinto_master.machine m ON m.id=a.machine_id
                JOIN vinto_master.sector s ON s.id=m.sector_id
                WHERE a.id=%s AND a.status='active'
+                 AND v.kind='operational' AND v.published_at IS NOT NULL
                  AND s.code=ANY(%s) AND m.code=ANY(%s)
                FOR SHARE OF a""",
             (assignment_id, list(scoped_sector_codes(sectors)), sorted(machine_codes))).fetchone()
