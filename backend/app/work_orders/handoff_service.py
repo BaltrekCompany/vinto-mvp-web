@@ -20,10 +20,12 @@ from app.work_orders.errors import (
 _LINE = re.compile(r"^L[1-9][0-9]*$")
 
 
-def _validate(reason, version):
-    if settings.work_order_reprogram_handoff_enabled is not True:
+def _validate(reason, version, *, require_new_work=True):
+    # Cancel of an EXISTING pending reservation must remain possible after
+    # disabling new D2 work, otherwise the system can become stuck forever.
+    if require_new_work and settings.work_order_reprogram_handoff_enabled is not True:
         raise WorkOrderHandoffDisabledError()
-    if settings.work_order_line_execution_enabled is not True:
+    if require_new_work and settings.work_order_line_execution_enabled is not True:
         raise WorkOrderHandoffBlockedError()
     if not isinstance(reason, str) or not 10 <= len(reason.strip()) <= 300:
         raise WorkOrderHandoffBlockedError()
@@ -172,10 +174,58 @@ def reserve(connection, *, actor_id, work_order_id, line_code,
     return result
 
 
+def read_handoff(connection, *, handoff_id, sectors):
+    """Scoped, read-only supervisor recovery status, regardless of D2 flag.
+
+    No OT number, actor name or receipt user details. An out-of-scope OT
+    is indistinguishable from a missing handoff (404).
+    """
+    try:
+        handoff_id = uuid.UUID(str(handoff_id))
+    except (TypeError, ValueError, AttributeError):
+        raise WorkOrderNotFoundError() from None
+    from app.sectors import scoped_sector_codes
+    allowed = list(scoped_sector_codes(sectors))
+    row = connection.execute(
+        """SELECT h.id, h.work_order_id, bl.line_code, h.status,
+                  h.expected_version_number, pv.version_number,
+                  h.prior_assignment_id, h.replacement_assignment_id,
+                  h.created_at, h.updated_at, h.completed_at
+           FROM vinto_txn.work_order_line_reprogram_handoff h
+           JOIN vinto_txn.work_order wo ON wo.id=h.work_order_id
+           JOIN vinto_txn.work_order_line bl ON bl.id=h.baseline_line_id
+           JOIN vinto_txn.work_order_version v
+             ON v.id=bl.work_order_version_id AND v.work_order_id=wo.id
+             AND v.kind='baseline' AND v.version_number=1
+           JOIN vinto_master.machine m ON m.id=wo.machine_id
+           JOIN vinto_master.sector s ON s.id=m.sector_id
+           LEFT JOIN vinto_txn.work_order_version pv
+             ON pv.id=h.published_version_id
+           WHERE h.id=%s AND wo.archived_at IS NULL
+             AND s.code=ANY(%s) AND NOT EXISTS (""" +
+             service._OUT_OF_SCOPE_LINE + """)""",
+        (handoff_id, allowed, allowed)).fetchone()
+    if row is None:
+        raise WorkOrderNotFoundError()
+    actions = {
+        "pending": "cancel_pending_or_publish",
+        "published": "retry_supervisor_reassign",
+        "reassigned": "operator_acknowledge_exact_revision",
+        "acknowledged": "completed",
+        "cancelled": "cancelled",
+    }
+    return dict(handoff_id=row[0], work_order_id=row[1], line_code=row[2],
+                status=row[3], expected_version=row[4],
+                published_version=row[5], prior_assignment_id=row[6],
+                replacement_assignment_id=row[7], created_at=row[8],
+                updated_at=row[9], completed_at=row[10],
+                recovery_action=actions[row[3]])
+
+
 def cancel(connection, *, actor_id, handoff_id, reason, sectors,
            request_id=None):
     """Cancel only pending reservation. No finishing, reassignment, or OT edit."""
-    reason = _validate(reason, None)
+    reason = _validate(reason, None, require_new_work=False)
     try:
         handoff_id = uuid.UUID(str(handoff_id))
     except (TypeError, ValueError, AttributeError):

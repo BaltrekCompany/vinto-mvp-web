@@ -1,0 +1,75 @@
+name: E2-D2-B2B recovery and rollback gate PostgreSQL17
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/work_orders/handoff_service.py'
+      - 'backend/app/work_orders/handoff_publication.py'
+      - 'backend/app/work_orders/router.py'
+      - 'backend/app/work_orders/handoff_rollout_cli.py'
+      - 'backend/app/work_orders/handoff_rollout_preflight.py'
+      - 'backend/tests/test_e2d2b2b_recovery_gate.py'
+      - 'backend/tests/test_e2d2b1_http.py'
+      - '.github/workflows/e2d2b2b-pg17.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2d2b2b-pg17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned deps
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile B2-B
+        run: |
+          python -B -m compileall -q backend/app/work_orders/handoff_rollout_preflight.py \
+            backend/app/work_orders/handoff_rollout_cli.py \
+            backend/app/work_orders/handoff_service.py \
+            backend/app/work_orders/handoff_publication.py \
+            backend/app/work_orders/router.py \
+            backend/tests/test_e2d2b2b_recovery_gate.py
+      - name: Readonly recovery gate and flag-off PG17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b2b_recovery_gate.py' -v
+      - name: Operator receipt and SQL failsafe PG17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_e2d2b2a_receipt_safety.py' -v
+      - name: B1.1/B1.2 and E2-C1 role regressions
+        working-directory: backend
+        run: |
+          python -B -m unittest discover -s tests -p 'test_e2d2b1_reserve_cancel.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d2b12_publish_reassign.py' -v
+          python -B -m unittest discover -s tests -p 'test_e2d2b1_http.py' -v
+          python -B -m unittest discover -s tests -p 'test_assignments_api.py' -v
+      - name: Migration checksums and sector scope
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
