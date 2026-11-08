@@ -21,6 +21,7 @@ from app.work_orders import service
 from app.work_orders import line_execution
 from app.work_orders import reprogramming
 from app.work_orders import handoff_service
+from app.work_orders import handoff_listing
 from app.work_orders import handoff_publication
 from app.work_orders import supervision_revision_notices
 from app.work_orders import close_order
@@ -105,6 +106,51 @@ def execution_capabilities(
     response.headers["Cache-Control"] = "private, no-store"
     return ExecutionCapabilitiesOut(line_execution=settings.work_order_line_execution_enabled is True)
 
+
+# B3: esta capacidad nueva no altera el esquema historico de /capabilities.
+# Solo Jefatura y Supervision pueden consultar el estado real de la bandera.
+class HandoffCapabilitiesOut(BaseModel):
+    enabled: bool
+
+
+@router.get("/handoff-capabilities", response_model=HandoffCapabilitiesOut,
+            responses={401: _ERRORS[401], 403: _ERRORS[403]})
+def handoff_capabilities(
+        response: Response,
+        user: AuthenticatedUser = Depends(capabilities_reader)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return HandoffCapabilitiesOut(enabled=(
+        settings.work_order_line_execution_enabled is True
+        and settings.work_order_reprogram_handoff_enabled is True
+    ))
+
+
+class HandoffListItemOut(BaseModel):
+    handoff_id: uuid.UUID
+    work_order_id: uuid.UUID
+    work_order_number: str
+    line_code: str
+    machine_code: str
+    status: Literal["pending", "published", "reassigned"]
+    expected_version: int
+    published_version: int | None
+    prior_assignment_id: uuid.UUID
+    replacement_assignment_id: uuid.UUID | None
+    reason: str
+    created_at: datetime
+
+
+@router.get("/handoffs", response_model=list[HandoffListItemOut],
+            responses={401: _ERRORS[401], 403: _ERRORS[403]})
+def list_open_handoffs(
+        response: Response,
+        user: AuthenticatedUser = Depends(capabilities_reader),
+        connection=Depends(get_connection)):
+    """Recuperacion tras refresh/logout: solo abiertos y dentro del sector completo.
+    Tambien funciona con la bandera OFF para permitir completar relevos pendientes.
+    """
+    response.headers["Cache-Control"] = "private, no-store"
+    return handoff_listing.list_open_handoffs(connection, sectors=user.sectors)
 
 
 class SupervisionFieldsOut(BaseModel):
