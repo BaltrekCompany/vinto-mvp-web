@@ -281,6 +281,113 @@ class DraftLineEditTests(WorkOrderApiCase):
         detail = (await call("GET", f"/api/work-orders/{created['id']}", cookie=await self.cookie("JEFATURA"))).json()
         self.assertEqual(detail["baseline"]["lines"][0], line)
 
+class PublishedRevisionTests(WorkOrderApiCase):
+    """E2-B: append-only programming versions; no already-operational OT touched."""
+
+    def revision_body(self, order, *, quantity=150, pv="PV-REPROGRAMADO", article=None,
+                      expected_version=None, expected=None):
+        line = (order.get("programming") or order["baseline"])["lines"][0]
+        old = expected or {
+            "pv_reference": line["pv_reference"],
+            "article_code": line["article"]["code"],
+            "quantity": line["quantity"],
+            "due_date": line["due_date"],
+        }
+        return {"expected_version": expected_version or (order.get("programming") or order["baseline"])["version_number"],
+                "expected": old,
+                "replacement": {**old, "pv_reference": pv, "quantity": quantity,
+                                "article_code": article or old["article_code"], "due_date": "2026-12-20"},
+                "reason": "Cambio de programación registrado por Jefatura"}
+
+    async def published(self):
+        created = (await self.create()).json()
+        result = await call("POST", f"/api/work-orders/{created['id']}/publish",
+                            cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(result.status, 200)
+        return result.json()
+
+    async def test_publish_then_revise_twice_keeps_original_and_displays_current_program(self):
+        order = await self.published()
+        old_line = order["baseline"]["lines"][0]
+        url = f"/api/work-orders/{order['id']}/lines/L1/reprogram"
+        first = await call("POST", url, json_body=self.revision_body(order), cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(first.status, 200, first.text)
+        edited = first.json()
+        self.assertEqual((edited["programming"]["version_number"], edited["programming"]["lines"][0]["quantity"]), (2, 150))
+        self.assertEqual(edited["baseline"]["lines"][0], old_line, "baseline must be byte-for-byte immutable")
+        self.assertEqual(edited["programming"]["lines"][0]["machine"], old_line["machine"])
+
+        second = await call("POST", url, json_body=self.revision_body(edited, quantity=170, pv="PV-TERCERA"),
+                            cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(second.status, 200, second.text)
+        revised = second.json()
+        self.assertEqual(revised["programming"]["version_number"], 3)
+        self.assertEqual(revised["programming"]["lines"][0]["quantity"], 170)
+        self.assertEqual(revised["baseline"]["lines"][0], old_line)
+        rows = self.connection.execute(
+            """SELECT version_number,kind,published_at IS NOT NULL,reprogram_reason IS NOT NULL
+               FROM vinto_txn.work_order_version WHERE work_order_id=%s ORDER BY version_number""",
+            (order["id"],)).fetchall()
+        self.assertEqual(rows, [(1, "baseline", True, False),
+                                (2, "operational", True, True),
+                                (3, "operational", True, True)])
+
+        events = await call("GET", f"/api/work-orders/{order['id']}/revisions",
+                            cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(events.status, 200, events.text)
+        history = events.json()
+        self.assertEqual([(v["version_number"], v["previous_version"]) for v in history], [(3, 2), (2, 1)])
+        self.assertEqual((history[0]["before"]["quantity"], history[0]["after"]["quantity"]), (150, 170))
+        self.assertEqual((history[1]["before"]["quantity"], history[1]["after"]["quantity"]), (100, 150))
+        self.assertEqual(history[0]["changed_by_id"], str(self.users["JEFATURA"][0].user_id))
+        self.assertEqual(history[0]["reason"], "Cambio de programación registrado por Jefatura")
+        self.assertTrue(history[0]["changed_at"])
+        for version in (2, 3):
+            version_id = self.scalar("SELECT id FROM vinto_txn.work_order_version WHERE work_order_id=%s AND version_number=%s", (order["id"], version))
+            with self.assertRaises(Exception):
+                self.connection.execute("UPDATE vinto_txn.work_order_line SET quantity=1 WHERE work_order_version_id=%s", (version_id,))
+        detail = (await call("GET", f"/api/work-orders/{order['id']}", cookie=await self.cookie("JEFATURA"))).json()
+        self.assertEqual(detail["programming"]["version_number"], 3)
+
+    async def test_rejects_stale_versions_permissions_invalid_machine_and_invalid_data(self):
+        order = await self.published()
+        url = f"/api/work-orders/{order['id']}/lines/L1/reprogram"
+        body = self.revision_body(order)
+        for profile in ("SUPERVISION", "OPERACION", "CALIDAD", "DATA_BALTREK"):
+            response = await call("POST", url, json_body=body, cookie=await self.cookie(profile))
+            self.assertEqual(response.status, 403, profile)
+        self.assertEqual((await call("POST", url, json_body=body)).status, 401)
+        for extra in [{"machine_code": "MP3"}, {"id": str(uuid4())}]:
+            bad = {**body, "replacement": {**body["replacement"], **extra}}
+            self.assertEqual((await call("POST", url, json_body=bad,
+                             cookie=await self.cookie("JEFATURA"))).status, 422)
+        bad_product = {**body, "replacement": {**body["replacement"], "article_code": MP3_CODES[0]}}
+        res = await call("POST", url, json_body=bad_product, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((res.status, res.json()["code"]), (422, "ARTICLE_NOT_ALLOWED_FOR_MACHINE"))
+        res = await call("POST", url, json_body={**body, "expected_version": 999},
+                         cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((res.status, res.json()["code"]), (409, "WORK_ORDER_REPROGRAM_CONFLICT"))
+        good = await call("POST", url, json_body=body, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual(good.status, 200, good.text)
+        stale = await call("POST", url, json_body=body, cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((stale.status, stale.json()["code"]), (409, "WORK_ORDER_REPROGRAM_CONFLICT"))
+        self.assertEqual((await call("GET", f"/api/work-orders/{order['id']}/revisions",
+                                    cookie=await self.cookie("SUPERVISION"))).status, 403)
+
+    async def test_any_execution_history_blocks_revision_before_writing(self):
+        order = await self.published()
+        baseline_line = order["baseline"]["lines"][0]
+        machine_id = self.scalar("SELECT machine_id FROM vinto_txn.work_order_line WHERE id=%s", (baseline_line["id"],))
+        self.connection.execute(
+            """INSERT INTO vinto_txn.work_order_line_execution
+                (baseline_line_id, work_order_id, machine_id)
+                VALUES (%s,%s,%s)""", (baseline_line["id"], order["id"], machine_id))
+        url = f"/api/work-orders/{order['id']}/lines/L1/reprogram"
+        resp = await call("POST", url, json_body=self.revision_body(order), cookie=await self.cookie("JEFATURA"))
+        self.assertEqual((resp.status, resp.json()["code"]), (409, "WORK_ORDER_REPROGRAM_BLOCKED"))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.work_order_version WHERE work_order_id=%s", (order["id"],)), 1)
+
+
 class PermissionTests(WorkOrderApiCase):
     async def test_without_a_session_every_endpoint_is_401(self):
         order = (await self.create()).json()
