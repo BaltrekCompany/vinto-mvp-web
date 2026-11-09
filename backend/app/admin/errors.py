@@ -22,10 +22,6 @@ class LastActiveAdministrator(AdminError):
     http_status, code, public_message = 409, "LAST_ADMINISTRATOR", "No se puede retirar el perfil del último administrador activo"
 
 
-class UserDeactivationForbidden(AdminError):
-    http_status, code, public_message = 409, "USER_DEACTIVATION_FORBIDDEN", "No se puede desactivar esta cuenta"
-
-
 class UserProfileInvalid(AdminError):
     http_status, code, public_message = 409, "USER_PROFILE_INVALID", "La cuenta no tiene exactamente un perfil válido"
 
