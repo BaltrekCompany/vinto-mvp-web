@@ -17,13 +17,18 @@ if ! [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]; then
 fi
 
 RELEASE="$APP_DIR/releases/$SHA"
-if [ ! -d "$RELEASE/backend/seed_data" ] || [ ! -f "$RELEASE/backend/seed_data/forms/$FORM.json" ]; then
+# El VPS protege /opt/vinto-mvp-web con permisos 750 (vinto-mvp).
+# El operador ubuntu NO puede atravesar estas rutas sin sudo: comprobar
+# su existencia con la identidad del servicio, no relajar los permisos.
+if ! sudo -u "$SERVICE_USER" test -d "$RELEASE/backend/seed_data" \
+  || ! sudo -u "$SERVICE_USER" test -f "$RELEASE/backend/seed_data/forms/$FORM.json"; then
   echo "MP3_RG01_STOP=RELEASE_NOT_PREPARED" >&2; exit 2
 fi
-if [ ! -x "$RELEASE/backend/.venv/bin/python" ] || [ ! -e "$RELEASE/backend/.env" ]; then
+if ! sudo -u "$SERVICE_USER" test -x "$RELEASE/backend/.venv/bin/python" \
+  || ! sudo -u "$SERVICE_USER" test -e "$RELEASE/backend/.env"; then
   echo "MP3_RG01_STOP=BACKEND_RUNTIME_NOT_PREPARED" >&2; exit 2
 fi
-CURRENT="$(readlink -f "$APP_DIR/current" || true)"
+CURRENT="$(sudo readlink -f "$APP_DIR/current" || true)"
 if [ -z "$CURRENT" ]; then
   echo "MP3_RG01_STOP=NO_CURRENT_RELEASE" >&2; exit 2
 fi
@@ -75,7 +80,7 @@ fi
 source "$SCRIPT_DIR/lib_common.sh"
 acquire_activate_lock
 
-if [ "$(readlink -f "$APP_DIR/current")" != "$CURRENT" ]; then
+if [ "$(sudo readlink -f "$APP_DIR/current")" != "$CURRENT" ]; then
   echo "MP3_RG01_STOP=CURRENT_CHANGED" >&2; exit 2
 fi
 
@@ -88,7 +93,7 @@ run_gate --apply
 echo "=== RG01 POSTCHECK (READ ONLY) ==="
 run_gate
 
-if [ "$(readlink -f "$APP_DIR/current")" != "$CURRENT" ]; then
+if [ "$(sudo readlink -f "$APP_DIR/current")" != "$CURRENT" ]; then
   echo "MP3_RG01_STOP=UNEXPECTED_RELEASE_CHANGE" >&2; exit 2
 fi
 echo "MP3_RG01_PREACTIVATION_IMPORT=PASS"
