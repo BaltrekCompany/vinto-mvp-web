@@ -153,15 +153,15 @@ test("the component lists read-only; its only actions are refresh, opening the h
   assert.match(component, /no depende de la asignación actualmente activa/);
 });
 
-test("the component has loading/error, empty and counter states", () => {
+test("the inbox retains loading/error, empty, counter and all operational information", () => {
   assert.match(component, /CentralStatus/);
   assert.match(component, /No hay bobinas pendientes de Calidad\./);
   assert.match(component, /Pendientes: \{items\.length\}/);
-  for (const header of ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Hora inicio", "Hora fin", "Gramaje", "Diámetro", "Peso", "Cortes", "Observaciones", "Estado"]) {
-    assert.ok(component.includes(`"${header}`), header);
+  for (const label of ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Hora inicio", "Hora fin", "Gramaje", "Diámetro (mm)", "Peso (kg)", "Cortes", "Observaciones", "Estado"]) {
+    assert.ok(component.includes(label), label);
   }
-  assert.match(component, /overflow-x-auto/);
-  assert.match(component, /grammageLabel\(/); // gramaje null: texto neutro, no un error
+  assert.match(component, /grammageLabel\(/);
+  assert.match(component, /qualityStatusLabel\(/);
 });
 
 test("Calidad Execution renders the central inbox and no longer the demo ReleaseCards gate", () => {
@@ -200,19 +200,20 @@ test("the resource is enabled only for Calidad + quality.capture in Ejecución, 
   assert.match(page, /usesCentralAssignment\(front, activeModule\)/); // Calidad sigue sin consultar la asignación activa
 });
 
-test("layout: the main grid column can shrink so only the table scrolls horizontally", () => {
+test("UX: responsive compact cards keep primary decisions visible and disclose secondary controls", () => {
   assert.match(page, /lg:grid-cols-\[270px_minmax\(0,1fr\)\]/);
-  assert.equal(page.includes("lg:grid-cols-[270px_1fr]"), false, "1fr = minmax(auto,1fr) lets a wide table push the whole page");
   assert.match(page, /<section className="min-w-0 p-4 md:p-8">/);
   assert.match(component, /min-w-0 max-w-full rounded-2xl/);
-  assert.match(component, /max-w-full overflow-x-auto/);
-  assert.match(component, /min-w-\[1320px\]/); // la tabla conserva su ancho mínimo: no se comprimen ni truncan las columnas
-  assert.equal(/truncate|text-ellipsis|overflow-hidden|line-clamp/.test(component), false);
-  assert.equal(/overflow-x-hidden/.test(page), false, "no se oculta el desborde de la página como parche");
-  const globals = ["../app/globals.css", "../app/layout.tsx"].map((f) => { try { return read(f); } catch { return ""; } }).join("\n");
-  assert.equal(/overflow-x:\s*hidden|overflow-x-hidden/.test(globals), false);
-  assert.equal((component.match(/<th /g) ?? []).length, 1); // las columnas salen de HEADERS.map
-  const headers = component.match(/const HEADERS = \[([^\]]*)\]/)[1].split(",").map((h) => h.trim()).filter(Boolean);
-  assert.equal(headers.length, 16);
+  assert.match(component, /<article key=\{i\.bobbin\.id\}/);
+  assert.match(component, /grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3/);
+  assert.match(component, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(260px,310px\)\]/);
+  assert.match(component, /<QualityBobbinDecision item=\{i\} refresh=\{refresh\}\/>/);
+  assert.match(component, /<summary[^>]*>Controles e historial<\/summary>/);
+  assert.match(component, /<summary[^>]*>Ver más datos de producción<\/summary>/);
+  assert.equal(/min-w-\[1320px\]|overflow-x-auto|<table|<th |<td /.test(component), false, "no wide 16-column table");
+  assert.equal(/truncate|text-ellipsis|overflow-hidden|line-clamp/.test(component), false, "no hidden operational data");
+  assert.equal(/overflow-x-hidden/.test(page), false, "no overflow hiding workaround");
   assert.match(component, /Registrar humedad/);
+  assert.match(component, /Registrar propiedades/);
+  assert.match(component, /Ver controles/);
 });
