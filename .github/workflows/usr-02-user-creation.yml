@@ -9,6 +9,8 @@ on:
       - 'backend/app/main.py'
       - 'backend/tests/test_user_creation_api.py'
       - 'backend/tests/test_auth_service.py'
+      - 'backend/tests/test_auth_api.py'
+      - 'backend/tests/test_auth_sessions.py'
       - 'backend/tests/test_user_deactivation.py'
       - 'backend/tests/test_admin_sector_api.py'
       - '.github/workflows/usr-02-user-creation.yml'
@@ -71,7 +73,7 @@ jobs:
         run: python -B -m unittest tests.test_user_creation_api -v
       - name: Existing authentication and account lifecycle regression
         working-directory: backend
-        run: python -B -m unittest tests.test_auth_service tests.test_user_deactivation tests.test_auth_api tests.test_auth_schema -v
+        run: python -B -m unittest tests.test_auth_service tests.test_user_deactivation tests.test_auth_api tests.test_auth_schema tests.test_auth_sessions -v
       - name: Existing admin sectors/grants regression
         working-directory: backend
         run: python -B -m unittest tests.test_admin_sector_api tests.test_admin_grants_read_api tests.test_admin_grants_write_api -v
