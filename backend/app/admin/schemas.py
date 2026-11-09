@@ -75,6 +75,30 @@ class AdminPasswordResetOut(BaseModel):
     request_id: str
 
 
+class UserStateChangeIn(BaseModel):
+    """USR-04: explicit reason only, never actor/status/grants from the client."""
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Debe indicar un motivo")
+        return cleaned
+
+
+class UserStateChangeOut(BaseModel):
+    user_id: UUID
+    username: str
+    active: bool
+    changed: bool
+    sessions_revoked: int
+    request_id: str | None
+
+
 class UserSectorsOut(BaseModel):
     user_id: UUID
     username: str | None
