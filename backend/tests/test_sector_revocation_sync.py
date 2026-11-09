@@ -155,6 +155,8 @@ class SyncCase(f3.BobbinApiCase):
         grants_0007 = re.search(r'GRANT SELECT, INSERT, UPDATE ON vinto_master\."user_machine_form_grant" TO vinto_app;', (BACKEND / "migrations/0007_user_machine_form_grants.sql").read_text(encoding="utf-8")).group(0)
         for statement in [schema, function, grants_0007] + statements:
             self.connection.execute(statement.replace("vinto_app", role))
+        # El rol de aplicación también recibe SELECT de handoff en la 0019.
+        self.connection.execute(f"GRANT SELECT ON vinto_txn.work_order_line_reprogram_handoff TO {role}")
         return role
 
     def revoke(self, user, role=None):
