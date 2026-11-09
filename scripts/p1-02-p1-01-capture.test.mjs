@@ -221,13 +221,17 @@ test("la oferta sale del backend por máquina (P1-02 en MP1, P1-01 en MP3) y no 
   assert.deepEqual([screenFor(BOBINAS_SECTOR, "VINTO-P1-02"), screenFor(BOBINAS_SECTOR, "VINTO-P1-01")], ["p102", "p101"]);
   assert.deepEqual([screenFor(BOBINAS_SECTOR, "VINTO-P1-04"), screenFor(BOBINAS_SECTOR, "VINTO-P1-05"), screenFor(BOBINAS_SECTOR, "VINTO-P1-31")], ["p104", "p105", "p131"]);
   for (const sector of ["REBOBINADO", "CONVERSION"]) for (const formCode of ["VINTO-P1-02", "VINTO-P1-01"]) assert.equal(screenFor(sector, formCode), null, `${sector}: ${formCode}`);
-  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101"]);
+  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101", "pmp3"]);
+  assert.equal(screenFor(BOBINAS_SECTOR, "VINTO-MP3-01"), "pmp3");
+  assert.equal(screenFor("REBOBINADO", "VINTO-MP3-01"), null);
   const form = (c) => ({ code: c, name: c, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
   const real = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06")] }]);
   assert.deepEqual([candidateScreensFor(real, "MP1"), candidateScreensFor(real, "MP3"), publishedCandidateScreens(real)], [[], [], []], "configuración real: nada publicado");
   const published = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06"), form("VINTO-P1-02")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06"), form("VINTO-P1-01")] }]);
   assert.deepEqual([candidateScreensFor(published, "MP1"), candidateScreensFor(published, "MP3"), candidateScreensFor(published, "MP9"), publishedCandidateScreens(published)], [["p102"], ["p101"], [], ["p102", "p101"]]);
+  const rg01 = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-01")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-MP3-01")] }]);
+  assert.deepEqual([candidateScreensFor(rg01, "MP1"), candidateScreensFor(rg01, "MP3"), publishedCandidateScreens(rg01)], [["p101"], ["pmp3"], ["p101", "pmp3"]]);
   const cards = code("components/vinto/bobinas-candidate-cards.tsx");
   assert.match(cards, /availability\.status === "ready" \? candidateScreensFor\(availability\.data, machineCode\) : \[\]/); // sin disponibilidad cargada (carga o error) no se ofrece nada
 });
