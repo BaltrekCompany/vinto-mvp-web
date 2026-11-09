@@ -58,14 +58,19 @@ case "$BACKUP" in
   "$BACKUP_DIR"/vinto-mvp-vinto_piloto-*.dump) ;;
   *) echo "MP3_RG01_STOP=INVALID_BACKUP_PATH" >&2; exit 2 ;;
 esac
-if [ ! -s "$BACKUP" ] || [ ! -s "$BACKUP.sha256" ] || [ ! -s "$BACKUP.verified" ]; then
+if [ ! -s "$BACKUP" ] || [ ! -s "$BACKUP.sha256" ] || [ ! -f "$BACKUP.verified" ]; then
   echo "MP3_RG01_STOP=BACKUP_NOT_VERIFIED" >&2; exit 2
 fi
 sha256sum -c "$BACKUP.sha256"
 
 # Esta fase comparte el lock operacional con activate/rollback para no
 # importar mientras otro proceso cambia de versión.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# IMPORTANTE: lock del operador instalado en OPS, NO el lock del release
+# candidato; activate/rollback usan /home/ubuntu/vinto-mvp-ops/scripts.
+SCRIPT_DIR="/home/ubuntu/vinto-mvp-ops/scripts"
+if [ ! -f "$SCRIPT_DIR/lib_common.sh" ]; then
+  echo "MP3_RG01_STOP=OPS_LOCK_LIBRARY_MISSING" >&2; exit 2
+fi
 # shellcheck source=./lib_common.sh
 source "$SCRIPT_DIR/lib_common.sh"
 acquire_activate_lock
