@@ -10,7 +10,6 @@ import uuid
 from app.admin.actor import require_actor_authorized
 from app.admin.errors import LastActiveAdministrator, UserNotFound
 from app.admin.user_editing import _actor_context, _admin_ids_locked
-from app.auth.permissions import USER_MANAGE
 from app.auth.service import ADMIN_PROFILE_CODES, LAST_ADMIN_CHANGE_LOCK_KEY, _clean_reason
 
 
