@@ -259,15 +259,16 @@ class DeactivationTests(DatabaseCase):
         result = deactivate_user(self.connection, username=target.username, actor_username=solo_admin.username, reason="x")
         self.assertTrue(result.changed)
 
-    def test_deactivation_works_for_user_with_multiple_profiles(self):
+    def test_deactivation_preserves_the_single_profile(self):
         admin_user = self.make_admin()
         target, _ = self.make_user("CALIDAD")
         supervision = self.connection.execute("SELECT id FROM vinto_master.profile WHERE code='SUPERVISION'").fetchone()[0]
-        self.connection.execute("INSERT INTO vinto_master.user_profile (user_id,profile_id) VALUES (%s,%s)", (target.user_id, supervision))
+        with self.assertRaises(psycopg.errors.UniqueViolation):
+            self.connection.execute("INSERT INTO vinto_master.user_profile (user_id,profile_id) VALUES (%s,%s)", (target.user_id, supervision))
         result = deactivate_user(self.connection, username=target.username, actor_username=admin_user.username, reason="x")
         self.assertTrue(result.changed)
         profile_count = self.scalar("SELECT count(*) FROM vinto_master.user_profile WHERE user_id=%s", (target.user_id,))
-        self.assertEqual(profile_count, 2)  # ambos perfiles se conservan
+        self.assertEqual(profile_count, 1)
 
     def test_no_secrets_leak_in_audit_or_errors(self):
         admin_user = self.make_admin()

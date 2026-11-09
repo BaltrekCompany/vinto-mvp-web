@@ -139,13 +139,13 @@ class AccessControlTests(AdminCase):
 
     async def test_the_routes_are_get_and_post_only_and_the_cors_policy_is_unchanged(self):
         paths = {p: set(m) for p, m in app.openapi()["paths"].items() if p.startswith("/api/admin")}
-        self.assertEqual(set(paths), {"/api/admin/users", "/api/admin/sectors", "/api/admin/users/{user_id}/sectors", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke",
+        self.assertEqual(set(paths), {"/api/admin/users", "/api/admin/profiles", "/api/admin/sectors", "/api/admin/users/{user_id}/sectors", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke",
                                       # MF-13-01C.1: consulta de catálogo y concesiones máquina-formulario (solo GET; ver test_admin_grants_read_api.py)
                                       "/api/admin/catalog", "/api/admin/catalog/forms", "/api/admin/users/{user_id}", "/api/admin/users/{user_id}/grants", "/api/admin/users/{user_id}/grants/history",
                                       # MF-13-01C.2: alta y baja de concesiones máquina-formulario (solo POST; ver test_admin_grants_write_api.py)
                                       "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke"})
-        self.assertEqual(sorted(p for p, methods in paths.items() if methods != {"get"}), ["/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke",
-                                                                                           "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"], "las únicas escrituras: sectores y concesiones máquina-formulario")
+        self.assertEqual(sorted(p for p, methods in paths.items() if methods != {"get"}), ["/api/admin/users", "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke",
+                                                                                           "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"], "escrituras: alta de usuario, sectores y concesiones máquina-formulario")
         self.assertTrue(all(methods <= {"get", "post"} for methods in paths.values()))
         cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
         self.assertEqual(sorted(cors.kwargs["allow_methods"]), ["GET", "POST"])
