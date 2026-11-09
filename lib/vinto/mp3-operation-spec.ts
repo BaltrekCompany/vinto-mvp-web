@@ -94,16 +94,16 @@ export const MP3_INSPECTION_SECTIONS: readonly MP3InspectionSection[] = [
     ] },
 
     { title: "Químicos", fields: [
-        num("quim_coating_1", "Coating", undefined, 1),
-        num("quim_coating_2", "Coating", undefined, 2),
-        num("quim_release_1", "Release", undefined, 1),
-        num("quim_release_2", "Release", undefined, 2),
-        num("quim_fosfato_1", "Fosfato", undefined, 1),
-        num("quim_fosfato_2", "Fosfato", undefined, 2),
-        num("quim_pasiv_tela_1", "Pasiv. tela", undefined, 1),
-        num("quim_pasiv_tela_2", "Pasiv. tela", undefined, 2),
-        num("quim_pasiv_fieltro_1", "Pasiv. fieltro", undefined, 1),
-        num("quim_pasiv_fieltro_2", "Pasiv. fieltro", undefined, 2),
+        num("quim_coating_1", "Coating", "Freq", 1),
+        num("quim_coating_2", "Coating", "ml/min", 2),
+        num("quim_release_1", "Release", "Freq", 1),
+        num("quim_release_2", "Release", "ml/min", 2),
+        num("quim_fosfato_1", "Fosfato", "%", 1),
+        num("quim_fosfato_2", "Fosfato", "ml/min", 2),
+        num("quim_pasiv_tela_1", "Pasiv. tela", "%", 1),
+        num("quim_pasiv_tela_2", "Pasiv. tela", "ml/min", 2),
+        num("quim_pasiv_fieltro_1", "Pasiv. fieltro", "%", 1),
+        num("quim_pasiv_fieltro_2", "Pasiv. fieltro", "ml/min", 2),
     ] },
 
     { title: "Aguas", fields: [

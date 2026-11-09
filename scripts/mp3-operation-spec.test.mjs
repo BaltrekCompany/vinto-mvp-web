@@ -74,3 +74,54 @@ test("blade changes are manual times and novedades is optional multiline", () =>
     assert.equal(notes?.fields[0].kind, "textarea");
     assert.equal(notes?.fields[0].required, false);
 });
+
+// The print carries two distinct annotations for each chemical row. Only the
+// presentation suffixes change; both slots remain independent optional decimals.
+test("RG-MP3-01 chemical column units match the printed form", () => {
+    const chemicals = MP3_INSPECTION_SECTIONS.find(s => s.title === "Químicos");
+    assert.ok(chemicals);
+    const expected = [
+            [
+                    "quim_coating_1",
+                    "Freq"
+            ],
+            [
+                    "quim_coating_2",
+                    "ml/min"
+            ],
+            [
+                    "quim_release_1",
+                    "Freq"
+            ],
+            [
+                    "quim_release_2",
+                    "ml/min"
+            ],
+            [
+                    "quim_fosfato_1",
+                    "%"
+            ],
+            [
+                    "quim_fosfato_2",
+                    "ml/min"
+            ],
+            [
+                    "quim_pasiv_tela_1",
+                    "%"
+            ],
+            [
+                    "quim_pasiv_tela_2",
+                    "ml/min"
+            ],
+            [
+                    "quim_pasiv_fieltro_1",
+                    "%"
+            ],
+            [
+                    "quim_pasiv_fieltro_2",
+                    "ml/min"
+            ]
+    ];
+    assert.deepEqual(chemicals.fields.map(f => [f.key, f.unit]), expected);
+    assert.ok(chemicals.fields.every(f => f.kind === "decimal" && !f.required));
+});

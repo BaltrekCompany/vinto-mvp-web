@@ -171,7 +171,7 @@
     },
     {
       "path": "lib/vinto/mp3-operation-spec.ts",
-      "sha256": "18e0bc9dd5172f53e3f1387c99df33f83f52c959d73e8ddbc59b03d39ca4e80a",
+      "sha256": "67652acb1e797344d73e5b729d5d2e9eff47e1cd3115cf09ca063a851849cf19",
       "scope": "mp3-rg01-fields:VINTO-MP3-01"
     }
   ],
