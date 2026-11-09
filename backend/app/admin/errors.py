@@ -18,6 +18,14 @@ class ProfileUnavailable(AdminError):
     http_status, code, public_message = 422, "PROFILE_UNAVAILABLE", "El perfil no existe o está inactivo"
 
 
+class LastActiveAdministrator(AdminError):
+    http_status, code, public_message = 409, "LAST_ADMINISTRATOR", "No se puede retirar el perfil del último administrador activo"
+
+
+class UserProfileInvalid(AdminError):
+    http_status, code, public_message = 409, "USER_PROFILE_INVALID", "La cuenta no tiene exactamente un perfil válido"
+
+
 class UserNotFound(AdminError):
     http_status, code, public_message = 404, "USER_NOT_FOUND", "Usuario no encontrado"
 

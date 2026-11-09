@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.sectors import KNOWN_SECTOR_CODES
 
@@ -33,6 +33,46 @@ class UserCreateIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=200)
     profile_code: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=12, max_length=256)
+
+
+class UserEditIn(BaseModel):
+    """USR-03: only existing display name/profile can be modified. No username, grants, actor or password."""
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    profile_code: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def require_non_null_change(self):
+        if not self.model_fields_set or any(getattr(self, field) is None for field in self.model_fields_set):
+            raise ValueError("Debe indicar nombre y/o perfil no nulos")
+        return self
+
+
+class UserEditOut(BaseModel):
+    user_id: UUID
+    username: str
+    display_name: str
+    profile_code: str
+    active: bool
+    changed: bool
+    sessions_revoked: int
+    request_id: str | None
+
+
+class AdminPasswordResetIn(BaseModel):
+    """USR-03: the password is admin-supplied, never logged, stored or returned in plaintext."""
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    password: str = Field(min_length=12, max_length=256)
+
+
+class AdminPasswordResetOut(BaseModel):
+    user_id: UUID
+    changed: bool
+    sessions_revoked: int
+    must_change: bool
+    request_id: str
 
 
 class UserSectorsOut(BaseModel):
