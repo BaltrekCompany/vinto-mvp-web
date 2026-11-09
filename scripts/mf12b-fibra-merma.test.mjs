@@ -206,7 +206,9 @@ test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las de
   assert.deepEqual(p104.machines, ["MP1", "MP3"]);
   assert.equal(p116.machines.length, 11);
   assert.equal(p104.fields.some((f) => /subtotal|total/.test(f.key)), false, "el subtotal no se persiste");
-  assert.equal(manifest.counts.form_fields, 464);
+  assert.equal(manifest.counts.form_fields, 597, "464 originales + 133 exclusivos de RG-MP3-01");
+  assert.deepEqual(forms["VINTO-MP3-01"].machines, ["MP3"]);
+  assert.equal(forms["VINTO-MP3-01"].version_number, 1);
 });
 
 test("MF-12B no toca la política central, las máquinas ni TVC/ETL", () => {
