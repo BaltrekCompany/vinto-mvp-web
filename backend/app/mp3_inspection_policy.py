@@ -26,7 +26,7 @@ SHIFT_ALREADY_TAKEN_SQL = """
       AND c.machine_id = %s
       AND c.operating_date = %s
       AND existing_schedule.shift_id = new_schedule.shift_id
-      AND c.status IN ('submitted', 'closed')
+      AND c.status IN ('submitted', 'closed', 'blocked')
     LIMIT 1
 """
 
