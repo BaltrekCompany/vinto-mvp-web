@@ -13,6 +13,7 @@ from uuid import uuid4
 from pydantic import SecretStr
 
 from app import capture_service
+from app import mp3_inspection_policy
 from app.assignments import service as assignment_service
 from app.auth.service import create_user
 from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form, has_active_machine_form_grant
@@ -206,6 +207,34 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted([r1.status, r2.status]), [201, 409], (r1.text, r2.text))
         self.assertEqual(
             sum(1 for r in (r1,r2) if r.status==409 and r.json().get("code")=="SHIFT_CAPTURE_ALREADY_EXISTS"), 1
+        )
+
+
+    async def test_07_legacy_capture_already_occupies_the_transition_shift(self):
+        assignment = await self.assignment("MP3")
+        old_values = {
+            f["key"]: ("08:30" if f["value_type"] == "time" else
+                       "legacy data" if f["value_type"] in ("text", "textarea") else "1.25")
+            for f in FORMS[P101]["fields"] if f["required"]
+        }
+        # Simula el registro realizado ANTES de la publicación RG01;
+        # la historia P1-01 MP3 no se modifica ni se borra.
+        with patch.object(mp3_inspection_policy, "assert_form_machine", return_value=None):
+            old, _ = await self.post(assignment, code=P101, values=old_values)
+        self.assertEqual(old.status, 201, old.text)
+        current, _ = await self.post(assignment, code=RG)
+        self.assertEqual((current.status, current.json().get("code")), (409, "SHIFT_CAPTURE_ALREADY_EXISTS"))
+        self.assertEqual(
+            self.connection.execute(
+                """SELECT count(*) FROM vinto_txn.capture c
+                   JOIN vinto_config.form_version v ON v.id=c.form_version_id
+                   JOIN vinto_config.form f ON f.id=v.form_id
+                   WHERE c.machine_id=(SELECT id FROM vinto_master.machine WHERE code='MP3')
+                     AND f.code IN (%s,%s) AND c.status IN ('submitted','closed','blocked')
+                     AND c.operating_date=%s""",
+                (P101, RG, "2026-11-15"),
+            ).fetchone()[0],
+            1,
         )
 
 
