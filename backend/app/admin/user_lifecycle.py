@@ -2,7 +2,8 @@
 
 Uses the same last-administrator advisory lock and locked administrator set as
 USR-03 and the legacy CLI. No credentials, profile, grants, OT, captures or
-historical records are modified. Revoked sessions are never restored.
+historical records are modified. Both state transitions revoke any lingering sessions;
+no session created before reactivation can become valid again.
 """
 
 import uuid
@@ -58,9 +59,17 @@ def change_user_state(connection, *, target_id, actor_id, active, reason):
             raise LastActiveAdministrator()
 
         _actor_context(connection, actor_id, request_id, clean_reason)
-        connection.execute('UPDATE vinto_master."user" SET active=%s WHERE id=%s', (active, target_id))
-        sessions_revoked = 0
-        if not active:
+        if active:
+            # An inactive account might still have unrevoked sessions from a
+            # legacy/manual disable or a login overlapping the disable.
+            # Revoke dormant tokens BEFORE enabling the account. Otherwise
+            # reactivation could unexpectedly make an old token valid again.
+            sessions_revoked = connection.execute(
+                """UPDATE vinto_auth.session SET revoked_at=clock_timestamp()
+                   WHERE user_id=%s AND revoked_at IS NULL""", (target_id,)).rowcount
+            connection.execute('UPDATE vinto_master."user" SET active=true WHERE id=%s', (target_id,))
+        else:
+            connection.execute('UPDATE vinto_master."user" SET active=false WHERE id=%s', (target_id,))
             sessions_revoked = connection.execute(
                 """UPDATE vinto_auth.session SET revoked_at=clock_timestamp()
                    WHERE user_id=%s AND revoked_at IS NULL""", (target_id,)).rowcount

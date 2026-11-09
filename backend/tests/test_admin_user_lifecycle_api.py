@@ -1,5 +1,7 @@
 """USR-04: isolated PostgreSQL 17 HTTP and database lifecycle regression."""
 import secrets
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from uuid import uuid4
 from unittest.mock import patch
@@ -158,6 +160,78 @@ class AdminUserLifecycleAPI(unittest.IsolatedAsyncioTestCase):
             response = await self.change(user.user_id, "deactivate", {"reason": "Racing actor"})
         self.assertEqual(response.status, 403, response.text)
         self.assertTrue(self.scalar('SELECT active FROM vinto_master."user" WHERE id=%s', (user.user_id,)))
+
+
+    async def test_09_reactivate_legacy_inactive_account_never_resurrects_old_cookie(self):
+        """USR-04 security gate: legacy/manual inactive users may still have unrevoked tokens."""
+        user, password = self.make_user()
+        old_cookie = (await self.login(user, password)).set_cookie_value()
+        self.connection.execute('UPDATE vinto_master."user" SET active=false WHERE id=%s', (user.user_id,))
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_auth.session WHERE user_id=%s AND revoked_at IS NULL", (user.user_id,)), 1)
+        self.assertEqual((await call("GET", "/api/auth/me", cookie=old_cookie)).status, 401)
+        reply = await self.change(user.user_id, "reactivate", {"reason": "USR-04 retorno legado"})
+        self.assertEqual(reply.status, 200, reply.text)
+        self.assertEqual((reply.json()["changed"], reply.json()["active"], reply.json()["sessions_revoked"]),
+                         (True, True, 1))
+        self.assertEqual((await call("GET", "/api/auth/me", cookie=old_cookie)).status, 401)
+        self.assertEqual((await self.login(user, password)).status, 200)
+
+    async def test_10_concurrent_api_deactivate_and_profile_demotion_keep_an_admin(self):
+        """Serialize USR-04 with USR-03 profile edits using separate PostgreSQL connections."""
+        from app.admin.user_editing import edit_user
+        from app.admin.user_lifecycle import change_user_state
+        from app.admin.errors import ActorNotAuthorized, LastActiveAdministrator
+
+        database = copy_database(STATE["template"], "usr04race")
+        try:
+            with connect(database) as db:
+                admin_a = create_user(
+                    db, username="race.a." + uuid4().hex[:12],
+                    display_name="Administrador A", profile_code="DATA_BALTREK",
+                    password="race-pw-" + secrets.token_urlsafe(18))
+                admin_b = create_user(
+                    db, username="race.b." + uuid4().hex[:12],
+                    display_name="Administrador B", profile_code="DATA_BALTREK",
+                    password="race-pw-" + secrets.token_urlsafe(18))
+            barrier = threading.Barrier(2)
+
+            def deactivate_b():
+                with connect(database) as db:
+                    barrier.wait(timeout=10)
+                    try:
+                        change_user_state(
+                            db, target_id=admin_b.user_id, actor_id=admin_a.user_id,
+                            active=False, reason="USR-04 concurrent safeguard")
+                        return "changed"
+                    except (ActorNotAuthorized, LastActiveAdministrator):
+                        return "blocked"
+
+            def demote_a():
+                with connect(database) as db:
+                    barrier.wait(timeout=10)
+                    try:
+                        edit_user(db, target_id=admin_a.user_id,
+                                  actor_id=admin_b.user_id, profile_code="OPERACION")
+                        return "changed"
+                    except (ActorNotAuthorized, LastActiveAdministrator):
+                        return "blocked"
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                task1 = executor.submit(deactivate_b)
+                task2 = executor.submit(demote_a)
+                results = [task1.result(timeout=20), task2.result(timeout=20)]
+            with connect(database) as db:
+                admin_count = db.execute(
+                    """SELECT count(*) FROM vinto_master."user" u
+                       JOIN vinto_master.user_profile up ON up.user_id=u.id
+                       JOIN vinto_master.profile p ON p.id=up.profile_id
+                       WHERE u.active AND p.active AND p.code='DATA_BALTREK'"""
+                ).fetchone()[0]
+            self.assertEqual(admin_count, 1, results)
+            self.assertEqual(sorted(results), ["blocked", "changed"])
+        finally:
+            drop_database(database)
 
 
 if __name__ == "__main__":
