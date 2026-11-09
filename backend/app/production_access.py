@@ -12,7 +12,7 @@ No hay flags ni variables de entorno que habiliten sectores o formularios: la fu
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app import capture_service
+from app import capture_service, mp3_inspection_policy
 from app.auth.dependencies import FORBIDDEN, current_user
 from app.auth.permissions import ASSIGNMENT_READ, PRODUCTION_CAPTURE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
@@ -68,6 +68,7 @@ def production_machines(connection, sectors, *, include_articles: bool = False, 
             """SELECT s.code, s.name, m.id, m.code, m.name FROM vinto_master.machine m JOIN vinto_master.sector s ON s.id = m.sector_id
                WHERE m.active AND s.active AND s.code = ANY(%s) ORDER BY s.code, m.code""", (scoped,)).fetchall()
         ids = [row[2] for row in machines]
+        machine_code_by_id = {row[2]: row[3] for row in machines}
         forms: dict = {}
         if ids:
             # La versión publicada MÁS ALTA de cada formulario activo y habilitado (área production), y solo si está vinculada a la máquina: como published_form_version().
@@ -78,6 +79,10 @@ def production_machines(connection, sectors, *, include_articles: bool = False, 
                                        ORDER BY f.id, fv.version_number DESC)
                        SELECT fvm.machine_id, l.code, l.name, l.version_number FROM latest l JOIN vinto_config.form_version_machine fvm ON fvm.form_version_id = l.version_id
                        WHERE fvm.machine_id = ANY(%s) ORDER BY fvm.machine_id, l.code""", (sorted(capture_service.CENTRAL_FORM_CODES), ids)).fetchall():
+                # Además de la relación publicada, no ofrecer P1-01 a MP3.
+                # Captura central aplica la MISMA regla a los POST directos.
+                if not mp3_inspection_policy.allowed_for_machine(code, machine_code_by_id[machine_id]):
+                    continue
                 forms.setdefault(machine_id, []).append(FormRef(code=code, name=name, version_number=version))
         articles: dict = {}
         if ids and include_articles:

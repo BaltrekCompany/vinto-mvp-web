@@ -32,7 +32,7 @@ from migrate import applied_migrations, read_migrations, validate_history
 
 BACKEND = Path(__file__).resolve().parent.parent
 MIGRATION_0008 = BACKEND / "migrations" / "0008_user_machine_form_grant_integrity.sql"
-P101, P105, P106 = "VINTO-P1-01", "VINTO-P1-05", "VINTO-P1-06"
+P101, P102, P105, P106 = "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-05", "VINTO-P1-06"
 BUNDLE = load_bundle()
 STATE = {}
 
@@ -155,6 +155,16 @@ class GrantablePairPolicyTests(Db):
         self.assertNotIn(("MP1", P105), grantable)
         self.assertIn(("MP3", P105), grantable)
 
+    def test_rg01_cutover_disallows_old_mp3_grant_but_preserves_mp1(self):
+        # El vínculo histórico MP3/P1-01 queda para consultas antiguas,
+        # pero no debe producir nuevas concesiones que la API rechazaría.
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP3", P101)
+        self.assertTrue(self.grant(self.other, "MP1", P101))
+        self.assertTrue(self.grant(self.other, "MP3", "VINTO-MP3-01"))
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP1", "VINTO-MP3-01")
+
     def test_an_existing_grant_whose_pair_stops_being_offered_stays_stored_and_can_be_revoked(self):
         self.assertTrue(self.grant(self.other, "MP3", P105))
         self.c.execute("UPDATE vinto_master.machine SET active = false WHERE code = 'MP3'")
@@ -173,11 +183,11 @@ class GrantablePairPolicyTests(Db):
         self.assertEqual([self.scalar(q) for q in queries], before)
 
     def test_mp1_and_mp3_stay_independent_for_the_same_form(self):
-        self.assertTrue(self.grant(self.other, "MP1", P101))
-        self.assertTrue(self.grant(self.other, "MP3", P101))
-        self.assertTrue(self.revoke(self.other, "MP1", P101))
-        self.assertTrue(has_active_machine_form_grant(self.c, self.other, "MP3", P101))
-        self.assertFalse(has_active_machine_form_grant(self.c, self.other, "MP1", P101))
+        self.assertTrue(self.grant(self.other, "MP1", P102))
+        self.assertTrue(self.grant(self.other, "MP3", P102))
+        self.assertTrue(self.revoke(self.other, "MP1", P102))
+        self.assertTrue(has_active_machine_form_grant(self.c, self.other, "MP3", P102))
+        self.assertFalse(has_active_machine_form_grant(self.c, self.other, "MP1", P102))
 
 
 # ---- 2. integridad histórica (migración 0008) ----------------------------------------------------------------------------------------------
@@ -314,11 +324,11 @@ class ConcurrencyTests(Db):
 
     def test_simultaneous_grants_still_create_one_active_row_and_mp1_mp3_do_not_interfere(self):
         user = self.user()
-        jobs = [lambda c: grant_machine_form(c, user_id=user, machine_code="MP1", form_code=P101, actor_id=self.admin)] * 4 \
-            + [lambda c: grant_machine_form(c, user_id=user, machine_code="MP3", form_code=P101, actor_id=self.admin)] * 4
+        jobs = [lambda c: grant_machine_form(c, user_id=user, machine_code="MP1", form_code=P102, actor_id=self.admin)] * 4 \
+            + [lambda c: grant_machine_form(c, user_id=user, machine_code="MP3", form_code=P102, actor_id=self.admin)] * 4
         results = self.run_threads(jobs)
         self.assertEqual(sorted(results), [False] * 6 + [True] * 2)
-        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.c, user)], [("MP1", P101), ("MP3", P101)])
+        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.c, user)], [("MP1", P102), ("MP3", P102)])
 
     def test_a_grant_revoke_race_keeps_every_invariant(self):
         for _ in range(4):
@@ -360,8 +370,8 @@ class MigrationTests(unittest.TestCase):
             mk = lambda p="OPERACION": create_user(c, username=f"mig.{uuid4().hex[:10]}", display_name=p, profile_code=p, password="pw-" + uuid4().hex).user_id  # noqa: E731
             admin, user = mk("DATA_BALTREK"), mk()
             for machine in ("MP1", "MP3"):
-                grant_machine_form(c, user_id=user, machine_code=machine, form_code=P101, actor_id=admin)
-            revoke_machine_form(c, user_id=user, machine_code="MP1", form_code=P101, actor_id=admin)
+                grant_machine_form(c, user_id=user, machine_code=machine, form_code=P102, actor_id=admin)
+            revoke_machine_form(c, user_id=user, machine_code="MP1", form_code=P102, actor_id=admin)
             # bajo 0007 la fila revocada aún se podía «retocar»: lo que ya está guardado debe seguir exactamente igual tras 0008
             snapshot = lambda: (c.execute("SELECT * FROM vinto_master.user_machine_form_grant ORDER BY id").fetchall(), c.execute("SELECT count(*) FROM vinto_audit.audit_event").fetchone()[0])  # noqa: E731
             before = snapshot()
@@ -373,7 +383,7 @@ class MigrationTests(unittest.TestCase):
             (revoked,) = [r for r in before[0] if r[8] is not None]  # revoked_at
             with self.assertRaises(psycopg.errors.CheckViolation), c.transaction():
                 c.execute("UPDATE vinto_master.user_machine_form_grant SET updated_by = %s WHERE id = %s", (user, revoked[0]))
-            self.assertTrue(grant_machine_form(c, user_id=user, machine_code="MP1", form_code=P101, actor_id=admin), "se puede volver a conceder (fila nueva)")
+            self.assertTrue(grant_machine_form(c, user_id=user, machine_code="MP1", form_code=P102, actor_id=admin), "se puede volver a conceder (fila nueva)")
             self.assertEqual(len(machine_form_grants_for_user(c, user, include_revoked=True)), 3)
 
 

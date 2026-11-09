@@ -134,7 +134,8 @@ class ConfigurationAndAvailabilityTests(Base):
     async def test_the_shipped_configuration_is_unchanged_and_the_forms_are_unreachable_without_the_test_policy(self):
         # CLOUD-DEP G.12-C4: CENTRAL_FORM_CODES real ya incluye los candidatos de Bobinas habilitados;
         # lo que importa es que los códigos de fixture sintéticos (P101_CODE/P102_CODE) NO estén.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_POLICY - {"VINTO-MP3-01"}, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertIn("VINTO-MP3-01", SHIPPED_POLICY, "única incorporación autorizada")
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         for code, (_, _, own, _) in FORMS.items():
             _, assignment = await self.assignment(own)
@@ -144,7 +145,7 @@ class ConfigurationAndAvailabilityTests(Base):
                 self.assertEqual((await self.get(f"/api/captures?form_code={code}")).status, 422)
                 machines = {m["code"]: [f["code"] for f in m["forms"]] for s in (await self.get("/api/production/machines")).json()["sectors"] for m in s["machines"]}
                 # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo están vinculadas a MP3
-                self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", F6})), "MP3": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_POLICY entero ya no aplica solo a MP1/MP3 (P1-07/10/11/12/13/16/29/30 son de otros sectores)
+                self.assertEqual(machines, {"MP1": sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", F6})), "MP3": sorted(SHIPPED_POLICY & frozenset({"VINTO-MP3-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", F6, "VINTO-P1-31"}))})  # CLOUD-DEP G.12-C4-FINAL25: SHIPPED_POLICY entero ya no aplica solo a MP1/MP3 (P1-07/10/11/12/13/16/29/30 son de otros sectores)
                 for codes in machines.values():
                     self.assertNotIn(code, codes)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture"), 0)

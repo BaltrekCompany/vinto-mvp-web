@@ -510,6 +510,9 @@ class LockingTests(GateCase):
         grants_0007 = re.search(r'GRANT SELECT, INSERT, UPDATE ON vinto_master\."user_machine_form_grant" TO vinto_app;', (BACKEND / "migrations/0007_user_machine_form_grants.sql").read_text(encoding="utf-8")).group(0)
         for statement in [schema, function, grants_0007] + statements:
             self.connection.execute(statement.replace("vinto_app", role))
+        # La migración E2-D2 0019 concede SELECT en handoff a vinto_app.
+        # El rol sintético de esta prueba también debe recibir ese GRANT real.
+        self.connection.execute(f"GRANT SELECT ON vinto_txn.work_order_line_reprogram_handoff TO {role}")
         self.grant()
         _, assignment = await self.assignment()
         app = connect(self.database)

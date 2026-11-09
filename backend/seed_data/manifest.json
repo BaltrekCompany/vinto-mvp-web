@@ -33,7 +33,8 @@
       "VINTO-P1-13",
       "VINTO-P1-16",
       "VINTO-P1-11",
-      "VINTO-P1-29"
+      "VINTO-P1-29",
+      "VINTO-MP3-01"
     ]
   },
   "generated_from": [
@@ -167,6 +168,11 @@
       "path": "lib/vinto/p1-29.ts",
       "sha256": "4caadd87c47dd49f4b338a3c9c26f38b3cc80e4bfd06f5be698c4ad30ad0fab0",
       "scope": "candidate-fields:VINTO-P1-29"
+    },
+    {
+      "path": "lib/vinto/mp3-operation-spec.ts",
+      "sha256": "18e0bc9dd5172f53e3f1387c99df33f83f52c959d73e8ddbc59b03d39ca4e80a",
+      "scope": "mp3-rg01-fields:VINTO-MP3-01"
     }
   ],
   "files": [
@@ -179,6 +185,11 @@
       "path": "articles.json",
       "sha256": "503f9f2ebb82e32b30240af2a72da7bab8a63d46d46d00e031629b1c7a0446ba",
       "bytes": 104553
+    },
+    {
+      "path": "forms/VINTO-MP3-01.json",
+      "sha256": "147333b6426c87dec880ba575226cdff1ace193971c75694eb3d6bf5c24895ef",
+      "bytes": 28221
     },
     {
       "path": "forms/VINTO-P1-01.json",
@@ -355,8 +366,8 @@
     "workflows": 2,
     "shifts": 4,
     "shift_schedules": 7,
-    "forms": 25,
-    "form_fields": 464,
+    "forms": 26,
+    "form_fields": 597,
     "form_options": 34,
     "form_groups": 3
   },

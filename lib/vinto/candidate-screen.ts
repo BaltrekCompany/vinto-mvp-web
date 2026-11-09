@@ -17,7 +17,8 @@ export type CandidateScreen = {
     sections?: readonly { title: string; hint?: string; keys: readonly string[] }[]; // agrupación SOLO visual de los campos (cada campo en exactamente una sección); no cambia la estructura guardada
     actionLabel?: string; // texto inequívoco de la acción en el inbox (por defecto «<título> (candidato)»)
     officialStatusNote?: string; // contexto "bobbin": aviso de que el estado oficial de Calidad de la bobina se muestra aparte (solo lectura) y esta captura no lo cambia
-    hints?: Readonly<Record<string, string>>; // pistas por campo (clave -> texto); no cambian el contrato
+    hints?: Readonly<Record<string, string>>;
+    collapsibleSections?: boolean; // RG-MP3-01: Pulper visible, otras secciones bajo desplegables nativos // pistas por campo (clave -> texto); no cambian el contrato
     table?: { columns: readonly { prefix: string; label: string; suffix?: string }[]; positions: readonly number[]; keyFor: (prefix: string, position: number) => string }; // MF-07 (P1-21): los campos «columna_NN» se dibujan como UNA tabla editable de filas numeradas; la estructura guardada no cambia
     preview?: (draft: Readonly<Record<string, string>>) => Record<string, string | null>; // MF-07: valor mostrado de cada campo calculado por el backend (solo visualización mientras se digita)
     derived?: readonly { key: string; label: string; suffix?: string; compute: (values: Readonly<Record<string, string | undefined>>) => string | null }[]; // MF-12B (P1-04): valores DERIVADOS solo para MOSTRAR (en la captura y en el historial); nunca se envían, se guardan ni son campos del formulario

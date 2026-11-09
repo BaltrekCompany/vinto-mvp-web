@@ -116,7 +116,8 @@ class ConfigurationAndAvailabilityTests(Base):
         self.assertEqual(SHIPPED_MACHINE_POLICY, frozenset({"VINTO-P1-18", "VINTO-P1-22", "VINTO-P1-26", "VINTO-P1-27"}))
         # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_PRODUCTION_POLICY también incluye P1-07/10/30 (Rebobinado),
         # pero esos 3 solo están vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 nunca los ofrecen.
-        self.assertEqual(SHIPPED_PRODUCTION_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_PRODUCTION_POLICY - {"VINTO-MP3-01"}, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertIn("VINTO-MP3-01", SHIPPED_PRODUCTION_POLICY, "única incorporación autorizada")
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         with patch.object(_machine_service, "MACHINE_QUALITY_FORM_CODES", SHIPPED_MACHINE_POLICY):
             for code in (P122_CODE, P126_CODE):
@@ -147,7 +148,7 @@ class ConfigurationAndAvailabilityTests(Base):
         reply = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
         offered = {m["code"]: sorted(f["code"] for f in m["forms"]) for s in reply.json()["sectors"] for m in s["machines"]}
         bobinas_forms = sorted(SHIPPED_PRODUCTION_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
-        self.assertEqual({k: v for k, v in offered.items() if k in ("MP1", "MP3")}, {"MP1": [c for c in bobinas_forms if c not in ("VINTO-P1-05", "VINTO-P1-31")], "MP3": bobinas_forms}, "MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3")
+        self.assertEqual({k: v for k, v in offered.items() if k in ("MP1", "MP3")}, {"MP1": [c for c in bobinas_forms if c not in ("VINTO-P1-05", "VINTO-P1-31")], "MP3": sorted((set(bobinas_forms) - {"VINTO-P1-01"}) | {"VINTO-MP3-01"})}, "MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3")
         for codes in offered.values():
             self.assertNotIn(P122_CODE, codes)
             self.assertNotIn(P126_CODE, codes)

@@ -233,12 +233,12 @@ class GrantsTests(Base):
 
     async def test_active_grants_and_the_revoked_history_with_mp1_and_mp3_kept_apart(self):
         uid = self.target()
-        for machine, form in (("MP1", P101), ("MP3", P101), ("MP3", P102)):
+        for machine, form in (("MP1", P101), ("MP3", P102), ("MP3", P106)):
             self.assertTrue(self.grant(uid, machine, form))
         self.assertTrue(self.revoke(uid, "MP1", P101))
         self.assertTrue(self.grant(uid, "MP1", P101))  # fila nueva: la revocada queda en el historial
         active = (await self.get(f"/api/admin/users/{uid}/grants")).json()
-        self.assertEqual([(g["machine"]["code"], g["form"]["code"], g["state"]) for g in active["grants"]], [("MP1", P101, "active"), ("MP3", P101, "active"), ("MP3", P102, "active")])
+        self.assertEqual([(g["machine"]["code"], g["form"]["code"], g["state"]) for g in active["grants"]], [("MP1", P101, "active"), ("MP3", P102, "active"), ("MP3", P106, "active")])
         self.assertEqual((active["total"], active["truncated"]), (3, False))
         self.assertTrue(all(g["revoked_at"] is None and g["revoked_by"] is None for g in active["grants"]))
         history = (await self.get(f"/api/admin/users/{uid}/grants/history")).json()
@@ -257,11 +257,11 @@ class GrantsTests(Base):
 
     async def test_revoking_one_machine_does_not_show_the_other_as_revoked(self):
         uid = self.target()
-        self.grant(uid, "MP1", P101)
-        self.grant(uid, "MP3", P101)
-        self.revoke(uid, "MP1", P101)
+        self.grant(uid, "MP1", P102)
+        self.grant(uid, "MP3", P102)
+        self.revoke(uid, "MP1", P102)
         by = {(g["machine"]["code"], g["form"]["code"]): g["state"] for g in (await self.get(f"/api/admin/users/{uid}/grants/history")).json()["grants"]}
-        self.assertEqual(by, {("MP1", P101): "revoked", ("MP3", P101): "active"})
+        self.assertEqual(by, {("MP1", P102): "revoked", ("MP3", P102): "active"})
         self.assertEqual([g["machine"]["code"] for g in (await self.get(f"/api/admin/users/{uid}/grants")).json()["grants"]], ["MP3"])
 
     async def test_the_history_limit_truncates_and_is_validated(self):
@@ -269,7 +269,7 @@ class GrantsTests(Base):
         for _ in range(2):
             self.grant(uid, "MP1", P101)
             self.revoke(uid, "MP1", P101)
-        self.grant(uid, "MP3", P101)
+        self.grant(uid, "MP3", P102)
         body = (await self.get(f"/api/admin/users/{uid}/grants/history?limit=2")).json()
         self.assertEqual((body["total"], len(body["grants"]), body["truncated"]), (3, 2, True))  # 2 ciclos conceder/revocar de la misma terna + 1 alta en MP3
         for bad in ("0", "501", "x"):
@@ -353,7 +353,7 @@ class CatalogTests(Base):
         self.assertEqual((reb["active"], reb["operational"]), (True, False))
         forms = [f for m in reb["machines"] for f in m["forms"]]
         self.assertTrue(forms and all(f["published"] and f["offered"] and not f["enabled_for_capture"] for f in forms))
-        self.assertTrue(all(f["enabled_for_capture"] for m in next(s for s in tree["sectors"] if s["code"] == "BOBINAS")["machines"] for f in m["forms"] if f["capture_policies"]))
+        self.assertTrue(all(f["enabled_for_capture"] for m in next(s for s in tree["sectors"] if s["code"] == "BOBINAS")["machines"] for f in m["forms"] if f["capture_policies"] and f["offered"]))
 
     async def test_an_inactive_machine_or_form_is_not_offered_and_not_enabled(self):
         for statement, undo in (("UPDATE vinto_master.machine SET active = false WHERE code = 'MP3'", "UPDATE vinto_master.machine SET active = true WHERE code = 'MP3'"),

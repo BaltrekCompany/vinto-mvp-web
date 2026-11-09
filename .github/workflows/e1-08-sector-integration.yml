@@ -15,6 +15,10 @@ on:
       - 'docs/E1-08-matriz-qa-go-no-go.md'
       - '.github/workflows/e1-08-sector-integration.yml'
 
+concurrency:
+  group: e1-08-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

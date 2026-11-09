@@ -221,13 +221,17 @@ test("la oferta sale del backend por máquina (P1-02 en MP1, P1-01 en MP3) y no 
   assert.deepEqual([screenFor(BOBINAS_SECTOR, "VINTO-P1-02"), screenFor(BOBINAS_SECTOR, "VINTO-P1-01")], ["p102", "p101"]);
   assert.deepEqual([screenFor(BOBINAS_SECTOR, "VINTO-P1-04"), screenFor(BOBINAS_SECTOR, "VINTO-P1-05"), screenFor(BOBINAS_SECTOR, "VINTO-P1-31")], ["p104", "p105", "p131"]);
   for (const sector of ["REBOBINADO", "CONVERSION"]) for (const formCode of ["VINTO-P1-02", "VINTO-P1-01"]) assert.equal(screenFor(sector, formCode), null, `${sector}: ${formCode}`);
-  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101"]);
+  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101", "pmp3"]);
+  assert.equal(screenFor(BOBINAS_SECTOR, "VINTO-MP3-01"), "pmp3");
+  assert.equal(screenFor("REBOBINADO", "VINTO-MP3-01"), null);
   const form = (c) => ({ code: c, name: c, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
   const real = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06")] }]);
   assert.deepEqual([candidateScreensFor(real, "MP1"), candidateScreensFor(real, "MP3"), publishedCandidateScreens(real)], [[], [], []], "configuración real: nada publicado");
   const published = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06"), form("VINTO-P1-02")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06"), form("VINTO-P1-01")] }]);
   assert.deepEqual([candidateScreensFor(published, "MP1"), candidateScreensFor(published, "MP3"), candidateScreensFor(published, "MP9"), publishedCandidateScreens(published)], [["p102"], ["p101"], [], ["p102", "p101"]]);
+  const rg01 = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-01")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-MP3-01")] }]);
+  assert.deepEqual([candidateScreensFor(rg01, "MP1"), candidateScreensFor(rg01, "MP3"), publishedCandidateScreens(rg01)], [["p101"], ["pmp3"], ["p101", "pmp3"]]);
   const cards = code("components/vinto/bobinas-candidate-cards.tsx");
   assert.match(cards, /availability\.status === "ready" \? candidateScreensFor\(availability\.data, machineCode\) : \[\]/); // sin disponibilidad cargada (carga o error) no se ofrece nada
 });
@@ -249,12 +253,22 @@ test("aislamiento por usuario y formulario: los historiales de otra cuenta o de 
   for (const file of ["lib/vinto/p1-02.ts", "lib/vinto/p1-01.ts", "lib/vinto/bobinas-candidates.ts", "lib/vinto/candidate-form.ts", "components/vinto/candidate-form-capture.tsx"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records|document\.cookie/.test(code(file)), false, file);
 });
 
-test("alcance: política, sectores y seed intactos, sin migraciones nuevas, sin pantallas ni endpoints nuevos y formularios anteriores sin tocar", () => {
+test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial, versiones previas ni esquema", () => {
   const sectors = read("backend/app/sectors.py"), capture = read("backend/app/capture_service.py"), manifest = JSON.parse(read("backend/seed_data/manifest.json"));
-  assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)$/m);
-  assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)$/m);
-  assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
-  assert.equal(readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql")).length, 6);
+  assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS, SECTOR_REBOBINADO, SECTOR_CONVERSION\)$/m, "conserva los tres sectores operativos del baseline");
+  assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{/m);
+  assert.match(capture, /mp3_inspection_policy\.RG_MP3_FORM_CODE/, "RG01 exige habilitación explícita de captura central");
+  for (const code of ["VINTO-P1-06", "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31"]) assert.ok(capture.includes(JSON.stringify(code)) || code === "VINTO-P1-06" && capture.includes("FORM_CODE,"), `política histórica: ${code}`);
+  assert.equal(manifest.scope.forms.length, 26, "25 formularios aprobados + solo RG01");
+  assert.equal(new Set(manifest.scope.forms).size, 26, "no se repiten códigos");
+  assert.equal(manifest.scope.forms.at(-1), "VINTO-MP3-01", "RG01 es la única incorporación");
+  assert.equal(manifest.counts.form_fields, 597, "464 campos anteriores + 133 RG01");
+  const rg = JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json"));
+  assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
+  assert.equal(rg.fields.length, 133);
+  const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
+  assert.equal(migrations.length, 23, "sin nueva migración respecto de Calidad 0023");
+  assert.ok(migrations.includes("0023_quality_release_decision.sql"));
   assert.equal(readdirSync(join(root, "components/vinto")).some((f) => /p1-0[12]/.test(f)), false, "no hay componentes de pantalla propios");
   assert.equal(/requestJson|\/api\//.test(code("lib/vinto/p1-02.ts") + code("lib/vinto/p1-01.ts")), false);
   assert.match(code("lib/vinto/bobinas-candidates.ts"), /api: candidateApi\(P102\)/);

@@ -139,7 +139,7 @@ test("flujo de envío: 201, 200 idempotente, rechazos, sesión y reconciliación
 test("la ficha se ofrece solo si el backend la publica para la máquina, junto a P1-05 y P1-31, y el legacy no cambia el orden ni las demás pantallas", () => {
   const form = (code) => ({ code, name: code, version_number: 1 });
   const avail = (machines) => parseAvailability({ sectors: [{ code: "BOBINAS", name: "Bobinas", machines }] });
-  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101"]); // p102 / p101 se añadieron en DEV-B3 (no cambian el orden de las anteriores)
+  assert.deepEqual([...BOBINAS_CANDIDATE_SCREENS], ["p104", "p105", "p131", "p102", "p101", "pmp3"]); // p102 / p101 se añadieron en DEV-B3 (no cambian el orden de las anteriores)
   const real = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-06")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-06")] }]);
   assert.deepEqual([candidateScreensFor(real, "MP1"), publishedCandidateScreens(real)], [[], []], "configuración real: ninguna ficha candidata");
   const published = avail([{ code: "MP1", name: "MP1", forms: [form("VINTO-P1-04"), form("VINTO-P1-05"), form("VINTO-P1-06"), form("VINTO-P1-31")] }, { code: "MP3", name: "MP3", forms: [form("VINTO-P1-04"), form("VINTO-P1-06")] }]);
@@ -168,11 +168,16 @@ test("aislamiento por usuario: el historial y la disponibilidad de P1-04 de la c
   assert.match(page, /p104: useResource<CandidateCapture\[\]>/);
 });
 
-test("alcance: la política real y seed_data no incluyen P1-04, el legacy no se toca y la pantalla central no usa almacenamiento local", () => {
+test("alcance actualizado: P1-04 sigue publicado y RG01 es exclusivo de MP3; sin almacenamiento local", () => {
   const capture = read("backend/app/capture_service.py"), sectors = read("backend/app/sectors.py"), manifest = JSON.parse(read("backend/seed_data/manifest.json"));
-  assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{FORM_CODE\}\)$/m);
-  assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS,\)$/m);
-  assert.deepEqual(manifest.scope.forms, ["VINTO-P1-06", "VINTO-P1-03", "VINTO-P1-19", "VINTO-P1-20"]);
+  assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{/m);
+  assert.match(capture, /"VINTO-P1-04"/, "P1-04 conserva su ruta de captura real");
+  assert.match(capture, /mp3_inspection_policy\.RG_MP3_FORM_CODE/, "RG01 se incorpora explícitamente");
+  assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS, SECTOR_REBOBINADO, SECTOR_CONVERSION\)$/m);
+  assert.ok(manifest.scope.forms.includes("VINTO-P1-04"), "P1-04 permanece en bundle oficial");
+  assert.equal(manifest.scope.forms.length, 26);
+  assert.deepEqual(JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json")).machines, ["MP3"]);
+  assert.equal(JSON.parse(read("backend/seed_data/forms/VINTO-P1-04.json")).version_number, 2);
   for (const file of ["lib/vinto/p1-04.ts", "lib/vinto/p1-04-api.ts", "lib/vinto/bobinas-candidates.ts"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records/.test(read(file).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")), false, file);
   const page = read("app/page.tsx");
   // INT-02A (cambio de contrato): ya no existe la tarjeta LOCAL de fibra ni su ocultamiento condicional; las tarjetas de Bobinas son solo F3 y P1-06 y P1-04 solo aparece si el backend la publica

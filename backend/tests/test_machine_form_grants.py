@@ -270,16 +270,16 @@ class ServiceTests(DatabaseCase):
         self.assertEqual(len(machine_form_grants_for_user(self.connection, user)), 1)
         self.assertEqual(self.rows(user), 2)
 
-    def test_p1_01_on_mp1_and_on_mp3_are_independent_grants(self):
+    def test_p1_02_on_mp1_and_on_mp3_are_independent_grants(self):
         user = self.new_user()
-        self.assertTrue(self.grant(user, "MP1", P101))
-        self.assertFalse(has_active_machine_form_grant(self.connection, user, "MP3", P101))  # granting MP1 never grants MP3
-        self.assertTrue(self.grant(user, "MP3", P101))
-        self.assertTrue(self.revoke(user, "MP1", P101))
-        self.assertFalse(has_active_machine_form_grant(self.connection, user, "MP1", P101))
-        self.assertTrue(has_active_machine_form_grant(self.connection, user, "MP3", P101))  # revoking MP1 leaves MP3 intact
-        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.connection, user)], [("MP3", P101)])
-        self.assertTrue(self.revoke(user, "MP3", P101))
+        self.assertTrue(self.grant(user, "MP1", P102))
+        self.assertFalse(has_active_machine_form_grant(self.connection, user, "MP3", P102))  # granting MP1 never grants MP3
+        self.assertTrue(self.grant(user, "MP3", P102))
+        self.assertTrue(self.revoke(user, "MP1", P102))
+        self.assertFalse(has_active_machine_form_grant(self.connection, user, "MP1", P102))
+        self.assertTrue(has_active_machine_form_grant(self.connection, user, "MP3", P102))  # revoking MP1 leaves MP3 intact
+        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.connection, user)], [("MP3", P102)])
+        self.assertTrue(self.revoke(user, "MP3", P102))
         self.assertEqual(machine_form_grants_for_user(self.connection, user), ())
 
     def test_grants_are_independent_between_users_and_between_forms(self):
@@ -365,7 +365,7 @@ class NoImplicitAuthorizationTests(DatabaseCase):
         grant_sector(self.connection, user_id=user, sector_code="BOBINAS", actor_id=self.admin)
         self.assertEqual(self.rows(user), 0)  # a sector grant implies no machine/form grant
         sectors_before = sector_codes_for_user(self.connection, user)
-        self.grant(user, "MP3", P101)
+        self.grant(user, "MP3", P102)
         self.assertEqual(sector_codes_for_user(self.connection, user), sectors_before)  # a machine/form grant implies no sector
         lonely = self.new_user()
         self.grant(lonely, "MP1", P101)
@@ -387,7 +387,7 @@ class NoImplicitAuthorizationTests(DatabaseCase):
                    "SELECT count(*) FROM vinto_master.user_sector")
         before = [self.scalar(q) for q in queries]
         self.grant(user, "MP1", P101)
-        self.grant(user, "MP3", P101)
+        self.grant(user, "MP3", P102)
         self.revoke(user, "MP1", P101)
         self.assertEqual([self.scalar(q) for q in queries], before)
 
@@ -435,16 +435,16 @@ class ConcurrencyTests(DatabaseCase):
 
     def test_concurrent_grants_on_mp1_and_mp3_do_not_interfere(self):
         user = self.new_user()
-        results = self.run_threads([self.grant_job(user, "MP1")] * 4 + [self.grant_job(user, "MP3")] * 4)
+        results = self.run_threads([self.grant_job(user, "MP1", P102)] * 4 + [self.grant_job(user, "MP3", P102)] * 4)
         self.assertEqual(sorted(results), [False] * 6 + [True] * 2)
-        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.connection, user)], [("MP1", P101), ("MP3", P101)])
+        self.assertEqual([(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.connection, user)], [("MP1", P102), ("MP3", P102)])
 
     def test_revoking_one_machine_while_granting_the_other_keeps_both_consistent(self):
         user = self.new_user()
-        self.grant(user, "MP1")
-        self.run_threads([self.revoke_job(user, "MP1")] * 3 + [self.grant_job(user, "MP3")] * 3)
+        self.grant(user, "MP1", P102)
+        self.run_threads([self.revoke_job(user, "MP1", P102)] * 3 + [self.grant_job(user, "MP3", P102)] * 3)
         active = [(g.machine_code, g.form_code) for g in machine_form_grants_for_user(self.connection, user)]
-        self.assertEqual(active, [("MP3", P101)])  # MP1 revoked, MP3 granted, nothing else
+        self.assertEqual(active, [("MP3", P102)])  # MP1 revoked, MP3 granted, nothing else
 
     def test_a_grant_revoke_race_never_leaves_two_active_rows_or_an_unattributed_revocation(self):
         for _ in range(5):

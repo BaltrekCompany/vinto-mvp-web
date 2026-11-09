@@ -160,6 +160,7 @@ export default function Home() {
         p131: useResource<CandidateCapture[]>(candidateHistoryKey("p131", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p131"), signal => BOBINAS_CANDIDATES.p131.api.list(signal), sessionLost),
         p102: useResource<CandidateCapture[]>(candidateHistoryKey("p102", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p102"), signal => BOBINAS_CANDIDATES.p102.api.list(signal), sessionLost),
         p101: useResource<CandidateCapture[]>(candidateHistoryKey("p101", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("p101"), signal => BOBINAS_CANDIDATES.p101.api.list(signal), sessionLost),
+        pmp3: useResource<CandidateCapture[]>(candidateHistoryKey("pmp3", scope, candRefresh), authenticated && bobinasFront && canReadCaptures && activeModule === "seguimiento" && publishedCand.includes("pmp3"), signal => BOBINAS_CANDIDATES.pmp3.api.list(signal), sessionLost),
     };
     // Inbox CENTRAL de Calidad (solo lectura, GET /api/quality/bobbins, status pendiente): no depende de la asignación activa.
     const canReadQualityInbox = hasPermission(user, "quality.capture");

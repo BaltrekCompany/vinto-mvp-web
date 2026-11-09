@@ -89,11 +89,12 @@ class DefinitionTests(unittest.TestCase):
         self.assertNotEqual(FORMS[P110]["definition_checksum"], V2["definition_checksum"])
 
     def test_no_other_form_changes_its_version(self):
-        self.assertEqual({c: f["version_number"] for c, f in FORMS.items()}, VERSIONS)
+        self.assertEqual({c: f["version_number"] for c, f in FORMS.items() if c != "VINTO-MP3-01"}, VERSIONS)
+        self.assertEqual((FORMS["VINTO-MP3-01"]["version_number"], FORMS["VINTO-MP3-01"]["machines"]), (1, ["MP3"]))
         self.assertEqual(FORMS["VINTO-P1-07"]["machines"], ["BELOIT", "OVER", "COPASA"])
         self.assertEqual(FORMS["VINTO-P1-29"]["machines"], ["TUBETERA"])
         self.assertEqual(FORMS["VINTO-P1-30"]["machines"], ["PERICHUN"])
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 464, "el total de campos del bundle no cambia")
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 597, "464 históricos + 133 exclusivos de RG-MP3-01")
 
     def test_only_rebobinado_machines_are_linked(self):
         sectors = {m["code"]: m["sector"] for m in BUNDLE.machines}
@@ -187,7 +188,7 @@ class AvailabilityTests(Base):
         for machine, forms in offered.items():
             if machine in FIVE:
                 continue
-            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production")
+            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and not (machine == "MP3" and f["code"] == "VINTO-P1-01"))
             self.assertEqual(sorted(forms), expected, machine)
             self.assertNotIn(P110, forms, machine)
 

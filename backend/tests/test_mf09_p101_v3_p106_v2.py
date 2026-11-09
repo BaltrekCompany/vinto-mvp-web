@@ -20,6 +20,7 @@ from uuid import uuid4
 from pydantic import SecretStr
 
 from app import capture_service as _capture_service
+from app import mp3_inspection_policy as _mp3_policy
 from app.assignments import service as _assignments_service
 from app.auth.service import create_user
 from app.config import settings
@@ -153,9 +154,18 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
     async def post(self, assignment, code, values, old=None):
         body = {"capture_id": str(uuid4()), "form_code": code, "assignment_id": assignment["id"], "device_key": str(uuid4()), "values": values}
+        # Pruebas de REGRESIÓN HISTÓRICA MF-09: esta suite emula capturas
+        # cuando P1-01 todavía se ofrecía en MP3. El aislamiento actual se
+        # verifica separadamente en test_mp3_rg01_http_pg17.
+        if code == P101:
+            with patch.object(_mp3_policy, "assert_form_machine", return_value=None):
+                if old is None:
+                    return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
+                with patch.object(_capture_service, "published_form_version", return_value=self.old[old]):
+                    return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
         if old is None:
             return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
-        with patch.object(_capture_service, "published_form_version", return_value=self.old[old]):  # solo aquí se fuerza la versión anterior, como antes de publicar la nueva
+        with patch.object(_capture_service, "published_form_version", return_value=self.old[old]):
             return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
 
     def scalar(self, query, params=()):
@@ -252,7 +262,11 @@ class P101Tests(Base):
         self.assertEqual(reply.status, 200, reply.text)
         for machine in ("MP1", "MP3"):
             m = [m for s in reply.json()["sectors"] for m in s["machines"] if m["code"] == machine][0]
-            self.assertEqual(len([f for f in m["forms"] if f["code"] in (P101, P106)]), 2, machine)
+            if machine == "MP1":
+                self.assertEqual(len([f for f in m["forms"] if f["code"] in (P101, P106)]), 2, machine)
+            else:
+                self.assertNotIn(P101, [f["code"] for f in m["forms"]], "P1-01 MP3 solo histórico")
+                self.assertEqual(len([f for f in m["forms"] if f["code"] in ("VINTO-MP3-01", P106)]), 2, machine)
 
 
 class P106Tests(Base):

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.auth.errors import FormNotFoundError, FormNotLinkedToMachineError, MachineNotFoundError, UserNotFoundError
+from app.mp3_inspection_policy import allowed_for_machine
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,12 @@ def _require_offered(connection, form_id, machine_id, machine_code, form_code) -
     sector activos, y la versión PUBLICADA MÁS RECIENTE del formulario vinculada a la máquina. Un vínculo que solo existe en una versión publicada anterior (p. ej. P1-05 v1
     en MP1 tras la v2 solo para MP3) NO cuenta: esa máquina ya no ofrece el formulario. Las versiones históricas no se tocan; una concesión ya guardada cuyo par deja de
     ofrecerse queda inerte y se puede revocar (revocar no exige que el par siga ofrecido)."""
+    # El vínculo histórico P1-01/MP3 permanece en catálogo para lectura, pero
+    # ya NO es un formulario concedible para nuevas capturas.
+    if not allowed_for_machine(form_code, machine_code):
+        raise FormNotLinkedToMachineError(
+            f"El formulario {form_code!r} no se ofrece para nuevas capturas en {machine_code!r}"
+        )
     form_active, machine_active, sector_active, linked = connection.execute(
         """SELECT f.active, m.active, s.active,
                   EXISTS (SELECT 1 FROM (SELECT fv.id FROM vinto_config.form_version fv WHERE fv.form_id = f.id AND fv.status = 'published'

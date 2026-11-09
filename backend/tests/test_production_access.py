@@ -37,7 +37,8 @@ F6 = "VINTO-P1-06"
 # vinculados a BELOIT/OVER/COPASA/PERICHUN -- MP1/MP3 (Bobinas) nunca los ofrecen. SHIPPED_FORMS debe
 # quedarse en el subconjunto que SÍ aplica a MP1/MP3, no en la política entera.
 SHIPPED_FORMS = sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
-MP1_FORMS = [c for c in SHIPPED_FORMS if c not in ("VINTO-P1-05", "VINTO-P1-31")]  # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3
+MP1_FORMS = [c for c in SHIPPED_FORMS if c not in ("VINTO-P1-05", "VINTO-P1-31")]
+MP3_FORMS = sorted((set(SHIPPED_FORMS) - {"VINTO-P1-01"}) | {"VINTO-MP3-01"})  # RG01 retira solo la oferta nueva de P1-01 MP3  # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3
 ARTICLE = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
 STATE = {}
 
@@ -101,11 +102,12 @@ class RealConfigurationTests(AvailabilityCase):
         # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_POLICY también suma P1-07/10/30 (Rebobinado), por lo que
         # ya no coincide con lo que se ofrece en MP1/MP3 (esos 3 solo están vinculados a BELOIT/OVER/
         # COPASA/PERICHUN) -- se compara contra el subconjunto real de Bobinas, no contra la política entera.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_POLICY - {"VINTO-MP3-01"}, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertIn("VINTO-MP3-01", SHIPPED_POLICY, "RG01 es la única incorporación autorizada de captura central")
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         reply = await self.get(who="OPERACION")  # granted BOBINAS + the fictitious Rebobinado (ZZFIX), never the REAL REBOBINADO
         self.assertEqual(reply.status, 200)
-        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": SHIPPED_FORMS}})
+        self.assertEqual(self.codes(reply), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": MP3_FORMS}})
         self.assertNotIn(REB_SECTOR, reply.text)  # the real REBOBINADO is operational, but never granted to this user
         self.assertNotIn('"REBOBINADO"', reply.text)
         self.assertEqual(self.codes(await self.get(who="SOLO_REBOBINADO")), {})  # only the fictitious Rebobinado granted: nothing real is operational for this user
@@ -113,7 +115,7 @@ class RealConfigurationTests(AvailabilityCase):
     async def test_401_and_scope(self):
         self.assertEqual((await call("GET", "/api/production/machines")).status, 401)
         self.assertEqual((await self.get(who="SIN_SECTOR")).json(), {"sectors": []})
-        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": SHIPPED_FORMS}})
+        self.assertEqual(self.codes(await self.get(who="SOLO_BOBINAS")), {"BOBINAS": {"MP1": MP1_FORMS, "MP3": MP3_FORMS}})
 
     async def test_the_permission_dependency_requires_at_least_one_view_permission(self):
         class Fake:

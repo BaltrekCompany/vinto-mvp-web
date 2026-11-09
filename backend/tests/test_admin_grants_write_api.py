@@ -279,16 +279,16 @@ class IndependenceTests(Base):
     async def active(self, uid):
         return sorted((g["machine"]["code"], g["form"]["code"]) for g in (await self.get(f"/api/admin/users/{uid}/grants")).json()["grants"])
 
-    async def test_p1_01_on_mp1_does_not_grant_it_on_mp3_and_each_is_revoked_separately(self):
+    async def test_p1_02_on_mp1_does_not_grant_it_on_mp3_and_each_is_revoked_separately(self):
         uid = self.target()
-        self.assertTrue((await self.post(uid, GRANT, "MP1", P101)).json()["changed"])
-        self.assertEqual(await self.active(uid), [("MP1", P101)], "conceder MP1 no concede MP3")
-        self.assertTrue((await self.post(uid, GRANT, "MP3", P101)).json()["changed"])
-        self.assertEqual(await self.active(uid), [("MP1", P101), ("MP3", P101)])
-        self.assertTrue((await self.post(uid, REVOKE, "MP1", P101)).json()["changed"])
-        self.assertEqual(await self.active(uid), [("MP3", P101)], "revocar MP1 deja MP3")
-        again = (await self.post(uid, GRANT, "MP1", P102)).json()
-        self.assertEqual((again["changed"], await self.active(uid)), (True, [("MP1", P102), ("MP3", P101)]), "otro formulario de la misma máquina es otra concesión")
+        self.assertTrue((await self.post(uid, GRANT, "MP1", P102)).json()["changed"])
+        self.assertEqual(await self.active(uid), [("MP1", P102)], "conceder MP1 no concede MP3")
+        self.assertTrue((await self.post(uid, GRANT, "MP3", P102)).json()["changed"])
+        self.assertEqual(await self.active(uid), [("MP1", P102), ("MP3", P102)])
+        self.assertTrue((await self.post(uid, REVOKE, "MP1", P102)).json()["changed"])
+        self.assertEqual(await self.active(uid), [("MP3", P102)], "revocar MP1 deja MP3")
+        again = (await self.post(uid, GRANT, "MP1", P101)).json()
+        self.assertEqual((again["changed"], await self.active(uid)), (True, [("MP1", P101), ("MP3", P102)]), "otro formulario de la misma máquina es otra concesión")
 
     async def test_p1_10_is_granted_and_revoked_independently_on_each_of_the_five_rebobinadoras(self):
         uid = self.target(sectors_=("BOBINAS", "REBOBINADO"))
@@ -417,7 +417,7 @@ class IdempotencyAndHistoryTests(Base):
     async def test_the_five_get_endpoints_reflect_the_changes(self):
         uid = self.target()
         await self.post(uid, GRANT, "MP1", P101)
-        await self.post(uid, GRANT, "MP3", P101)
+        await self.post(uid, GRANT, "MP3", P102)
         await self.post(uid, REVOKE, "MP1", P101)
         active = (await self.get(f"/api/admin/users/{uid}/grants")).json()
         self.assertEqual([(g["machine"]["code"], g["state"]) for g in active["grants"]], [("MP3", "active")])
@@ -464,11 +464,11 @@ class ConcurrencyTests(Base):
 
     async def test_mp1_and_mp3_grants_racing_each_other_do_not_interfere_and_a_grant_revoke_race_stays_consistent(self):
         uid = self.target()
-        replies = await asyncio.gather(*([self.post(uid, GRANT, "MP1", P101) for _ in range(3)] + [self.post(uid, GRANT, "MP3", P101) for _ in range(3)]))
+        replies = await asyncio.gather(*([self.post(uid, GRANT, "MP1", P102) for _ in range(3)] + [self.post(uid, GRANT, "MP3", P102) for _ in range(3)]))
         self.assertEqual(sorted(r.json()["changed"] for r in replies), [False] * 4 + [True] * 2)
         self.assertEqual(sorted(g.machine_code for g in machine_form_grants_for_user(self.connection, uid)), ["MP1", "MP3"])
         other = self.target()
-        replies = await asyncio.gather(*([self.post(other, GRANT, "MP1", P101) for _ in range(4)] + [self.post(other, REVOKE, "MP1", P101) for _ in range(4)]))
+        replies = await asyncio.gather(*([self.post(other, GRANT, "MP1", P102) for _ in range(4)] + [self.post(other, REVOKE, "MP1", P102) for _ in range(4)]))
         self.assertTrue(all(r.status == 200 for r in replies), [r.text for r in replies if r.status != 200])
         rows = machine_form_grants_for_user(self.connection, other, include_revoked=True)
         self.assertLessEqual(sum(g.active for g in rows), 1, "nunca dos concesiones activas de la misma terna")

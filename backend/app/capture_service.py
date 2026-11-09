@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 
-from app import capture_uniqueness, dependent_options
+from app import capture_uniqueness, dependent_options, mp3_inspection_policy
 from app.assignments.errors import AssignmentNotFoundError
 from app.assignments.service import _machine_lock
 from app.capture_errors import (AssignmentNotActiveError, AssignmentStaleError, CaptureIdempotencyConflictError, CaptureNotFoundError,
@@ -58,6 +58,7 @@ FORM_CODE = "VINTO-P1-06"  # formulario histórico F6: respuesta por defecto de 
 CENTRAL_FORM_CODES = frozenset({
     FORM_CODE, "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30",
     "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29",
+    mp3_inspection_policy.RG_MP3_FORM_CODE,
 })
 PRODUCTION_AREA = "production"
 GROUPS_KEY = "_groups"  # propiedad RESERVADA de `values` para los grupos repetibles; ningún campo de una definición puede llamarse así
@@ -663,9 +664,18 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
 
         device_id = _resolve_device(connection, device_key, machine_id)
 
+        # MP3 RG01: el legacy P1-01 deja de aceptar capturas NUEVAS en MP3,
+        # sin alterar su historia ni la ficha vigente de MP1. Máquina de BD, no del cliente.
+        mp3_inspection_policy.assert_form_machine(connection, form_code, machine_id)
         form_version_id = published_form_version(connection, form_code, machine_id)
         fields, groups, clean = _prepare_content(connection, form_version_id, values)
-        _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean)  # MF-12B: con el lock de la máquina ya tomado, en esta misma transacción
+        _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean)
+        # El advisory lock de máquina está tomado por lock_active_assignment:
+        # serializa inclusive dos capturas simultáneas desde diferentes OT/dispositivos.
+        mp3_inspection_policy.assert_one_per_shift(
+            connection, form_code=form_code, machine_id=machine_id,
+            operating_date=operating_date, shift_schedule_id=schedule_id,
+        )  # MF-12B: con el lock de la máquina ya tomado, en esta misma transacción
 
         connection.execute(
             """INSERT INTO vinto_txn.capture (id, form_version_id, machine_id, shift_schedule_id, device_id, assignment_id, operating_date, captured_at, status)
