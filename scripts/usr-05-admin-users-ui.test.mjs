@@ -74,7 +74,7 @@ test("create form contains verified username, active profile catalogue and two s
 test("all account form variants have white input backgrounds and legible text in dark OS mode",()=>{
     for (const action of ["create","edit","reset","deactivate","reactivate"]) {
         const markup=html(ui.AccountForm,{target:target(action,action==="reactivate"?{...U,active:false}:U),profiles,submitting:false,onConfirm:noop,onClose:noop});
-        const inputs=[...markup.matchAll(/<input\\b[^>]*>/g)].map((match)=>match[0]);
+        const inputs=[...markup.matchAll(/<input\b[^>]*>/g)].map((match)=>match[0]);
         assert.ok(inputs.length>0, action+" must have an input");
         for (const field of inputs) {
             for(const token of ["bg-white","text-slate-950","dark:bg-white","dark:text-slate-950","border-slate-300"])
@@ -82,7 +82,7 @@ test("all account form variants have white input backgrounds and legible text in
         }
         assert.ok(markup.includes("text-slate-900") && markup.includes("dark:text-slate-900"),action+" cancel action contrast");
         if(action==="create" || action==="edit") {
-            const select=markup.match(/<select\\b[^>]*>/)?.[0] || "";
+            const select=markup.match(/<select\b[^>]*>/)?.[0] || "";
             for(const token of ["bg-white","text-slate-950","dark:bg-white","dark:text-slate-950"])
                 assert.ok(select.includes(token),action+" select missing "+token);
         }
