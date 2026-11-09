@@ -46,7 +46,7 @@ test("rejection requires a review step with the exact four entered fields", () =
   assert.match(decision, /\{classLabel\}/);
   assert.match(decision, /\{detail\.trim\(\)\}/);
   assert.match(decision, /\{correctiveAction\.trim\(\)\}/);
-  assert.match(decision, />Confirmar rechazo definitivo\}/); // button label inside ternary
+  assert.match(decision, /"Confirmar rechazo definitivo"/); // explicit second-stage submit
   assert.match(decision, /Volver a editar/);
   assert.match(decision, /setReview\(false\)/);
   assert.match(decision, /rejection_type: rejectionType, classification, detail: detail\.trim\(\), corrective_action: correctiveAction\.trim\(\)/);
