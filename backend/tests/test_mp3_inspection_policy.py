@@ -56,7 +56,7 @@ class MP3PolicyTests(unittest.TestCase):
         query, params = c.calls[0]
         self.assertIn("existing_schedule.shift_id = new_schedule.shift_id", query)
         self.assertIn("c.operating_date = %s", query)
-        self.assertIn("c.status IN ('submitted', 'closed')", query)
+        self.assertIn("c.status IN ('submitted', 'closed', 'blocked')", query)
         self.assertEqual(params, ("schedule", p.RG_MP3_FORM_CODE, "machine", date(2026, 11, 9)))
 
     def test_second_capture_of_the_same_shift_is_a_conflict(self):
