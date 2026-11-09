@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/components/vinto/brand";
 import { AdminChangeDialog, AdminNotice, AdminSummaryCards, AdminUserDetail, AdminUserList } from "@/components/vinto/admin/admin-parts";
 import { AdminGrantDialog, AdminGrantsSection, type GrantsPanelProps } from "@/components/vinto/admin/admin-grants-parts";
-import { adminApi, grantsApi } from "@/lib/vinto/admin-api";
+import { AccountDialog, AccountToolbar, AccountUncertain, AccountUserActions } from "@/components/vinto/admin/admin-user-accounts";
+import { accountApi, adminApi, grantsApi } from "@/lib/vinto/admin-api";
 import {
     BLOCK_TITLES, FAILURE_MESSAGES, blockMessage, deriveAccess, filterUsers, isLimited, summarize, userLabel,
     type AccessBlock, type AdminFailureKind, type AdminResource, type AdminResult, type AdminSector, type AdminUser, type ChangeState, type SectorChange, type UserSectors,
@@ -19,6 +20,8 @@ import {
     type ChangeOperation, type FormRow, type GrantFeedback, type FormsCatalog, type GrantChangeState, type GrantChange, type GrantTarget, type MachineCatalog, type Uncertainty, type UserDetail, type UserGrants,
 } from "@/lib/vinto/admin-grants";
 import { useAdminResource, useGrantChange, useSectorChange } from "@/lib/vinto/use-admin";
+import { useAccountChange } from "@/lib/vinto/use-admin-users";
+import type { AccountOutcome, AccountProfile } from "@/lib/vinto/admin-users";
 
 // Vista de presentación de la consola: recibe los recursos ya cargados y los manejadores (sin hooks de red), de modo que cada estado se puede renderizar y probar.
 export type AdminConsoleViewProps = {
@@ -28,6 +31,7 @@ export type AdminConsoleViewProps = {
     onRetryUsers: () => void; onRetryCatalog: () => void; onRetryDetail: () => void; onLogout: () => void;
     // MF-13-01C.3 (opcionales: la administración por sector se puede renderizar sola): sección «Máquinas y formularios» y su diálogo de confirmación.
     grantsPanel?: GrantsPanelProps; grantDialog?: { state: GrantChangeState; onConfirm: () => void; onClose: () => void };
+    accountToolbar?: ReactNode; accountSection?: ReactNode; accountDialog?: ReactNode; accountWarning?: ReactNode; accountBusy?: boolean;
 };
 
 export function AdminConsoleView(props: AdminConsoleViewProps) {
@@ -47,14 +51,18 @@ export function AdminConsoleView(props: AdminConsoleViewProps) {
             {block && <AdminNotice title={BLOCK_TITLES[block]} text={blockMessage(block)}/>}
             {users.status === "error" && !block && <AdminNotice title="No se pudieron cargar los usuarios" text={FAILURE_MESSAGES[users.kind]} onRetry={props.onRetryUsers}/>}
             <AdminSummaryCards summary={summary} catalogSize={catalog.status === "ready" ? catalog.data.length : null}/>
+            {props.accountToolbar}
+            {props.accountWarning}
             {(users.status === "loading" || users.status === "idle") && <div role="status" aria-live="polite" className="rounded-2xl border bg-white p-6 text-sm font-semibold text-slate-700">Cargando usuarios…</div>}
             {list && <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                <AdminUserList users={visible} retrieved={list.length} query={query} onQuery={props.onQuery} selectedId={selectedId} onSelect={props.onSelect} limited={isLimited(list.length)} disabled={block !== null}/>
-                <AdminUserDetail user={selected} detail={detail} catalog={catalog} block={block} onGrant={(sector) => props.onOpen("grant", sector)} onRevoke={(sector) => props.onOpen("revoke", sector)} onRetryDetail={props.onRetryDetail} onRetryCatalog={props.onRetryCatalog}/></div>}
+                <AdminUserList users={visible} retrieved={list.length} query={query} onQuery={props.onQuery} selectedId={selectedId} onSelect={props.onSelect} limited={isLimited(list.length)} disabled={block !== null || !!props.accountBusy}/>
+                <AdminUserDetail user={selected} detail={detail} catalog={catalog} block={block} locked={props.accountBusy} onGrant={(sector) => props.onOpen("grant", sector)} onRevoke={(sector) => props.onOpen("revoke", sector)} onRetryDetail={props.onRetryDetail} onRetryCatalog={props.onRetryCatalog}/></div>}
+            {selected && props.accountSection}
             {selected && props.grantsPanel && <AdminGrantsSection user={selected} {...props.grantsPanel}/>}
         </section>
         <AdminChangeDialog state={change} onConfirm={props.onConfirm} onClose={props.onClose}/>
         {props.grantDialog && <AdminGrantDialog state={props.grantDialog.state} onConfirm={props.grantDialog.onConfirm} onClose={props.grantDialog.onClose}/>}
+        {props.accountDialog}
     </main>;
 }
 
@@ -67,8 +75,11 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
     // MF-13-01C.3: máquina elegida (solo para MOSTRAR formularios; el objetivo de una operación se fija al abrir el diálogo), resultado incierto y último resultado de ESTE usuario.
     const [machineCode, setMachineCode] = useState<string | null>(null), [uncertainty, setUncertainty] = useState<Uncertainty>(null);
     const [feedback, setFeedback] = useState<GrantFeedback | null>(null);
+    // Un POST con error de red puede haberse confirmado. Bloqueamos nuevas operaciones hasta una relectura manual correcta.
+    const [accountUncertainty, setAccountUncertainty] = useState<"none" | "unconfirmed" | "checking">("none");
     const users = useAdminResource<AdminUser[]>(`users:${session}`, true, (signal) => adminApi.listUsers(signal), onSessionLost);
     const catalog = useAdminResource<AdminSector[]>(`sectors:${session}`, true, (signal) => adminApi.listSectors(signal), onSessionLost);
+    const profiles = useAdminResource<AccountProfile[]>(`profiles:${session}`, true, (signal) => accountApi.listProfiles(signal), onSessionLost);
     const detail = useAdminResource<UserSectors>(`detail:${session}:${selectedId ?? "none"}`, selectedId !== null, (signal) => adminApi.getUserSectors(selectedId ?? "", signal), onSessionLost);
     // Lecturas de «Máquinas y formularios»: solo con un usuario seleccionado, siempre desde la API (nada de listas estáticas ni almacenamiento local). Las claves incluyen sesión y usuario:
     // al cambiar se cancela la petición anterior y su resultado jamás se muestra en la vista del usuario actual.
@@ -79,7 +90,7 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
     const grants = useAdminResource<UserGrants>(`grants:${session}:${selectedId ?? "none"}`, picked, (signal) => grantsApi.getUserGrants(selectedId ?? "", signal), onSessionLost);
     const history = useAdminResource<UserGrants>(`history:${session}:${selectedId ?? "none"}`, picked, (signal) => grantsApi.getUserGrantsHistory(selectedId ?? "", signal), onSessionLost);
     // Un 403 (permiso u origen) en cualquier lectura o cambio bloquea las acciones; nunca se interpreta como sesión vencida (eso es el 401).
-    const block = deriveAccess([users.view, catalog.view, detail.view, machines.view, forms.view, userDetail.view, grants.view, history.view], changeFailure);
+    const block = deriveAccess([users.view, catalog.view, profiles.view, detail.view, machines.view, forms.view, userDetail.view, grants.view, history.view], changeFailure);
     const change = useSectorChange((result: AdminResult<SectorChange>) => {
         if (!result.ok && result.kind === "session") { onSessionLost(); return; } // 401: vuelve al Login y se limpia el estado administrativo
         if (!result.ok && (result.kind === "forbidden" || result.kind === "origin")) setChangeFailure(result.kind); // 403: se bloquean las acciones
@@ -96,6 +107,29 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
         if (plan.user) { grants.refresh(); history.refresh(); userDetail.refresh(); }
         if (plan.catalogs) { machines.refresh(); forms.refresh(); }
     });
+    // USR-05: mismas garantías de sesión, red y relectura que las concesiones; nunca se asume un éxito tras un timeout.
+    const accountChange = useAccountChange((result: AdminResult<AccountOutcome>) => {
+        if (!result.ok && result.kind === "session") { onSessionLost(); return; }
+        if (!result.ok && (result.kind === "forbidden" || result.kind === "origin")) setChangeFailure(result.kind);
+        if (!result.ok && result.kind === "unavailable") setAccountUncertainty("unconfirmed");
+        users.refresh(); detail.refresh(); userDetail.refresh(); grants.refresh(); history.refresh();
+    });
+    // Igual que las concesiones: resolver la relectura durante el render (solo en una transición
+    // concreta), evitando efectos que disparen escrituras síncronas de estado.
+    const readComplete = accountUncertainty === "checking" && users.view.status === "ready" && !users.view.refreshing;
+    const readFailed = accountUncertainty === "checking" && users.view.status === "error" && !users.view.refreshing;
+    if (readComplete) setAccountUncertainty("none");
+    else if (readFailed) setAccountUncertainty("unconfirmed");
+    const effectiveAccountUncertainty = readComplete ? "none" : readFailed ? "unconfirmed" : accountUncertainty;
+    const accountBusy = accountChange.state.step !== "closed" || effectiveAccountUncertainty !== "none";
+    const sectorBusy = change.state.step !== "closed" || grantChange.state.step !== "closed";
+    const accountLocked = block !== null || accountBusy || sectorBusy || users.view.status !== "ready" || users.view.refreshing ||
+        profiles.view.status !== "ready" || profiles.view.refreshing || (profiles.view.status === "ready" && profiles.view.data.length === 0);
+    function recheckAccount() {
+        if (accountUncertainty !== "unconfirmed") return;
+        setAccountUncertainty("checking");
+        users.refresh(); detail.refresh(); userDetail.refresh(); grants.refresh(); history.refresh();
+    }
     // La incertidumbre se cierra solo con una relectura completa y correcta del usuario seleccionado (o al cambiar de usuario). Se ajusta durante el render, no en un efecto.
     const settledUncertainty = nextUncertainty(uncertainty, selectedId, isReread([grants.view, userDetail.view]));
     if (settledUncertainty !== uncertainty) setUncertainty(settledUncertainty);
@@ -103,19 +137,28 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
     const selected = users.view.status === "ready" ? users.view.data.find((candidate) => candidate.id === selectedId) ?? null : null;
     function openGrant(operation: ChangeOperation, row: FormRow, machine: { code: string; name: string }) {
         if (selected === null || userDetail.view.status !== "ready" || machines.view.status !== "ready" || grants.view.status !== "ready") return;
-        if (actionsLocked({ block, uncertain, views: [userDetail.view, machines.view, grants.view] })) return;
+        if (accountBusy || actionsLocked({ block, uncertain, views: [userDetail.view, machines.view, grants.view] })) return;
         const sector = findMachine(machines.view.data, machine.code)?.sector ?? null, person = userDetail.view.data;
         const inert = operation === "grant" ? inertReasons({ userActive: person.active, grantedSectors: person.sectors, sector, offered: row.offered }) : row.inert;
         grantChange.open({ operation, userId: selected.id, userLabel: userLabel(selected), machineCode: machine.code, machineName: machine.name, formCode: row.code, formName: row.name, offered: row.offered,
             inert, sectorGranted: sector !== null && person.sectors.some((granted) => granted.code === sector.code) });
     }
     const panel: GrantsPanelProps = {
-        detail: userDetail.view, catalog: machines.view, forms: forms.view, grants: grants.view, history: history.view, machineCode, onSelectMachine: setMachineCode, block, uncertain,
+        detail: userDetail.view, catalog: machines.view, forms: forms.view, grants: grants.view, history: history.view, machineCode, onSelectMachine: setMachineCode, block, uncertain: uncertain || accountBusy,
         feedback: visibleFeedback(feedback, selectedId), onOpen: openGrant,
         onRetryDetail: userDetail.refresh, onRetryCatalog: machines.refresh, onRetryForms: forms.refresh, onRetryGrants: grants.refresh, onRetryHistory: history.refresh,
     };
-    return <AdminConsoleView user={user} users={users.view} catalog={catalog.view} detail={detail.view} query={query} onQuery={setQuery} selectedId={selectedId} onSelect={setSelectedId}
-        block={block} change={change.state} onOpen={(operation, sector) => { if (selected && block === null) change.open({ operation, userId: selected.id, userLabel: userLabel(selected), sector }); }}
+    return <AdminConsoleView user={user} users={users.view} catalog={catalog.view} detail={detail.view} query={query} onQuery={setQuery} selectedId={selectedId}
+        onSelect={(id) => { if (!accountBusy) { setSelectedId(id); setMachineCode(null); } }}
+        block={block} change={change.state} onOpen={(operation, sector) => { if (selected && block === null && !accountBusy) change.open({ operation, userId: selected.id, userLabel: userLabel(selected), sector }); }}
         onConfirm={change.confirm} onClose={change.close} onRetryUsers={users.refresh} onRetryCatalog={catalog.refresh} onRetryDetail={detail.refresh} onLogout={onLogout}
-        grantsPanel={panel} grantDialog={{ state: grantChange.state, onConfirm: grantChange.confirm, onClose: grantChange.close }}/>;
+        grantsPanel={panel} grantDialog={{ state: grantChange.state, onConfirm: grantChange.confirm, onClose: grantChange.close }}
+        accountBusy={accountBusy}
+        accountToolbar={<AccountToolbar profiles={profiles.view} locked={accountLocked} onRetry={profiles.refresh}
+            onCreate={() => { if (!accountLocked) accountChange.open({ action: "create", user: null }); }}/>}
+        accountSection={selected ? <AccountUserActions user={selected} currentUserId={session} locked={accountLocked}
+            onOpen={(target) => { if (!accountLocked) accountChange.open(target); }}/> : null}
+        accountWarning={effectiveAccountUncertainty !== "none" ? <AccountUncertain checking={effectiveAccountUncertainty === "checking"} onRetry={recheckAccount}/> : null}
+        accountDialog={<AccountDialog state={accountChange.state} profiles={profiles.view.status === "ready" ? profiles.view.data : []}
+            onConfirm={(input) => { void accountChange.submit(input); }} onClose={accountChange.close}/>}/>;
 }

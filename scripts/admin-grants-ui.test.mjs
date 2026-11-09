@@ -135,7 +135,7 @@ test("published, offered, enabled for capture and granted are shown as separate 
   for (const expected of ["Publicado v1", "Ofrecido a la máquina", "Sin política de captura central", "No concedido", "no significa que el formulario no exista", "otra ruta especializada"]) assert.ok(p103.includes(expected), expected);
   assert.ok(has(text, "Conceder VINTO-P1-03 en MP1"), "sin política de captura central igualmente se puede conceder");
   assert.ok(!/efectiv/i.test(p106 + p103), "ninguna fila habla de acceso efectivo");
-  assert.ok(text.includes("todavía no se aplican a las capturas") && text.includes('data-notice="not-effective"'));
+  assert.ok(text.includes("solo ocurre cuando la autorización efectiva") && text.includes('data-notice="not-effective"'));
 });
 
 test("an inert grant (pair no longer offered) is marked inert, can be revoked and cannot be granted again", () => {
@@ -202,7 +202,7 @@ const dialog = (state) => html(parts.GrantDialogBody, { state, onConfirm: noop, 
 
 test("dialog: confirming names user, machine, form and operation, offers Cancelar and the confirm action; submitting disables both and says so", () => {
   const confirming = dialog({ step: "confirming", target: target({ sectorGranted: false, inert: ["sector_missing"] }) });
-  for (const expected of ["Conceder acceso a un formulario", "<dt", "Usuario", "Operación DEV", "Máquina", "MP1", "Formulario", "VINTO-P1-01 · Parámetros", "Conceder", "Conceder acceso", "Cancelar", "NO se concede automáticamente", "Concesión inerte", "todavía no se aplican a las capturas"]) assert.ok(confirming.includes(expected), expected);
+  for (const expected of ["Conceder acceso a un formulario", "<dt", "Usuario", "Operación DEV", "Máquina", "MP1", "Formulario", "VINTO-P1-01 · Parámetros", "Conceder", "Conceder acceso", "Cancelar", "NO se concede automáticamente", "Concesión inerte", "solo ocurre cuando la autorización efectiva"]) assert.ok(confirming.includes(expected), expected);
   assert.ok(!/<button[^>]*\sdisabled=""/.test(confirming), "ningún botón deshabilitado al confirmar");
   const revoking = dialog({ step: "confirming", target: target({ operation: "revoke" }) });
   assert.ok(revoking.includes("Revocar acceso a un formulario") && revoking.includes("Revocar acceso") && revoking.includes("conserva el historial") && revoking.includes("bg-red-700"));
