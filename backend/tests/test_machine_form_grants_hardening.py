@@ -155,6 +155,16 @@ class GrantablePairPolicyTests(Db):
         self.assertNotIn(("MP1", P105), grantable)
         self.assertIn(("MP3", P105), grantable)
 
+    def test_rg01_cutover_disallows_old_mp3_grant_but_preserves_mp1(self):
+        # El vínculo histórico MP3/P1-01 queda para consultas antiguas,
+        # pero no debe producir nuevas concesiones que la API rechazaría.
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP3", P101)
+        self.assertTrue(self.grant(self.other, "MP1", P101))
+        self.assertTrue(self.grant(self.other, "MP3", "VINTO-MP3-01"))
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP1", "VINTO-MP3-01")
+
     def test_an_existing_grant_whose_pair_stops_being_offered_stays_stored_and_can_be_revoked(self):
         self.assertTrue(self.grant(self.other, "MP3", P105))
         self.c.execute("UPDATE vinto_master.machine SET active = false WHERE code = 'MP3'")
