@@ -321,17 +321,17 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
     async def test_14_cors_preflight_allows_patch_for_trusted_origin_only(self):
         target, _ = self.make_user()
         options = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
-                             origin=ORIGIN,
-                             extra_headers=[("access-control-request-method", "PATCH"),
+                             extra_headers=[("origin", ORIGIN),
+                                            ("access-control-request-method", "PATCH"),
                                             ("access-control-request-headers", "content-type")])
         self.assertEqual(options.status, 200, options.text)
         self.assertIn("PATCH", options.header("access-control-allow-methods"))
         self.assertEqual(options.header("access-control-allow-origin"), ORIGIN)
         self.assertEqual(options.header("access-control-allow-credentials"), "true")
-        forbidden = await call("OPTIONS", f"/api/admin/users/{target.user_id}", origin=ORIGIN,
-                               extra_headers=[("access-control-request-method", "DELETE")])
+        forbidden = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
+                               extra_headers=[("origin", ORIGIN), ("access-control-request-method", "DELETE")])
         self.assertEqual(forbidden.status, 400)
         other = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
-                           origin="http://evil.example",
-                           extra_headers=[("access-control-request-method", "PATCH")])
+                           extra_headers=[("origin", "http://evil.example"),
+                                          ("access-control-request-method", "PATCH")])
         self.assertNotEqual(other.header("access-control-allow-origin"), "http://evil.example")
