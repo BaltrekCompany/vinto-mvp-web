@@ -1,4 +1,4 @@
-name: VINTO Calidad PR159 isolated integration
+name: VINTO Calidad isolated integration and UX
 
 on:
   pull_request:
@@ -8,6 +8,8 @@ on:
       - 'backend/migrations/0023_quality_release_decision.sql'
       - 'components/vinto/quality-bobbin-*'
       - 'lib/vinto/quality-decision-api.ts'
+      - 'scripts/quality-bobbin-inbox.test.mjs'
+      - 'scripts/quality-bobbin-ux.test.mjs'
       - '.github/workflows/quality-pr159-isolated.yml'
   push:
     branches:
@@ -89,6 +91,8 @@ jobs:
         run: |
           corepack enable
           pnpm install --frozen-lockfile
+      - name: Inbox and irreversible-decision UX regression
+        run: node --test scripts/quality-bobbin-inbox.test.mjs scripts/quality-bobbin-ux.test.mjs
       - name: TypeScript
         run: pnpm exec tsc --noEmit
       - name: ESLint
