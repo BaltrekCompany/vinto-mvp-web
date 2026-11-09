@@ -12,6 +12,12 @@ export const MP3_OPERATION_SECTIONS = MP3_INSPECTION_SECTIONS.map(s => ({
         "Lecturas opcionales. Las casillas repetidas guardan cada valor por separado.",
     keys: s.fields.map(f => f.key),
 }));
+/** Se conserva la etiqueta impresa; la posición diferencia casillas iguales. */
+export const MP3_OPERATION_HINTS: Readonly<Record<string, string>> = Object.fromEntries(
+    MP3_INSPECTION_FIELDS.filter(f => f.slot !== undefined).map(f => [
+        f.key, `Casilla ${f.slot} · lectura independiente dentro de ${f.label}`
+    ]),
+);
 export const MP3_OPERATION = defineCandidateForm(MP3_INSPECTION_FORM_CODE, MP3_OPERATION_FIELDS);
 export const MP3_OPERATION_AUTOMATIC = [
     "Operador (usuario autenticado)",
