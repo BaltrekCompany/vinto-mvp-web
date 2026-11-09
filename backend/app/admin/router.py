@@ -8,10 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.admin import catalog, grants_read, grants_write, service, user_creation, user_editing
+from app.admin import catalog, grants_read, grants_write, service, user_creation, user_editing, user_lifecycle
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
 from app.admin.schemas import (CatalogOut, FormsCatalogOut, GrantChangeIn, GrantChangeOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut,
-                               UserDetailOut, UserGrantsOut, UserSectorsOut, UserCreateIn, ProfileOut, UserEditIn, UserEditOut, AdminPasswordResetIn, AdminPasswordResetOut)
+                               UserDetailOut, UserGrantsOut, UserSectorsOut, UserCreateIn, ProfileOut, UserEditIn, UserEditOut, AdminPasswordResetIn, AdminPasswordResetOut, UserStateChangeIn, UserStateChangeOut)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -91,6 +91,31 @@ def reset_admin_password(user_id: UUID, body: AdminPasswordResetIn, response: Re
     response.headers.update(NO_STORE)
     return user_editing.reset_password(connection, target_id=user_id, actor_id=user.user_id,
                                        password=body.password)
+
+
+
+@router.post("/users/{user_id}/deactivate", response_model=UserStateChangeOut,
+             responses={**_ERRORS, 409: {"description": "Last active administrator"}, 415: {"description": "JSON required"}},
+             dependencies=[Depends(trusted_origin), Depends(json_body)])
+def deactivate_admin_user(user_id: UUID, body: UserStateChangeIn, response: Response,
+                          user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)),
+                          connection=Depends(get_identity_connection)):
+    """USR-04: deactivate account and permanently revoke its sessions."""
+    response.headers.update(NO_STORE)
+    return user_lifecycle.change_user_state(connection, target_id=user_id, actor_id=user.user_id,
+                                            active=False, reason=body.reason)
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserStateChangeOut,
+             responses={**_ERRORS, 415: {"description": "JSON required"}},
+             dependencies=[Depends(trusted_origin), Depends(json_body)])
+def reactivate_admin_user(user_id: UUID, body: UserStateChangeIn, response: Response,
+                          user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)),
+                          connection=Depends(get_identity_connection)):
+    """USR-04: restore account access without reinstating prior sessions."""
+    response.headers.update(NO_STORE)
+    return user_lifecycle.change_user_state(connection, target_id=user_id, actor_id=user.user_id,
+                                            active=True, reason=body.reason)
 
 
 @router.get("/sectors", response_model=list[SectorGrantOut], responses=_ERRORS)
