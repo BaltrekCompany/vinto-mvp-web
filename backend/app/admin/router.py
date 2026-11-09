@@ -8,10 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.admin import catalog, grants_read, grants_write, service
+from app.admin import catalog, grants_read, grants_write, service, user_creation
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
 from app.admin.schemas import (CatalogOut, FormsCatalogOut, GrantChangeIn, GrantChangeOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut,
-                               UserDetailOut, UserGrantsOut, UserSectorsOut)
+                               UserDetailOut, UserGrantsOut, UserSectorsOut, UserCreateIn, ProfileOut)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -50,6 +50,23 @@ def list_users(response: Response, limit: int = Query(default=service.DEFAULT_LI
                _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_identity_connection)):
     response.headers.update(NO_STORE)
     return service.list_users(connection, limit)
+
+
+@router.get("/profiles", response_model=list[ProfileOut], responses=_ERRORS)
+def list_profiles(response: Response, _user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)), connection=Depends(get_identity_connection)):
+    """Only active, recognized profiles from the reference catalog."""
+    response.headers.update(NO_STORE)
+    return user_creation.list_available_profiles(connection)
+
+
+@router.post("/users", status_code=201, response_model=UserAdminOut, responses={**_ERRORS, 409: {"description": "Username already exists"}, 415: {"description": "JSON required"}},
+             dependencies=[Depends(trusted_origin), Depends(json_body)])
+def create_admin_user(body: UserCreateIn, response: Response, user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)),
+                      connection=Depends(get_identity_connection)):
+    """USR-02: create an account with exactly one profile; no implicit sector or machine access."""
+    response.headers.update(NO_STORE)
+    return user_creation.create_admin_user(connection, actor_id=user.user_id, username=body.username,
+                                           display_name=body.display_name, profile_code=body.profile_code, password=body.password)
 
 
 @router.get("/sectors", response_model=list[SectorGrantOut], responses=_ERRORS)

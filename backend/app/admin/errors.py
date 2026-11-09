@@ -6,6 +6,17 @@ class AdminError(Exception):
     code = "ADMIN_ERROR"
     public_message = "Solicitud inválida"
 
+class UsernameAlreadyExists(AdminError):
+    http_status, code, public_message = 409, "USERNAME_ALREADY_EXISTS", "El nombre de usuario ya está registrado"
+
+
+class NewUserInvalid(AdminError):
+    http_status, code, public_message = 422, "NEW_USER_INVALID", "Los datos del nuevo usuario no son válidos"
+
+
+class ProfileUnavailable(AdminError):
+    http_status, code, public_message = 422, "PROFILE_UNAVAILABLE", "El perfil no existe o está inactivo"
+
 
 class UserNotFound(AdminError):
     http_status, code, public_message = 404, "USER_NOT_FOUND", "Usuario no encontrado"

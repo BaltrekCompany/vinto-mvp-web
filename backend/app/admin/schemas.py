@@ -25,6 +25,16 @@ class UserAdminOut(BaseModel):
     sectors: list[SectorGrantOut]
 
 
+class UserCreateIn(BaseModel):
+    """Administrative creation only. No actor, grants, must_change or role arrays from clients."""
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    username: str = Field(min_length=1, max_length=70)
+    display_name: str = Field(min_length=1, max_length=200)
+    profile_code: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+
+
 class UserSectorsOut(BaseModel):
     user_id: UUID
     username: str | None
