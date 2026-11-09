@@ -251,12 +251,12 @@ class WriteInventoryTests(unittest.TestCase):
 
     STATEMENT = re.compile(r"(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(vinto_(?:master|auth|audit))\.\"?(\w+)\"?")
     EXPECTED = {
-        "vinto_master.user": {"INSERT": ["app/auth/service.py"], "UPDATE": ["app/admin/user_editing.py", "app/auth/service.py"]},
+        "vinto_master.user": {"INSERT": ["app/auth/service.py"], "UPDATE": ["app/admin/user_editing.py", "app/admin/user_lifecycle.py", "app/auth/service.py"]},
         "vinto_master.user_profile": {"INSERT": ["app/auth/service.py"], "UPDATE": ["app/admin/user_editing.py"]},
         "vinto_master.user_sector": {"INSERT": ["app/auth/grants.py"], "DELETE": ["app/auth/grants.py"]},
         "vinto_master.user_machine_form_grant": {"INSERT": ["app/auth/machine_form_grants.py"], "UPDATE": ["app/auth/machine_form_grants.py"]},
         "vinto_auth.credential": {"INSERT": ["app/auth/service.py"], "UPDATE": ["app/admin/user_editing.py", "app/auth/service.py"]},
-        "vinto_auth.session": {"INSERT": ["app/auth/sessions.py"], "UPDATE": ["app/admin/user_editing.py", "app/auth/service.py", "app/auth/sessions.py"]},
+        "vinto_auth.session": {"INSERT": ["app/auth/sessions.py"], "UPDATE": ["app/admin/user_editing.py", "app/admin/user_lifecycle.py", "app/auth/service.py", "app/auth/sessions.py"]},
         "vinto_auth.auth_event": {"INSERT": ["app/admin/user_editing.py", "app/auth/service.py", "app/auth/sessions.py"]},
         "vinto_audit.audit_event": {"INSERT": ["app/admin/user_editing.py"]},
     }
