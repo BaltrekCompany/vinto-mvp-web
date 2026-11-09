@@ -5,10 +5,10 @@ La unica transicion autorizada es pending -> released/rejected.
 """
 from fastapi import HTTPException
 
-from app.sectors import scoped_sector_codes
+from app.sectors import SECTOR_BOBINAS, SECTOR_REBOBINADO, scoped_sector_codes
 from app.quality.decision_schemas import QualityDecisionIn
 
-DECISION_SECTORS = frozenset({"BOBINAS", "REBOBINADO"})
+DECISION_SECTORS = frozenset({SECTOR_BOBINAS, SECTOR_REBOBINADO})
 
 
 def decide_bobbin(connection, *, bobbin_id, actor_id, sectors, request_id, body: QualityDecisionIn):
