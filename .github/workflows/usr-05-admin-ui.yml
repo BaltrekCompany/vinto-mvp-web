@@ -1,0 +1,63 @@
+name: VINTO USR-05 administration UI QA
+
+on:
+  pull_request:
+    paths:
+      - 'components/vinto/admin/**'
+      - 'lib/vinto/admin.ts'
+      - 'lib/vinto/admin-api.ts'
+      - 'lib/vinto/admin-users.ts'
+      - 'lib/vinto/use-admin-users.ts'
+      - 'scripts/usr-05-admin-users*.test.mjs'
+      - 'scripts/admin*.test.mjs'
+      - 'docs/USR-05-interfaz-administracion-usuarios.md'
+      - '.github/workflows/usr-05-admin-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: usr-05-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: usr-05-node22
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VINTO_MVP_DOMAIN: vinto-mvp.baltrekservices.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install pinned frontend
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Account API, controller and UI regressions
+        run: |
+          node --test \
+            scripts/usr-05-admin-users.test.mjs \
+            scripts/usr-05-admin-users-ui.test.mjs \
+            scripts/admin.test.mjs \
+            scripts/admin-ui.test.mjs \
+            scripts/admin-grants.test.mjs \
+            scripts/admin-grants-ui.test.mjs
+      - name: TypeScript typecheck and scoped eslint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm exec eslint \
+            lib/vinto/admin.ts \
+            lib/vinto/admin-api.ts \
+            lib/vinto/admin-users.ts \
+            lib/vinto/use-admin-users.ts \
+            components/vinto/admin/admin-console.tsx \
+            components/vinto/admin/admin-user-accounts.tsx \
+            components/vinto/admin/admin-parts.tsx
+      - name: Build frontend without deployment
+        run: pnpm run build
