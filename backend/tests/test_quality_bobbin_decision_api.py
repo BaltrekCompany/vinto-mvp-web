@@ -105,6 +105,38 @@ class DecisionHttpTests(f3.BobbinApiCase):
         self.assertEqual((await self.decide(str(legacy), self.decision_body())).status, 404)
 
 
+    async def test_two_concurrent_decisions_allow_only_one_winner(self):
+        import asyncio
+        bobbin_id = await self.make_bobbin()
+        cookie = await self.cookie("CALIDAD")  # login antes de iniciar las peticiones simultaneas
+        path = f"/api/quality/bobbins/{bobbin_id}/decision"
+        before = self.scalar("SELECT count(*) FROM vinto_audit.audit_event")
+        release = self.decision_body()
+        reject = self.decision_body("reject")
+        outcomes = await asyncio.gather(
+            call("POST", path, json_body=release, cookie=cookie),
+            call("POST", path, json_body=reject, cookie=cookie),
+        )
+        self.assertEqual(sorted(x.status for x in outcomes), [200, 409])
+        self.assertIn(self.row(bobbin_id)[0], ("released", "rejected"))
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_audit.audit_event") - before, 1)
+
+    async def test_two_identical_concurrent_retries_are_idempotent(self):
+        import asyncio
+        bobbin_id = await self.make_bobbin()
+        cookie = await self.cookie("CALIDAD")
+        body = self.decision_body("reject")
+        path = f"/api/quality/bobbins/{bobbin_id}/decision"
+        before = self.scalar("SELECT count(*) FROM vinto_audit.audit_event")
+        results = await asyncio.gather(
+            call("POST", path, json_body=body, cookie=cookie),
+            call("POST", path, json_body=body, cookie=cookie),
+        )
+        self.assertEqual([x.status for x in results], [200, 200])
+        self.assertEqual(sorted(x.json()["already_decided"] for x in results), [False, True])
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_audit.audit_event") - before, 1)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
