@@ -1,0 +1,39 @@
+name: VINTO RG-MP3-01 isolated form contract
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/mp3-operation-spec.ts'
+      - 'scripts/mp3-operation-spec.test.mjs'
+      - 'docs/RG-MP3-01-contrato-captura-por-turno.md'
+      - '.github/workflows/mp3-rg01-contract.yml'
+  push:
+    branches:
+      - 'feat/mp3-rg01-form-20261109'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: MP3 field contract, types and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install locked dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: MP3 contract invariants
+        run: node --test scripts/mp3-operation-spec.test.mjs
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: ESLint
+        run: pnpm exec eslint lib/vinto/mp3-operation-spec.ts
