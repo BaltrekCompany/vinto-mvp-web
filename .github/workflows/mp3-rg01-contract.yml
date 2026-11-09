@@ -14,6 +14,9 @@ on:
       - 'backend/app/production_access.py'
       - 'backend/tests/test_mp3_inspection_policy.py'
       - 'scripts/mp3-operation-spec.test.mjs'
+      - 'scripts/generate-mp3-rg01-bundle.mjs'
+      - 'backend/seed_data/forms/VINTO-MP3-01.json'
+      - 'backend/seed_data/manifest.json'
       - 'docs/RG-MP3-01-contrato-captura-por-turno.md'
       - '.github/workflows/mp3-rg01-contract.yml'
   push:
@@ -40,6 +43,8 @@ jobs:
         run: |
           corepack enable
           pnpm install --frozen-lockfile
+      - name: Generate RG01 seed preview
+        run: node scripts/generate-mp3-rg01-bundle.mjs --emit
       - name: MP3 contract invariants
         run: node --test scripts/mp3-operation-spec.test.mjs
       - name: TypeScript
