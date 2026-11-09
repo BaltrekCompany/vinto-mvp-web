@@ -18,6 +18,7 @@ import contextlib
 
 from app import capture_service
 from app.quality import capture_service as quality_capture_service
+from app.mp3_inspection_policy import allowed_for_machine
 from app.quality import machine_capture_service
 from app.sectors import KNOWN_SECTOR_CODES, is_operational_sector
 
@@ -50,10 +51,10 @@ class Catalog:
         self.machine_by_code = {m["code"]: m for m in machines}
 
     def pair(self, machine_code, form_code) -> dict:
-        """Estado de un par (aunque no exista): published / offered / enabled_for_capture / capture_policies."""
+        """Estado actual del par: los vínculos históricos se listan, pero no necesariamente se ofrecen."""
         form, machine = self.forms.get(form_code), self.machine_by_code.get(machine_code)
         published = form is not None and form["effective_version"] is not None
-        offered = bool(published and machine is not None and (machine_code, form_code) in self.links and form["active"] and machine["active"] and machine["sector_active"])
+        offered = bool(published and machine is not None and (machine_code, form_code) in self.links and form["active"] and machine["active"] and machine["sector_active"] and allowed_for_machine(form_code, machine_code))
         policies = form["policies"] if form is not None else []
         enabled = bool(offered and policies and is_operational_sector(machine["sector_code"]))
         return {"published_version": form["effective_version"] if form is not None else None, "offered": offered, "enabled_for_capture": enabled, "capture_policies": list(policies)}

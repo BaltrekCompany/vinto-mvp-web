@@ -50,6 +50,7 @@ from app.auth.permissions import permissions_for_profiles
 from app.auth.service import AuthenticatedUser
 from app.authz.errors import AuthorizationDenied, AuthorizationUnavailable, ResourceNotFound
 from app.authz.policies import OperationPolicy, policy_for
+from app.mp3_inspection_policy import allowed_for_machine
 from app.sectors import is_operational_sector
 
 ALLOWED, FORBIDDEN, NOT_FOUND = "allowed", "forbidden", "not_found"
@@ -171,6 +172,9 @@ def _evaluate(connection, user_id, policy: OperationPolicy, machine_code, form_c
     linked = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s", (version[0], machine_id)).fetchone()
     if linked is None:
         return deny(R_PAIR_NOT_OFFERED)  # un vínculo que solo existe en una versión histórica no cuenta
+    # El vínculo y la concesión histórica P1-01/MP3 no deben reabrir capturas.
+    if not allowed_for_machine(form_code, machine_code):
+        return deny(R_PAIR_NOT_OFFERED)
     # 7 · concesión ACTIVA de la terna exacta (bloqueo 4: FOR SHARE bloquea un UPDATE de revoked_at)
     grant = connection.execute(
         "SELECT id FROM vinto_master.user_machine_form_grant WHERE user_id = %s AND machine_id = %s AND form_id = %s AND revoked_at IS NULL" + share, (user_id, machine_id, form_id)).fetchone()

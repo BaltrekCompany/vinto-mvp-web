@@ -18,6 +18,7 @@ from app.auth.service import AuthenticatedUser, create_user
 from app.authz import Operation, authorize
 from app.authz.readiness import coverage_report
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
+from app.mp3_inspection_policy import allowed_for_machine
 from app.production_access import production_machines
 
 PRODUCTION, BOBBIN, Q_BOBBIN = Operation.PRODUCTION_CAPTURE, Operation.BOBBIN_PRODUCTION, Operation.QUALITY_BOBBIN_CAPTURE
@@ -95,6 +96,9 @@ class EquivalenceCase(unittest.TestCase):
         decision = authorize(c, principal(holder), operation, machine, form)
 
         def capture_available(area):
+            # La consulta de version historica no equivale a disponibilidad efectiva.
+            if area == "production" and not allowed_for_machine(form, machine):
+                return False
             try:
                 capture_service.published_form_version(c, form, machine_id, area=area)
                 return True
@@ -195,7 +199,7 @@ class RealBundleEquivalenceTests(EquivalenceCase):
                     after = self.observe(holder, operation, machine, form)
                     self.assertEqual(grantable, before["catalog_offered"])
                     self.assertEqual(after["engine"].allowed, grantable)  # con concesión y todo lo demás en regla: abierto ⇔ el catálogo lo ofrece
-                    self.assertEqual(after["capture"], grantable)  # y la captura de su área lo encuentra igual
+                    self.assertEqual(after["capture"], grantable)  # disponibilidad efectiva, incluido el retiro de P1-01 de MP3
                     self.assertEqual(before["engine"].reason, "GRANT_MISSING" if grantable else before["engine"].reason)
                     if grantable:
                         open_machines.append(machine)

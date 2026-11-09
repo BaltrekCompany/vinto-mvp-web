@@ -28,7 +28,7 @@ from app.ephemeral_db import build_reference_template, connect, copy_database, d
 
 BACKEND = Path(__file__).resolve().parent.parent
 PRODUCTION, BOBBIN, Q_BOBBIN, Q_MACHINE = (Operation.PRODUCTION_CAPTURE, Operation.BOBBIN_PRODUCTION, Operation.QUALITY_BOBBIN_CAPTURE, Operation.QUALITY_MACHINE_CAPTURE)
-P101, P103, P118, P119 = "VINTO-P1-01", "VINTO-P1-03", "VINTO-P1-18", "VINTO-P1-19"  # P1-01 central; P1-03 F3; P1-18 calidad por máquina; P1-19 calidad por bobina
+P101, P102, P103, P118, P119 = "VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-03", "VINTO-P1-18", "VINTO-P1-19"  # P1-01 central; P1-03 F3; P1-18 calidad por máquina; P1-19 calidad por bobina
 TEMPLATE = None
 
 
@@ -179,11 +179,11 @@ class DecisionTests(DatabaseCase):
         self.assertIsNotNone(decision.grant_id)
 
     def test_each_of_the_four_routes_allows_its_own_forms_with_the_right_profile(self):
-        production = self.operator("MP3", P101)
+        production = self.operator("MP3", P102)
         bobbin = self.operator("MP1", P103)
         quality_bobbin = self.operator("MP1", P119, profile="CALIDAD")
         quality_machine = self.operator("MP3", P118, profile="CALIDAD")
-        self.assertAllowed(production, PRODUCTION, "MP3", P101)
+        self.assertAllowed(production, PRODUCTION, "MP3", P102)
         self.assertAllowed(bobbin, BOBBIN, "MP1", P103, profiles=("OPERACION",))
         self.assertAllowed(quality_bobbin, Q_BOBBIN, "MP1", P119, profiles=("CALIDAD",))
         self.assertAllowed(quality_machine, Q_MACHINE, "MP3", P118, profiles=("CALIDAD",))
@@ -203,7 +203,7 @@ class DecisionTests(DatabaseCase):
 
     def test_a_grant_for_mp1_does_not_authorise_mp3_nor_another_form(self):
         user = self.operator("MP1", P101)
-        self.assertDenied(user, "GRANT_MISSING", PRODUCTION, "MP3", P101)
+        self.assertDenied(user, "PAIR_NOT_OFFERED", PRODUCTION, "MP3", P101)
         self.assertDenied(user, "GRANT_MISSING", PRODUCTION, "MP1", "VINTO-P1-02")
         self.assertAllowed(user, PRODUCTION, "MP1", P101)
 
@@ -559,7 +559,7 @@ class RestrictedRoleTests(DatabaseCase):
         user, stranger = self.operator(), self.operator(grant=False)
         with self.as_app():
             self.assertAllowed(user, lock=True)
-            self.assertDenied(user, "GRANT_MISSING", PRODUCTION, "MP3", P101, lock=True)
+            self.assertDenied(user, "PAIR_NOT_OFFERED", PRODUCTION, "MP3", P101, lock=True)
             self.assertDenied(stranger, "GRANT_MISSING", lock=True)
 
     def test_the_lock_still_blocks_a_concurrent_revocation_under_those_privileges(self):
