@@ -1,6 +1,8 @@
 """USR-03: HTTP, database and security regression for admin user editing (isolated PostgreSQL 17)."""
 import json
 import secrets
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -210,7 +212,7 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.send("PATCH", absent, "edit", {"display_name": "Valid name"})).status, 404)
         self.assertEqual((await self.send("POST", absent, "reset", {"password": "valid-secret-" + secrets.token_urlsafe(17)})).status, 404)
         target, _ = self.make_user()
-        for code in ("BAD_CODE", ""]:
+        for code in ("BAD_CODE", ""):
             reply = await self.send("PATCH", target.user_id, "edit", {"profile_code": code})
             self.assertEqual(reply.status, 422, reply.text)
         self.assertEqual(self.scalar(
@@ -262,3 +264,46 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
         self.admin_password = new_password
         self.admin_cookie = None
         self.assertEqual((await call("GET", "/api/admin/users", cookie=await self.cookie())).status, 200)
+
+    async def test_13_concurrent_demote_and_cli_deactivate_never_remove_both_admins(self):
+        """USR-03 and the preexisting CLI deactivation must serialize on the same lock."""
+        from app.admin.user_editing import edit_user
+        from app.auth.service import deactivate_user
+        other, _ = self.make_user("DATA_BALTREK")
+        # Set up exactly two active administrators: the fixture and 'other'.
+        barrier = threading.Barrier(2)
+
+        def demote_fixture():
+            with connect(self.database) as db:
+                barrier.wait(timeout=10)
+                try:
+                    edit_user(db, target_id=self.admin.user_id, actor_id=self.admin.user_id,
+                              profile_code="OPERACION")
+                    return "changed"
+                except Exception as exc:
+                    return type(exc).__name__
+
+        def deactivate_other():
+            with connect(self.database) as db:
+                barrier.wait(timeout=10)
+                try:
+                    deactivate_user(db, username=other.username, actor_username=other.username,
+                                    reason="USR-03 isolated concurrency test")
+                    return "changed"
+                except Exception as exc:
+                    return type(exc).__name__
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(demote_fixture)
+            b = pool.submit(deactivate_other)
+            results = [a.result(timeout=20), b.result(timeout=20)]
+        count = self.scalar(
+            """SELECT count(*)
+               FROM vinto_master."user" u
+               JOIN vinto_master.user_profile up ON up.user_id=u.id
+               JOIN vinto_master.profile p ON p.id=up.profile_id
+               WHERE u.active AND p.active AND p.code='DATA_BALTREK'""")
+        self.assertEqual(count, 1, results)
+        self.assertEqual(results.count("changed"), 1, results)
+        self.assertTrue(any(x in ("LastActiveAdministrator", "LastAdministratorError",
+                                  "UserNotFoundError") for x in results), results)

@@ -14,7 +14,7 @@ from app.admin.errors import (LastActiveAdministrator, NewUserInvalid, ProfileUn
 from app.auth.errors import InvalidDisplayNameError, InvalidPasswordPolicyError
 from app.auth.passwords import HASH_ALGORITHM, hash_password, validate_password_policy
 from app.auth.permissions import DATA_BALTREK, PROFILE_PERMISSIONS
-from app.auth.service import _clean_display_name
+from app.auth.service import LAST_ADMIN_CHANGE_LOCK_KEY, _clean_display_name
 
 
 def _actor_context(connection, actor_id, request_id, reason):
@@ -49,6 +49,10 @@ def edit_user(connection, *, target_id, actor_id, display_name=None, profile_cod
 
     request_id = "admin-user-edit:" + str(uuid.uuid4())
     with connection.transaction():
+        if profile_code is not None:
+            # Same lock as legacy CLI deactivate_user; eliminates a stale-join
+            # race where simultaneous demotion and deactivation remove both admins.
+            connection.execute("SELECT pg_advisory_xact_lock(%s)", (LAST_ADMIN_CHANGE_LOCK_KEY,))
         require_actor_authorized(connection, actor_id)
         # Lock the admin set BEFORE the target when a profile might change, to
         # serialize with legacy CLI deactivation and protect the last admin.
