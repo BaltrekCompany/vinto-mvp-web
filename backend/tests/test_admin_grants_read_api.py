@@ -156,9 +156,9 @@ class AccessTests(Base):
         routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods)
         writes = [(m, p) for m, p in routes if m != "GET"]
         # MF-13-01C.2 añade únicamente los dos POST de concesiones máquina-formulario; la lectura (catálogo, detalle, concesiones, historial) sigue sin escrituras
-        self.assertEqual(writes, [("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"),
+        self.assertEqual(writes, [("PATCH", "/api/admin/users/{user_id}"), ("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"), ("POST", "/api/admin/users/{user_id}/reset-password"),
                                   ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
-        self.assertFalse([p for _, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or p == "/api/admin/users/{user_id}"], "las rutas de lectura siguen siendo solo GET")
+        self.assertFalse([p for _, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or (p == "/api/admin/users/{user_id}" and m != "PATCH")], "lecturas solo GET, salvo edición PATCH autorizada")
         uid, before = self.target(), self.snapshot()
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             for path in self.paths(uid):
@@ -167,7 +167,7 @@ class AccessTests(Base):
         self.assertEqual(self.snapshot(), before, "ningún intento escribió nada")
 
     async def test_existing_admin_routes_are_unchanged(self):
-        routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods if "grants" not in r.path and "catalog" not in r.path and r.path != "/api/admin/users/{user_id}")
+        routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods if "grants" not in r.path and "catalog" not in r.path and r.path not in ("/api/admin/users/{user_id}", "/api/admin/users/{user_id}/reset-password")
         self.assertEqual(routes, [("GET", "/api/admin/profiles"), ("GET", "/api/admin/sectors"), ("GET", "/api/admin/users"), ("GET", "/api/admin/users/{user_id}/sectors"),
                                   ("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
         self.assertEqual((await self.get("/api/admin/sectors")).status, 200)
