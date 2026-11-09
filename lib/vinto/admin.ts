@@ -136,12 +136,12 @@ export type AdminClient = {
     changeSector: (operation: ChangeOperation, userId: string, sectorCode: string, signal?: AbortSignal) => Promise<AdminResult<SectorChange>>;
 };
 
-export type AdminRequest = <T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null) => Promise<AdminResult<T>>;
+export type AdminRequest = <T>(path: string, init: { method?: "GET" | "POST" | "PATCH"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null) => Promise<AdminResult<T>>;
 
 // Petición administrativa única (cookie de sesión HttpOnly, sin caché, sin Origin, errores mapeados): la usan el cliente de sectores y el de concesiones máquina-formulario
 // (lib/vinto/admin-grants.ts), de modo que la autenticación y el mapeo de fallos no se duplican.
 export function createAdminRequester(baseUrl: () => string, fetchImpl: FetchLike): AdminRequest {
-    return async function request<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null): Promise<AdminResult<T>> {
+    return async function request<T>(path: string, init: { method?: "GET" | "POST" | "PATCH"; body?: unknown; signal?: AbortSignal }, parse: (payload: unknown) => T | null): Promise<AdminResult<T>> {
         let response: Response;
         try {
             response = await fetchImpl(`${baseUrl()}${path}`, {
