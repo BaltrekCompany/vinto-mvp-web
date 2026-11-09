@@ -14,6 +14,15 @@ on:
       - 'backend/app/production_access.py'
       - 'backend/tests/test_mp3_inspection_policy.py'
       - 'backend/tests/test_mp3_rg01_http_pg17.py'
+      - 'backend/tests/test_mp3_import_gate_pg17.py'
+      - 'backend/mp3_rg01_import_gate.py'
+      - 'deploy/mvp/scripts/mp3_rg01_import_release.sh'
+      - 'scripts/mf11-calidad-conversion.test.mjs'
+      - 'scripts/mf12a-p101-availability.test.mjs'
+      - 'scripts/mf12b-fibra-merma.test.mjs'
+      - 'scripts/p1-02-p1-01-capture.test.mjs'
+      - 'scripts/p1-04-capture.test.mjs'
+      - 'scripts/p1-30-p1-07-capture.test.mjs'
       - 'scripts/mp3-operation-spec.test.mjs'
       - 'scripts/generate-mp3-rg01-bundle.mjs'
       - 'backend/seed_data/forms/VINTO-MP3-01.json'
@@ -46,8 +55,9 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Verify RG01 seed integrity
         run: node scripts/generate-mp3-rg01-bundle.mjs --check
-      - name: MP3 contract invariants
-        run: node --test scripts/mp3-operation-spec.test.mjs
+      - name: MP3 and historical updated contracts
+        run: |
+          node --test scripts/mp3-operation-spec.test.mjs scripts/mf11-calidad-conversion.test.mjs scripts/mf12a-p101-availability.test.mjs scripts/mf12b-fibra-merma.test.mjs scripts/p1-02-p1-01-capture.test.mjs scripts/p1-04-capture.test.mjs scripts/p1-30-p1-07-capture.test.mjs
       - name: TypeScript
         run: pnpm exec tsc --noEmit
       - name: ESLint
@@ -66,8 +76,10 @@ jobs:
           python-version: '3.12'
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
-      - name: Syntax checks
-        run: python -B -m compileall -q backend/app/mp3_inspection_policy.py backend/app/capture_errors.py backend/app/capture_service.py backend/app/production_access.py backend/tests/test_mp3_inspection_policy.py
+      - name: Syntax and operational script checks
+        run: |
+          python -B -m compileall -q backend/app/mp3_inspection_policy.py backend/app/capture_errors.py backend/app/capture_service.py backend/app/production_access.py backend/tests/test_mp3_inspection_policy.py backend/mp3_rg01_import_gate.py backend/tests/test_mp3_import_gate_pg17.py
+          bash -n deploy/mvp/scripts/mp3_rg01_import_release.sh
       - name: Validate complete seed bundle and machine scope
         working-directory: backend
         run: |
@@ -112,3 +124,6 @@ jobs:
       - name: MP3 cross-machine HTTP, once-per-shift and concurrent POST
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_mp3_rg01_http_pg17.py' -v
+      - name: Dry-run, allowlist import and idempotency on PostgreSQL 17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_mp3_import_gate_pg17.py' -v
