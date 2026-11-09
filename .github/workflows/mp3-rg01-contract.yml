@@ -16,6 +16,7 @@ on:
       - 'backend/tests/test_mp3_rg01_http_pg17.py'
       - 'backend/tests/test_mp3_import_gate_pg17.py'
       - 'backend/mp3_rg01_import_gate.py'
+      - 'backend/mp3_rg01_operator_readiness.py'
       - 'deploy/mvp/scripts/mp3_rg01_import_release.sh'
       - 'scripts/mf11-calidad-conversion.test.mjs'
       - 'scripts/mf12a-p101-availability.test.mjs'
@@ -33,6 +34,10 @@ on:
     branches:
       - 'feat/mp3-rg01-form-20261109'
   workflow_dispatch:
+
+concurrency:
+  group: mp3-rg01-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
