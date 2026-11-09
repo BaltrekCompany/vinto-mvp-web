@@ -83,17 +83,17 @@ function SectorRow({ sector, action }: { sector: AdminSector; action: React.Reac
     </li>;
 }
 
-export function AdminUserDetail({ user, detail, catalog, block, onGrant, onRevoke, onRetryDetail, onRetryCatalog }: {
-    user: AdminUser | null; detail: AdminResource<UserSectors>; catalog: AdminResource<AdminSector[]>; block: AccessBlock;
+export function AdminUserDetail({ user, detail, catalog, block, locked = false, onGrant, onRevoke, onRetryDetail, onRetryCatalog }: {
+    user: AdminUser | null; detail: AdminResource<UserSectors>; catalog: AdminResource<AdminSector[]>; block: AccessBlock; locked?: boolean;
     onGrant: (sector: AdminSector) => void; onRevoke: (sector: AdminSector) => void; onRetryDetail: () => void; onRetryCatalog: () => void;
 }) {
-    const blocked = block !== null; // 403 (permiso u origen): las acciones quedan bloqueadas; nunca se confunde con una sesión vencida
+    const blocked = block !== null || locked; // 403 (permiso u origen): las acciones quedan bloqueadas; nunca se confunde con una sesión vencida
     if (user === null) return <section aria-label="Detalle de usuario" className="rounded-2xl border border-dashed bg-white p-6"><h2 className="font-black">Detalle de usuario</h2><p className="mt-2 text-sm text-slate-700">Selecciona un usuario del listado para ver y administrar su acceso por sector.</p></section>;
     return <section aria-label="Detalle de usuario" className="rounded-2xl border bg-white p-5">
         <h2 className="text-xl font-black">{userLabel(user)}</h2>
         <p className="text-sm text-slate-700">{user.username ?? "Sin usuario de acceso"} · <Badge variant="outline" className={user.active ? TONES.ok : TONES.muted}>{user.active ? "Activo" : "Inactivo"}</Badge></p>
         <div className="mt-2 flex flex-wrap gap-1">{user.profiles.length ? user.profiles.map((profile) => <Badge key={profile} variant="outline" className="border-slate-300 bg-white text-slate-800">{profileLabel(profile)}</Badge>) : <span className="text-xs text-slate-600">Sin perfil activo</span>}</div>
-        <p className="mt-3 text-xs text-slate-600">Aquí solo se administra el acceso por sector (<b>dónde</b> puede trabajar). Los perfiles y permisos (<b>qué</b> puede hacer) y el estado operativo de los sectores no se editan desde esta pantalla.</p>
+        <p className="mt-3 text-xs text-slate-600">Aquí solo se administra el acceso por sector (<b>dónde</b> puede trabajar). Los perfiles y permisos (<b>qué</b> puede hacer) y el estado operativo de los sectores no se editan desde esta pantalla de concesiones; utiliza Gestión de cuentas.</p>
         {block && <div className="mt-4"><AdminNotice title={BLOCK_TITLES[block]} text={blockMessage(block)}/></div>}
 
         <h3 className="mt-5 font-black">Sectores concedidos</h3>
