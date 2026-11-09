@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
 } from "@/lib/vinto/admin-grants";
 import { useAdminResource, useGrantChange, useSectorChange } from "@/lib/vinto/use-admin";
 import { useAccountChange } from "@/lib/vinto/use-admin-users";
-import type { AccountOutcome, AccountProfile, AccountTarget } from "@/lib/vinto/admin-users";
+import type { AccountOutcome, AccountProfile } from "@/lib/vinto/admin-users";
 
 // Vista de presentación de la consola: recibe los recursos ya cargados y los manejadores (sin hooks de red), de modo que cada estado se puede renderizar y probar.
 export type AdminConsoleViewProps = {
@@ -108,18 +108,20 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
         if (plan.catalogs) { machines.refresh(); forms.refresh(); }
     });
     // USR-05: mismas garantías de sesión, red y relectura que las concesiones; nunca se asume un éxito tras un timeout.
-    const accountChange = useAccountChange((result: AdminResult<AccountOutcome>, _target: AccountTarget) => {
+    const accountChange = useAccountChange((result: AdminResult<AccountOutcome>) => {
         if (!result.ok && result.kind === "session") { onSessionLost(); return; }
         if (!result.ok && (result.kind === "forbidden" || result.kind === "origin")) setChangeFailure(result.kind);
         if (!result.ok && result.kind === "unavailable") setAccountUncertainty("unconfirmed");
         users.refresh(); detail.refresh(); userDetail.refresh(); grants.refresh(); history.refresh();
     });
-    useEffect(() => {
-        if (accountUncertainty !== "checking" || users.view.status === "idle" || users.view.status === "loading") return;
-        if (users.view.status === "ready" && !users.view.refreshing) setAccountUncertainty("none");
-        else if (users.view.status === "error" && !users.view.refreshing) setAccountUncertainty("unconfirmed");
-    }, [accountUncertainty, users.view]);
-    const accountBusy = accountChange.state.step !== "closed" || accountUncertainty !== "none";
+    // Igual que las concesiones: resolver la relectura durante el render (solo en una transición
+    // concreta), evitando efectos que disparen escrituras síncronas de estado.
+    const readComplete = accountUncertainty === "checking" && users.view.status === "ready" && !users.view.refreshing;
+    const readFailed = accountUncertainty === "checking" && users.view.status === "error" && !users.view.refreshing;
+    if (readComplete) setAccountUncertainty("none");
+    else if (readFailed) setAccountUncertainty("unconfirmed");
+    const effectiveAccountUncertainty = readComplete ? "none" : readFailed ? "unconfirmed" : accountUncertainty;
+    const accountBusy = accountChange.state.step !== "closed" || effectiveAccountUncertainty !== "none";
     const sectorBusy = change.state.step !== "closed" || grantChange.state.step !== "closed";
     const accountLocked = block !== null || accountBusy || sectorBusy || users.view.status !== "ready" || users.view.refreshing ||
         profiles.view.status !== "ready" || profiles.view.refreshing || (profiles.view.status === "ready" && profiles.view.data.length === 0);
@@ -156,7 +158,7 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
             onCreate={() => { if (!accountLocked) accountChange.open({ action: "create", user: null }); }}/>}
         accountSection={selected ? <AccountUserActions user={selected} currentUserId={session} locked={accountLocked}
             onOpen={(target) => { if (!accountLocked) accountChange.open(target); }}/> : null}
-        accountWarning={accountUncertainty !== "none" ? <AccountUncertain checking={accountUncertainty === "checking"} onRetry={recheckAccount}/> : null}
+        accountWarning={effectiveAccountUncertainty !== "none" ? <AccountUncertain checking={effectiveAccountUncertainty === "checking"} onRetry={recheckAccount}/> : null}
         accountDialog={<AccountDialog state={accountChange.state} profiles={profiles.view.status === "ready" ? profiles.view.data : []}
             onConfirm={(input) => { void accountChange.submit(input); }} onClose={accountChange.close}/>}/>;
 }
