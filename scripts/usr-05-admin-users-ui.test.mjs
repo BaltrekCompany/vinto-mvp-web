@@ -1,7 +1,7 @@
 // node --test scripts/usr-05-admin-users-ui.test.mjs
 // Render SSR real de los componentes de USR-05 y controles accesibles sin navegador ni red.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { before, after, test } from "node:test";
 import { pathToFileURL } from "node:url";
@@ -71,6 +71,33 @@ test("create form contains verified username, active profile catalogue and two s
     assert.ok(markup.includes("Data Baltrek") && markup.includes("Operación") && !markup.includes("INVENTADO"));
     assert.ok(!markup.includes("Conceder acceso") && !markup.includes("actor_id"));
 });
+test("all account form variants have white input backgrounds and legible text in dark OS mode",()=>{
+    for (const action of ["create","edit","reset","deactivate","reactivate"]) {
+        const markup=html(ui.AccountForm,{target:target(action,action==="reactivate"?{...U,active:false}:U),profiles,submitting:false,onConfirm:noop,onClose:noop});
+        const inputs=[...markup.matchAll(/<input\\b[^>]*>/g)].map((match)=>match[0]);
+        assert.ok(inputs.length>0, action+" must have an input");
+        for (const field of inputs) {
+            for(const token of ["bg-white","text-slate-950","dark:bg-white","dark:text-slate-950","border-slate-300"])
+                assert.ok(field.includes(token),action+" field missing "+token);
+        }
+        assert.ok(markup.includes("text-slate-900") && markup.includes("dark:text-slate-900"),action+" cancel action contrast");
+        if(action==="create" || action==="edit") {
+            const select=markup.match(/<select\\b[^>]*>/)?.[0] || "";
+            for(const token of ["bg-white","text-slate-950","dark:bg-white","dark:text-slate-950"])
+                assert.ok(select.includes(token),action+" select missing "+token);
+        }
+    }
+});
+
+test("account modal overrides the shared dark theme without changing global dialog or business logic",()=>{
+    const source=readFileSync(join(root,"components/vinto/admin/admin-user-accounts.tsx"),"utf8");
+    assert.match(source,/const ACCOUNT_MODAL_CLASS = "[^"]*bg-white text-slate-950[^"]*dark:bg-white dark:text-slate-950"/);
+    assert.ok(source.includes('<DialogContent showCloseButton={!pending} className={ACCOUNT_MODAL_CLASS}'));
+    assert.ok(source.includes('DialogDescription className="text-slate-700 dark:text-slate-700"'));
+    assert.ok(source.includes('const ACCOUNT_CONFIRM_CLASS = "bg-[#146b4f] text-white'));
+    assert.ok(source.includes('className={ACCOUNT_CANCEL_CLASS}'));
+});
+
 test("edit preserves username identity; lifecycle requires reason and warns about session revocation",()=>{
     const common={profiles,submitting:false,onConfirm:noop,onClose:noop};
     const edit=html(ui.AccountForm,{...common,target:target("edit")});
