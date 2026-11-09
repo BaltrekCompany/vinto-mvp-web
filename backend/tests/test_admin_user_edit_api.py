@@ -321,19 +321,22 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
                                   "UserNotFoundError") for x in results), results)
 
     async def test_14_cors_preflight_allows_patch_for_trusted_origin_only(self):
+        def header(reply, name):
+            return next((value.decode("latin-1") for key, value in reply.headers
+                         if key.decode("latin-1").lower() == name.lower()), None)
         target, _ = self.make_user()
         options = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
                              extra_headers=[("origin", ORIGIN),
                                             ("access-control-request-method", "PATCH"),
                                             ("access-control-request-headers", "content-type")])
         self.assertEqual(options.status, 200, options.text)
-        self.assertIn("PATCH", options.header("access-control-allow-methods"))
-        self.assertEqual(options.header("access-control-allow-origin"), ORIGIN)
-        self.assertEqual(options.header("access-control-allow-credentials"), "true")
+        self.assertIn("PATCH", header(options, "access-control-allow-methods"))
+        self.assertEqual(header(options, "access-control-allow-origin"), ORIGIN)
+        self.assertEqual(header(options, "access-control-allow-credentials"), "true")
         forbidden = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
                                extra_headers=[("origin", ORIGIN), ("access-control-request-method", "DELETE")])
         self.assertEqual(forbidden.status, 400)
         other = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
                            extra_headers=[("origin", "http://evil.example"),
                                           ("access-control-request-method", "PATCH")])
-        self.assertNotEqual(other.header("access-control-allow-origin"), "http://evil.example")
+        self.assertNotEqual(header(other, "access-control-allow-origin"), "http://evil.example")
