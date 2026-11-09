@@ -163,7 +163,10 @@ class AccessTests(Base):
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             for path in self.paths(uid):
                 reply = await call(method, path, json_body={}, cookie=await self.cookie("ADMIN"), extra_headers=[("origin", settings.cors_origins[0])])
-                self.assertIn(reply.status, (404, 405), (method, path, reply.status))
+                if method == "PATCH" and path == f"/api/admin/users/{uid}":
+                    self.assertEqual(reply.status, 422, (method, path, reply.status))
+                else:
+                    self.assertIn(reply.status, (404, 405), (method, path, reply.status))
         self.assertEqual(self.snapshot(), before, "ningún intento escribió nada")
 
     async def test_existing_admin_routes_are_unchanged(self):
