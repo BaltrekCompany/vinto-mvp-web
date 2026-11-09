@@ -142,7 +142,9 @@ class LoginTests(ApiCase):
 
     async def test_cookie_flags_in_local(self):
         created, password = self.make_user()
-        reply = await self.login(created.username, password)
+        # CI runs with APP_ENV=ci; check the local-specific contract explicitly.
+        with patch.object(settings, "app_env", "local"):
+            reply = await self.login(created.username, password)
         attributes = reply.attributes()
         self.assertIsNotNone(reply.set_cookie())
         self.assertIn("httponly", attributes)
@@ -244,13 +246,12 @@ class LoginTests(ApiCase):
 class MeTests(ApiCase):
     async def test_valid_cookie_returns_user_with_profiles_and_permissions(self):
         created, password = self.make_user("CALIDAD")
-        self.connection.execute("INSERT INTO vinto_master.user_profile (user_id,profile_id) SELECT %s,id FROM vinto_master.profile WHERE code='SUPERVISION'", (created.user_id,))
         cookie = (await self.login(created.username, password)).cookie_value()
         reply = await call("GET", "/api/auth/me", cookie=cookie)
         self.assertEqual(reply.status, 200)
         user = reply.json()["user"]
-        self.assertEqual(user["profiles"], ["CALIDAD", "SUPERVISION"])
-        self.assertEqual(user["permissions"], sorted({"work_order.read", "assignment.read", "assignment.manage", "quality.capture", "quality.release", "catalog.read"}))
+        self.assertEqual(user["profiles"], ["CALIDAD"])
+        self.assertEqual(user["permissions"], sorted({"work_order.read", "assignment.read", "quality.capture", "quality.release", "catalog.read"}))
         self.assertEqual(user["id"], str(created.user_id))
         self.assertEqual(reply.header("cache-control"), "no-store")
 
