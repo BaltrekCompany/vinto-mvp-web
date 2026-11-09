@@ -128,7 +128,8 @@ class DefinitionTests(unittest.TestCase):
         return [f["key"] for f in FORMS[code]["fields"]]
 
     def test_the_seven_new_versions_and_no_other_form_changes(self):
-        self.assertEqual({c: f["version_number"] for c, f in FORMS.items()}, VERSIONS)
+        self.assertEqual({c: f["version_number"] for c, f in FORMS.items() if c != "VINTO-MP3-01"}, VERSIONS)
+        self.assertEqual((FORMS["VINTO-MP3-01"]["version_number"], FORMS["VINTO-MP3-01"]["machines"]), (1, ["MP3"]))
         self.assertEqual({c: sorted(FORMS[c]["machines"]) for c in (P126, P127, P124)}, {c: ["MP1", "MP3"] for c in (P126, P127, P124)}, "P1-26, P1-27 y P1-24 siguen para MP1 y MP3")
         self.assertEqual(sorted(FORMS[P111]["machines"]), ["GAMBINI", "SINCRO_II", "SINCRO_III"])
         self.assertEqual(sorted(FORMS[P112]["machines"]), ["GAMBINI", "SINCRO_II", "SINCRO_III"])
@@ -196,7 +197,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 464)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 597)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
