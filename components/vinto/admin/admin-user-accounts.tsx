@@ -21,7 +21,7 @@ export function AccountToolbar({ profiles, locked, onCreate, onRetry }: {
             <div><h2 className="text-lg font-black">Gestión de cuentas</h2>
                 <p className="mt-1 text-sm text-slate-700">Crea cuentas con un perfil activo. Los sectores y formularios se conceden por separado.</p>
             </div>
-            <Button className="bg-[#146b4f]" disabled={locked || profiles.status !== "ready" || profiles.refreshing}
+            <Button className={ACCOUNT_CONFIRM_CLASS} disabled={locked || profiles.status !== "ready" || profiles.refreshing}
                     onClick={onCreate} aria-label="Crear usuario"><Plus className="mr-2 h-4 w-4"/>Nuevo usuario</Button>
         </div>
         {(profiles.status === "loading" || profiles.status === "idle") && <p role="status" className="mt-2 text-sm text-slate-600">Consultando perfiles disponibles…</p>}
@@ -64,6 +64,14 @@ const CONFIRM: Record<AccountAction, string> = {
     deactivate: "Desactivar usuario", reactivate: "Reactivar usuario",
 };
 
+// USR-05 UX: el modal debe permanecer claro y legible incluso si el sistema usa modo oscuro.
+// No alterar las variables de tema globales ni el componente Dialog compartido.
+const ACCOUNT_MODAL_CLASS = "max-h-[90vh] overflow-y-auto border-slate-200 bg-white text-slate-950 dark:border-slate-200 dark:bg-white dark:text-slate-950";
+const ACCOUNT_FIELD_CLASS = "border-slate-300 bg-white text-slate-950 placeholder:text-slate-500 focus-visible:border-emerald-700 focus-visible:ring-emerald-700/20 dark:border-slate-300 dark:bg-white dark:text-slate-950 dark:placeholder:text-slate-500";
+const ACCOUNT_SELECT_CLASS = "h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 focus-visible:border-emerald-700 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-emerald-700/20 dark:border-slate-300 dark:bg-white dark:text-slate-950";
+const ACCOUNT_CANCEL_CLASS = "border-slate-300 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950 dark:border-slate-300 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 dark:hover:text-slate-950";
+const ACCOUNT_CONFIRM_CLASS = "bg-[#146b4f] text-white hover:bg-[#0d553e] dark:bg-[#146b4f] dark:text-white dark:hover:bg-[#0d553e]";
+
 export function AccountForm({ target, profiles, submitting, onConfirm, onClose }: {
     target: AccountTarget; profiles: AccountProfile[]; submitting: boolean; onConfirm: (input: AccountInput) => void; onClose: () => void;
 }) {
@@ -99,20 +107,20 @@ export function AccountForm({ target, profiles, submitting, onConfirm, onClose }
         setVerifyPassword("");
     }
 
-    return <form onSubmit={handleSubmit} className="space-y-4" aria-busy={submitting}>
+    return <form onSubmit={handleSubmit} className="space-y-4 text-slate-950 dark:text-slate-950" aria-busy={submitting}>
         <div className="space-y-1"><h3 className="font-semibold">{TITLES[action]}</h3>
             <p className="text-sm text-slate-700">{account ? userLabel(account) : "Se creará una cuenta sin concesiones de sectores ni formularios."}</p></div>
         {action === "create" && <div className="space-y-2"><Label htmlFor="usr05-username">Usuario de acceso</Label>
             <Input id="usr05-username" value={username} maxLength={64} disabled={submitting} onChange={(event) => setUsername(event.target.value)}
-                autoComplete="off" spellCheck={false} placeholder="nombre.apellido" required/></div>}
+                autoComplete="off" spellCheck={false} placeholder="nombre.apellido" className={ACCOUNT_FIELD_CLASS} required/></div>}
         {(action === "create" || action === "edit") && <>
             <div className="space-y-2"><Label htmlFor="usr05-name">Nombre visible</Label>
                 <Input id="usr05-name" value={name} maxLength={200} disabled={submitting}
-                    onChange={(event) => setName(event.target.value)} required/></div>
+                    onChange={(event) => setName(event.target.value)} className={ACCOUNT_FIELD_CLASS} required/></div>
             <div className="space-y-2"><Label htmlFor="usr05-profile">Perfil vigente</Label>
                 <select id="usr05-profile" value={profile} disabled={submitting || !ready} required
                         onChange={(event) => setProfile(event.target.value)}
-                        className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm">
+                        className={ACCOUNT_SELECT_CLASS}>
                     <option value="">Selecciona un perfil…</option>
                     {profiles.map((entry) => <option key={entry.code} value={entry.code}>{entry.name} ({entry.code})</option>)}
                 </select>
@@ -122,10 +130,10 @@ export function AccountForm({ target, profiles, submitting, onConfirm, onClose }
         {needsPassword && <>
             <div className="space-y-2"><Label htmlFor="usr05-password">Contraseña nueva</Label>
                 <Input id="usr05-password" type="password" value={password} minLength={12} maxLength={256} disabled={submitting}
-                    autoComplete="new-password" onChange={(event) => setPassword(event.target.value)} required/></div>
+                    autoComplete="new-password" onChange={(event) => setPassword(event.target.value)} className={ACCOUNT_FIELD_CLASS} required/></div>
             <div className="space-y-2"><Label htmlFor="usr05-password-confirm">Repetir contraseña</Label>
                 <Input id="usr05-password-confirm" type="password" value={verifyPassword} minLength={12} maxLength={256} disabled={submitting}
-                    autoComplete="new-password" onChange={(event) => setVerifyPassword(event.target.value)} required/></div>
+                    autoComplete="new-password" onChange={(event) => setVerifyPassword(event.target.value)} className={ACCOUNT_FIELD_CLASS} required/></div>
             <p className="text-xs text-slate-600">Mínimo 12 caracteres. La contraseña no se mostrará en los resultados ni se guardará en el navegador.</p>
         </>}
         {changesState && <>
@@ -137,11 +145,11 @@ export function AccountForm({ target, profiles, submitting, onConfirm, onClose }
             </div>
             <div className="space-y-2"><Label htmlFor="usr05-reason">Motivo obligatorio</Label>
                 <Input id="usr05-reason" value={reason} maxLength={500} disabled={submitting}
-                    onChange={(event) => setReason(event.target.value)} required/></div>
+                    onChange={(event) => setReason(event.target.value)} className={ACCOUNT_FIELD_CLASS} required/></div>
         </>}
         {error && <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>}
-        <DialogFooter><Button type="button" variant="outline" disabled={submitting} onClick={onClose}>Cancelar</Button>
-            <Button type="submit" disabled={submitting || !ready} className={action === "deactivate" ? "bg-red-700 hover:bg-red-800" : "bg-[#146b4f]"}>
+        <DialogFooter><Button type="button" variant="outline" className={ACCOUNT_CANCEL_CLASS} disabled={submitting} onClick={onClose}>Cancelar</Button>
+            <Button type="submit" disabled={submitting || !ready} className={action === "deactivate" ? "bg-red-700 text-white hover:bg-red-800 dark:bg-red-700 dark:text-white dark:hover:bg-red-800" : ACCOUNT_CONFIRM_CLASS}>
                 {submitting ? "Aplicando…" : CONFIRM[action]}</Button></DialogFooter>
     </form>;
 }
@@ -162,9 +170,9 @@ export function AccountDialog({ state, profiles, onConfirm, onClose }: {
     if (state.step === "closed") return null;
     const pending = state.step === "submitting";
     return <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
-        <DialogContent showCloseButton={!pending} className="max-h-[90vh] overflow-y-auto" aria-busy={pending}>
-            <DialogHeader><DialogTitle>{TITLES[state.target.action]}</DialogTitle>
-                <DialogDescription>Solo un administrador autorizado puede efectuar esta operación. El servidor comprobará los permisos y registrará el cambio.</DialogDescription></DialogHeader>
+        <DialogContent showCloseButton={!pending} className={ACCOUNT_MODAL_CLASS} aria-busy={pending}>
+            <DialogHeader><DialogTitle className="text-slate-950 dark:text-slate-950">{TITLES[state.target.action]}</DialogTitle>
+                <DialogDescription className="text-slate-700 dark:text-slate-700">Solo un administrador autorizado puede efectuar esta operación. El servidor comprobará los permisos y registrará el cambio.</DialogDescription></DialogHeader>
             {(state.step === "draft" || state.step === "submitting") &&
                 <AccountForm key={state.target.action + ":" + (state.target.user?.id ?? "new")}
                     target={state.target} profiles={profiles} submitting={pending} onConfirm={onConfirm} onClose={onClose}/>}
@@ -172,7 +180,7 @@ export function AccountDialog({ state, profiles, onConfirm, onClose }: {
                 <p className="text-sm">{outcomeMessage(state)}</p>
                 <p className="text-xs text-slate-600">Usuario: {state.outcome.username || "—"} · Sesiones revocadas: {state.outcome.sessionsRevoked}</p>
                 {state.outcome.requestId && <details className="break-all text-xs text-slate-600"><summary>Identificador de auditoría</summary>{state.outcome.requestId}</details>}
-                <DialogFooter><Button className="bg-[#146b4f]" onClick={onClose}>Cerrar</Button></DialogFooter>
+                <DialogFooter><Button className={ACCOUNT_CONFIRM_CLASS} onClick={onClose}>Cerrar</Button></DialogFooter>
             </div>}
             {state.step === "failed" && <div role="alert" className="space-y-3">
                 <p className="text-sm text-red-700">{state.failure.code === "LAST_ADMINISTRATOR"
@@ -181,7 +189,7 @@ export function AccountDialog({ state, profiles, onConfirm, onClose }: {
                         ? "El nombre de usuario ya existe. Indica otro."
                         : FAILURE_MESSAGES[state.failure.kind]}</p>
                 {state.failure.kind === "unavailable" && <p className="text-sm text-amber-950">Resultado no confirmado: la operación pudo aplicarse. Relee el estado antes de repetirla.</p>}
-                <DialogFooter><Button className="bg-[#146b4f]" onClick={onClose}>Cerrar</Button></DialogFooter>
+                <DialogFooter><Button className={ACCOUNT_CONFIRM_CLASS} onClick={onClose}>Cerrar</Button></DialogFooter>
             </div>}
         </DialogContent>
     </Dialog>;
