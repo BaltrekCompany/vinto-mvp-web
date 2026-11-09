@@ -137,11 +137,11 @@ def reset_password(connection, *, target_id, actor_id, password):
         # password hash into audit tables). Only known safe metadata is emitted.
         connection.execute(
             """INSERT INTO vinto_audit.audit_event
-               (entity_schema, entity_table, entity_key, action, actor_id, request_id,
+               (entity_schema, entity_table, entity_key, action, actor_id, database_actor, request_id,
                 reason, old_data, new_data)
                VALUES ('vinto_auth','credential',
                        jsonb_build_object('user_id', %s::text),
-                       'UPDATE',%s,%s,'admin password reset',
+                       'UPDATE',%s,current_user,%s,'admin password reset',
                        NULL,jsonb_build_object('must_change',false,'sessions_revoked',%s))""",
             (target_id, actor_id, request_id, sessions_revoked))
     return {"user_id": target_id, "changed": True, "sessions_revoked": sessions_revoked,

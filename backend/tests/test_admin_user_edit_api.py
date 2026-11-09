@@ -96,7 +96,7 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
 
     async def test_01_name_only_preserves_profile_access_grants_and_sessions(self):
         target, password = self.make_user("OPERACION", sectors=("BOBINAS",))
-        old_session = (await self.login(target, password)).cookie_value()
+        old_session = (await self.login(target, password)).set_cookie_value()
         before_grants = self.scalar("SELECT count(*) FROM vinto_master.user_sector WHERE user_id=%s", (target.user_id,))
         reply = await self.send("PATCH", target.user_id, "edit", {"display_name": " Nuevo Nombre "})
         self.assertEqual(reply.status, 200, reply.text)
@@ -114,8 +114,8 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
 
     async def test_02_profile_change_revokes_sessions_preserves_grants_and_audits(self):
         target, password = self.make_user("OPERACION", sectors=("BOBINAS",))
-        cookie1 = (await self.login(target, password)).cookie_value()
-        cookie2 = (await self.login(target, password)).cookie_value()
+        cookie1 = (await self.login(target, password)).set_cookie_value()
+        cookie2 = (await self.login(target, password)).set_cookie_value()
         before_grants = self.scalar("SELECT count(*) FROM vinto_master.user_sector WHERE user_id=%s", (target.user_id,))
         reply = await self.send("PATCH", target.user_id, "edit", {"profile_code": "CALIDAD"})
         self.assertEqual(reply.status, 200, reply.text)
@@ -136,7 +136,7 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
 
     async def test_03_noop_does_not_revoke_sessions_or_audit(self):
         target, password = self.make_user("OPERACION")
-        cookie = (await self.login(target, password)).cookie_value()
+        cookie = (await self.login(target, password)).set_cookie_value()
         prior = self.scalar("SELECT count(*) FROM vinto_audit.audit_event")
         reply = await self.send("PATCH", target.user_id, "edit",
                                 {"display_name": "Prueba USR03", "profile_code": "OPERACION"})
@@ -167,7 +167,7 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
 
     async def test_06_reset_password_revokes_sessions_keeps_username_and_no_change_requirement(self):
         target, old_password = self.make_user("OPERACION", sectors=("BOBINAS",))
-        cookie = (await self.login(target, old_password)).cookie_value()
+        cookie = (await self.login(target, old_password)).set_cookie_value()
         new_password = "new-secure-password-" + secrets.token_urlsafe(16)
         response = await self.send("POST", target.user_id, "reset", {"password": new_password})
         self.assertEqual(response.status, 200, response.text)
