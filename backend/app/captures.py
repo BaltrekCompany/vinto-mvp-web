@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
 
-from app import capture_service
+from app import capture_service, mp3_inspection_policy
 from app.auth.dependencies import require_permission
 from app.auth.permissions import CATALOG_READ, PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
@@ -82,8 +82,11 @@ def submit_capture(body: CaptureIn, response: Response, user: AuthenticatedUser 
                    connection=Depends(get_connection)):
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id)."""
     request_id = str(uuid.uuid4())
-    # MF-13-01D.2A: la autorización efectiva depende SOLO del modo configurado en el servidor (por defecto off = comportamiento anterior); el cliente no puede cambiarlo.
-    gate = gate_for(user, settings.authz_central_captures_mode, request_id)
+    # RG-MP3-01 es un formulario NUEVO con concesión usuario+MP3+formulario
+    # obligatoria incluso si el resto de captura central continúa en off/observe.
+    # El modo histórico de TODOS los otros formularios queda intacto.
+    mode = "enforce" if body.form_code == mp3_inspection_policy.RG_MP3_FORM_CODE else settings.authz_central_captures_mode
+    gate = gate_for(user, mode, request_id)
     result = capture_service.submit_production_capture(
         connection, actor_id=user.user_id, capture_id=body.capture_id, form_code=body.form_code, assignment_id=body.assignment_id,
         device_key=body.device_key, values=body.values, request_id=request_id, sectors=user.sectors, gate=gate)
