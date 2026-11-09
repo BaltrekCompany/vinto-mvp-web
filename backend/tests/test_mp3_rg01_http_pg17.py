@@ -228,7 +228,7 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(legacy_mode=legacy_mode), patch.object(settings, "authz_central_captures_mode", legacy_mode):
                 denied, _ = await self.post(assignment)
                 self.assertEqual(denied.status, 403, denied.text)
-                self.assertEqual(denied.json()["code"], "AUTHORIZATION_DENIED")
+                self.assertEqual(denied.json()["code"], "FORBIDDEN")
 
         self.assertTrue(grant_machine_form(
             self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
