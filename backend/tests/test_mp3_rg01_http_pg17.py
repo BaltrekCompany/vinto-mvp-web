@@ -6,7 +6,7 @@ unicidad atómica por fecha operativa+turno y persistencia tipada.
 import asyncio
 import secrets
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -66,8 +66,11 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         self.connection.execute("UPDATE vinto_txn.assignment SET status='finished', finished_at=clock_timestamp() WHERE status='active'")
+        # Each test receives a distinct operational date. A capture from test_02
+        # must not consume the one-per-shift slot being checked in test_04/05.
+        test_day = DAY + timedelta(days=int(self._testMethodName.split("_")[1]) - 1)
         for target in (capture_service, assignment_service):
-            p = patch.object(target, "_now", return_value=DAY)
+            p = patch.object(target, "_now", return_value=test_day)
             p.start()
             self.addCleanup(p.stop)
 
