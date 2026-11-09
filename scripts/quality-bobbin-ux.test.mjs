@@ -14,8 +14,8 @@ test("each pending bobbin has visible decisions, without a wide horizontal table
   assert.match(inbox, /items\.map\(i => <article key=\{i\.bobbin\.id\}/);
   assert.match(inbox, /<QualityBobbinDecision item=\{i\} refresh=\{refresh\}\/>/);
   assert.match(decision, /grid grid-cols-2 gap-2/);
-  assert.match(decision, />Liberar\s*<\/Button>/);
-  assert.match(decision, />Rechazar\s*<\/Button>/);
+  assert.match(decision, />\s*Liberar\s*<\/Button>/);
+  assert.match(decision, />\s*Rechazar\s*<\/Button>/);
   assert.doesNotMatch(inbox, /<table|min-w-\[1320px\]|overflow-x-auto/);
   assert.match(inbox, /aria-label=\{"Bobina " \+ i\.bobbin\.code/);
 });
