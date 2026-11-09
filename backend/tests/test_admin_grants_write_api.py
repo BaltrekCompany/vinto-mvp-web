@@ -269,7 +269,7 @@ class RequestHardeningTests(Base):
             reply = await _call(method, f"/api/admin/users/{uid}/{GRANT}", json_body={"machine_code": "MP1", "form_code": P101}, cookie=await self.cookie("ADMIN"), extra_headers=[("origin", ORIGIN)])
             self.assertEqual(reply.status, 405, method)
         writes = sorted(p for r in admin_router.routes for m in r.methods if m != "GET" for p in [r.path])
-        self.assertEqual(writes, ["/api/admin/users", "/api/admin/users/{user_id}", "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke", "/api/admin/users/{user_id}/reset-password", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"])
+        self.assertEqual(writes, ["/api/admin/users", "/api/admin/users/{user_id}", "/api/admin/users/{user_id}/deactivate", "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke", "/api/admin/users/{user_id}/reactivate", "/api/admin/users/{user_id}/reset-password", "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"])
         self.assertEqual(self.rows(uid), 0)
 
 
