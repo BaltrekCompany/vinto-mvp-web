@@ -431,17 +431,19 @@ class AuthenticateTests(DatabaseCase):
         self.assertEqual((principal.profile_codes, principal.permissions), ((), frozenset()))
         self.assertFalse(principal.can("production.capture"))
 
-    def test_only_active_profiles_count_in_a_multi_profile_user(self):
+    def test_single_profile_database_constraint_rejects_second_profile(self):
         database = self.make_database()
         self.addCleanup(drop_database, database)
         with connect(database) as connection:
             created, password = self.make_user("OPERACION", connection=connection)
-            connection.execute("INSERT INTO vinto_master.user_profile (user_id,profile_id) SELECT %s,id FROM vinto_master.profile WHERE code='CALIDAD'", (created.user_id,))
-            connection.execute("UPDATE vinto_master.profile SET active=false WHERE code='OPERACION'")
+            with self.assertRaises(psycopg.errors.UniqueViolation):
+                connection.execute("INSERT INTO vinto_master.user_profile (user_id,profile_id) SELECT %s,id FROM vinto_master.profile WHERE code='CALIDAD'", (created.user_id,))
             principal = authenticate(connection, created.username, password)
-        self.assertEqual(principal.profile_codes, ("CALIDAD",))
-        self.assertTrue(principal.can("quality.release"))
-        self.assertFalse(principal.can("production.capture"))
+            profile_count = connection.execute("SELECT count(*) FROM vinto_master.user_profile WHERE user_id=%s", (created.user_id,)).fetchone()[0]
+        self.assertEqual(profile_count, 1)
+        self.assertEqual(principal.profile_codes, ("OPERACION",))
+        self.assertFalse(principal.can("quality.release"))
+        self.assertTrue(principal.can("production.capture"))
 
     def test_success_resets_the_failure_counter(self):
         created, password = self.make_user()

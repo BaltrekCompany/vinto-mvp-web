@@ -90,7 +90,9 @@ async def postgres_error_handler(request: Request, error: psycopg.Error):
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, error: RequestValidationError):
     """Los 422 de /api/auth/* no repiten la entrada (podría contener una contraseña); el resto conserva el formato de FastAPI."""
-    if request.url.path.startswith("/api/auth/"):
+    if request.url.path.startswith("/api/auth/") or (request.url.path == "/api/admin/users" and request.method == "POST"):
+        # USR-02: Pydantic errors may include the submitted password in "input".
+        # The administrative create endpoint must never echo secret input or its value.
         return JSONResponse(status_code=422, content={"detail": "Solicitud inválida"})
     return await request_validation_exception_handler(request, error)
 
