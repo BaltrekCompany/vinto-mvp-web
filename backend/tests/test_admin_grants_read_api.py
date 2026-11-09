@@ -167,7 +167,7 @@ class AccessTests(Base):
         self.assertEqual(self.snapshot(), before, "ningún intento escribió nada")
 
     async def test_existing_admin_routes_are_unchanged(self):
-        routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods if "grants" not in r.path and "catalog" not in r.path and r.path not in ("/api/admin/users/{user_id}", "/api/admin/users/{user_id}/reset-password")
+        routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods if "grants" not in r.path and "catalog" not in r.path and r.path not in ("/api/admin/users/{user_id}", "/api/admin/users/{user_id}/reset-password"))
         self.assertEqual(routes, [("GET", "/api/admin/profiles"), ("GET", "/api/admin/sectors"), ("GET", "/api/admin/users"), ("GET", "/api/admin/users/{user_id}/sectors"),
                                   ("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
         self.assertEqual((await self.get("/api/admin/sectors")).status, 200)
