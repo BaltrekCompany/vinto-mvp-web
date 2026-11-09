@@ -10,7 +10,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from app.seed import bundle as bundle_module
-from app.seed.bundle import BundleError, load_bundle
+from app.seed.bundle import BundleError, compute_source_checksum, load_bundle
 from app.shifts import ScheduleRow, resolve_shift_from_schedules
 
 BUNDLE = load_bundle()
@@ -68,8 +68,12 @@ class ApprovedBundleTests(unittest.TestCase):
         # Bobinas) sí creció. Esta prueba sigue siendo el guardián: cualquier cambio FUTURO no
         # revisado volverá a hacerla fallar, exactamente como debe.
         # MF-05: P1-01 pasa a la versión 2 (84 campos); checksum recalculado con load_bundle().source_checksum, nunca a mano.
-        # MF-13-01B.2: P1-10 pasa a la versión 3 (cinco máquinas de Rebobinado; mismos campos); checksum recalculado con load_bundle().source_checksum.
-        self.assertEqual(BUNDLE.source_checksum, "469c3ad77091eff4a88eb5166cfa42ef0015db70e7b80597dd682efe355aaf38")
+        # MF-13-01B.2: P1-10 pasa a la versión 3 (cinco máquinas de Rebobinado; mismos campos).
+        # RG-MP3-01: se incorporó VINTO-MP3-01 y se actualizó el manifest del bundle.
+        # Valor calculado mediante load_bundle().source_checksum del manifest aprobado
+        # en main c10d0c8 (2026-11-09). No modificar el manifest ni los formularios aquí.
+        self.assertEqual(BUNDLE.source_checksum, compute_source_checksum(BUNDLE.manifest))
+        self.assertEqual(BUNDLE.source_checksum, "d36d2e1cd448287268d6c4bc6d679dfad92dee531bd9aacb96bf6ecc290ea911")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
         self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])
