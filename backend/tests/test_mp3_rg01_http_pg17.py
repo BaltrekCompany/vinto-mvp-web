@@ -68,6 +68,14 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         self.connection.execute("UPDATE vinto_txn.assignment SET status='finished', finished_at=clock_timestamp() WHERE status='active'")
+        operator = self.users["OPERACION"][0].user_id
+        actor = self.users["DATA_BALTREK"][0].user_id
+        if has_active_machine_form_grant(self.connection, operator, "MP3", RG):
+            revoke_machine_form(self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor)
+        # Explicit grant for ordinary tests. Authorization-focused cases prove
+        # fail-closed behavior with no active grant even if the legacy mode is off.
+        if not self._testMethodName.startswith(("test_06_", "test_08_")):
+            grant_machine_form(self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor)
         # Each test receives a distinct operational date. A capture from test_02
         # must not consume the one-per-shift slot being checked in test_04/05.
         test_day = DAY + timedelta(days=int(self._testMethodName.split("_")[1]) - 1)
@@ -144,7 +152,7 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
     async def test_03_reject_wrong_machine_and_legacy_on_mp3(self):
         a1 = await self.assignment("MP1")
         r, _ = await self.post(a1)
-        self.assertEqual((r.status, r.json()["code"]), (409, "FORM_NOT_AVAILABLE"))
+        self.assertEqual(r.status, 403, r.text)  # RG01 hace fail-closed incluso en MP1
         # La captura antigua sigue permitida en MP1 si la definición está publicada.
         old_values = {f["key"]: ("07:30" if f["value_type"] == "time" else
                                   "dato" if f["value_type"] in ("text", "textarea") else "1.25")
@@ -209,6 +217,42 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
             sum(1 for r in (r1,r2) if r.status==409 and r.json().get("code")=="SHIFT_CAPTURE_ALREADY_EXISTS"), 1
         )
 
+
+    async def test_08_rg01_grants_enforced_with_global_off_and_observe(self):
+        assignment = await self.assignment("MP3")
+        operator = self.users["OPERACION"][0].user_id
+        actor = self.users["DATA_BALTREK"][0].user_id
+        self.assertFalse(has_active_machine_form_grant(self.connection, operator, "MP3", RG))
+
+        for legacy_mode in ("off", "observe", "enforce"):
+            with self.subTest(legacy_mode=legacy_mode), patch.object(settings, "authz_central_captures_mode", legacy_mode):
+                denied, _ = await self.post(assignment)
+                self.assertEqual(denied.status, 403, denied.text)
+                self.assertEqual(denied.json()["code"], "AUTHORIZATION_DENIED")
+
+        self.assertTrue(grant_machine_form(
+            self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
+        ))
+        with patch.object(settings, "authz_central_captures_mode", "off"):
+            accepted, body = await self.post(assignment)
+            self.assertEqual(accepted.status, 201, accepted.text)
+            self.assertTrue(revoke_machine_form(
+                self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
+            ))
+            revoked = await call("POST", "/api/captures", json_body=body,
+                                 cookie=await self.cookie("OPERACION"))
+            self.assertEqual(revoked.status, 403, revoked.text)
+
+        # Baseline MP1 remains legacy mode off; P1-01 is NOT forced to enforce.
+        a1 = await self.assignment("MP1")
+        old_values = {
+            f["key"]: ("08:15" if f["value_type"] == "time" else
+                       "dato" if f["value_type"] in ("text", "textarea") else "1.25")
+            for f in FORMS[P101]["fields"] if f["required"]
+        }
+        with patch.object(settings, "authz_central_captures_mode", "off"):
+            old, _ = await self.post(a1, code=P101, values=old_values)
+        self.assertEqual(old.status, 201, old.text)
 
     async def test_07_legacy_capture_already_occupies_the_transition_shift(self):
         assignment = await self.assignment("MP3")
