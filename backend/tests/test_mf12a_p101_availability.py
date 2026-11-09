@@ -113,13 +113,14 @@ class DefinitionTests(unittest.TestCase):
         return [f["key"] for f in FORMS[code]["fields"]]
 
     def test_only_the_three_forms_get_a_new_version(self):
-        self.assertEqual({c: f["version_number"] for c, f in FORMS.items()}, VERSIONS)
+        self.assertEqual({c: f["version_number"] for c, f in FORMS.items() if c != "VINTO-MP3-01"}, VERSIONS)
+        self.assertEqual((FORMS["VINTO-MP3-01"]["version_number"], FORMS["VINTO-MP3-01"]["machines"]), (1, ["MP3"]))
         self.assertEqual(sorted(FORMS[P101]["machines"]), ["MP1", "MP3"], "P1-01 sigue en MP1 y MP3 (obs. 9 aplica a ambas)")
         self.assertEqual(FORMS[P105]["machines"], ["MP3"])
         self.assertEqual(FORMS[P131]["machines"], ["MP3"])
         for code in ("VINTO-P1-02", "VINTO-P1-03", P104, "VINTO-P1-06"):
             self.assertEqual(sorted(FORMS[code]["machines"]), ["MP1", "MP3"], f"{code}: la disponibilidad no cambia")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 464)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 597)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
     def test_p1_01_v4_removes_replaces_and_adds_exactly_what_was_approved(self):
         v3 = [f["key"] for f in V3["fields"]]
