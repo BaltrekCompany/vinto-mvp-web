@@ -21,6 +21,7 @@ from uuid import uuid4
 from pydantic import SecretStr
 
 from app import capture_service as _capture_service
+from app import mp3_inspection_policy as _mp3_policy
 from app.assignments import service as _assignments_service
 from app.auth.service import create_user
 from app.config import settings
@@ -159,7 +160,10 @@ class P101VersionTests(unittest.IsolatedAsyncioTestCase):
 
     async def post(self, assignment, values):
         body = {"capture_id": str(uuid4()), "form_code": CODE, "assignment_id": assignment["id"], "device_key": str(uuid4()), "values": values}
-        return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
+        # MF-05 replaya el periodo HISTÓRICO en que MP3 aún capturaba P1-01.
+        # Solo esta simulación bypassa el nuevo aislamiento: la producción no.
+        with patch.object(_mp3_policy, "assert_form_machine", return_value=None):
+            return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
 
     async def test_the_versions_and_the_bundle_match_the_request(self):
         v1, v2 = [k for k, _ in self.definition(self.v1)], [k for k, _ in self.definition(self.v2)]
@@ -227,7 +231,8 @@ class P101VersionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.status, 200, reply.text)
         mp3 = [m for s in reply.json()["sectors"] for m in s["machines"] if m["code"] == "MP3"][0]
         offered = [f for f in mp3["forms"] if f["code"] == CODE]
-        self.assertEqual(len(offered), 1, "P1-01 se ofrece una sola vez aunque existan dos versiones publicadas")
+        self.assertEqual(len(offered), 0, "P1-01 sigue histórico pero no disponible para nuevas capturas en MP3")
+        self.assertEqual([f["code"] for f in mp3["forms"]].count("VINTO-MP3-01"), 1, "MP3 ofrece exactamente una ficha RG01")
 
 
 def previous_bundle(version=1):
@@ -275,7 +280,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
                                             WHERE f.code <> %s ORDER BY f.code""", (CODE,)).fetchall()
         dry = reference.dry_run(self.connection, self.mf05)
         self.assertEqual(dry.conflicts, [])
-        self.assertEqual(dry.counts["form_version"], {"create": 1, "present": 24})
+        self.assertEqual(dry.counts["form_version"], {"create": 1, "present": 25})
         self.assertEqual(dry.counts["field"]["create"], 84)
         self.assertEqual(dry.counts["form_version_machine"]["create"], 2)
         self.assertEqual(self.snapshot_v1(), before, "el dry-run no escribe")
