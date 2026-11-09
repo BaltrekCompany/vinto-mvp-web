@@ -153,7 +153,7 @@ export function AdminConsole({ user, onLogout, onSessionLost }: { user: AuthUser
         grantsPanel={panel} grantDialog={{ state: grantChange.state, onConfirm: grantChange.confirm, onClose: grantChange.close }}
         accountBusy={accountBusy}
         accountToolbar={<AccountToolbar profiles={profiles.view} locked={accountLocked} onRetry={profiles.refresh}
-            onCreate={() => { if (!accountLocked) accountChange.open({ action: "create", user: null }); }}/ >}
+            onCreate={() => { if (!accountLocked) accountChange.open({ action: "create", user: null }); }}/>}
         accountSection={selected ? <AccountUserActions user={selected} currentUserId={session} locked={accountLocked}
             onOpen={(target) => { if (!accountLocked) accountChange.open(target); }}/> : null}
         accountWarning={accountUncertainty !== "none" ? <AccountUncertain checking={accountUncertainty === "checking"} onRetry={recheckAccount}/> : null}
