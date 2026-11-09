@@ -1,0 +1,77 @@
+name: USR-04 administrator lifecycle PostgreSQL 17
+
+on:
+  pull_request:
+    paths:
+      - 'backend/migrations/**'
+      - 'backend/app/admin/**'
+      - 'backend/app/auth/**'
+      - 'backend/app/main.py'
+      - 'backend/tests/test_admin_user_lifecycle_api.py'
+      - 'backend/tests/test_admin_sector_api.py'
+      - 'backend/tests/test_admin_grants_read_api.py'
+      - 'backend/tests/test_admin_grants_write_api.py'
+      - '.github/workflows/usr-03-user-edit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  usr-04-pg17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-only-disposable-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-only-disposable-password@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-only-disposable-password@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-only-disposable-password@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Confirm PostgreSQL 17
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ["TEST_ADMIN_DATABASE_URL"]) as conn:
+              version = int(conn.execute("SHOW server_version_num").fetchone()[0])
+          assert 170000 <= version < 180000, version
+          print("USR04_POSTGRES17=PASS")
+          PY
+      - name: Compile USR-04
+        run: python -B -m compileall -q backend/app/admin backend/app/main.py backend/tests/test_admin_user_lifecycle_api.py
+      - name: Migrate ephemeral database
+        working-directory: backend
+        run: python -B prepare_test_db.py
+      - name: USR-04 HTTP and PostgreSQL lifecycle regression
+        working-directory: backend
+        run: python -B -m unittest tests.test_admin_user_lifecycle_api -v
+      - name: Regressions USR-02, authentication and sessions
+        working-directory: backend
+        run: python -B -m unittest tests.test_user_creation_api tests.test_auth_api tests.test_auth_service tests.test_auth_sessions tests.test_user_deactivation -v
+      - name: Regressions admin sector and machine/form grants
+        working-directory: backend
+        run: python -B -m unittest tests.test_admin_sector_api tests.test_admin_grants_read_api tests.test_admin_grants_write_api -v
