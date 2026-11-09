@@ -155,7 +155,14 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             {candidate.calculated && <p>Calculados sin fórmula aprobada (no se calculan, no se guardan ni se muestran como oficiales): <b>{candidate.calculated.join(", ")}</b>.</p>}</div>}
         {renderTable()}
         {table && renderCalculated()}
-        {groups.map(group => <CaptureSection key={group.title} title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>)}
+        {groups.map(group => candidate.collapsibleSections
+            ? <details key={group.title} className="border-b border-slate-200 bg-white" open={group.title === "Pulper" ? true : undefined}>
+                <summary className="cursor-pointer px-5 py-4 font-bold text-[#146b4f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                    {group.title}{group.title === "Pulper" ? " · 7 campos obligatorios" : " · opcional"}
+                </summary>
+                <CaptureSection title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>
+            </details>
+            : <CaptureSection key={group.title} title={group.title} hint={group.hint}>{group.fields.map(renderField)}</CaptureSection>)}
         {!table && renderCalculated()}
         {candidate.derived && <div className="border-b bg-slate-50 p-6" data-section="derived">
             <h2 className="font-black">Valores calculados en pantalla (no se guardan)</h2>
