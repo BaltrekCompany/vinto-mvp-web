@@ -3,7 +3,7 @@
 import {
     createAdminRequester, isRecord, isUuid, parseAdminUser,
     type AdminFailure, type AdminResult, type AdminUser,
-} from "@/lib/vinto/admin";
+} from "./admin.ts";
 
 export type AccountProfile = { code: string; name: string };
 export type AccountAction = "create" | "edit" | "reset" | "deactivate" | "reactivate";
