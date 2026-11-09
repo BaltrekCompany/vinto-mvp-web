@@ -101,7 +101,8 @@ class RealConfigurationTests(AvailabilityCase):
         # CLOUD-DEP G.12-C4-COMPLETE: SHIPPED_POLICY también suma P1-07/10/30 (Rebobinado), por lo que
         # ya no coincide con lo que se ofrece en MP1/MP3 (esos 3 solo están vinculados a BELOIT/OVER/
         # COPASA/PERICHUN) -- se compara contra el subconjunto real de Bobinas, no contra la política entera.
-        self.assertEqual(SHIPPED_POLICY, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertEqual(SHIPPED_POLICY - {"VINTO-MP3-01"}, frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31", "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-30", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16", "VINTO-P1-29"}))
+        self.assertIn("VINTO-MP3-01", SHIPPED_POLICY, "RG01 es la única incorporación autorizada de captura central")
         self.assertEqual(SHIPPED_SECTORS, ("BOBINAS", "REBOBINADO", "CONVERSION"))
         reply = await self.get(who="OPERACION")  # granted BOBINAS + the fictitious Rebobinado (ZZFIX), never the REAL REBOBINADO
         self.assertEqual(reply.status, 200)
