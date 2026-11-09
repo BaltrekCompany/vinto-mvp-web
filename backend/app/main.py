@@ -26,7 +26,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,  # cookie de sesión; los orígenes son explícitos, nunca "*"
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type"],
 )
 app.include_router(captures_router)

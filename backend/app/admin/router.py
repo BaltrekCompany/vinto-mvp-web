@@ -1,4 +1,4 @@
-"""API administrativa de concesiones por sector (/api/admin). Solo GET y POST (la configuración CORS no se amplía).
+"""API administrativa de concesiones por sector (/api/admin). GET, POST y PATCH; CORS permite PATCH solo para orígenes de confianza.
 
 Autorización: sesión válida + permiso `user.manage` (nunca `catalog.manage`). El actor de cada cambio es SIEMPRE el usuario autenticado.
 Las respuestas llevan Cache-Control: no-store.

@@ -13,6 +13,7 @@ from pydantic import SecretStr
 from app.auth.service import create_user
 from app.auth.passwords import verify_password
 from app.auth.grants import grant_sector
+from app.auth.machine_form_grants import grant_machine_form
 from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
 
@@ -114,6 +115,12 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
 
     async def test_02_profile_change_revokes_sessions_preserves_grants_and_audits(self):
         target, password = self.make_user("OPERACION", sectors=("BOBINAS",))
+        self.assertTrue(grant_machine_form(self.connection, user_id=target.user_id,
+                                           machine_code="MP1", form_code="VINTO-P1-01",
+                                           actor_id=self.admin.user_id))
+        previous_form = self.connection.execute(
+            "SELECT id,revoked_at FROM vinto_master.user_machine_form_grant WHERE user_id=%s",
+            (target.user_id,)).fetchall()
         cookie1 = (await self.login(target, password)).set_cookie_value()
         cookie2 = (await self.login(target, password)).set_cookie_value()
         before_grants = self.scalar("SELECT count(*) FROM vinto_master.user_sector WHERE user_id=%s", (target.user_id,))
@@ -126,6 +133,9 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
         for cookie in (cookie1, cookie2):
             self.assertEqual((await call("GET", "/api/auth/me", cookie=cookie)).status, 401)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_master.user_sector WHERE user_id=%s", (target.user_id,)), before_grants)
+        self.assertEqual(self.connection.execute(
+            "SELECT id,revoked_at FROM vinto_master.user_machine_form_grant WHERE user_id=%s",
+            (target.user_id,)).fetchall(), previous_form)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_master.user_profile WHERE user_id=%s", (target.user_id,)), 1)
         self.assertEqual((await self.login(target, password)).status, 200)
         last = self.connection.execute(
@@ -307,3 +317,21 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results.count("changed"), 1, results)
         self.assertTrue(any(x in ("LastActiveAdministrator", "LastAdministratorError",
                                   "UserNotFoundError") for x in results), results)
+
+    async def test_14_cors_preflight_allows_patch_for_trusted_origin_only(self):
+        target, _ = self.make_user()
+        options = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
+                             origin=ORIGIN,
+                             extra_headers=[("access-control-request-method", "PATCH"),
+                                            ("access-control-request-headers", "content-type")])
+        self.assertEqual(options.status, 200, options.text)
+        self.assertIn("PATCH", options.header("access-control-allow-methods"))
+        self.assertEqual(options.header("access-control-allow-origin"), ORIGIN)
+        self.assertEqual(options.header("access-control-allow-credentials"), "true")
+        forbidden = await call("OPTIONS", f"/api/admin/users/{target.user_id}", origin=ORIGIN,
+                               extra_headers=[("access-control-request-method", "DELETE")])
+        self.assertEqual(forbidden.status, 400)
+        other = await call("OPTIONS", f"/api/admin/users/{target.user_id}",
+                           origin="http://evil.example",
+                           extra_headers=[("access-control-request-method", "PATCH")])
+        self.assertNotEqual(other.header("access-control-allow-origin"), "http://evil.example")

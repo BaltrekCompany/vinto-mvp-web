@@ -141,7 +141,7 @@ def reset_password(connection, *, target_id, actor_id, password):
                 reason, old_data, new_data)
                VALUES ('vinto_auth','credential',
                        jsonb_build_object('user_id', %s::text),
-                       'UPDATE',%s,current_user,%s,'admin password reset',
+                       'UPDATE',%s,session_user,%s,'admin password reset',
                        NULL,jsonb_build_object('must_change',false,'sessions_revoked',%s))""",
             (target_id, actor_id, request_id, sessions_revoked))
     return {"user_id": target_id, "changed": True, "sessions_revoked": sessions_revoked,

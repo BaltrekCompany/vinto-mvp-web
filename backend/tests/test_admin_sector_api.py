@@ -146,9 +146,9 @@ class AccessControlTests(AdminCase):
                                       "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke"})
         self.assertEqual(sorted(p for p, methods in paths.items() if methods != {"get"}), ["/api/admin/users", "/api/admin/users/{user_id}", "/api/admin/users/{user_id}/grants/grant", "/api/admin/users/{user_id}/grants/revoke", "/api/admin/users/{user_id}/reset-password",
                                                                                            "/api/admin/users/{user_id}/sectors/grant", "/api/admin/users/{user_id}/sectors/revoke"], "escrituras: alta, edición y clave de usuarios; sectores y concesiones máquina-formulario")
-        self.assertTrue(all(methods <= {"get", "post"} for methods in paths.values()))
+        self.assertTrue(all(methods <= {"get", "post", "patch"} for methods in paths.values()))
         cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
-        self.assertEqual(sorted(cors.kwargs["allow_methods"]), ["GET", "POST"])
+        self.assertEqual(sorted(cors.kwargs["allow_methods"]), ["GET", "PATCH", "POST"])
         self.assertEqual(cors.kwargs["allow_headers"], ["Content-Type"])
         self.assertEqual((await call("DELETE", "/api/admin/users", cookie=await self.admin_cookie())).status, 405)
 
