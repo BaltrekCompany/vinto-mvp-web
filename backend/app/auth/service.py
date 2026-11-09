@@ -31,6 +31,10 @@ from app.config import settings
 USERNAME_PATTERN = re.compile(r"[a-z0-9._-]{1,64}")
 MAX_DISPLAY_NAME_LENGTH = 200
 
+# Shared transaction advisory lock: serialize administrative profile demotion
+# with the existing CLI deactivate_user guard on the last Data Baltrek.
+LAST_ADMIN_CHANGE_LOCK_KEY = 2026110903
+
 
 @dataclass(frozen=True)
 class CreatedUser:
@@ -269,6 +273,9 @@ def deactivate_user(connection, *, username, actor_username, reason, request_id=
     clean_reason = _clean_reason(reason)
     request_id = request_id or f"deactivate_user:{uuid.uuid4()}"
     with connection.transaction():
+        # USR-03: serialize CLI deactivation with profile edits so both cannot
+        # remove the last active administrator using stale join snapshots.
+        connection.execute("SELECT pg_advisory_xact_lock(%s)", (LAST_ADMIN_CHANGE_LOCK_KEY,))
         actor_id = _resolve_admin_actor_id(connection, actor_username)
         _set_change_context(connection, actor_id=actor_id, request_id=request_id, reason=clean_reason)
         user_id = _find_user_id_by_username(connection, normalized)

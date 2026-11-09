@@ -142,14 +142,14 @@ Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se
 | `vinto_master.profile` INSERT, UPDATE | D.3B.1 | ninguno | — |
 | `vinto_master.machine` INSERT, UPDATE | D.3B.1 | ninguno | — |
 | `vinto_master.sector` INSERT, UPDATE | D.3B.1 | ninguno | — |
-| `vinto_master.user` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
-| `vinto_master.user_profile` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
+| `vinto_master.user` INSERT, UPDATE | D.3B.4 | `app/auth/service.py`, `app/admin/user_editing.py` | D.3B.2 |
+| `vinto_master.user_profile` INSERT, UPDATE | D.3B.4 | `app/auth/service.py`, `app/admin/user_editing.py` | D.3B.2 |
 | `vinto_master.user_sector` INSERT, DELETE | D.3B.4 | `app/auth/grants.py` | D.3B.2 |
 | `vinto_master.user_machine_form_grant` INSERT, UPDATE | D.3B.4 | `app/auth/machine_form_grants.py` | D.3B.2 |
-| `vinto_auth.credential` INSERT, UPDATE | D.3B.4 | `app/auth/service.py` | D.3B.2 |
-| `vinto_auth.credential` SELECT (hash; queda `SELECT` por columna) | D.3B.4 | `app/auth/service.py` | D.3B.2 |
-| `vinto_auth.session` INSERT, UPDATE (queda `UPDATE (last_seen_at)`) | D.3B.4 | `app/auth/sessions.py`, `app/auth/service.py` | D.3B.2 |
-| `vinto_auth.auth_event` INSERT | D.3B.4 | `app/auth/service.py`, `app/auth/sessions.py` | D.3B.2 |
+| `vinto_auth.credential` INSERT, UPDATE | D.3B.4 | `app/auth/service.py`, `app/admin/user_editing.py` | D.3B.2 |
+| `vinto_auth.credential` SELECT (hash; queda `SELECT` por columna) | D.3B.4 | `app/auth/service.py`, `app/admin/user_editing.py` | D.3B.2 |
+| `vinto_auth.session` INSERT, UPDATE (queda `UPDATE (last_seen_at)`) | D.3B.4 | `app/auth/sessions.py`, `app/auth/service.py`, `app/admin/user_editing.py` | D.3B.2 |
+| `vinto_auth.auth_event` INSERT | D.3B.4 | `app/auth/service.py`, `app/auth/sessions.py`, `app/admin/user_editing.py` | D.3B.2 |
 
 ### 7.4 Inventario de D.3B.2 (todo consumidor migra o se declara de negocio)
 
@@ -163,6 +163,9 @@ Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se
 | `app/admin/router.py` (todas las rutas, lecturas incluidas) | `Depends(get_connection)` | `Depends(get_identity_connection)`; la autorización `require_permission(USER_MANAGE)` sigue resolviendo la sesión con el rol de negocio | identidad |
 | `app/admin/service.py`, `app/admin/grants_write.py` | reciben la conexión del router | heredan la conexión de identidad; además revalidan al actor (`app/admin/actor.py`) dentro de la transacción de la escritura | identidad |
 | `app/admin/user_creation.py` (USR-02) | alta mediante `create_user` en transacción administrativa | hereda `get_identity_connection` del router, revalida `user.manage` y atribuye al actor real | identidad |
+| `app/admin/user_editing.py` (USR-03) | cambia nombre/perfil y restablece contraseña sin modificar concesiones | hereda `get_identity_connection`, revalida `user.manage` bajo bloqueo, revoca sesiones ante perfil/clave y deja auditoría sin secretos | identidad |
+
+**USR-03:** las escrituras explícitas del servicio `app/admin/user_editing.py` en `vinto_master.user`, `user_profile`, `vinto_auth.credential`, `session`, `auth_event` y `vinto_audit.audit_event` pertenecen al rol de identidad. El registro manual en auditoría contiene únicamente identificador, actor, resultado y metadatos de sesión: nunca password ni hash. La matriz de revocación 7.3 se actualizó para que su prueba de orden siga fallando ante consumidores omitidos.
 | `app/auth/service.py` (`create_user`, `authenticate`, `deactivate_user`, `reactivate_user`) | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/grants.py`, `app/auth/machine_form_grants.py` | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/sessions.py` (`login_with_session`, `create_session`, `revoke_session`; `resolve_session` es de negocio) | reciben la conexión del llamador | sin cambio de código | identidad / negocio |

@@ -394,8 +394,9 @@ class LastAdministratorGuardTests(IsolatedDatabaseCase):
     def test_concurrent_deactivation_of_two_distinct_admins_never_leaves_zero_active(self):
         """Dos administradores activos (y ningún otro); dos hilos intentan desactivarse ENTRE SÍ al mismo
         tiempo. Resultado aceptable: exactamente una desactivación aplicada (la otra rechazada por
-        LastAdministratorError) o, si el orden de bloqueo se cruza, una de las dos transacciones puede
-        recibir un deadlock de PostgreSQL (psycopg.Error) — ambos desenlaces son seguros. Lo que NUNCA
+        LastAdministratorError), rechazo del actor que ya quedó inactivo (UserNotFoundError)
+        tras el lock transaccional compartido con USR-03, o un error de concurrencia PostgreSQL
+        (psycopg.Error). Lo que NUNCA
         puede ocurrir es que ambas desactivaciones se apliquen, dejando cero administradores activos."""
         admin_a = self.make_admin()
         admin_b = self.make_admin()
@@ -410,6 +411,11 @@ class LastAdministratorGuardTests(IsolatedDatabaseCase):
                         outcomes.append(("ok", result.changed))
                     except LastAdministratorError:
                         outcomes.append(("blocked", None))
+                    except UserNotFoundError:
+                        # With USR-03 last-admin serialization, the losing
+                        # actor may already be inactive by the time it enters
+                        # the identity transaction. Rejecting it is required.
+                        outcomes.append(("actor_inactive", None))
                     except psycopg.Error as error:
                         outcomes.append(("db_error", type(error).__name__))
             except Exception as error:  # pragma: no cover - reportado abajo

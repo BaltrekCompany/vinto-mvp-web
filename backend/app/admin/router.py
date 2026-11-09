@@ -1,4 +1,4 @@
-"""API administrativa de concesiones por sector (/api/admin). Solo GET y POST (la configuración CORS no se amplía).
+"""API administrativa de concesiones por sector (/api/admin). GET, POST y PATCH; CORS permite PATCH solo para orígenes de confianza.
 
 Autorización: sesión válida + permiso `user.manage` (nunca `catalog.manage`). El actor de cada cambio es SIEMPRE el usuario autenticado.
 Las respuestas llevan Cache-Control: no-store.
@@ -8,10 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.admin import catalog, grants_read, grants_write, service, user_creation
+from app.admin import catalog, grants_read, grants_write, service, user_creation, user_editing
 from app.admin.errors import OriginNotAllowed, UnsupportedMediaType
 from app.admin.schemas import (CatalogOut, FormsCatalogOut, GrantChangeIn, GrantChangeOut, SectorChangeIn, SectorChangeOut, SectorGrantOut, UserAdminOut,
-                               UserDetailOut, UserGrantsOut, UserSectorsOut, UserCreateIn, ProfileOut)
+                               UserDetailOut, UserGrantsOut, UserSectorsOut, UserCreateIn, ProfileOut, UserEditIn, UserEditOut, AdminPasswordResetIn, AdminPasswordResetOut)
 from app.auth.dependencies import require_permission
 from app.auth.permissions import USER_MANAGE
 from app.auth.service import AuthenticatedUser
@@ -67,6 +67,30 @@ def create_admin_user(body: UserCreateIn, response: Response, user: Authenticate
     response.headers.update(NO_STORE)
     return user_creation.create_admin_user(connection, actor_id=user.user_id, username=body.username,
                                            display_name=body.display_name, profile_code=body.profile_code, password=body.password)
+
+
+@router.patch("/users/{user_id}", response_model=UserEditOut,
+              responses={**_ERRORS, 409: {"description": "Last active administrator"}, 415: {"description": "JSON required"}},
+              dependencies=[Depends(trusted_origin), Depends(json_body)])
+def edit_admin_user(user_id: UUID, body: UserEditIn, response: Response,
+                    user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)),
+                    connection=Depends(get_identity_connection)):
+    """USR-03: name/profile only; username is immutable and grants are unchanged."""
+    response.headers.update(NO_STORE)
+    return user_editing.edit_user(connection, target_id=user_id, actor_id=user.user_id,
+                                  display_name=body.display_name, profile_code=body.profile_code)
+
+
+@router.post("/users/{user_id}/reset-password", response_model=AdminPasswordResetOut,
+             responses={**_ERRORS, 415: {"description": "JSON required"}},
+             dependencies=[Depends(trusted_origin), Depends(json_body)])
+def reset_admin_password(user_id: UUID, body: AdminPasswordResetIn, response: Response,
+                         user: AuthenticatedUser = Depends(require_permission(USER_MANAGE)),
+                         connection=Depends(get_identity_connection)):
+    """USR-03: admin-defined password, revoke existing sessions, no forced password change."""
+    response.headers.update(NO_STORE)
+    return user_editing.reset_password(connection, target_id=user_id, actor_id=user.user_id,
+                                       password=body.password)
 
 
 @router.get("/sectors", response_model=list[SectorGrantOut], responses=_ERRORS)
