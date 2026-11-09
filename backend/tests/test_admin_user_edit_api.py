@@ -253,6 +253,8 @@ class UserEditAPI(unittest.IsolatedAsyncioTestCase):
                      {"password": secret}, {"display_name": " "}):
             reply = await self.send("PATCH", target.user_id, "edit", body)
             self.assertEqual(reply.status, 422, reply.text)
+            self.assertNotIn(secret, reply.text)
+            self.assertNotIn('"input"', reply.text)
         self.assertEqual(self.scalar(
             "SELECT username FROM vinto_auth.credential WHERE user_id=%s", (target.user_id,)), target.username)
 
