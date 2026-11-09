@@ -25,7 +25,8 @@ export type BobinasCandidate = {
     unresolved?: readonly string[]; // campos automáticos de la definición SIN fuente confirmada (no se generan)
     calculated?: readonly string[]; // campos calculados de la definición sin fórmula aprobada (no se calculan ni se muestran)
     sections?: readonly { title: string; hint?: string; keys: readonly string[] }[];
-    hints?: Readonly<Record<string,string>>; // agrupación SOLO visual (cada campo en una sección)
+    hints?: Readonly<Record<string,string>>;
+    collapsibleSections?: boolean; // agrupación SOLO visual (cada campo en una sección)
     derived?: CandidateScreen["derived"]; // MF-12B: valores derivados solo para mostrar (P1-04: subtotal)
     titleFor?: (machine: string | undefined) => { kicker: string; title: string }; // MF-09A: ver CandidateScreen
     historyNote: string;
@@ -43,7 +44,7 @@ export const BOBINAS_CANDIDATES = {
         historyNote: "Ficha candidata: los consumos son los digitados (texto); no se calculan desde los caudales ni forman inventario." },
     p102: { code: P1_02_CODE, form: P102, api: candidateApi(P102), kicker: "Parámetros · Bobinas MP1", title: "Parámetros de operación de máquina MP1", automatic: P102_AUTOMATIC, pending: P102_PENDING, unresolved: P102_UNRESOLVED_AUTOMATIC, sections: P102_SECTIONS,
         historyNote: "Ficha candidata construida desde la definición original: los valores se muestran tal como se digitaron (sin rangos ni cálculos) y la hora de registro no es la hora de la medición." },
-    pmp3: { code: MP3_INSPECTION_FORM_CODE, form: MP3_OPERATION, api: candidateApi(MP3_OPERATION), kicker: "Operación e inspección · Bobinas MP3", title: "Operación e inspección de máquina MP3 · RG-MP3-01", automatic: MP3_OPERATION_AUTOMATIC, pending: MP3_OPERATION_PENDING, sections: MP3_OPERATION_SECTIONS, hints: MP3_OPERATION_HINTS,
+    pmp3: { code: MP3_INSPECTION_FORM_CODE, form: MP3_OPERATION, api: candidateApi(MP3_OPERATION), kicker: "Operación e inspección · Bobinas MP3", title: "Operación e inspección de máquina MP3 · RG-MP3-01", automatic: MP3_OPERATION_AUTOMATIC, pending: MP3_OPERATION_PENDING, sections: MP3_OPERATION_SECTIONS, hints: MP3_OPERATION_HINTS, collapsibleSections: true,
         historyNote: "Formulario RG-MP3-01 específico de MP3: Pulper obligatorio, otras mediciones opcionales, una captura por turno y autor autenticado. El historial del antiguo P1-01 permanece separado." },
     p101: { code: P1_01_CODE, form: P101, api: candidateApi(P101), kicker: "Operación e inspección · Bobinas", title: "Operación e inspección de máquina", titleFor: machineTitles("Operación e inspección · Bobinas", "Operación e inspección de máquina"), automatic: P101_AUTOMATIC, pending: P101_PENDING, unresolved: P101_UNRESOLVED_AUTOMATIC, sections: P101_SECTIONS,
         historyNote: "Ficha candidata construida desde la definición original: valores tal como se digitaron; sin velocidad, firma ni revisión automáticas; las tres horas de cambio de cuchilla son manuales." },
