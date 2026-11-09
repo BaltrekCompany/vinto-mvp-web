@@ -20,6 +20,13 @@ class CorrelativeInUseError(CaptureError):
     http_status, code, public_message = 409, "CORRELATIVE_IN_USE", "El número correlativo ya está registrado para esta OT y máquina"
 
 
+class ShiftCaptureAlreadyExistsError(CaptureError):
+    http_status, code, public_message = (
+        409, "SHIFT_CAPTURE_ALREADY_EXISTS",
+        "Ya existe una captura de operación e inspección de MP3 para esta fecha operativa y turno",
+    )
+
+
 class UnsupportedFormError(CaptureError):
     http_status, code, public_message = 422, "UNSUPPORTED_FORM", "Formulario no soportado por este endpoint"
 
