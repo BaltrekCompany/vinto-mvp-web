@@ -25,11 +25,26 @@ El operador VPS `ubuntu` debe usar los scripts de release existentes y el flujo 
 - `backend/mp3_rg01_import_gate.py` y `backend/mp3_rg01_operator_readiness.py`.
 - `deploy/mvp/scripts/mp3_rg01_import_release.sh`.
 
-El formulario del candidato se puede **evaluar antes de activar**:
+El formulario del candidato se puede **evaluar antes de activar**. IMPORTANTE: el operador `ubuntu` no tiene acceso de lectura al árbol privado de releases. No ejecutar `bash /opt/vinto-mvp-web/releases/...` directamente: instalar primero una copia idéntica, identificada por SHA, en el directorio operativo protegido.
 
 ```bash
+set -euo pipefail
 SHA=<SHA_EXACTO_40_CARACTERES>
-bash "/opt/vinto-mvp-web/releases/$SHA/deploy/mvp/scripts/mp3_rg01_import_release.sh" check "$SHA"
+REL="/opt/vinto-mvp-web/releases/$SHA"
+OPS="/home/ubuntu/vinto-mvp-ops/scripts"
+SCRIPT="mp3_rg01_import_release.sh"
+test "$(sudo -u vinto-mvp git -C "$REL" rev-parse HEAD)" = "$SHA"
+test -d "$OPS"
+if test -e "$OPS/$SCRIPT"; then
+  sudo cmp -s "$REL/deploy/mvp/scripts/$SCRIPT" "$OPS/$SCRIPT" || {
+    echo "MP3_RG01_STOP=OPS_SCRIPT_DIFFERS" >&2
+    exit 2
+  }
+else
+  sudo install -o ubuntu -g ubuntu -m 700 "$REL/deploy/mvp/scripts/$SCRIPT" "$OPS/$SCRIPT"
+fi
+test -x "$OPS/$SCRIPT"
+bash "$OPS/$SCRIPT" check "$SHA"
 ```
 
 Estado esperado `MP3_RG01_DRY_RUN=PASS`; `state=new`, `pending_creates=136`. Si la base ya importó exactamente ese formulario, `state=already_imported`, `pending_creates=0` es un no-op aceptable. Cualquier otro valor o error: **STOP**, no improvisar `UPDATE` ni `INSERT` SQL.
@@ -48,7 +63,7 @@ El operador identifica el respaldo NUEVO y confirma `verified`. La escritura de 
 SHA=<SHA_EXACTO_40_CARACTERES>
 BACKUP_FILE="/home/ubuntu/vinto-mvp-backups/<RUTA_REAL_DEL_BACKUP>.dump"
 CONFIRM=yes AUTHORIZED_COMMIT="$SHA" BACKUP_FILE="$BACKUP_FILE" \
-  bash "/opt/vinto-mvp-web/releases/$SHA/deploy/mvp/scripts/mp3_rg01_import_release.sh" apply "$SHA"
+  bash "/home/ubuntu/vinto-mvp-ops/scripts/mp3_rg01_import_release.sh" apply "$SHA"
 ```
 
 El script verifica backup, SHA y candidatas, comparte el candado de `/home/ubuntu/vinto-mvp-ops/scripts` con `activate/rollback`, repite dry-run, aplica con el importador oficial y hace postcheck. **No** modifica `current`, no reinicia servicios ni concede permisos. Se exige `MP3_RG01_PREACTIVATION_IMPORT=PASS`. La nueva definición puede coexistir con el código anterior hasta la activación.
