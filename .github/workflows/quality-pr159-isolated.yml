@@ -60,6 +60,11 @@ jobs:
           python -B -m unittest discover -s tests -p 'test_quality_bobbin_decision_schema.py' -v
           python -B -m unittest discover -s tests -p 'test_quality_bobbin_decision_service.py' -v
           python -B -m unittest discover -s tests -p 'test_quality_bobbin_decision_api.py' -v
+      - name: Global sector scope, permissions and migration checksum regression
+        working-directory: backend
+        env:
+          PYTHONPATH: tests:.
+        run: python -B -m unittest -v test_sector_scope.StaticScopeTests
       - name: Historical inbox regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_quality_bobbin_inbox_api.py' -v
