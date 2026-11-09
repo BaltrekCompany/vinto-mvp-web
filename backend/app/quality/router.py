@@ -1,6 +1,6 @@
 """Calidad: bandeja central de Bobinas (GET /api/quality/bobbins, solo lectura) y capturas de Calidad ligadas a una Bobina
 (POST/GET /api/quality/bobbins/{bobbin_id}/captures, GET /api/quality/captures/{capture_id}). Permiso quality.capture, nunca production.capture.
-Nada de esto libera ni rechaza: quality_release no se modifica."""
+Las capturas nunca liberan/rechazan; el endpoint /decision es una operacion independiente auditada."""
 
 import uuid
 from typing import Literal
@@ -8,13 +8,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Response
 
 from app.auth.dependencies import require_permission
-from app.auth.permissions import QUALITY_CAPTURE
+from app.auth.permissions import QUALITY_CAPTURE, QUALITY_RELEASE
 from app.auth.service import AuthenticatedUser
 from app.authz.capture_gate import gate_for
 from app.authz.policies import Operation
 from app.config import settings
 from app.database import get_connection
-from app.quality import capture_service, service
+from app.quality import capture_service, service, decision_service
+from app.quality.decision_schemas import QualityDecisionIn, QualityDecisionOut
 from app.quality.capture_schemas import QualityCaptureIn, QualityCaptureOut, QualityCaptureResultOut, quality_capture_out, quality_capture_result_out
 from app.production_access import ProductionMachinesOut
 from app.quality.schemas import QualityBobbinOut, quality_bobbin_out
@@ -76,3 +77,17 @@ def list_bobbin_quality_captures(bobbin_id: str, form_code: str | None = Query(d
 @router.get("/captures/{capture_id}", response_model=QualityCaptureOut, responses=_CAPTURE_ERRORS)
 def get_quality_capture(capture_id: str, user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     return quality_capture_out(capture_service.get_quality_capture(connection, capture_id, sectors=user.sectors))
+
+
+@router.post("/bobbins/{bobbin_id}/decision", response_model=QualityDecisionOut,
+             responses={401: {"description": "No autenticado"}, 403: {"description": "Sin permiso quality.release"},
+                        404: {"description": "Bobina inexistente o fuera de alcance"}, 409: {"description": "Ya decidida"},
+                        422: {"description": "Datos de decision invalidos"}})
+def decide_quality_bobbin(bobbin_id: uuid.UUID, body: QualityDecisionIn,
+                          user: AuthenticatedUser = Depends(require_permission(QUALITY_RELEASE)),
+                          connection=Depends(get_connection)):
+    """Decide una bobina F3 numerada en Bobinas/Rebobinado, independientemente de la OT o turno.
+    Un reintento con decision_id identico devuelve 200; uno diferente devuelve 409."""
+    return decision_service.decide_bobbin(
+        connection, bobbin_id=bobbin_id, actor_id=user.user_id, sectors=user.sectors,
+        request_id=str(uuid.uuid4()), body=body)
