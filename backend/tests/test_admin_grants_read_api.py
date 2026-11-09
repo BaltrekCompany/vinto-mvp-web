@@ -6,6 +6,7 @@ Nada aquí toca endpoints de escritura, capturas, perfiles de usuarios reales ni
 
 import dataclasses
 import json
+import psycopg
 import secrets
 import threading
 import unittest
@@ -142,9 +143,8 @@ class AccessTests(Base):
 
     async def test_the_only_gate_is_the_existing_user_manage_permission(self):
         self.assertEqual([p for p, perms in permissions.PROFILE_PERMISSIONS.items() if permissions.USER_MANAGE in perms], ["DATA_BALTREK"])
-        self.users["MIXED"] = self.make_user("mixed", "JEFATURA")  # Jefatura + Data Baltrek: la unión de permisos incluye user.manage
-        self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'DATA_BALTREK'", (self.users["MIXED"][0].user_id,))
-        self.assertEqual((await self.get("/api/admin/catalog", "MIXED")).status, 200)
+        self.users["EXTRA_ADMIN"] = self.make_user("extra_admin", "DATA_BALTREK")
+        self.assertEqual((await self.get("/api/admin/catalog", "EXTRA_ADMIN")).status, 200)
 
     async def test_a_revoked_session_and_a_deactivated_admin_lose_access(self):
         self.users["GONE"] = self.make_user("gone", "DATA_BALTREK")
@@ -156,7 +156,7 @@ class AccessTests(Base):
         routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods)
         writes = [(m, p) for m, p in routes if m != "GET"]
         # MF-13-01C.2 añade únicamente los dos POST de concesiones máquina-formulario; la lectura (catálogo, detalle, concesiones, historial) sigue sin escrituras
-        self.assertEqual(writes, [("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"),
+        self.assertEqual(writes, [("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"),
                                   ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
         self.assertFalse([p for _, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or p == "/api/admin/users/{user_id}"], "las rutas de lectura siguen siendo solo GET")
         uid, before = self.target(), self.snapshot()
@@ -168,8 +168,8 @@ class AccessTests(Base):
 
     async def test_existing_admin_routes_are_unchanged(self):
         routes = sorted((m, r.path) for r in admin_router.routes for m in r.methods if "grants" not in r.path and "catalog" not in r.path and r.path != "/api/admin/users/{user_id}")
-        self.assertEqual(routes, [("GET", "/api/admin/sectors"), ("GET", "/api/admin/users"), ("GET", "/api/admin/users/{user_id}/sectors"),
-                                  ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
+        self.assertEqual(routes, [("GET", "/api/admin/profiles"), ("GET", "/api/admin/sectors"), ("GET", "/api/admin/users"), ("GET", "/api/admin/users/{user_id}/sectors"),
+                                  ("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
         self.assertEqual((await self.get("/api/admin/sectors")).status, 200)
         self.assertEqual((await self.get("/api/admin/users")).status, 200)
         self.assertEqual((await self.get(f"/api/admin/users/{self.target()}/sectors")).status, 200)
@@ -192,12 +192,13 @@ class UserTests(Base):
         self.assertEqual(body["permissions"], sorted(permissions.PROFILE_PERMISSIONS["OPERACION"]), "se derivan de la matriz existente")
         self.assertEqual([(s["code"], s["operational"]) for s in body["sectors"]], [("BOBINAS", True), ("REBOBINADO", True)])
 
-    async def test_a_user_with_two_profiles_shows_both_and_the_union_of_permissions(self):
+    async def test_a_user_with_a_second_profile_is_rejected_and_reports_only_one(self):
         uid = self.target("OPERACION")
-        self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (uid,))
+        with self.assertRaises(psycopg.errors.UniqueViolation):
+            self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (uid,))
         body = (await self.get(f"/api/admin/users/{uid}")).json()
-        self.assertEqual([p["code"] for p in body["profiles"]], ["CALIDAD", "OPERACION"])
-        self.assertEqual(body["permissions"], sorted(permissions.PROFILE_PERMISSIONS["OPERACION"] | permissions.PROFILE_PERMISSIONS["CALIDAD"]))
+        self.assertEqual([p["code"] for p in body["profiles"]], ["OPERACION"])
+        self.assertEqual(body["permissions"], sorted(permissions.PROFILE_PERMISSIONS["OPERACION"]))
 
     async def test_a_granted_but_non_operational_sector_is_reported_as_such(self):
         uid = self.target()

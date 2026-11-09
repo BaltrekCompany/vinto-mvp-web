@@ -13,6 +13,8 @@ on:
       - 'backend/tests/test_auth_sessions.py'
       - 'backend/tests/test_user_deactivation.py'
       - 'backend/tests/test_admin_sector_api.py'
+      - 'backend/tests/test_admin_grants_read_api.py'
+      - 'backend/tests/test_admin_grants_write_api.py'
       - '.github/workflows/usr-02-user-creation.yml'
   workflow_dispatch:
 
