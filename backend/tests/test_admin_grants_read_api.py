@@ -158,7 +158,7 @@ class AccessTests(Base):
         # MF-13-01C.2 añade únicamente los dos POST de concesiones máquina-formulario; la lectura (catálogo, detalle, concesiones, historial) sigue sin escrituras
         self.assertEqual(writes, [("PATCH", "/api/admin/users/{user_id}"), ("POST", "/api/admin/users"), ("POST", "/api/admin/users/{user_id}/grants/grant"), ("POST", "/api/admin/users/{user_id}/grants/revoke"), ("POST", "/api/admin/users/{user_id}/reset-password"),
                                   ("POST", "/api/admin/users/{user_id}/sectors/grant"), ("POST", "/api/admin/users/{user_id}/sectors/revoke")])
-        self.assertFalse([p for _, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or (p == "/api/admin/users/{user_id}" and m != "PATCH")], "lecturas solo GET, salvo edición PATCH autorizada")
+        self.assertFalse([p for m, p in writes if "/catalog" in p or p.endswith("/history") or p.endswith("/grants") or (p == "/api/admin/users/{user_id}" and m != "PATCH")], "lecturas solo GET, salvo edición PATCH autorizada")
         uid, before = self.target(), self.snapshot()
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             for path in self.paths(uid):
