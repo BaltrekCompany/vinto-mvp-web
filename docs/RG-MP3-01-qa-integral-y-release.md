@@ -84,7 +84,7 @@ sudo -u vinto-mvp bash -c '
 
 La salida enumera operadores `eligible`, `needs_grant` y `not_authorized`, sin claves ni tokens. `NEEDS_EXPLICIT_GRANTS` significa **STOP**, no habilitar UI para operador ausente. Conceder solo a usuarios seleccionados mediante el panel administrativo de VINTO, por un administrador autenticado; no hacer una inserción SQL manual ni una concesión masiva a todos. Repetir la consulta, confirmar `eligible` para los operadores responsables; auditar las concesiones.
 
-**Ojo:** incluso si `AUTHZ_CENTRAL_CAPTURES_MODE=off` en backend, la UI usa `eligible` del motor real; sin concesión puede ocultar el formulario. No se debe ampliar implícitamente el permiso por estar autenticado.
+**Seguridad de RG01:** en `POST /api/captures`, **solo `VINTO-MP3-01` fuerza `enforce`** del motor efectivo, independientemente del valor global `AUTHZ_CENTRAL_CAPTURES_MODE` (`off`, `observe` o `enforce`). El servidor deniega un usuario sin concesión, incluso mediante API directa o reintento; la UI utiliza además `eligible`. Los otros formularios (incluido P1-01 de MP1) conservan el modo global histórico sin cambios. Prueba HTTP dedicada `test_08_rg01_grants_enforced_with_global_off_and_observe`.
 
 ## Paso 5 — Activación y QA manual (otra autorización, no forma parte del PR)
 
