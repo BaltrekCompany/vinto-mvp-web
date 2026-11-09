@@ -1,0 +1,85 @@
+name: VINTO Calidad portable frontend release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'components/vinto/quality-bobbin-decision.tsx'
+      - 'components/vinto/quality-bobbin-inbox.tsx'
+      - 'lib/vinto/quality-decision-api.ts'
+      - 'backend/app/quality/**'
+      - 'backend/migrations/0023_quality_release_decision.sql'
+      - '.github/workflows/quality-portable-release-artifact.yml'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Immutable 40-character SHA for offline frontend artifact'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+      VINTO_MVP_DOMAIN: vinto-mvp.baltrekservices.com
+    steps:
+      - name: Require immutable commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(uname -m)" = x86_64
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+
+      - name: Verify release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
+          corepack enable
+          test "$(corepack pnpm --version)" = "11.25.0"
+
+      - name: Build and boot-test standalone Next.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash deploy/mvp/scripts/build-frontend-artifact.sh             "$GITHUB_WORKSPACE" "$TARGET_SHA" "$RUNNER_TEMP/vinto-quality-artifacts"
+
+      - name: Verify artifact integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="vinto-mvp-frontend-$TARGET_SHA"
+          tarfile="$RUNNER_TEMP/vinto-quality-artifacts/$name.tar.gz"
+          manifest="$RUNNER_TEMP/vinto-quality-artifacts/$name.manifest"
+          test -s "$tarfile"
+          test -s "$manifest"
+          grep -Fxq "VINTO_MVP_ARTIFACT_COMMIT=$TARGET_SHA" "$manifest"
+          expected="$(sed -n 's/^VINTO_MVP_ARTIFACT_SHA256=//p' "$manifest")"
+          printf '%s  %s\n' "$expected" "$tarfile" | sha256sum -c -
+          echo "QUALITY_FRONTEND_ARTIFACT=PASS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vinto-mvp-frontend-quality-${{ env.TARGET_SHA }}
+          path: |
+            ${{ runner.temp }}/vinto-quality-artifacts/vinto-mvp-frontend-*.tar.gz
+            ${{ runner.temp }}/vinto-quality-artifacts/vinto-mvp-frontend-*.manifest
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
