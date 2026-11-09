@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { QualityBobbinDecision } from "@/components/vinto/quality-bobbin-decision";
 import { CentralStatus } from "@/components/vinto/central-status";
 import { grammageLabel, qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { QUALITY_BOBBIN_CANDIDATES } from "@/lib/vinto/quality-bobbin-candidates";
@@ -9,7 +10,7 @@ import type { Resource } from "@/lib/vinto/use-central";
 
 // Bobinas pendientes de Calidad leídas de PostgreSQL (GET /api/quality/bobbins). El listado es de solo lectura; las ÚNICAS acciones por fila
 // abren, para esa Bobina concreta, el control de humedad (VINTO-P1-19), el de propiedades físicas (VINTO-P1-20) o el historial (solo lectura).
-// No libera ni rechaza.
+// Las acciones de decisión operan por bobina y quedan auditadas en quality_release.
 // DEV-Q2: si el backend publica un candidato por bobina (P1-21) para la máquina de la fila, se añade una acción «candidato» que abre su captura central; sin disponibilidad no se muestra nada.
 // Sin polling: se carga al entrar a Ejecución de Calidad y con "Actualizar". No depende de la asignación activa.
 const HEADERS = ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Hora inicio", "Hora fin", "Gramaje", "Diámetro (mm)", "Peso (kg)", "Cortes", "Observaciones", "Estado", "Acción"];
@@ -28,7 +29,7 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
                     <td className="px-2 py-2">{i.production.operating_date}</td><td className="px-2 py-2">{i.production.shift.name}</td><td className="px-2 py-2">{i.bobbin.start_time}</td><td className="px-2 py-2">{i.bobbin.end_time}</td>
                     <td className="px-2 py-2">{grammageLabel(i.bobbin.grammage_g_m2)}</td><td className="px-2 py-2">{i.bobbin.diameter_mm}</td><td className="px-2 py-2">{i.bobbin.weight_kg}</td><td className="px-2 py-2">{i.bobbin.number_of_cuts}</td>
                     <td className="px-2 py-2">{i.bobbin.notes ?? "—"}</td><td className="px-2 py-2"><span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-950">{qualityStatusLabel(i.quality.status)}</span></td>
-                    <td className="px-2 py-2"><div className="flex flex-col gap-1.5">{(actionOffers?.(i.bobbin.machine.code).humidity ?? true) && <Button size="sm" className="bg-[#146b4f]" aria-label={`Registrar humedad de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterHumidity(i)}>Registrar humedad</Button>}
+                    <td className="px-2 py-2"><div className="flex flex-col gap-1.5"><QualityBobbinDecision item={i} refresh={refresh}/>{(actionOffers?.(i.bobbin.machine.code).humidity ?? true) && <Button size="sm" className="bg-[#146b4f]" aria-label={`Registrar humedad de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterHumidity(i)}>Registrar humedad</Button>}
                         {(actionOffers?.(i.bobbin.machine.code).physical ?? true) && <Button size="sm" className="bg-[#146b4f]" aria-label={`Registrar propiedades físicas de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterProperties(i)}>Registrar propiedades</Button>}
                         {(candidateOffers?.(i.bobbin.machine.code) ?? []).map(screen => <Button key={screen} size="sm" variant="outline" className="border-amber-300 text-amber-950" data-form={QUALITY_BOBBIN_CANDIDATES[screen].code}
                             aria-label={`${QUALITY_BOBBIN_CANDIDATES[screen].actionLabel ?? `Registrar ${QUALITY_BOBBIN_CANDIDATES[screen].title} (candidato)`} de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterCandidate?.(screen, i)}>{QUALITY_BOBBIN_CANDIDATES[screen].actionLabel ?? `${QUALITY_BOBBIN_CANDIDATES[screen].title} (candidato)`}</Button>)}
