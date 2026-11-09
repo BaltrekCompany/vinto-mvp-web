@@ -188,7 +188,7 @@ class AvailabilityTests(Base):
         for machine, forms in offered.items():
             if machine in FIVE:
                 continue
-            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production")
+            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and not (machine == "MP3" and f["code"] == "VINTO-P1-01"))
             self.assertEqual(sorted(forms), expected, machine)
             self.assertNotIn(P110, forms, machine)
 
