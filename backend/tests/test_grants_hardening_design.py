@@ -195,7 +195,7 @@ class RolesCase(sync.SyncCase):
     ATTACKS = {
         "grant": "INSERT INTO vinto_master.user_machine_form_grant (user_id, machine_id, form_id) VALUES (%(op)s,%(mp1)s,%(form)s)",
         "sector": "INSERT INTO vinto_master.user_sector (user_id, sector_id) VALUES (%(op)s,%(sec)s)",
-        "admin_profile": "INSERT INTO vinto_master.user_profile (user_id, profile_id) VALUES (%(op)s,%(pa)s)",
+        "admin_profile": "UPDATE vinto_master.user_profile SET profile_id = %(pa)s WHERE user_id = %(op)s",
         "password_hash": "UPDATE vinto_auth.credential SET password_hash = password_hash WHERE user_id = %(admin)s",
         "forged_session": "INSERT INTO vinto_auth.session (user_id, token_hash, expires_at) VALUES (%(admin)s, %(hash)s, now() + interval '1 hour')",
         "user_active": "UPDATE vinto_master.\"user\" SET active = active WHERE id = %(admin)s",

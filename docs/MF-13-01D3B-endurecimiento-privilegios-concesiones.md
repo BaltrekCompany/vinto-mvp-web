@@ -162,6 +162,7 @@ Cada revocación declara cuándo se ejecuta, quién la usa hoy y en qué fase se
 | `app/auth/dependencies.py::current_user` (resolución de sesiones) | `Depends(get_connection)` → `resolve_session` | **sin cambio**: `resolve_session` solo lee columnas de la credencial y actualiza `last_seen_at` | negocio |
 | `app/admin/router.py` (todas las rutas, lecturas incluidas) | `Depends(get_connection)` | `Depends(get_identity_connection)`; la autorización `require_permission(USER_MANAGE)` sigue resolviendo la sesión con el rol de negocio | identidad |
 | `app/admin/service.py`, `app/admin/grants_write.py` | reciben la conexión del router | heredan la conexión de identidad; además revalidan al actor (`app/admin/actor.py`) dentro de la transacción de la escritura | identidad |
+| `app/admin/user_creation.py` (USR-02) | alta mediante `create_user` en transacción administrativa | hereda `get_identity_connection` del router, revalida `user.manage` y atribuye al actor real | identidad |
 | `app/auth/service.py` (`create_user`, `authenticate`, `deactivate_user`, `reactivate_user`) | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/grants.py`, `app/auth/machine_form_grants.py` | reciben la conexión del llamador | sin cambio de código | identidad |
 | `app/auth/sessions.py` (`login_with_session`, `create_session`, `revoke_session`; `resolve_session` es de negocio) | reciben la conexión del llamador | sin cambio de código | identidad / negocio |
