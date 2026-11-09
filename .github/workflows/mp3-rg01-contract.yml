@@ -43,8 +43,8 @@ jobs:
         run: |
           corepack enable
           pnpm install --frozen-lockfile
-      - name: Generate RG01 seed preview
-        run: node scripts/generate-mp3-rg01-bundle.mjs --emit
+      - name: Verify RG01 seed integrity
+        run: node scripts/generate-mp3-rg01-bundle.mjs --check
       - name: MP3 contract invariants
         run: node --test scripts/mp3-operation-spec.test.mjs
       - name: TypeScript
@@ -67,6 +67,10 @@ jobs:
         run: python -m pip install -r backend/requirements.txt
       - name: Syntax checks
         run: python -B -m compileall -q backend/app/mp3_inspection_policy.py backend/app/capture_errors.py backend/app/capture_service.py backend/app/production_access.py backend/tests/test_mp3_inspection_policy.py
+      - name: Validate complete seed bundle and machine scope
+        working-directory: backend
+        run: |
+          python -B -c "from app.seed.bundle import load_bundle; b=load_bundle(); f=next(f for f in b.forms if f['code']=='VINTO-MP3-01'); assert f['machines']==['MP3']; assert len(f['fields'])==133; print('RG01_SEED_BUNDLE=PASS')"
       - name: MP3 isolated policy tests
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_mp3_inspection_policy.py' -v
