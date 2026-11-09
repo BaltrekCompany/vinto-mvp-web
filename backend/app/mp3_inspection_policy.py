@@ -7,6 +7,8 @@ El mismo capture_id se reconcilia en capture_service antes de alcanzar esta pol�
 Ámbito de unicidad: MP3 + fecha operativa (no fecha de servidor) + turno
 (shift_id, no schedule_id, para soportar revisiones del horario).
 Cambios de OT, asignación, usuario o dispositivo NO abren otra captura del turno.
+La historia de VINTO-P1-01 de MP3 durante el turno de transición TAMBIÉN ocupa
+esa franja: no se registra dos veces la inspección con códigos diferentes.
 """
 
 from app.capture_errors import FormNotAvailableError, ShiftCaptureAlreadyExistsError
@@ -22,7 +24,7 @@ SHIFT_ALREADY_TAKEN_SQL = """
     JOIN vinto_config.form f ON f.id = v.form_id
     JOIN vinto_config.shift_schedule existing_schedule ON existing_schedule.id = c.shift_schedule_id
     JOIN vinto_config.shift_schedule new_schedule ON new_schedule.id = %s
-    WHERE f.code = %s
+    WHERE f.code = ANY(%s)
       AND c.machine_id = %s
       AND c.operating_date = %s
       AND existing_schedule.shift_id = new_schedule.shift_id
@@ -57,7 +59,7 @@ def assert_one_per_shift(connection, *, form_code: str, machine_id, operating_da
         return
     taken = connection.execute(
         SHIFT_ALREADY_TAKEN_SQL,
-        (shift_schedule_id, form_code, machine_id, operating_date),
+        (shift_schedule_id, [RG_MP3_FORM_CODE, SHARED_OLD_FORM_CODE], machine_id, operating_date),
     ).fetchone()
     if taken is not None:
         raise ShiftCaptureAlreadyExistsError()
