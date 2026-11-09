@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { QualityBobbinDecision } from "@/components/vinto/quality-bobbin-decision";
 import { CentralStatus } from "@/components/vinto/central-status";
@@ -23,7 +24,7 @@ type Props = {
     actionOffers?: (machineCode: string) => { humidity: boolean; physical: boolean };
 };
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
     return <div className="min-w-0">
         <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{label}</dt>
         <dd className="mt-0.5 break-words text-sm text-slate-950">{children}</dd>
