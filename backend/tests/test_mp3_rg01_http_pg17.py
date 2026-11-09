@@ -15,6 +15,7 @@ from pydantic import SecretStr
 from app import capture_service
 from app.assignments import service as assignment_service
 from app.auth.service import create_user
+from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form, has_active_machine_form_grant
 from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
 from app.seed.bundle import load_bundle
@@ -50,7 +51,7 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
         cls.patch_db = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.patch_db.start()
         cls.users, cls.cookies = {}, {}
-        for profile in ("JEFATURA", "SUPERVISION", "OPERACION"):
+        for profile in ("JEFATURA", "SUPERVISION", "OPERACION", "DATA_BALTREK"):
             password = "pw-" + secrets.token_urlsafe(18)
             cls.users[profile] = (
                 create_user(cls.connection, username="rg01." + profile.lower(), display_name=profile, profile_code=profile,
@@ -161,6 +162,41 @@ class RG01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((same.status, same.json()["already_submitted"]), (200, True))
         r, _ = await self.post(a)
         self.assertEqual((r.status, r.json()["code"]), (409, "SHIFT_CAPTURE_ALREADY_EXISTS"))
+
+    async def test_06_operator_requires_individual_rg01_machine_form_grant(self):
+        operator = self.users["OPERACION"][0].user_id
+        actor = self.users["DATA_BALTREK"][0].user_id
+        self.assertFalse(has_active_machine_form_grant(self.connection, operator, "MP3", RG))
+        availability = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
+        ref = next(f for s in availability.json()["sectors"] for m in s["machines"] if m["code"] == "MP3" for f in m["forms"] if f["code"] == RG)
+        self.assertFalse(ref["eligible"], "sin concesión, el operador NO ve habilitada la ficha nueva")
+
+        assignment = await self.assignment("MP3")
+        with patch.object(settings, "authz_central_captures_mode", "enforce"):
+            denied, _ = await self.post(assignment)
+            self.assertEqual(denied.status, 403, denied.text)
+
+            granted = grant_machine_form(
+                self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
+            )
+            self.assertTrue(granted)
+            self.assertFalse(grant_machine_form(
+                self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
+            ), "no duplica una concesión activa")
+            self.assertTrue(has_active_machine_form_grant(self.connection, operator, "MP3", RG))
+            availability = await call("GET", "/api/production/machines", cookie=await self.cookie("OPERACION"))
+            ref = next(f for s in availability.json()["sectors"] for m in s["machines"] if m["code"] == "MP3" for f in m["forms"] if f["code"] == RG)
+            self.assertTrue(ref["eligible"], "el usuario tiene perfil, sector y concesión exacta")
+
+            accepted, body = await self.post(assignment)
+            self.assertEqual(accepted.status, 201, accepted.text)
+            self.assertTrue(revoke_machine_form(
+                self.connection, user_id=operator, machine_code="MP3", form_code=RG, actor_id=actor,
+            ))
+            self.assertFalse(has_active_machine_form_grant(self.connection, operator, "MP3", RG))
+            # Incluso el reintento idempotente requiere una concesión ACTIVA bajo enforce.
+            revoked = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
+            self.assertEqual(revoked.status, 403, revoked.text)
 
     async def test_05_two_concurrent_submits_differing_id(self):
         a = await self.assignment("MP3")
