@@ -21,6 +21,7 @@ from uuid import uuid4
 from pydantic import SecretStr
 
 from app import capture_service as _capture_service
+from app import mp3_inspection_policy as _mp3_policy
 from app.assignments import service as _assignments_service
 from app.auth.service import create_user
 from app.config import settings
@@ -222,7 +223,10 @@ class Base(unittest.IsolatedAsyncioTestCase):
         body = {"capture_id": capture_id or str(uuid4()), "form_code": code, "assignment_id": assignment["id"], "device_key": device_key or str(uuid4()), "values": values}
         if not old:
             return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION")), body
-        with patch.object(_capture_service, "published_form_version", return_value=self.old[code]):  # solo aquí se fuerza la versión anterior, como antes de publicar la nueva
+        # Simulación EXPLÍCITA de un registro histórico antes de retirar P1-01 de MP3;
+        # solo esta llamada puede usar una versión histórica. El código productivo no se toca.
+        with patch.object(_capture_service, "published_form_version", return_value=self.old[code]), \
+             patch.object(_mp3_policy, "assert_form_machine", return_value=None):
             return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION")), body
 
     async def get(self, capture_id):
@@ -243,6 +247,9 @@ class P101Tests(Base):
             assignment = await self.assignment(machine)
             values = v4_values(frecuencia_release="50 Hz", dosificacion_coating="12", frecuencia_coating="cada 2 h")
             reply, _ = await self.post(assignment, P101, values)
+            if machine == "MP3":
+                self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"), "RG01 reemplaza P1-01 solo en MP3")
+                continue
             self.assertEqual(reply.status, 201, (machine, reply.text))
             capture = reply.json()["capture"]
             self.assertEqual(capture["form"]["version_number"], 4)
@@ -254,7 +261,7 @@ class P101Tests(Base):
             self.assertEqual((got.status, got.json()["values"]), (200, capture["values"]))
 
     async def test_the_three_new_fields_are_optional_and_empty_values_store_nothing(self):
-        assignment = await self.assignment("MP3")
+        assignment = await self.assignment("MP1")
         base = {k: v for k, v in v4_values().items() if k not in OPTIONAL}
         for empty in ("absent", None, "", "   "):
             values = dict(base) if empty == "absent" else {**base, **{k: empty for k in OPTIONAL}}
@@ -283,7 +290,7 @@ class P101Tests(Base):
         self.assertEqual((await self.post(assignment, P101, {**good, "velocidad_pope": "310.5", "boquillas_quimicos": "B-3"}))[0].status, 201)
 
     async def test_retired_keys_are_rejected_in_a_new_v4_capture(self):
-        assignment = await self.assignment("MP3")
+        assignment = await self.assignment("MP1")
         n = self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],))
         for key in RETIRED:
             reply, _ = await self.post(assignment, P101, {**v4_values(), key: "1"})
@@ -344,12 +351,12 @@ class AvailabilityTests(Base):
         offered = await self.machines()
         mp1_before = sorted(["VINTO-P1-01", P102, P104, "VINTO-P1-06", P105, P131])
         self.assertEqual(offered["MP1"], sorted(set(mp1_before) - {P105, P131}), "MP1 conserva P1-01, P1-02, P1-04 y P1-06")
-        self.assertEqual(offered["MP3"], mp1_before, "MP3 conserva las seis fichas")
+        self.assertEqual(offered["MP3"], sorted((set(mp1_before) - {P101}) | {"VINTO-MP3-01"}), "MP3 solo reemplaza P1-01 con RG01")
 
     async def test_every_other_machine_keeps_exactly_the_offer_of_the_bundle(self):
         offered = await self.machines()
         for machine, codes in offered.items():
-            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production")
+            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and not (machine == "MP3" and f["code"] == P101))
             self.assertEqual(codes, expected, machine)
 
     async def test_new_captures_are_rejected_in_mp1_even_through_the_direct_api(self):
