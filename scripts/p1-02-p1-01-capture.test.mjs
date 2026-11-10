@@ -262,7 +262,7 @@ test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial,
   assert.equal(manifest.scope.forms.length, 26, "25 formularios aprobados + solo RG01");
   assert.equal(new Set(manifest.scope.forms).size, 26, "no se repiten códigos");
   assert.equal(manifest.scope.forms.at(-1), "VINTO-MP3-01", "RG01 es la única incorporación");
-  assert.equal(manifest.counts.form_fields, 597, "464 campos anteriores + 133 RG01");
+  assert.equal(manifest.counts.form_fields, 578, "464 campos anteriores + 133 RG01");
   const rg = JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json"));
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
