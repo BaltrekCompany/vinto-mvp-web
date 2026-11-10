@@ -267,7 +267,8 @@ test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial,
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 26, "USR-02/03 y RB-CRIA-01 agregan 0024-0026 sin cambiar MP1/MP3");
+  assert.equal(migrations.length, 27, "CV-P112-01 añade migración 0027 aislada sin modificar MP1/MP3");
+  assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   assert.ok(migrations.includes("0023_quality_release_decision.sql"));
   assert.equal(readdirSync(join(root, "components/vinto")).some((f) => /p1-0[12]/.test(f)), false, "no hay componentes de pantalla propios");
   assert.equal(/requestJson|\/api\//.test(code("lib/vinto/p1-02.ts") + code("lib/vinto/p1-01.ts")), false);
