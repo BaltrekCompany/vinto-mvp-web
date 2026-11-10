@@ -384,7 +384,7 @@ test("the header is inherited (read-only) and separates nominal grammage from th
     assert.ok(component.includes(`<Auto label="${label}"`), label);
   }
   assert.match(component, /grammageLabel\(bobbin\.grammage_g_m2\)/);
-  assert.match(component, /value=\{bobbin\.number_of_cuts\}/);
+  assert.match(component, /value=\{bobbin\.number_of_cuts \?\? "—"\}/); // La pantalla existente utiliza guion si Producción no informó cortes.
   assert.equal((component.match(/<Input /g) ?? []).length, 1, "one Input template, rendered per measurement key");
   assert.match(component, /PHYSICAL_GROUPS\.map/);
 });
