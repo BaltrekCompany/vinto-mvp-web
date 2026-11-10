@@ -15,6 +15,7 @@ on:
       - 'backend/tests/test_bundle_validation.py'
       - 'lib/vinto/p1-12.ts'
       - 'lib/vinto/pallet-preview.ts'
+      - 'lib/vinto/pallet-weight.ts'
       - 'lib/vinto/candidate-form.ts'
       - 'lib/vinto/conversion-candidates.ts'
       - 'components/vinto/candidate-form-capture.tsx'
