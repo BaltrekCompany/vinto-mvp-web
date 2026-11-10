@@ -137,6 +137,21 @@ class AssignmentApiCase(unittest.IsolatedAsyncioTestCase):
 class RevisionNoticesTests(AssignmentApiCase):
     """E2-C1: actionable notice, operator identity, grants, audit and replay."""
 
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # The class shares an ephemeral database across test methods. Clear only
+        # the grants exercised here so one test cannot authorize another.
+        # Revocations are audited and idempotent; no runtime permission changes.
+        from app.auth.machine_form_grants import revoke_machine_form
+
+        actor = self.users["OPERACION"][0].user_id
+        granted_by = self.users["JEFATURA"][0].user_id
+        for form_code in ("VINTO-P1-03", "VINTO-P1-19"):
+            revoke_machine_form(
+                self.connection, user_id=actor, machine_code="MP1",
+                form_code=form_code, actor_id=granted_by,
+            )
+
     async def _revised_assignment(self):
         original = await self.published_order(lines=1)
         old = original["baseline"]["lines"][0]
