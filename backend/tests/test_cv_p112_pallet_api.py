@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from app import capture_service
 from app.assignments import service as assignments_service
 from app.auth.service import create_user
+from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
 from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
 from app.seed.bundle import load_bundle
@@ -44,6 +45,7 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
         cls.users, cls.cookies = {}, {}
+        cls.actor = create_user(cls.connection, username="cvp112.admin", display_name="QA Admin", profile_code="DATA_BALTREK", password="cvp112-" + secrets.token_urlsafe(18), sectors=()).user_id
         for profile in ("JEFATURA", "SUPERVISION", "OPERACION"):
             password = "cvp112-" + secrets.token_urlsafe(18)
             created = create_user(cls.connection, username="cvp112." + profile.lower(),
@@ -119,7 +121,14 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
     async def test_authorized_weight_preview_is_bound_to_ot_and_line(self):
         order, assignment = await self.assignment()
         url = f"/api/production/pallet-preview?assignment_id={assignment['id']}"
-        ok = await call("GET", url, cookie=await self.cookie("OPERACION"))
+        cookie = await self.cookie("OPERACION")
+        # Permisos efectivos, no solo el modo observe: sin grant no hay vista previa.
+        without_grant = await call("GET", url, cookie=cookie)
+        self.assertEqual(without_grant.status, 404)
+        user_id = self.users["OPERACION"][0].user_id
+        self.assertTrue(grant_machine_form(self.connection, user_id=user_id,
+            machine_code="GAMBINI", form_code=FORM, actor_id=self.actor))
+        ok = await call("GET", url, cookie=cookie)
         self.assertEqual(ok.status, 200, ok.text)
         info = ok.json()
         self.assertEqual(info["article_code"], ARTICLE)
@@ -133,6 +142,9 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unknown.status, 404)
         anonymous = await call("GET", url)
         self.assertEqual(anonymous.status, 401)
+        self.assertTrue(revoke_machine_form(self.connection, user_id=user_id, machine_code="GAMBINI", form_code=FORM, actor_id=self.actor))
+        after_revoke = await call("GET", url, cookie=cookie)
+        self.assertEqual(after_revoke.status, 404)
 
     async def test_first_pallet_and_atomic_snapshot(self):
         order, assignment = await self.assignment()
