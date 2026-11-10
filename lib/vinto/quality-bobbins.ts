@@ -11,13 +11,14 @@ export type QualityBobbinInboxItem = {
         code: string;
         machine: { code: string; name: string };
         management_start_year: number;
-        sequence_number: number;
+        sequence_number: number | null;
         start_time: string;
         end_time: string;
         diameter_mm: string;
         weight_kg: string;
         grammage_g_m2: string | null; // null: el producto no tiene gramaje en el maestro (no es un error)
-        number_of_cuts: string;
+        number_of_cuts: string | null;
+        rewinding?: { mother_label: string; child_position: number };
         notes: string | null;
     };
     production: {
@@ -53,9 +54,21 @@ export function parseQualityBobbinInboxItem(value: unknown): QualityBobbinInboxI
     const diameter = decimal(b.diameter_mm), weight = decimal(b.weight_kg);
     const grammage = b.grammage_g_m2 === null ? null : decimal(b.grammage_g_m2);
     if (!isStr(b.id) || !isStr(b.code) || !machine) return null;
-    if (!isInt(b.management_start_year) || b.management_start_year <= 0 || !isInt(b.sequence_number) || b.sequence_number <= 0) return null;
-    if (b.code !== String(b.sequence_number)) return null; // contrato F3 / CHECK de 0004: code = sequence_number::text
-    if (!isStr(b.start_time) || !isStr(b.end_time) || !isStr(b.number_of_cuts)) return null;
+    if (!isInt(b.management_start_year) || b.management_start_year <= 0) return null;
+    const rw = b.rewinding;
+    const isChild = isRec(rw);
+    if (isChild) {
+        if (!isStr(rw.mother_label) || !rw.mother_label.trim()
+            || !isInt(rw.child_position) || rw.child_position < 1 || rw.child_position > 22
+            || rw.child_position === 12 || b.sequence_number !== null || b.number_of_cuts !== null
+            || !isStr(p.capture_id)
+            || b.code !== `CRIA-${p.capture_id.replace(/-/g, "")}-${rw.child_position}`) return null;
+    } else {
+        if (rw !== undefined && rw !== null) return null;
+        if (!isInt(b.sequence_number) || b.sequence_number <= 0 || b.code !== String(b.sequence_number)
+            || !isStr(b.number_of_cuts)) return null; // contrato F3 inalterado
+    }
+    if (!isStr(b.start_time) || !isStr(b.end_time)) return null;
     if (diameter === null || weight === null || NEGATIVE(weight)) return null; // diámetro: decimal válido, sin rango funcional
     if (b.grammage_g_m2 !== null && grammage === null) return null;
     if (!(b.notes === null || typeof b.notes === "string")) return null;
@@ -73,7 +86,9 @@ export function parseQualityBobbinInboxItem(value: unknown): QualityBobbinInboxI
         bobbin: {
             id: b.id, code: b.code, machine, management_start_year: b.management_start_year, sequence_number: b.sequence_number,
             start_time: b.start_time, end_time: b.end_time, diameter_mm: diameter, weight_kg: weight, grammage_g_m2: grammage,
-            number_of_cuts: b.number_of_cuts, notes: b.notes,
+            number_of_cuts: b.number_of_cuts as string | null, notes: b.notes,
+            ...(isChild ? { rewinding: { mother_label: (rw as Rec).mother_label as string,
+                                       child_position: (rw as Rec).child_position as number } } : {}),
         },
         production: {
             capture_id: p.capture_id, captured_at: p.captured_at, operating_date: p.operating_date, shift,
