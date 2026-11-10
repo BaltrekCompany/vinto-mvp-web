@@ -22,7 +22,7 @@ import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 export const P1_07_CODE = "VINTO-P1-07";
 // Números de las crías de la definición legacy: 1-11 y 13-22 (21 campos). El 12 NO existe.
 export const P107_CRIA_NUMBERS: readonly number[] = [...Array.from({ length: 11 }, (_, i) => i + 1), ...Array.from({ length: 10 }, (_, i) => i + 13)];
-const CRIAS: readonly FieldSpec[] = P107_CRIA_NUMBERS.map((n) => ({ key: `peso_cria_${n}`, label: `Peso cría ${n}`, kind: "decimal", required: true, suffix: "kg" }));
+const CRIAS: readonly FieldSpec[] = P107_CRIA_NUMBERS.map((n) => ({ key: `peso_cria_${n}`, label: `Peso cría ${n}`, kind: "decimal", required: n === 1, suffix: "kg" }));
 export const P107_FIELDS: readonly FieldSpec[] = [
     { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 2 },
     { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 2 },
@@ -48,16 +48,16 @@ export const P107_SECTIONS: readonly { title: string; hint?: string; keys: reado
     { title: "Horas del trabajo", hint: "Hora local de planta (HH:MM), digitadas; no son la hora de registro del sistema.", keys: ["hora_inicio", "hora_fin"] },
     { title: "Bobina y destino", keys: ["etiqueta_numero_de_bobina", "peso", "destino", "producto_refilado", "auxiliar"] },
     { title: "Parámetros de proceso", keys: ["velocidad_minima", "tension", "velocidad", "metraje", "diametro", "formato_1", "formato_2", "formato_3", "tubete"] },
-    { title: "Pesos de crías", hint: "21 campos individuales (1-11 y 13-22; no existe la cría 12). La definición legacy los marca todos obligatorios: cuántas crías hay en realidad está pendiente de homologación.", keys: CRIAS.map((c) => c.key) },
+    { title: "Pesos de crías", hint: "21 posiciones (1-11 y 13-22; no existe la 12). Solo la cría 1 es obligatoria. Cada peso registrado genera una cría pendiente de Calidad; posiciones vacías no generan crías.", keys: CRIAS.map((c) => c.key) },
     { title: "Observaciones", keys: ["observaciones"] },
 ];
 export const P107 = defineCandidateForm(P1_07_CODE, P107_FIELDS);
 export const P107_AUTOMATIC = ["Fecha (fecha operativa de la asignación)", "Turno (el de la asignación)", "Operador (usuario autenticado, informativo)"] as const;
 export const P107_PENDING: readonly { label: string; pending: string }[] = [
-    { label: "No es genealogía", pending: "Este circuito solo captura los campos manuales de P1-07. No crea bobinas hijas, no consume bobinas madre, no crea relaciones madre-hija ni correlativos, no calcula balances de masa ni mueve inventario, y no toca la liberación de Calidad. Capturar P1-07 NO equivale a una genealogía funcional." },
-    { label: "Etiqueta / número de bobina", pending: "Es texto digitado y NO identifica una bobina madre: su identidad y relación siguen pendientes de VINTO." },
+    { label: "Madre declarada", pending: "La etiqueta identifica la madre SOLO como texto declarado por Operación (opción A); no valida ni vincula un UUID real de MP1/MP3. Cada peso de cría informado crea una unidad técnica propia con estado Pendiente en Calidad. No hay consumo de inventario, correlativo industrial ni balance de masas." },
+    { label: "Etiqueta / número de bobina", pending: "Es el rótulo declarado de la bobina madre: NO se verifica contra una bobina física MP1/MP3 ni crea una relación genealógica de inventario." },
     { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 2; no se derivan de la hora de registro, no se calcula la duración ni se valida que fin sea posterior a inicio, y no se asume otra fecha si cruzan la medianoche." },
-    { label: "Pesos de crías", pending: "21 campos individuales (1-11 y 13-22; no existe la cría 12), todos decimales obligatorios según la definición legacy. La cardinalidad y la condicionalidad (cuántas salidas hay) están pendientes y no se calcula ningún total ni balance." },
+    { label: "Pesos de crías", pending: "Solo peso_cria_1 es obligatorio; las otras 20 posiciones son opcionales. Cada peso positivo informado genera una cría individual pendiente de Calidad, sin correlativo comercial ni balance de masa." },
     { label: "Catálogos y reglas", pending: "Producto refilado, destino, tubete, tensión y metraje son texto sin catálogo; no hay reglas de corte, rendimiento ni mermas aprobadas." },
     { label: "Máquinas, sector y turnos", pending: "Rebobinado no es un sector operativo (el seed aprobado solo tiene MP1 y MP3): COPASA, BELOIT, OVER y los turnos oficiales siguen pendientes. Solo se usan en entornos de prueba." },
 ];

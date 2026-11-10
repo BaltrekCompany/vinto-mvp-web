@@ -22,6 +22,8 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
         detail.length <= 4000 && correctiveAction.length <= 4000;
     const typeLabel = REJECTION_TYPES.find(x => x.value === rejectionType)?.label ?? "Sin seleccionar";
     const classLabel = REJECTION_CLASSES.find(x => x.value === classification)?.label ?? "Sin seleccionar";
+    const child = item.bobbin.rewinding;
+    const subject = child ? `cría ${child.child_position} de la madre ${child.mother_label}` : `bobina ${item.bobbin.code}`;
 
     async function submit(action: "release" | "reject") {
         if (busy || done || (action === "reject" && (!canReject || !review))) return;
@@ -55,21 +57,26 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
     return <div className="min-w-0 space-y-2" data-quality-decision={item.bobbin.id}>
         <div className="grid grid-cols-2 gap-2">
             <Button size="sm" className="bg-[#146b4f]" disabled={busy || done}
-                aria-label={`Liberar bobina ${item.bobbin.code}`}
+                aria-label={`Liberar ${subject}`}
                 onClick={() => {
-                    if (window.confirm(`¿Liberar definitivamente la bobina ${item.bobbin.code} de ${item.bobbin.machine.code} (OT ${item.production.work_order.number})? Esta decisión quedará registrada y no se puede deshacer desde esta pantalla.`))
+                    if (window.confirm(`¿Liberar definitivamente ${subject} de ${item.bobbin.machine.code} (OT ${item.production.work_order.number}, línea ${item.production.line.line_code})? Esta decisión quedará registrada y no se puede deshacer desde esta pantalla.`))
                         void submit("release");
                 }}>
                 Liberar
             </Button>
             <Button size="sm" variant="outline" disabled={busy || done} aria-expanded={open}
-                aria-label={`Rechazar bobina ${item.bobbin.code}`}
+                aria-label={`Rechazar ${subject}`}
                 onClick={() => { setOpen(v => !v); setReview(false); setError(""); }}>
                 Rechazar
             </Button>
         </div>
-        {open && <section className="min-w-0 space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm" aria-label={`Rechazo de bobina ${item.bobbin.code}`}>
-            <h4 className="font-bold">Rechazar bobina {item.bobbin.code} — {item.bobbin.machine.code}</h4>
+        {open && <section className="min-w-0 space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm" aria-label={`Rechazo de ${subject}`}>
+            <h4 className="font-bold">Rechazar {subject} — {item.bobbin.machine.code}</h4>
+            {child && <p className="rounded-md border border-rose-200 bg-white p-2 text-xs text-slate-900">
+                Madre declarada: <strong>{child.mother_label}</strong> · Cría <strong>{child.child_position}</strong> ·
+                Peso <strong>{item.bobbin.weight_kg} kg</strong> · OT <strong>{item.production.work_order.number}</strong> ·
+                Línea/PV <strong>{item.production.line.line_code} / {item.production.line.pv_reference}</strong>
+            </p>}
             {!review ? <>
                 <p className="text-xs text-rose-900">Completa los cuatro campos. La clasificación debe corresponder al detalle registrado.</p>
                 <label className="block font-medium">Tipo
@@ -99,7 +106,8 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
                     <p className="font-bold text-rose-950">Revisa antes de confirmar</p>
                     <p className="mt-1 text-xs text-rose-900">La decisión será definitiva en esta pantalla. Verifica que la clasificación coincida con el detalle.</p>
                     <dl className="mt-3 space-y-2">
-                        <div><dt className="text-xs font-semibold text-slate-600">Bobina / máquina / OT</dt><dd className="break-words">{item.bobbin.code} / {item.bobbin.machine.code} / {item.production.work_order.number}</dd></div>
+                        <div><dt className="text-xs font-semibold text-slate-600">{child ? "Cría / madre / máquina / OT" : "Bobina / máquina / OT"}</dt>
+                            <dd className="break-words">{subject} / {item.bobbin.machine.code} / {item.production.work_order.number}</dd></div>
                         <div><dt className="text-xs font-semibold text-slate-600">Tipo</dt><dd>{typeLabel}</dd></div>
                         <div><dt className="text-xs font-semibold text-slate-600">Clasificación</dt><dd className="font-semibold">{classLabel}</dd></div>
                         <div><dt className="text-xs font-semibold text-slate-600">Detalle</dt><dd className="whitespace-pre-wrap break-words">{detail.trim()}</dd></div>

@@ -137,6 +137,21 @@ class AssignmentApiCase(unittest.IsolatedAsyncioTestCase):
 class RevisionNoticesTests(AssignmentApiCase):
     """E2-C1: actionable notice, operator identity, grants, audit and replay."""
 
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # The class shares an ephemeral database across test methods. Clear only
+        # the grants exercised here so one test cannot authorize another.
+        # Revocations are audited and idempotent; no runtime permission changes.
+        from app.auth.machine_form_grants import revoke_machine_form
+
+        actor = self.users["OPERACION"][0].user_id
+        granted_by = self.users["JEFATURA"][0].user_id
+        for form_code in ("VINTO-P1-03", "VINTO-P1-19"):
+            revoke_machine_form(
+                self.connection, user_id=actor, machine_code="MP1",
+                form_code=form_code, actor_id=granted_by,
+            )
+
     async def _revised_assignment(self):
         original = await self.published_order(lines=1)
         old = original["baseline"]["lines"][0]
@@ -160,17 +175,18 @@ class RevisionNoticesTests(AssignmentApiCase):
             machine_code="MP1", form_code="VINTO-P1-03",
             actor_id=self.users["JEFATURA"][0].user_id)
 
-    async def test_combined_operation_quality_profile_quality_grant_cannot_read_production_notices(self):
-        # A combined-profile user has production.capture from OPERACION but
-        # only a QUALITY form grant on MP1. Generic machine visibility admits
-        # Quality; E2-C1 must require the production-specific authorization.
+    async def test_operation_profile_quality_only_grant_cannot_read_production_notices(self):
+        # USR-02: un usuario posee UN perfil. Un OPERACION con concesión
+        # exclusivamente de formulario CALIDAD (P1-19) no recibe avisos de OT;
+        # E2-C1 exige una concesión específica de Producción (P1-03).
+        # Conserva el gate de permisos sin insertar un segundo perfil ilegal.
         from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
 
         assigned = await self._revised_assignment()
         actor = self.users["OPERACION"][0].user_id
-        self.connection.execute(
-            "INSERT INTO vinto_master.user_profile (user_id, profile_id) "
-            "SELECT %s, id FROM vinto_master.profile WHERE code='CALIDAD'", (actor,))
+        self.assertEqual(self.scalar(
+            "SELECT count(*) FROM vinto_master.user_profile WHERE user_id=%s",
+            (actor,)), 1, "USR-02: perfil único obligatorio")
         grant_machine_form(
             self.connection, user_id=actor, machine_code="MP1",
             form_code="VINTO-P1-19", actor_id=self.users["JEFATURA"][0].user_id)

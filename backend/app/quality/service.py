@@ -28,13 +28,13 @@ class QualityBobbinView:
     machine_code: str
     machine_name: str
     management_start_year: int
-    sequence_number: int
+    sequence_number: int | None
     start_time: time
     end_time: time
     diameter_mm: str
     weight_kg: str
     grammage_g_m2: str | None
-    number_of_cuts: str
+    number_of_cuts: str | None
     notes: str | None
     capture_id: uuid.UUID
     captured_at: datetime
@@ -49,13 +49,15 @@ class QualityBobbinView:
     article_code: str
     article_description: str
     quality_status: str
+    rewind_child_position: int | None
+    rewind_mother_label: str | None
 
 
 # Orden de presentación determinista (marca temporal estable + id). NO es una prioridad de negocio: Calidad no confirmó ninguna.
-_SQL = """SELECT b.id, b.code, m.code, m.name, b.management_start_year, b.sequence_number, b.start_time, b.end_time,
+_SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year, vinto_txn.management_start_year(c.operating_date)), b.sequence_number, b.start_time, b.end_time,
                  b.diameter_mm, b.weight_kg, b.grammage_g_m2, b.number_of_cuts, b.notes,
                  c.id, c.captured_at, c.operating_date, sh.code, sh.name,
-                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status
+                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status, b.rewind_child_position, b.rewind_mother_label
           FROM vinto_txn.bobbin b
           JOIN vinto_txn.quality_release q ON q.bobbin_id = b.id
           JOIN vinto_txn.capture c ON c.id = b.source_capture_id
@@ -69,7 +71,8 @@ _SQL = """SELECT b.id, b.code, m.code, m.name, b.management_start_year, b.sequen
           JOIN vinto_txn.work_order wo ON wo.id = wov.work_order_id
           JOIN vinto_master.article_version av ON av.id = b.article_version_id
           JOIN vinto_master.article ar ON ar.id = av.article_id
-          WHERE b.sequence_number IS NOT NULL AND q.status = %s AND s.code = ANY(%s)
+          WHERE (b.sequence_number IS NOT NULL OR b.rewind_child_position IS NOT NULL)
+            AND q.status = %s AND s.code = ANY(%s)
           ORDER BY c.captured_at DESC, b.id DESC"""
 
 

@@ -24,7 +24,7 @@ def decide_bobbin(connection, *, bobbin_id, actor_id, sectors, request_id, body:
                JOIN vinto_txn.bobbin b ON b.id=q.bobbin_id
                JOIN vinto_master.machine m ON m.id=b.machine_id
                JOIN vinto_master.sector s ON s.id=m.sector_id
-               WHERE q.bobbin_id=%s AND b.sequence_number IS NOT NULL
+               WHERE q.bobbin_id=%s AND (b.sequence_number IS NOT NULL OR b.rewind_child_position IS NOT NULL)
                  AND s.code=ANY(%s)
                FOR UPDATE OF q""",
             (bobbin_id, allowed),

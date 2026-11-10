@@ -6,7 +6,7 @@
   "name": "Registro de producción de bobinas rebobinadas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "BELOIT",
     "OVER",
@@ -172,7 +172,7 @@
       "label": "Peso cría 2",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 18
     },
@@ -181,7 +181,7 @@
       "label": "Peso cría 3",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 19
     },
@@ -190,7 +190,7 @@
       "label": "Peso cría 4",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 20
     },
@@ -199,7 +199,7 @@
       "label": "Peso cría 5",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 21
     },
@@ -208,7 +208,7 @@
       "label": "Peso cría 6",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 22
     },
@@ -217,7 +217,7 @@
       "label": "Peso cría 7",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 23
     },
@@ -226,7 +226,7 @@
       "label": "Peso cría 8",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 24
     },
@@ -235,7 +235,7 @@
       "label": "Peso cría 9",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 25
     },
@@ -244,7 +244,7 @@
       "label": "Peso cría 10",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 26
     },
@@ -253,7 +253,7 @@
       "label": "Peso cría 11",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 27
     },
@@ -262,7 +262,7 @@
       "label": "Peso cría 13",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 28
     },
@@ -271,7 +271,7 @@
       "label": "Peso cría 14",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 29
     },
@@ -280,7 +280,7 @@
       "label": "Peso cría 15",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 30
     },
@@ -289,7 +289,7 @@
       "label": "Peso cría 16",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 31
     },
@@ -298,7 +298,7 @@
       "label": "Peso cría 17",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 32
     },
@@ -307,7 +307,7 @@
       "label": "Peso cría 18",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 33
     },
@@ -316,7 +316,7 @@
       "label": "Peso cría 19",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 34
     },
@@ -325,7 +325,7 @@
       "label": "Peso cría 20",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 35
     },
@@ -334,7 +334,7 @@
       "label": "Peso cría 21",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 36
     },
@@ -343,7 +343,7 @@
       "label": "Peso cría 22",
       "value_type": "decimal",
       "source": "manual",
-      "required": true,
+      "required": false,
       "unit": null,
       "display_order": 37
     },
@@ -357,5 +357,5 @@
       "display_order": 38
     }
   ],
-  "definition_checksum": "efbe0304e5cd577c95ba6c3791a382a8d8dbadcf69e92c32c7db87a2b9946a5c"
+  "definition_checksum": "9eee613b20450cd933b3aa89567fd5a4d706bc4562003eac23d24aa0993c5acf"
 }
