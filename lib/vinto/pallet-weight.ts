@@ -32,14 +32,14 @@ export function parsePalletPreview(raw: unknown): PalletPreview | null {
 export function previewTotalKg(weight: string | null, jabas: string): string | null {
     if (weight === null || !/^\d+(?:\.\d{1,6})?$/.test(weight) || !/^\d{1,9}$/.test(jabas)) return null;
     const count = BigInt(jabas);
-    if (count < 1n) return null;
+    if (count < BigInt(1)) return null;
     // Exacto hasta seis decimales; evita redondear el Peso del Excel antes de guardar.
     const [whole, decimals = ""] = weight.split(".");
-    const microKg = BigInt(whole) * 1_000_000n + BigInt(decimals.padEnd(6, "0"));
-    if (microKg <= 0n) return null;
+    const microKg = BigInt(whole) * BigInt(1_000_000) + BigInt(decimals.padEnd(6, "0"));
+    if (microKg <= BigInt(0)) return null;
     const totalMicro = microKg * count;
-    const totalWhole = totalMicro / 1_000_000n;
-    const tail = String(totalMicro % 1_000_000n).padStart(6, "0").replace(/0+$/, "");
+    const totalWhole = totalMicro / BigInt(1_000_000);
+    const tail = String(totalMicro % BigInt(1_000_000)).padStart(6, "0").replace(/0+$/, "");
     return `${totalWhole}.${tail.padEnd(2, "0")}`;
 }
 
