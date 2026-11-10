@@ -41,7 +41,18 @@ P107, P110, P112, P129, P130 = "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-12", "VIN
 CODES = (P107, P110, P112, P129, P130)
 BUNDLE = load_bundle()
 V2_P110 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(encoding="utf-8"))  # MF-13-01B.2: la v3 de P1-10 solo amplía las máquinas; estas pruebas son las de MF-10 (v2, solo COPASA)
-BUNDLE_MF10 = dataclasses.replace(BUNDLE, forms=tuple(V2_P110 if f["code"] == "VINTO-P1-10" else f for f in BUNDLE.forms))
+# MF-10 comprueba el contrato histórico v2, no las nuevas crías v3 de RB-CRIA-01.
+def historical_mf10_form(form):
+    if form["code"] == P107:
+        previous = {**form, "version_number": 2,
+                    "fields": [{**field, "required": True} if field["key"].startswith("peso_cria_")
+                               else field for field in form["fields"]]}
+        return {**previous, "definition_checksum": compute_definition_checksum(previous)}
+    if form["code"] == P110:
+        return V2_P110
+    return form
+
+BUNDLE_MF10 = dataclasses.replace(BUNDLE, forms=tuple(historical_mf10_form(f) for f in BUNDLE.forms))
 FORMS = {f["code"]: f for f in BUNDLE_MF10.forms}
 FORMS[P112] = {**FORMS[P112], "version_number": 2, "fields": [f for f in FORMS[P112]["fields"] if f["key"] not in ("hora_inicio", "hora_fin")]}  # MF-11: la v3 añade las horas; aquí se prueba la v2 de MF-10
 MACHINE = {P107: "COPASA", P110: "COPASA", P112: "GAMBINI", P129: "TUBETERA", P130: "PERICHUN"}
@@ -63,6 +74,8 @@ def restore_previous(connection, code, number, drop_keys):
     for fid, key, label, value_type, source, required, order in c.execute("SELECT id, key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (new_id,)).fetchall():
         if key in drop_keys:
             continue
+        if code == P107 and key.startswith("peso_cria_"):
+            required = True  # v2 legacy: 21 crías obligatorias
         copy = c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (old_id, key, label, value_type, source, required, order)).fetchone()[0]
         for option_key, option_label, option_order in c.execute("SELECT option_key, label, display_order FROM vinto_config.field_option WHERE field_definition_id = %s", (fid,)).fetchall():
             c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
@@ -164,6 +177,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
         restore_previous(cls.connection, P112, 3, ("hora_inicio", "hora_fin"))
+        restore_previous(cls.connection, P107, 3, ())  # RB-CRIA-01: preservar pruebas v2 de MF-10
         restore_previous(cls.connection, P110, 3, ())  # MF-13-01B.2: P1-10 v3 (cinco máquinas, mismos campos) -> la v2 de MF-10
         cls.current = {code: cls.version(code, 2) for code in CODES}
         with contextlib.redirect_stdout(io.StringIO()):
