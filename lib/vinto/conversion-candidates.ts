@@ -27,8 +27,8 @@ export type ConversionCandidate = Omit<CandidateScreen, "api"> & { api: ReturnTy
 
 export const CONVERSION_CANDIDATES: Record<ConversionCandidateScreen, ConversionCandidate> = {
     p112: { code: P1_12_CODE, form: P112, api: candidateApi(P112), kicker: "Papel higiénico · Conversión", title: "Producción diaria de papel higiénico", automatic: P112_AUTOMATIC, pending: P112_PENDING,
-        sections: withHours(P112_FIELDS, "Producción, empaques y formato"),
-        historyNote: "Ficha candidata construida desde los 20 campos manuales de la definición legacy más las horas de inicio y fin (desde la versión 3): los valores se muestran tal como se digitaron; sin saldos finales, mermas ni firma." },
+        sections: [{ title: "Producción por pallet", keys: ["cantidad_jabas", "hora_inicio", "hora_fin"] }],
+        historyNote: "P1-12 v4: un pallet por captura, número por OT y línea; peso nominal maestro y peso total congelados al guardar. Las versiones 1-3 conservan sus campos históricos sin conversiones." },
     p113: { code: P1_13_CODE, form: P113, api: candidateApi(P113), kicker: "Servilletas y especiales · Conversión", title: "Producción diaria de servilletas y especiales", automatic: P113_AUTOMATIC, pending: P113_PENDING,
         sections: withHours(P113_FIELDS, "Bobina, producto, empaque e insumo"),
         historyNote: "Ficha candidata construida desde los 18 campos manuales de la definición legacy más las horas de inicio y fin (desde la versión 2): los valores se muestran tal como se digitaron; sin mermas ni saldos finales calculados." },
