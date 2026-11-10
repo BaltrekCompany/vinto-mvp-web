@@ -89,7 +89,7 @@ test("Quality child UI displays position and mother, not an official sequence; b
     const decision = readFileSync(new URL("../components/vinto/quality-bobbin-decision.tsx",import.meta.url),"utf8");
     assert.match(inbox,/Cría \$\{i\.bobbin\.rewinding\.child_position\}/);
     assert.match(inbox,/Etiqueta \/ bobina madre/);
-    assert.match(inbox,/Controles físicos F3 no se habilitan/);
+    assert.match(inbox,/controles físicos F3 no se habilitan/i);
     assert.match(decision,/mother_label|mother_label|mother_label/); // no usado como etiqueta literal: variable tipada
     assert.match(decision,/subject/);
     assert.match(decision,/submitQualityDecision\(item\.bobbin\.id/);
