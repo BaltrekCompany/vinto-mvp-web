@@ -50,7 +50,8 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
             {items.map(i => <article key={i.bobbin.id} aria-label={"Bobina " + i.bobbin.code + " de " + i.bobbin.machine.code} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 p-3 md:p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <h3 className="text-lg font-black">Bobina {i.bobbin.code}</h3>
+                        <h3 className="text-lg font-black">{i.bobbin.rewinding ? `Cría ${i.bobbin.rewinding.child_position}` : `Bobina ${i.bobbin.code}`}</h3>
+                        {i.bobbin.rewinding && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-900">Origen: Rebobinado</span>}
                         <span className="text-sm font-bold text-slate-700">Máquina {i.bobbin.machine.code}</span>
                         <span className="text-xs text-slate-600">Gestión {i.bobbin.management_start_year}</span>
                     </div>
@@ -59,7 +60,11 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
                 <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,310px)]">
                     <div className="min-w-0">
                         <dl className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3">
-                            <Field label="OT">{i.production.work_order.number}</Field>
+                            {i.bobbin.rewinding && <>
+                                    <Field label="Etiqueta / bobina madre">{i.bobbin.rewinding.mother_label}</Field>
+                                    <Field label="N.º de cría">{i.bobbin.rewinding.child_position}</Field>
+                                </>}
+                                <Field label="OT">{i.production.work_order.number}</Field>
                             <Field label="Línea / PV">{i.production.line.line_code} / {i.production.line.pv_reference}</Field>
                             <Field label="Fecha operativa">{i.production.operating_date}</Field>
                             <Field label="Artículo"><span className="font-semibold">{i.production.line.article.code}</span><span className="block text-slate-700">{i.production.line.article.description}</span></Field>
@@ -73,14 +78,17 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
                                 <Field label="Hora inicio">{i.bobbin.start_time}</Field>
                                 <Field label="Hora fin">{i.bobbin.end_time}</Field>
                                 <Field label="Diámetro (mm)">{i.bobbin.diameter_mm}</Field>
-                                <Field label="Cortes">{i.bobbin.number_of_cuts}</Field>
+                                {!i.bobbin.rewinding && <Field label="Cortes">{i.bobbin.number_of_cuts}</Field>}
                                 <Field label="Observaciones">{i.bobbin.notes ?? "—"}</Field>
                             </dl>
                         </details>
                     </div>
                     <div className="min-w-0 space-y-3 lg:border-l lg:border-slate-200 lg:pl-4">
                         <QualityBobbinDecision item={i} refresh={refresh}/>
-                        <details className="rounded-lg border border-slate-200 bg-white">
+                        {i.bobbin.rewinding ? <p className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+                            Evaluación individual de cría. El historial de decisión se conserva en Calidad.
+                            Los controles físicos F3 no se habilitan automáticamente para las crías.
+                        </p> : <details className="rounded-lg border border-slate-200 bg-white">
                             <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#146b4f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Controles e historial</summary>
                             <div className="flex flex-col gap-2 border-t p-3">
                                 {(actionOffers?.(i.bobbin.machine.code).humidity ?? true) && <Button size="sm" variant="outline" className="h-auto min-h-8 whitespace-normal text-left" aria-label={`Registrar humedad de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterHumidity(i)}>Registrar humedad</Button>}
@@ -89,7 +97,7 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
                                     aria-label={`${QUALITY_BOBBIN_CANDIDATES[screen].actionLabel ?? `Registrar ${QUALITY_BOBBIN_CANDIDATES[screen].title} (candidato)`} de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onRegisterCandidate?.(screen, i)}>{QUALITY_BOBBIN_CANDIDATES[screen].actionLabel ?? `${QUALITY_BOBBIN_CANDIDATES[screen].title} (candidato)`}</Button>)}
                                 <Button size="sm" variant="outline" aria-label={`Ver controles de la bobina ${i.bobbin.code} (${i.bobbin.machine.code} · ${i.production.work_order.number})`} onClick={() => onViewHistory(i)}>Ver controles</Button>
                             </div>
-                        </details>
+                        </details>}
                     </div>
                 </div>
             </article>)}
