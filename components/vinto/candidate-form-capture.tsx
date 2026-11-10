@@ -56,17 +56,17 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const io = deps ?? realDeps;
     const [draft, setDraft] = useState<CandidateDraft>(attempt ? { ...attempt.draft } : initialDraft());
     const [sending, setSending] = useState(false);
-    const [palletPreview, setPalletPreview] = useState<PalletPreview | null>(null);
-    const [palletLoading, setPalletLoading] = useState(palletMode);
+    const [palletSource, setPalletSource] = useState<{ assignmentId: string; preview: PalletPreview | null } | null>(null);
+    // La vista previa se acepta solo para la asignación que originó la consulta.
+    const palletPreview = palletSource?.assignmentId === context?.assignmentId ? palletSource.preview : null;
+    const palletLoading = palletMode && palletSource?.assignmentId !== context?.assignmentId;
     useEffect(() => {
         if (!palletMode || !context?.assignmentId) return;
         const controller = new AbortController();
-        setPalletLoading(true);
-        setPalletPreview(null);
-        getPalletPreview(context.assignmentId, controller.signal)
-            .then(result => { if (!controller.signal.aborted) setPalletPreview(result.ok ? result.data : null); })
-            .catch(() => { if (!controller.signal.aborted) setPalletPreview(null); })
-            .finally(() => { if (!controller.signal.aborted) setPalletLoading(false); });
+        const sourceId = context.assignmentId;
+        getPalletPreview(sourceId, controller.signal)
+            .then(result => { if (!controller.signal.aborted) setPalletSource({ assignmentId: sourceId, preview: result.ok ? result.data : null }); })
+            .catch(() => { if (!controller.signal.aborted) setPalletSource({ assignmentId: sourceId, preview: null }); });
         return () => controller.abort();
     }, [palletMode, context?.assignmentId]);
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
