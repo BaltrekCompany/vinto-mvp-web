@@ -95,7 +95,7 @@ test("las brechas son visibles: horas sin fuente, bobina como texto, sector no o
   assert.match(t07, /madre SOLO como texto declarado/i);
   assert.match(t07, /no valida ni vincula un UUID real de MP1\/MP3/i);
   assert.match(t07, /NO se verifica contra una bobina física/i);
-  assert.match(t07, /no existe la cría 12/);
+  assert.match(P107_SECTIONS.find((s) => s.title === "Pesos de crías")?.hint ?? "", /no existe la 12/, "la posición 12 no existe y la pantalla lo explica");
   assert.match(t07, /otras 20 posiciones son opcionales/);
   assert.match(t07, /Horas de inicio y fin[\s\S]*Se digitan[\s\S]*no se derivan de la hora de registro/);
   assert.match(t07, /COPASA, BELOIT, OVER y los turnos oficiales siguen pendientes/);
