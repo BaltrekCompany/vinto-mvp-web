@@ -184,5 +184,8 @@ test("alcance actualizado: P1-04 sigue publicado y RG01 es exclusivo de MP3; sin
   assert.equal(/centralFibra|function Fiber\(/.test(page), false);
   assert.match(page, /const CENTRAL_BOBINAS_FORMS = FORM_DEFINITIONS\.filter\(f => f\.id === F3_FORM_ID \|\| f\.id === F6_FORM_ID\)/);
   assert.equal(/localStorage\.(removeItem|clear)/.test(page), false);
-  assert.equal(/total_kg|total_final|hora_inicio|hora_fin/.test(read("components/vinto/candidate-form-capture.tsx")), false, "la pantalla genérica no conoce totales ni horas");
+  const generic = read("components/vinto/candidate-form-capture.tsx");
+  assert.equal(/total_kg|total_final/.test(generic), false, "el motor genérico no calcula totales industriales");
+  assert.ok(generic.includes('palletMode = candidate.code === "VINTO-P1-12"'), "P1-12 posee sección explícita y aislada");
+  assert.ok(generic.includes('data-section="p112-pallet"'), "la sección de pallet no cambia P1-04");
 });
