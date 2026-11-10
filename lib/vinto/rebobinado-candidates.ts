@@ -16,5 +16,5 @@ export const REBOBINADO_CANDIDATES: Record<RebobinadoCandidateScreen, Rebobinado
     p130: { code: P1_30_CODE, form: P130, api: candidateApi(P130), kicker: "Producción Perichun · Rebobinado", title: "Producción Perichun", automatic: P130_AUTOMATIC, pending: P130_PENDING,
         historyNote: "Ficha candidata: horas de inicio y fin digitadas (desde la versión 2); el número de bobina es texto y no crea bobinas. Los valores se muestran tal como se digitaron; los campos retirados se marcan como versión anterior." },
     p107: { code: P1_07_CODE, form: P107, api: candidateApi(P107), kicker: "Bobinas rebobinadas · Rebobinado", title: "Registro de producción de bobinas rebobinadas", automatic: P107_AUTOMATIC, pending: P107_PENDING,
-        sections: P107_SECTIONS, historyNote: "Captura técnica candidata, NO genealogía: no hay bobinas hijas, relaciones madre-hija ni balances; los pesos de las 21 crías se muestran tal como se digitaron." },
+        sections: P107_SECTIONS, historyNote: "Desde P1-07 v3, cada peso de cría informado crea una unidad auditable pendiente de Calidad, asociada a la etiqueta madre DECLARADA. No se crean relaciones reales madre/hija, consumos, correlativos oficiales ni balances; las capturas v1/v2 conservan solo sus valores históricos." },
 };
