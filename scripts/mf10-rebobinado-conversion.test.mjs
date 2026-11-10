@@ -65,6 +65,9 @@ test("P1-07: el formulario de producción se llama «bobinas rebobinadas» y mue
     assert.ok(text.indexOf("Hora inicio *") < text.indexOf("Etiqueta / número de bobina *"), "las horas abren el formulario");
     assert.equal(count(html, "<input"), 2 + 36 - 1, "36 campos manuales (35 inputs + 1 textarea) + las dos horas");
     assert.ok(text.includes("Peso cría 1 *") && text.includes("Peso cría 22") && !text.includes("Peso cría 22 *") && !text.includes("Peso cría 12"), "solo la primera cría obligatoria");
+    for (const label of ["Producto refilado", "Auxiliar", "Formato 2", "Formato 3"]) {
+      assert.ok(text.includes(label) && !text.includes(`${label} *`), `${machine}: ${label} opcional en v4`);
+    }
   }
 });
 
@@ -117,7 +120,7 @@ test("MF-10 no toca TVC/ETL ni el resto del código: el seed solo trae las cinco
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-07": 3, "VINTO-P1-10": 3, "VINTO-P1-12": 3, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
+  const expected = { "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-12": 3, "VINTO-P1-29": 2, "VINTO-P1-30": 2 };
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-11"], 2, "P1-11 recibe sus horas en MF-11");
   assert.equal(versions["VINTO-P1-13"], 2, "P1-13 recibe sus horas en MF-11");
