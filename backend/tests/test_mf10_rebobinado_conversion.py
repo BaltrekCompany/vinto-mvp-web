@@ -40,7 +40,8 @@ except ModuleNotFoundError:
 P107, P110, P112, P129, P130 = "VINTO-P1-07", "VINTO-P1-10", "VINTO-P1-12", "VINTO-P1-29", "VINTO-P1-30"
 CODES = (P107, P110, P112, P129, P130)
 BUNDLE = load_bundle()
-V2_P110 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(encoding="utf-8"))  # MF-13-01B.2: la v3 de P1-10 solo amplía las máquinas; estas pruebas son las de MF-10 (v2, solo COPASA)
+V2_P110 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(encoding="utf-8"))
+V3_P112 = json.loads(Path(__file__).with_name("cv_p112_v3.json").read_text(encoding="utf-8"))  # Contrato histórico real, no deducido de los 3 campos v4.  # MF-13-01B.2: la v3 de P1-10 solo amplía las máquinas; estas pruebas son las de MF-10 (v2, solo COPASA)
 # MF-10 comprueba el contrato histórico v2, no las nuevas crías v3 de RB-CRIA-01.
 def historical_mf10_form(form):
     if form["code"] == P107:
@@ -51,6 +52,8 @@ def historical_mf10_form(form):
         return {**previous, "definition_checksum": compute_definition_checksum(previous)}
     if form["code"] == P110:
         return V2_P110
+    if form["code"] == P112:
+        return V3_P112
     return form
 
 BUNDLE_MF10 = dataclasses.replace(BUNDLE, forms=tuple(historical_mf10_form(f) for f in BUNDLE.forms))
@@ -84,6 +87,33 @@ def restore_previous(connection, code, number, drop_keys):
             c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
     c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (old_id, new_id))
     c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (old_id,))
+
+
+def restore_historical_p112_v2(connection):
+    """P1-12 v4 real no contiene los 20 campos de v2: restaurar fixture histórica
+    en la DB efímera, jamás en producción. La definición vigente no se reescribe."""
+    c = connection
+    current = c.execute("""SELECT fv.id, fv.form_id, fv.workflow_id, fv.area, fv.name
+        FROM vinto_config.form_version fv JOIN vinto_config.form f ON f.id=fv.form_id
+        WHERE f.code=%s AND fv.version_number=4""", (P112,)).fetchone()
+    if current is None:
+        raise AssertionError("Fixture P1-12 v4 no encontrada")
+    fv4_id, form_id, workflow_id, area, name = current
+    c.execute("UPDATE vinto_config.form_version SET status='retired' WHERE id=%s", (fv4_id,))
+    v2 = c.execute("""INSERT INTO vinto_config.form_version
+        (form_id, version_number, name, area, workflow_id, definition_checksum)
+        VALUES (%s,2,%s,%s,%s,%s) RETURNING id""",
+        (form_id, name, area, workflow_id, "b" * 64)).fetchone()[0]
+    for f in V3_P112["fields"]:
+        if f["key"] in ("hora_inicio", "hora_fin"):
+            continue
+        c.execute("""INSERT INTO vinto_config.field_definition
+            (form_version_id, key, label, value_type, source, required, display_order)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (v2, f["key"], f["label"], f["value_type"], f["source"], f["required"], f["display_order"]))
+    c.execute("""INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id)
+        SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id=%s""", (v2, fv4_id))
+    c.execute("UPDATE vinto_config.form_version SET status='published', published_at=clock_timestamp() WHERE id=%s", (v2,))
 
 
 def setUpModule():
@@ -179,7 +209,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
         # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
-        restore_previous(cls.connection, P112, 3, ("hora_inicio", "hora_fin"))
+        restore_historical_p112_v2(cls.connection)
         restore_previous(cls.connection, P107, 4, ())  # RB-CRIA-02: v4 actual -> contrato histórico v2 para MF-10
         restore_previous(cls.connection, P110, 3, ())  # MF-13-01B.2: P1-10 v3 (cinco máquinas, mismos campos) -> la v2 de MF-10
         cls.current = {code: cls.version(code, 2) for code in CODES}
