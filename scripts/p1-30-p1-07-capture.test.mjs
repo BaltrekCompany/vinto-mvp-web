@@ -247,7 +247,8 @@ test("alcance actualizado: Rebobinado operativo y sus formularios intactos; RG01
   assert.equal(manifest.scope.forms.length, 26, "RG01 es la única incorporación");
   assert.deepEqual(JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json")).machines, ["MP3"], "ningún vínculo accidental con Rebobinado");
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 26, "RB-CRIA-01 incorpora solo migración 0026 tras USR-02/03");
+  assert.equal(migrations.length, 27, "CV-P112-01 añade solo migración 0027 a la línea base 0026");
+  assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts"]) assert.equal(/quality_release|bobbins?-api|\/api\/bobbins|from "[^"]*(bobbin|genealog)[^"]*"/i.test(code(file)), false, file);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /NO equivale a una genealogía funcional/);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /peso_cria_12/);
