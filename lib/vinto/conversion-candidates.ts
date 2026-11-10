@@ -8,7 +8,7 @@
 import { candidateApi } from "./candidate-form-api.ts";
 import type { CandidateScreen } from "./candidate-screen.ts";
 import type { FieldSpec } from "./candidate-form.ts";
-import { P112, P112_AUTOMATIC, P112_FIELDS, P112_PENDING, P1_12_CODE } from "./p1-12.ts";
+import { P112, P112_AUTOMATIC, P112_PENDING, P1_12_CODE } from "./p1-12.ts";
 import { P113, P113_AUTOMATIC, P113_FIELDS, P113_PENDING, P1_13_CODE } from "./p1-13.ts";
 import { P116, P116_AUTOMATIC, P116_FIELDS, P116_PENDING, P1_16_CODE } from "./p1-16.ts";
 
