@@ -58,7 +58,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const [sending, setSending] = useState(false);
     const [palletSource, setPalletSource] = useState<{ assignmentId: string; preview: PalletPreview | null } | null>(null);
     // La vista previa se acepta solo para la asignación que originó la consulta.
-    const palletPreview = palletSource?.assignmentId === context?.assignmentId ? palletSource.preview : null;
+    const palletPreview = palletSource && palletSource.assignmentId === context?.assignmentId ? palletSource.preview : null;
     const palletLoading = palletMode && palletSource?.assignmentId !== context?.assignmentId;
     useEffect(() => {
         if (!palletMode || !context?.assignmentId) return;
