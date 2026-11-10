@@ -33,7 +33,8 @@ export type CandidateValues = Record<string, string>; // los opcionales ausentes
 // Respuesta de una captura: la de Producción lleva asignación, OT y línea; la de Calidad por máquina no (lleva `recorded_by`); la de Calidad por bobina lleva `bobbin`, OT y línea, sin asignación. Los campos de
 // contexto son opcionales para poder tratar todas igual.
 export type CandidateCapture = Omit<CaptureEnvelope, "assignment" | "work_order" | "line"> & Partial<Pick<CaptureEnvelope, "assignment" | "work_order" | "line">>
-    & { recorded_by?: { id: string; display_name: string } | null; bobbin?: { id: string; code: string }; values: CandidateValues };
+    & { recorded_by?: { id: string; display_name: string } | null; bobbin?: { id: string; code: string }; values: CandidateValues;
+        pallet?: { number: number; quantity_jabas: number; nominal_weight_kg: string; total_weight_kg: string } | null };
 export type CandidateSubmission = SubmissionOf<CandidateCapture>;
 export type CandidateDraft = Record<string, string>;
 // `assignment_id` (contexto "assignment"), `machine_code` ("machine") o `bobbin_id` ("bobbin"): exactamente uno. Los POST de Calidad llevan la máquina o la bobina en la ruta, no en el cuerpo.
@@ -126,7 +127,19 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
         }
         return clean;
     }
-    const parseCapture = (value: unknown): CandidateCapture | null => context === "machine" ? parseMachineEnvelope(value, parseValues, code) : context === "bobbin" ? parseBobbinEnvelope(value, parseValues, code) : parseCaptureOf(value, parseValues, code);
+    const parseCapture = (value: unknown): CandidateCapture | null => {
+        const parsed = context === "machine" ? parseMachineEnvelope(value, parseValues, code)
+            : context === "bobbin" ? parseBobbinEnvelope(value, parseValues, code)
+            : parseCaptureOf(value, parseValues, code);
+        if (!parsed || code !== "VINTO-P1-12" || parsed.form.version_number < 4) return parsed;
+        const pallet = isRec(value) ? value.pallet : null;
+        if (!isRec(pallet) || !Number.isSafeInteger(pallet.number) || Number(pallet.number) < 1
+            || !Number.isSafeInteger(pallet.quantity_jabas) || Number(pallet.quantity_jabas) < 1
+            || typeof pallet.nominal_weight_kg !== "string" || !isDecimalText(pallet.nominal_weight_kg)
+            || typeof pallet.total_weight_kg !== "string" || !isDecimalText(pallet.total_weight_kg)) return null;
+        return { ...parsed, pallet: { number: Number(pallet.number), quantity_jabas: Number(pallet.quantity_jabas),
+            nominal_weight_kg: pallet.nominal_weight_kg, total_weight_kg: pallet.total_weight_kg } };
+    };
     const parseSubmission = (value: unknown): CandidateSubmission | null => parseSubmissionOf(value, parseCapture);
     const parseList = (value: unknown): CandidateCapture[] | null => parseCaptureListOf(value, parseCapture);
 
