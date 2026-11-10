@@ -153,6 +153,22 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(entry["bobbin"]["sequence_number"])
             self.assertIsNone(entry["bobbin"]["number_of_cuts"])
 
+    async def test_all_21_supported_positions_generate_21_distinct_pending_children(self):
+        assignment = await self.assignment()
+        positions = [*range(1, 12), *range(13, 23)]
+        values = self.values(**{f"peso_cria_{n}": str(n) + ".50" for n in positions})
+        reply, body = await self.capture(assignment, values)
+        self.assertEqual(reply.status, 201, reply.text)
+        rows = self.children(body["capture_id"])
+        self.assertEqual([r[1] for r in rows], positions)
+        self.assertTrue(all(r[4] == "pending" for r in rows))
+        self.assertEqual(len({r[0] for r in rows}), 21)
+        self.assertEqual(len({r[1] for r in rows}), 21)
+        items = [i for i in await self.inbox()
+                 if i["production"]["capture_id"] == body["capture_id"]]
+        self.assertEqual(len(items), 21)
+        self.assertNotIn(12, [i["bobbin"]["rewinding"]["child_position"] for i in items])
+
     async def test_same_capture_retry_does_not_duplicate_children_or_events(self):
         assignment = await self.assignment()
         capture_id, device_key = str(uuid4()), str(uuid4())
