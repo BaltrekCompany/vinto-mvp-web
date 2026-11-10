@@ -19,15 +19,20 @@ class InboxBobbinOut(BaseModel):
     code: str
     machine: CodeNameOut
     management_start_year: int
-    sequence_number: int | None
+    sequence_number: int
     start_time: time
     end_time: time
     diameter_mm: str  # decimales como texto para no perder precisión
     weight_kg: str
     grammage_g_m2: str | None  # None: el producto no tiene gramaje (no es un error)
-    number_of_cuts: str | None
-    rewinding: RewindingChildOut | None = None
+    number_of_cuts: str
     notes: str | None
+
+
+class InboxRewindingChildOut(InboxBobbinOut):
+    sequence_number: None
+    number_of_cuts: None
+    rewinding: RewindingChildOut
 
 
 class InboxLineOut(BaseModel):
@@ -51,19 +56,26 @@ class InboxQualityOut(BaseModel):
 
 
 class QualityBobbinOut(BaseModel):
-    bobbin: InboxBobbinOut
+    bobbin: InboxBobbinOut | InboxRewindingChildOut
     production: InboxProductionOut
     quality: InboxQualityOut
 
 
 def quality_bobbin_out(v: QualityBobbinView) -> QualityBobbinOut:
+    common = dict(
+        id=v.bobbin_id, code=v.code, machine=CodeNameOut(code=v.machine_code, name=v.machine_name),
+        management_start_year=v.management_start_year, sequence_number=v.sequence_number,
+        start_time=v.start_time, end_time=v.end_time, diameter_mm=v.diameter_mm,
+        weight_kg=v.weight_kg, grammage_g_m2=v.grammage_g_m2,
+        number_of_cuts=v.number_of_cuts, notes=v.notes,
+    )
+    if v.rewind_child_position is not None:
+        bobbin = InboxRewindingChildOut(**common, rewinding=RewindingChildOut(
+            mother_label=v.rewind_mother_label, child_position=v.rewind_child_position))
+    else:
+        bobbin = InboxBobbinOut(**common)
     return QualityBobbinOut(
-        bobbin=InboxBobbinOut(
-            id=v.bobbin_id, code=v.code, machine=CodeNameOut(code=v.machine_code, name=v.machine_name), management_start_year=v.management_start_year,
-            sequence_number=v.sequence_number, start_time=v.start_time, end_time=v.end_time, diameter_mm=v.diameter_mm, weight_kg=v.weight_kg,
-            grammage_g_m2=v.grammage_g_m2, number_of_cuts=v.number_of_cuts, notes=v.notes,
-            rewinding=(RewindingChildOut(mother_label=v.rewind_mother_label, child_position=v.rewind_child_position)
-                       if v.rewind_child_position is not None else None)),
+        bobbin=bobbin,
         production=InboxProductionOut(
             capture_id=v.capture_id, captured_at=v.captured_at, operating_date=v.operating_date, shift=CodeNameOut(code=v.shift_code, name=v.shift_name),
             work_order=WorkOrderRefOut(id=v.work_order_id, number=v.work_order_number),
