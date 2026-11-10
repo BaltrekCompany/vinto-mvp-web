@@ -130,7 +130,7 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
         return self.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 
     async def test_one_and_three_children_with_real_independent_pending_states(self):
-        self.assertEqual(P107["version_number"], 3)
+        self.assertEqual(P107["version_number"], 4)
         self.assertEqual(sum(x["required"] for x in P107["fields"] if x["key"].startswith("peso_cria_")), 1)
         assignment = await self.assignment()
         result, body = await self.capture(assignment, self.values(
@@ -152,6 +152,18 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(entry["production"]["line"]["pv_reference"], "PV-RB-CRIA")
             self.assertIsNone(entry["bobbin"]["sequence_number"])
             self.assertIsNone(entry["bobbin"]["number_of_cuts"])
+
+    async def test_v4_four_optional_fields_omitted_creates_children_and_quality(self):
+        optional = {"producto_refilado", "auxiliar", "formato_2", "formato_3"}
+        assert all(not f["required"] for f in P107["fields"] if f["key"] in optional)
+        assignment = await self.assignment()
+        values = self.values(peso_cria_2="11.25", peso_cria_13="9.80")
+        self.assertTrue(optional.isdisjoint(values))
+        result, body = await self.capture(assignment, values)
+        self.assertEqual(result.status, 201, result.text)
+        rows = self.children(body["capture_id"])
+        self.assertEqual([r[1] for r in rows], [1, 2, 13])
+        self.assertTrue(all(r[4] == "pending" for r in rows))
 
     async def test_all_21_supported_positions_generate_21_distinct_pending_children(self):
         assignment = await self.assignment()
