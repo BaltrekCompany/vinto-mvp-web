@@ -43,7 +43,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const kept = c.fields.filter((f) => !c.added.includes(f.key));
     assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
     assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
-    assert.deepEqual(kept.map((f) => f.required), m.map((f) => f.required ?? f.requirement), `${c.name}: obligatoriedad`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => c.formCode === P1_07_CODE && f.key.startsWith("peso_cria_") ? f.key === "peso_cria_1" : (f.required ?? f.requirement)), `${c.name}: obligatoriedad (P1-07 v3)`);
     assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const key of NEW_HOURS) assert.deepEqual({ ...c.fields.find((f) => f.key === key) }, { key, label: key === "hora_inicio" ? "Hora inicio" : "Hora fin", kind: "time", required: true, sinceVersion: 2 }, `${c.name}: ${key}`);
     assert.equal(c.fields.length, c.counts[0] - c.retired.length + c.added.length);
@@ -69,7 +69,8 @@ test("P1-07 tiene EXACTAMENTE 21 crías individuales (1-11 y 13-22) y la cría 1
   assert.deepEqual(ours, [...Array.from({ length: 11 }, (_, i) => `peso_cria_${i + 1}`), ...Array.from({ length: 10 }, (_, i) => `peso_cria_${i + 13}`)]);
   assert.equal(ours.includes("peso_cria_12"), false);
   assert.equal(P107_CRIA_NUMBERS.includes(12), false);
-  assert.ok(P107_FIELDS.filter((f) => f.key.startsWith("peso_cria_")).every((f) => f.kind === "decimal" && f.required), "obligatoriedad legacy conservada (la condicionalidad queda pendiente)");
+  assert.ok(P107_FIELDS.filter((f) => f.key.startsWith("peso_cria_")).every((f) => f.kind === "decimal"), "todas las crías son decimales");
+  assert.deepEqual(P107_FIELDS.filter((f) => f.key.startsWith("peso_cria_") && f.required).map((f) => f.key), ["peso_cria_1"], "v3 solo exige primera cría");
   assert.equal(P107.normalizeDraft({ ...fill(P107_FIELDS), peso_cria_12: "1" }).values.peso_cria_12, undefined, "una cría 12 enviada nunca llega al payload");
 });
 
@@ -91,11 +92,11 @@ test("las brechas son visibles: horas sin fuente, bobina como texto, sector no o
   assert.match(t30, /Lote[\s\S]*no se inventa un Lote para las capturas anteriores/);
   assert.match(t30, /peso de bobina es TEXTO/);
   assert.match(t30, /PERICHUN y los turnos oficiales siguen pendientes/);
-  assert.match(t07, /NO equivale a una genealogía funcional/);
-  assert.match(t07, /no crea bobinas hijas, no consume bobinas madre, no crea relaciones madre-hija ni correlativos, no calcula balances de masa ni mueve inventario/i);
-  assert.match(t07, /NO identifica una bobina madre/);
+  assert.match(t07, /madre SOLO como texto declarado/i);
+  assert.match(t07, /no valida ni vincula un UUID real de MP1\/MP3/i);
+  assert.match(t07, /NO se verifica contra una bobina física/i);
   assert.match(t07, /no existe la cría 12/);
-  assert.match(t07, /cardinalidad y la condicionalidad/);
+  assert.match(t07, /otras 20 posiciones son opcionales/);
   assert.match(t07, /Horas de inicio y fin[\s\S]*Se digitan[\s\S]*no se derivan de la hora de registro/);
   assert.match(t07, /COPASA, BELOIT, OVER y los turnos oficiales siguen pendientes/);
   assert.match(read("lib/vinto/p1-07.ts"), /NO UNA GENEALOGÍA \(docs\/M5-A-p107-genealogia\.md\)/);
@@ -118,7 +119,9 @@ test("el borrador valida estructuralmente, deja los textos tal cual y NO genera 
     assert.equal(c.form.normalizeDraft({ ...fill(c.fields), hora_inicio: "23:30", hora_fin: "00:15" }).ok, true, `${c.name}: sin validación de orden ni de cruce de día`);
     for (const f of c.fields.filter((x) => x.kind === "decimal")) {
       for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: bad }).errors.join(" "), /debe ser un número decimal/, `${c.name} ${f.key} ${bad}`);
-      assert.match(c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " }).errors.join(" "), /es obligatorio/, f.key);
+      const empty = c.form.normalizeDraft({ ...fill(c.fields), [f.key]: " " });
+      if (f.required) assert.match(empty.errors.join(" "), /es obligatorio/, f.key);
+      else assert.equal(f.key in empty.values, false, `${f.key}: opcional omitido`);
     }
     assert.equal(c.form.normalizeDraft(c.form.emptyDraft()).errors.length, c.fields.filter((f) => f.required).length);
   }
@@ -230,7 +233,7 @@ test("alcance actualizado: Rebobinado operativo y sus formularios intactos; RG01
   assert.equal(manifest.scope.forms.length, 26, "RG01 es la única incorporación");
   assert.deepEqual(JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json")).machines, ["MP3"], "ningún vínculo accidental con Rebobinado");
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 23, "no introduce una migración SQL nueva");
+  assert.equal(migrations.length, 26, "RB-CRIA-01 incorpora solo migración 0026 tras USR-02/03");
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts"]) assert.equal(/quality_release|bobbins?-api|\/api\/bobbins|from "[^"]*(bobbin|genealog)[^"]*"/i.test(code(file)), false, file);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /NO equivale a una genealogía funcional/);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /peso_cria_12/);
@@ -270,5 +273,5 @@ test("MF-10: P1-07 se muestra como «bobinas rebobinadas» (la definición legac
   assert.equal(defOf("form_7_registro_de_productos_rebobinados").name, "Registro de producción de bobinas refiladas", "la definición legacy (reporte) conserva «refiladas»");
   const seed = JSON.parse(read("backend/seed_data/forms/VINTO-P1-07.json"));
   assert.equal(seed.name, "Registro de producción de bobinas rebobinadas");
-  assert.equal(seed.version_number, 2);
+  assert.equal(seed.version_number, 3, "P1-07 v3 conserva v1/v2 en historial");
 });
