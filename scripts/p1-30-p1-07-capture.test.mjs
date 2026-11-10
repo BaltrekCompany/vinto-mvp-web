@@ -287,5 +287,5 @@ test("MF-10: P1-07 se muestra como «bobinas rebobinadas» (la definición legac
   assert.equal(defOf("form_7_registro_de_productos_rebobinados").name, "Registro de producción de bobinas refiladas", "la definición legacy (reporte) conserva «refiladas»");
   const seed = JSON.parse(read("backend/seed_data/forms/VINTO-P1-07.json"));
   assert.equal(seed.name, "Registro de producción de bobinas rebobinadas");
-  assert.equal(seed.version_number, 3, "P1-07 v3 conserva v1/v2 en historial");
+  assert.equal(seed.version_number, 4, "P1-07 v4 conserva v1/v2/v3 en historial");
 });
