@@ -116,6 +116,24 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
             (ARTICLE,)).fetchone()[0], Decimal("1.74"))
         self.assertEqual(self.count("vinto_master.pallet_nominal_weight"), 52)
 
+    async def test_authorized_weight_preview_is_bound_to_ot_and_line(self):
+        order, assignment = await self.assignment()
+        url = f"/api/production/pallet-preview?assignment_id={assignment['id']}"
+        ok = await call("GET", url, cookie=await self.cookie("OPERACION"))
+        self.assertEqual(ok.status, 200, ok.text)
+        info = ok.json()
+        self.assertEqual(info["article_code"], ARTICLE)
+        self.assertEqual(info["line_code"], "L1")
+        self.assertEqual(info["work_order"], order["number"])
+        self.assertEqual(Decimal(info["nominal_weight_kg"]), Decimal("1.74"))
+        self.assertEqual(info["unit"], "kg/jaba")
+        self.assertTrue(info["weight_available"])
+        unknown = await call("GET", f"/api/production/pallet-preview?assignment_id={uuid4()}",
+                             cookie=await self.cookie("OPERACION"))
+        self.assertEqual(unknown.status, 404)
+        anonymous = await call("GET", url)
+        self.assertEqual(anonymous.status, 401)
+
     async def test_first_pallet_and_atomic_snapshot(self):
         order, assignment = await self.assignment()
         body = self.payload(assignment)
