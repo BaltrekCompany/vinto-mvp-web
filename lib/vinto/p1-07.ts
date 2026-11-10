@@ -19,6 +19,7 @@
 // de corte, rendimiento y mermas, y las máquinas y turnos oficiales de Rebobinado. Habilitado solo en entornos de prueba.
 import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
+// RB-CRIA-02: P1-07 v4 hace opcionales producto refilado, auxiliar y formatos 2/3; v3 sigue histórica.
 export const P1_07_CODE = "VINTO-P1-07";
 // Números de las crías de la definición legacy: 1-11 y 13-22 (21 campos). El 12 NO existe.
 export const P107_CRIA_NUMBERS: readonly number[] = [...Array.from({ length: 11 }, (_, i) => i + 1), ...Array.from({ length: 10 }, (_, i) => i + 13)];
@@ -29,16 +30,16 @@ export const P107_FIELDS: readonly FieldSpec[] = [
     { key: "etiqueta_numero_de_bobina", label: "Etiqueta / número de bobina", kind: "text", required: true },
     { key: "peso", label: "Peso", kind: "decimal", required: true, suffix: "kg" },
     { key: "destino", label: "Destino", kind: "text", required: true },
-    { key: "producto_refilado", label: "Producto refilado", kind: "text", required: true },
-    { key: "auxiliar", label: "Auxiliar", kind: "text", required: true },
+    { key: "producto_refilado", label: "Producto refilado", kind: "text", required: false },
+    { key: "auxiliar", label: "Auxiliar", kind: "text", required: false },
     { key: "velocidad_minima", label: "Velocidad mínima", kind: "decimal", required: true, suffix: "m/min" },
     { key: "tension", label: "Tensión", kind: "text", required: true },
     { key: "velocidad", label: "Velocidad", kind: "decimal", required: true, suffix: "m/min" },
     { key: "metraje", label: "Metraje", kind: "text", required: true },
     { key: "diametro", label: "Diámetro", kind: "decimal", required: true, suffix: "mm" },
     { key: "formato_1", label: "Formato 1", kind: "decimal", required: true },
-    { key: "formato_2", label: "Formato 2", kind: "decimal", required: true },
-    { key: "formato_3", label: "Formato 3", kind: "decimal", required: true },
+    { key: "formato_2", label: "Formato 2", kind: "decimal", required: false },
+    { key: "formato_3", label: "Formato 3", kind: "decimal", required: false },
     { key: "tubete", label: "Tubete", kind: "text", required: true },
     ...CRIAS,
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },

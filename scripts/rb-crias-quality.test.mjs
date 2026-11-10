@@ -38,7 +38,7 @@ const child = (position = 13) => ({
     },
 });
 
-test("P1-07 v3: 21 positions with gap 12 and only first child required", () => {
+test("P1-07 v4: 21 positions with gap 12 and only first child required", () => {
     assert.equal(P107_CRIA_NUMBERS.length, 21);
     assert.equal(P107_CRIA_NUMBERS.includes(12), false);
     const fields = P107_FIELDS.filter(f => f.key.startsWith("peso_cria_"));
@@ -46,7 +46,14 @@ test("P1-07 v3: 21 positions with gap 12 and only first child required", () => {
     assert.deepEqual(fields.filter(f => f.required).map(f => f.key), ["peso_cria_1"]);
     assert.ok(fields.every(f => f.kind === "decimal" && f.suffix === "kg"));
     const manifest = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-07.json",import.meta.url),"utf8"));
-    assert.equal(manifest.version_number, 3);
+    assert.equal(manifest.version_number, 4);
+    const optional = ["producto_refilado", "auxiliar", "formato_2", "formato_3"];
+    for (const key of optional) {
+        assert.equal(P107_FIELDS.find(f => f.key === key)?.required, false, `frontend ${key}`);
+        assert.equal(manifest.fields.find(f => f.key === key)?.required, false, `bundle ${key}`);
+    }
+    assert.equal(manifest.fields.find(f => f.key === "formato_1")?.required, true);
+    assert.equal(manifest.fields.find(f => f.key === "etiqueta_numero_de_bobina")?.required, true);
     assert.deepEqual(manifest.fields.filter(f => f.key.startsWith("peso_cria_") && f.required).map(f => f.key), ["peso_cria_1"]);
 });
 

@@ -45,7 +45,8 @@ V2_P110 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(enc
 def historical_mf10_form(form):
     if form["code"] == P107:
         previous = {**form, "version_number": 2,
-                    "fields": [{**field, "required": True} if field["key"].startswith("peso_cria_")
+                    "fields": [{**field, "required": True} if field["key"].startswith("peso_cria_") or
+                               field["key"] in ("producto_refilado", "auxiliar", "formato_2", "formato_3")
                                else field for field in form["fields"]]}
         return {**previous, "definition_checksum": compute_definition_checksum(previous)}
     if form["code"] == P110:
@@ -70,12 +71,14 @@ def restore_previous(connection, code, number, drop_keys):
     c = connection
     new_id, form_id, workflow, area, name = c.execute("SELECT v.id, v.form_id, v.workflow_id, v.area, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()
     c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (new_id,))
-    old_id = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (form_id, number - 1, name, area, workflow, "b" * 64)).fetchone()[0]
+    # P1-07 v4 es el bundle actual; MF-10 prueba la histórica v2 directamente.
+    old_number = 2 if code == P107 and number == 4 else number - 1
+    old_id = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (form_id, old_number, name, area, workflow, "b" * 64)).fetchone()[0]
     for fid, key, label, value_type, source, required, order in c.execute("SELECT id, key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (new_id,)).fetchall():
         if key in drop_keys:
             continue
-        if code == P107 and key.startswith("peso_cria_"):
-            required = True  # v2 legacy: 21 crías obligatorias
+        if code == P107 and (key.startswith("peso_cria_") or key in ("producto_refilado", "auxiliar", "formato_2", "formato_3")):
+            required = True  # contrato histórico v2: 21 crías y los cuatro campos originales obligatorios
         copy = c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (old_id, key, label, value_type, source, required, order)).fetchone()[0]
         for option_key, option_label, option_order in c.execute("SELECT option_key, label, display_order FROM vinto_config.field_option WHERE field_definition_id = %s", (fid,)).fetchall():
             c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
@@ -177,7 +180,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
         restore_previous(cls.connection, P112, 3, ("hora_inicio", "hora_fin"))
-        restore_previous(cls.connection, P107, 3, ())  # RB-CRIA-01: preservar pruebas v2 de MF-10
+        restore_previous(cls.connection, P107, 4, ())  # RB-CRIA-02: v4 actual -> contrato histórico v2 para MF-10
         restore_previous(cls.connection, P110, 3, ())  # MF-13-01B.2: P1-10 v3 (cinco máquinas, mismos campos) -> la v2 de MF-10
         cls.current = {code: cls.version(code, 2) for code in CODES}
         with contextlib.redirect_stdout(io.StringIO()):
