@@ -64,7 +64,7 @@ test("P1-07: el formulario de producción se llama «bobinas rebobinadas» y mue
     assert.equal(count(html, 'type="time"'), 2);
     assert.ok(text.indexOf("Hora inicio *") < text.indexOf("Etiqueta / número de bobina *"), "las horas abren el formulario");
     assert.equal(count(html, "<input"), 2 + 36 - 1, "36 campos manuales (35 inputs + 1 textarea) + las dos horas");
-    assert.ok(text.includes("Peso cría 22 *") && !text.includes("Peso cría 12"));
+    assert.ok(text.includes("Peso cría 1 *") && text.includes("Peso cría 22") && !text.includes("Peso cría 22 *") && !text.includes("Peso cría 12"), "solo la primera cría obligatoria");
   }
 });
 
