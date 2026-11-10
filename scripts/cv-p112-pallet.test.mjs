@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { P112, P112_FIELDS, P112_LEGACY_FIELDS } from "../lib/vinto/p1-12.ts";
-import { parsePalletPreview, previewTotalKg } from "../lib/vinto/pallet-preview.ts";
+import { parsePalletPreview, previewTotalKg } from "../lib/vinto/pallet-weight.ts";
 
 const seed = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-12.json", import.meta.url), "utf8"));
 const draft = { cantidad_jabas: "2", hora_inicio: "08:15", hora_fin: "09:05" };
