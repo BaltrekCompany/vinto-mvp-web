@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { P112, P112_FIELDS, P112_LEGACY_FIELDS } from "../lib/vinto/p1-12.ts";
+import { parsePalletPreview, previewTotalKg } from "../lib/vinto/pallet-preview.ts";
 
 const seed = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-12.json", import.meta.url), "utf8"));
 const draft = { cantidad_jabas: "2", hora_inicio: "08:15", hora_fin: "09:05" };
@@ -59,4 +60,23 @@ test("las capturas P1-12 v3 continúan legibles sin pallet", () => {
     assert.ok(parsed);
     assert.equal(parsed.values.formato, "4*12");
     assert.equal(parsed.pallet, undefined);
+});
+
+test("la vista previa acepta el peso decimal oficial y calcula totales sin perder decimales", () => {
+    const context = { work_order: "OT-1", line_code: "L1", pv_reference: "PV-1",
+        machine: "GAMBINI", article_code: "10351", article_description: "PERLITA ECO PLUS 4*12",
+        nominal_weight_kg: "1.740000", weight_available: true, unit: "kg/jaba" };
+    const parsed = parsePalletPreview(context);
+    assert.ok(parsed, "el peso 1.740000 del maestro debe poder mostrarse");
+    assert.equal(parsed.article_code, "10351");
+    assert.equal(previewTotalKg(parsed.nominal_weight_kg, "2"), "3.48");
+    assert.equal(previewTotalKg("2.795520", "2"), "5.59104");
+    assert.equal(previewTotalKg("0.604800", "3"), "1.8144");
+    assert.equal(previewTotalKg("10.944000", "999999999"), "10943999989.056");
+    assert.equal(previewTotalKg(null, "2"), null);
+    assert.equal(previewTotalKg("1.74", "0"), null);
+    assert.equal(previewTotalKg("1.74", "1.5"), null);
+    assert.equal(parsePalletPreview({ ...context, nominal_weight_kg: "no disponible" }), null);
+    assert.equal(parsePalletPreview({ ...context, nominal_weight_kg: "0" }), null);
+    assert.equal(parsePalletPreview({ ...context, nominal_weight_kg: null, weight_available: false })?.weight_available, false);
 });
