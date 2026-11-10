@@ -21,7 +21,8 @@ const defOf = (id) => FORM_DEFINITIONS.find((f) => f.id === id);
 const isManual = (f) => f.source === "manual";
 const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? "textarea" : "text");
 const fill = (fields) => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "time" ? (f.key === "hora_fin" ? "14:45" : "06:30") : f.key === "observaciones" ? " nota " : "texto 12,5"]));
-const NEW_HOURS = ["hora_inicio", "hora_fin"]; // MF-10: manuales, obligatorias desde la versión 2
+const NEW_HOURS = ["hora_inicio", "hora_fin"];
+const P107_V4_OPTIONAL = new Set(["producto_refilado", "auxiliar", "formato_2", "formato_3"]); // MF-10: manuales, obligatorias desde la versión 2
 const CASES = [
   { name: "P1-30", id: "form_30_produccion_perichun", form: P130, formCode: P1_30_CODE, fields: P130_FIELDS, pending: P130_PENDING, counts: [10, 5], machines: ["perichun"], hours: ["hora_inicio", "hora_termino"], retired: ["gramaje_g_m2", "resistencia_longitudinal", "resistencia_transversal", "numero_mrp"], added: [...NEW_HOURS, "lote"] },
   { name: "P1-07", id: "form_7_registro_de_productos_rebobinados", form: P107, formCode: P1_07_CODE, fields: P107_FIELDS, pending: P107_PENDING, counts: [36, 5], machines: ["copasa", "beloit", "over"], hours: ["hora_inicio", "hora_final"], retired: [], added: NEW_HOURS },
@@ -43,7 +44,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const kept = c.fields.filter((f) => !c.added.includes(f.key));
     assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
     assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
-    assert.deepEqual(kept.map((f) => f.required), m.map((f) => c.formCode === P1_07_CODE && f.key.startsWith("peso_cria_") ? f.key === "peso_cria_1" : (f.required ?? f.requirement)), `${c.name}: obligatoriedad (P1-07 v3)`);
+    assert.deepEqual(kept.map((f) => f.required), m.map((f) => c.formCode === P1_07_CODE && f.key.startsWith("peso_cria_") ? f.key === "peso_cria_1" : c.formCode === P1_07_CODE && P107_V4_OPTIONAL.has(f.key) ? false : (f.required ?? f.requirement)), `${c.name}: obligatoriedad (P1-07 v3)`);
     assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const key of NEW_HOURS) assert.deepEqual({ ...c.fields.find((f) => f.key === key) }, { key, label: key === "hora_inicio" ? "Hora inicio" : "Hora fin", kind: "time", required: true, sinceVersion: 2 }, `${c.name}: ${key}`);
     assert.equal(c.fields.length, c.counts[0] - c.retired.length + c.added.length);
@@ -59,6 +60,19 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.equal(keys30.indexOf("lote"), keys30.indexOf("formato_de_salida") + 1, "Lote ocupa el lugar de la resistencia longitudinal");
   assert.deepEqual(P130_LEGACY_FIELDS.map((f) => f.key), ["gramaje_g_m2", "resistencia_longitudinal", "resistencia_transversal", "numero_mrp"], "retirados: solo lectura para las capturas v1");
   assert.equal(P130_LEGACY_FIELDS.find((f) => f.key === "numero_mrp").kind, "text");
+});
+
+test("P1-07 v4 admite los cuatro campos opcionales vacíos sin quitar campos obligatorios", () => {
+  const draft = fill(P107_FIELDS);
+  for (const key of P107_V4_OPTIONAL) draft[key] = " ";
+  const result = P107.normalizeDraft(draft);
+  assert.equal(result.ok, true);
+  for (const key of P107_V4_OPTIONAL) {
+    assert.equal(P107_FIELDS.find(f => f.key === key)?.required, false);
+    assert.equal(key in result.values, false, `campo opcional omitido: ${key}`);
+  }
+  assert.equal(result.values.peso_cria_1, "1.5");
+  assert.match(P107.normalizeDraft({ ...draft, etiqueta_numero_de_bobina: " " }).errors.join(" "), /es obligatorio/);
 });
 
 test("P1-07 tiene EXACTAMENTE 21 crías individuales (1-11 y 13-22) y la cría 12 no existe", () => {
