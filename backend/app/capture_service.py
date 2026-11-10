@@ -685,6 +685,13 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
         if groups:
             _insert_groups(connection, capture_id, form_version_id, fields, groups, clean[GROUPS_KEY])
         connection.execute("UPDATE vinto_txn.capture SET status = 'submitted', submitted_at = clock_timestamp() WHERE id = %s", (capture_id,))
+        if form_code == "VINTO-P1-07":
+            # Solo la v3+ genera crías; misma transacción, idempotencia y permisos
+            # de la captura central. Ningún cambio en F3 ni en P1-07 histórico.
+            from app.rewinding_children import create_children
+            create_children(connection, capture_id=capture_id,
+                            form_version_id=form_version_id, machine_id=machine_id,
+                            assignment_id=assignment_id, clean=clean)
     return CaptureResult(get_capture(connection, capture_id, sectors=sectors), created=True, already_submitted=False)
 
 
