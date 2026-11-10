@@ -48,8 +48,9 @@ QUALITY = (P124, P126, P127)
 NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
+_P112_V3 = json.loads((Path(__file__).with_name("cv_p112_v3.json")).read_text(encoding="utf-8"))  # Fixture auténtica MF-11: v3 P1-12, sin la lógica de pallets v4.
 _REAL = load_bundle()
-BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else f for f in _REAL.forms))
+BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else _P112_V3 if f["code"] == P112 else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 MACHINE = {P111: "GAMBINI", P112: "GAMBINI", P113: "OMET_I", P116: "OMET_I"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in {r["machine_code"] for r in BUNDLE.article_machines}}
@@ -197,7 +198,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 597)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 578)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
