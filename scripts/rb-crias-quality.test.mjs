@@ -135,3 +135,23 @@ test("Quality child UI displays position and mother, not an official sequence; b
     assert.match(inbox,/groupQualityBobbinFamilies\(resource\.data\)/);
     assert.match(decision,/role=\{isChild \? "dialog" : undefined\}/);
 });
+
+test("mother Quality uses the real mother UUID, not a child UUID or its label as key", () => {
+    const motherId = "ad109839-00b7-4a53-99bd-1a6bc1beab8b";
+    const row = child(1);
+    row.bobbin.rewinding.mother_bobbin_id = motherId;
+    const parsed = parseQualityBobbinInboxItem(row);
+    assert.ok(parsed);
+    const target = motherQualityItem(parsed);
+    assert.ok(target);
+    assert.equal(target.bobbin.id, motherId);
+    assert.equal(target.bobbin.code, mother);
+    assert.equal(target.bobbin.rewinding, undefined);
+    assert.equal(target.bobbin.mother_quality.source_capture_id, id);
+    assert.notEqual(target.bobbin.id, parsed.bobbin.id);
+    assert.equal(motherQualityItem(parseQualityBobbinInboxItem(child(1))), null);
+    assert.equal(motherQualityItem(parseQualityBobbinInboxItem(source)), null);
+    assert.equal(parseQualityBobbinInboxItem({ ...row,
+        bobbin: { ...row.bobbin, rewinding: { ...row.bobbin.rewinding, mother_bobbin_id: 123 } }
+    }), null);
+});
