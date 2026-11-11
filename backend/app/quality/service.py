@@ -85,6 +85,7 @@ _SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year,
                     AND sibling.rewind_child_position IS NOT NULL
                     AND sibling_quality.status = 'pending'
               ))
+              OR (%s AND b.rewind_child_position IS NOT NULL)
             )
           ORDER BY c.captured_at DESC, b.id DESC"""
 
@@ -93,14 +94,15 @@ def _text(value):
     return None if value is None else format(value, "f")  # decimales como texto exacto, sin float
 
 
-def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors, include_rewinding_family: bool = False) -> list[QualityBobbinView]:
+def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors, include_rewinding_family: bool = False, include_completed_mothers: bool = False) -> list[QualityBobbinView]:
     if status not in QUALITY_STATUSES:
         raise ValueError(f"Estado de calidad desconocido: {status!r}")
     # Opt-in de la interfaz: conservar visibles las hermanas ya decididas mientras
     # quede alguna cría pendiente de esa MISMA captura P1-07. El endpoint legado,
     # incluidos los filtros released/rejected, conserva exactamente su contrato.
     expand = include_rewinding_family and status == DEFAULT_STATUS
-    rows = connection.execute(_SQL, (list(scoped_sector_codes(sectors)), status, expand)).fetchall()
+    all_mothers = expand and include_completed_mothers
+    rows = connection.execute(_SQL, (list(scoped_sector_codes(sectors)), status, expand, all_mothers)).fetchall()
     views = []
     for row in rows:
         r = list(row)
