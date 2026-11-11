@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import UUID4, BaseModel, ConfigDict
+from pydantic import UUID4, BaseModel, ConfigDict, model_serializer
 
 from app.capture_service import CaptureResult, CaptureView
 
@@ -74,6 +74,14 @@ class CaptureOut(BaseModel):
     line: LineOut
     values: dict[str, Any]  # decimales como texto para no perder precisión
     pallet: PalletOut | None = None  # P1-12 v4; ausente en capturas históricas
+
+    @model_serializer(mode="wrap")
+    def serialize_without_legacy_pallet_null(self, handler):
+        """La API histórica no emite 'pallet':null para F6 y P1-12 v1-v3."""
+        data = handler(self)
+        if self.pallet is None:
+            data.pop("pallet", None)
+        return data
 
 
 class CaptureResultOut(BaseModel):
