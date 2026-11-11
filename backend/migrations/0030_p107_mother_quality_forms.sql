@@ -1,25 +1,62 @@
--- RB-P107-MQ-02: formularios de Calidad para madres P1-07 independientes de F3.
--- Preserva las versiones y vínculos MP1/MP3 existentes; no crea permisos de
--- usuario ni cambia estados de crías. Solo COPASA/BELOIT/OVER (máquinas P1-07).
--- Los seis formularios de Calidad se vinculan a las máquinas productoras de
--- madres declaradas, no a una supuesta bobina física F3.
-INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id)
-SELECT fv.id, m.id
-FROM vinto_config.form f
-JOIN LATERAL (
-  SELECT v.id, v.area FROM vinto_config.form_version v
-  WHERE v.form_id=f.id AND v.status='published'
-  ORDER BY v.version_number DESC LIMIT 1
-) fv ON fv.area='quality'
-CROSS JOIN vinto_master.machine m
-JOIN vinto_master.sector s ON s.id=m.sector_id
-WHERE f.active AND f.code IN (
-  'VINTO-P1-19','VINTO-P1-20','VINTO-P1-21',
-  'VINTO-P1-24','VINTO-P1-25','VINTO-P1-28'
-)
-AND m.active AND s.active AND s.code='REBOBINADO'
-AND m.code IN ('COPASA','BELOIT','OVER')
-ON CONFLICT (form_version_id, machine_id) DO NOTHING;
+-- RB-P107-MQ-02: política aditiva de captura de Calidad sobre MADRE P1-07.
+-- IMPORTANTE: jamás INSERT en form_version_machine de una versión publicada:
+-- guard_form_child lo prohíbe, y el bundle es la autoridad inmutable de F3.
+-- Solo las seis definiciones existentes y las máquinas que publican P1-07
+-- (COPASA, BELOIT, OVER) son válidas para el CONTEXTO de una madre técnica.
+-- Las concesiones de usuario/máquina/formulario se verifican en el backend.
+
+-- validate_capture de 0001 se conserva literalmente para F3 y Producción;
+-- esta excepción positiva es exclusiva de b.rewind_mother_capture_id.
+CREATE OR REPLACE FUNCTION vinto_txn.validate_capture() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE machine_sector uuid; device_machine uuid;
+BEGIN
+ IF TG_OP = 'UPDATE' THEN
+   IF OLD.status = 'closed' THEN RAISE EXCEPTION 'Closed capture is immutable' USING ERRCODE = '23514'; END IF;
+   IF NEW.form_version_id <> OLD.form_version_id OR NEW.machine_id <> OLD.machine_id
+     OR NEW.shift_schedule_id <> OLD.shift_schedule_id OR NEW.device_id <> OLD.device_id
+     OR NEW.assignment_id IS DISTINCT FROM OLD.assignment_id OR NEW.operating_date <> OLD.operating_date
+     OR NEW.recipe_version_id IS DISTINCT FROM OLD.recipe_version_id THEN
+       RAISE EXCEPTION 'Capture context is immutable; create a new capture' USING ERRCODE = '23514';
+   END IF;
+   IF OLD.status <> 'draft' AND (nullif(NEW.correction_reason,'') IS NULL
+     OR nullif(current_setting('vinto.reason',true),'') IS NULL) THEN
+       RAISE EXCEPTION 'Capture correction requires an audited reason' USING ERRCODE = '23514';
+   END IF;
+   NEW.revision := OLD.revision + 1;
+ ELSE NEW.revision := 1;
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM vinto_config.form_version WHERE id = NEW.form_version_id
+   AND (status = 'published' OR TG_OP = 'UPDATE' AND status = 'retired')) THEN
+   RAISE EXCEPTION 'Capture requires published form' USING ERRCODE = '23514';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = NEW.form_version_id AND machine_id = NEW.machine_id)
+   AND NOT EXISTS (
+     SELECT 1 FROM vinto_txn.bobbin b
+     JOIN vinto_master.machine m ON m.id=b.machine_id
+     JOIN vinto_config.form_version fv ON fv.id=NEW.form_version_id
+     JOIN vinto_config.form f ON f.id=fv.form_id
+     WHERE b.id=NEW.bobbin_id
+       AND b.rewind_mother_capture_id IS NOT NULL
+       AND b.rewind_child_position IS NULL
+       AND b.machine_id=NEW.machine_id
+       AND m.code IN ('COPASA','BELOIT','OVER')
+       AND fv.area='quality'
+       AND f.code IN ('VINTO-P1-19','VINTO-P1-20','VINTO-P1-21',
+                      'VINTO-P1-24','VINTO-P1-25','VINTO-P1-28')
+   ) THEN
+   RAISE EXCEPTION 'Machine is not allowed for this form version' USING ERRCODE = '23514';
+ END IF;
+ SELECT sector_id INTO machine_sector FROM vinto_master.machine WHERE id = NEW.machine_id;
+ SELECT machine_id INTO device_machine FROM vinto_master.device WHERE id = NEW.device_id;
+ IF device_machine IS NOT NULL AND device_machine <> NEW.machine_id THEN
+   RAISE EXCEPTION 'Device machine mismatch' USING ERRCODE = '23514';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM vinto_config.shift_schedule WHERE id = NEW.shift_schedule_id AND sector_id = machine_sector
+   AND NEW.operating_date >= valid_from AND (valid_to IS NULL OR NEW.operating_date <= valid_to)) THEN
+   RAISE EXCEPTION 'Capture shift mismatch' USING ERRCODE = '23514';
+ END IF;
+ RETURN NEW;
+END $$;
 
 -- La guardia existente aceptaba EXCLUSIVAMENTE F3 numerada. Ampliación
 -- positiva y acotada a las madres P1-07 con identidad 0029. No acepta crías.
