@@ -22,6 +22,8 @@ type Props = {
     candidateOffers?: (machineCode: string) => QualityBobbinScreen[];
     onRegisterCandidate?: (screen: QualityBobbinScreen, item: QualityBobbinInboxItem) => void;
     actionOffers?: (machineCode: string) => { humidity: boolean; physical: boolean };
+    showAllMothers?: boolean;
+    onToggleAllMothers?: () => void;
 };
 
 // La ficha P1-07 puede registrar controles SOBRE SU MADRE (UUID único), no
@@ -63,7 +65,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </div>;
 }
 
-export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRegisterProperties, onViewHistory, candidateOffers, onRegisterCandidate, actionOffers }: Props) {
+export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRegisterProperties, onViewHistory, candidateOffers, onRegisterCandidate, actionOffers, showAllMothers = false, onToggleAllMothers }: Props) {
     if (resource.status !== "ready") return <CentralStatus state={resource} onRetry={refresh} title="No se pudo cargar el inbox de Calidad"/>;
     const items = groupQualityBobbinFamilies(resource.data);
     if (!items) return <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm">Las crías recibidas no pertenecen a una misma ficha de madre coherente. <Button size="sm" variant="outline" onClick={refresh}>Actualizar</Button></p>;
@@ -71,11 +73,12 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
     return <section className="min-w-0 max-w-full rounded-2xl border bg-white p-4 shadow-sm md:p-6" aria-live="polite">
         <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h2 className="text-xl font-black">Bobinas pendientes de Calidad</h2>
+                <h2 className="text-xl font-black">{showAllMothers ? "Bobinas pendientes y madres históricas" : "Bobinas pendientes de Calidad"}</h2>
                 <p className="mt-1 text-sm text-slate-700">Bobinas producidas pendientes de evaluación. El listado no depende de la asignación actualmente activa.</p>
             </div>
             <div className="flex items-center gap-3">
                 <span className="text-sm font-bold">Pendientes: {pendingCount} · Fichas: {items.length}</span>
+                {onToggleAllMothers && <Button variant="outline" size="sm" onClick={onToggleAllMothers}>{showAllMothers ? "Mostrar pendientes" : "Ver madres finalizadas"}</Button>}
                 <Button variant="outline" size="sm" disabled={resource.refreshing} onClick={refresh}>{resource.refreshing ? "Actualizando…" : "Actualizar"}</Button>
             </div>
         </div>
