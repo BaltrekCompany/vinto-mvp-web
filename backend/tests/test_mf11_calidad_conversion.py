@@ -45,7 +45,7 @@ P111, P112, P113, P116 = "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-
 P124, P126, P127 = "VINTO-P1-24", "VINTO-P1-26", "VINTO-P1-27"
 CONVERSION = (P111, P112, P113, P116)
 QUALITY = (P124, P126, P127)
-NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
+NEW_VERSION = {P111: 3, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
 _P112_V3 = json.loads((Path(__file__).with_name("cv_p112_v3.json")).read_text(encoding="utf-8"))  # Fixture auténtica MF-11: v3 P1-12, sin la lógica de pallets v4.
@@ -59,7 +59,7 @@ DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 HOURS = {"hora_inicio": "06:30", "hora_fin": "14:45"}
 POINTS = ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, P111: 2, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, P111: 3, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
             "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 4, "VINTO-P1-25": 3, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
 # claves que cada versión NUEVA añade respecto de la anterior
 ADDED = {P111: ("hora_inicio", "hora_fin"), P112: ("hora_inicio", "hora_fin"), P113: ("hora_inicio", "hora_fin"), P116: ("hora_inicio", "hora_fin"), P126: ("absorcion_de_humedad",), P127: ("alcalinidad_total",), P124: ()}
@@ -198,7 +198,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 578)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 577)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):

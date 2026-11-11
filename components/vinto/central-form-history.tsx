@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { failureMessage } from "@/lib/vinto/orders";
 import type { P110Capture } from "@/lib/vinto/p1-10";
 import { positionLabel, type P111Capture } from "@/lib/vinto/p1-11";
+import { calculatedConsumption } from "@/lib/vinto/p1-11-v3";
 import { shortHour, type P112Capture } from "@/lib/vinto/p1-12";
 import type { P113Capture } from "@/lib/vinto/p1-13";
 import { ORIGEN_MERMA_OPTIONS, TIPO_MERMA_OPTIONS, type P116Capture } from "@/lib/vinto/p1-16";
@@ -56,12 +57,12 @@ export function P113History({ resource, refresh }: { resource: Resource<P113Capt
     </Shell>;
 }
 
-// Las bobinas se muestran TAL CUAL se declararon y en el orden capturado: sin sumas, sin totales y sin ninguna columna de consumo (no es un libro de existencias).
+// Historial v1/v2 conserva los saldos declarados. En v3 se muestra el consumo derivado exclusivamente para consulta, sin movimiento de inventario.
 export function P111History({ resource, refresh }: { resource: Resource<P111Capture[]>; refresh: () => void }) {
-    return <Shell title="Consumo de bobinas (P1-11) · registros centrales" note="Ficha candidata (hipótesis de prueba): los números de bobina y los saldos son declaraciones. No es un libro de existencias: no hay consumo, totales ni inventario." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Hora inicio", "Hora fin", "Bobinas declaradas (en orden)", "Observaciones", "Rev."]}>
+    return <Shell title="Consumo de bobinas (P1-11) · registros centrales" note="Registros históricos: v1/v2 conservan declaraciones sin cálculo; v3 muestra material según receta y consumo calculado solo de forma informativa. No es un libro de existencias: ningún registro modifica el inventario." resource={resource} refresh={refresh} headers={["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", "Hora inicio", "Hora fin", "Bobinas declaradas (en orden)", "Observaciones", "Rev."]}>
         {resource.status === "ready" && resource.data.map(c => <tr key={c.id} className="border-b last:border-0" data-capture={c.id}>{common(c)}
             <td className="px-2 py-2">{c.values.hora_inicio ? shortHour(c.values.hora_inicio) : ""}</td><td className="px-2 py-2">{c.values.hora_fin ? shortHour(c.values.hora_fin) : ""}</td>
-            <td className="px-2 py-2"><ol className="space-y-1" data-rows={c.values._groups.bobinas.length}>{c.values._groups.bobinas.map((row, index) => <li key={index} data-row={index + 1}>{index + 1}. {row.numero_bobina} · {positionLabel(row.posicion)} · inicial {row.saldo_inicial_kg} · ingreso {row.ingreso_kg} · final {row.saldo_final_kg} (declarados)</li>)}</ol></td>
+            <td className="px-2 py-2"><ol className="space-y-1" data-rows={c.values._groups.bobinas.length}>{c.values._groups.bobinas.map((row, index) => <li key={index} data-row={index + 1}>{index + 1}. {row.numero_bobina} · {positionLabel(row.posicion)}{c.form.version_number >= 3 && row.tipo_material ? ` · material ${row.tipo_material}` : ""} · inicial {row.saldo_inicial_kg} · ingreso {row.ingreso_kg} · final {row.saldo_final_kg} (declarados){c.form.version_number >= 3 ? ` · consumo ${calculatedConsumption(row)}` : ""}</li>)}</ol></td>
             <td className="px-2 py-2">{c.values.observaciones ?? ""}</td><td className="px-2 py-2">{c.revision}</td></tr>)}
     </Shell>;
 }

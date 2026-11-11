@@ -674,6 +674,10 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
         mp3_inspection_policy.assert_form_machine(connection, form_code, machine_id)
         form_version_id = published_form_version(connection, form_code, machine_id)
         fields, groups, clean = _prepare_content(connection, form_version_id, values)
+        if form_code == "VINTO-P1-11":
+            from app.p111_recipe_policy import validate_p111_recipe
+            validate_p111_recipe(connection, form_version_id=form_version_id,
+                                 article_version_id=context.article_version_id, values=clean)
         _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean)
         # El advisory lock de máquina está tomado por lock_active_assignment:
         # serializa inclusive dos capturas simultáneas desde diferentes OT/dispositivos.
