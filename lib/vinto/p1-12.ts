@@ -25,7 +25,7 @@ export type P112Submission = SubmissionOf<P112Capture>;
 
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/; // lo que envía el cliente
 const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQL devuelve la hora con segundos (HH:MM:SS)
-const INTEGER = /^\d{1,9}$/; // P1-12 v4: misma cota de jabas enteras positivas del formulario vigente
+const INTEGER = /^-?\d+$/; // Helper histórico M6-B compartido con P1-13; no valida la captura v4 operativa
 
 // Hora tal como se muestra: HH:MM (los segundos que añade PostgreSQL no se muestran).
 export const shortHour = (value: string): string => value.slice(0, 5);
@@ -54,11 +54,13 @@ export const P112_LABELS = { cantidad_jabas: "Cantidad de jabas", hora_inicio: "
 
 export type P112DraftCheck = { ok: true; values: P112Values } | { ok: false; errors: string[] };
 
+// Contrato legacy: conserva entero con signo en pruebas M6-B y P1-13.
+// P1-12 v4 usa P112.createAttempt (defineCandidateForm), que exige 1..999999999.
 export function normalizeP112Draft(draft: P112Draft): P112DraftCheck {
     const errors: string[] = [];
     const jabas = draft.cantidad_jabas.trim(), start = draft.hora_inicio.trim(), end = draft.hora_fin.trim();
     if (!jabas) errors.push(`${P112_LABELS.cantidad_jabas}: es obligatorio.`);
-    else if (!INTEGER.test(jabas) || Number(jabas) <= 0) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un entero positivo de hasta 9 dígitos.`);
+    else if (!INTEGER.test(jabas) || !Number.isSafeInteger(Number(jabas))) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un número entero.`);
     for (const [key, text] of [["hora_inicio", start], ["hora_fin", end]] as const) {
         if (!text) errors.push(`${P112_LABELS[key]}: es obligatorio.`);
         else if (!HOUR.test(text)) errors.push(`${P112_LABELS[key]}: debe tener formato HH:MM.`);
