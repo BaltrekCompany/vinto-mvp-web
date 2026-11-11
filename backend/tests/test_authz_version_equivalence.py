@@ -20,6 +20,8 @@ from app.authz.readiness import coverage_report
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.mp3_inspection_policy import allowed_for_machine
 from app.production_access import production_machines
+from app.quality.capture_service import _published_mother_form_version
+from app.quality.mother_policy import allows_mother_form
 
 PRODUCTION, BOBBIN, Q_BOBBIN = Operation.PRODUCTION_CAPTURE, Operation.BOBBIN_PRODUCTION, Operation.QUALITY_BOBBIN_CAPTURE
 P101, P103, P105, P110, P119, P131 = "VINTO-P1-01", "VINTO-P1-03", "VINTO-P1-05", "VINTO-P1-10", "VINTO-P1-19", "VINTO-P1-31"
@@ -100,7 +102,13 @@ class EquivalenceCase(unittest.TestCase):
             if area == "production" and not allowed_for_machine(form, machine):
                 return False
             try:
-                capture_service.published_form_version(c, form, machine_id, area=area)
+                # F3 conserva el vinculo publicado original. La nueva ruta
+                # de madre P1-07 usa una excepcion por contexto: solo seis
+                # formularios / tres maquinas, sin mutar form_version_machine.
+                if operation == Q_BOBBIN and allows_mother_form(machine, form):
+                    _published_mother_form_version(c, form, machine_id)
+                else:
+                    capture_service.published_form_version(c, form, machine_id, area=area)
                 return True
             except Exception:
                 return False
