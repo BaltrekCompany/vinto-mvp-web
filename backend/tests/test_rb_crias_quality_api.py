@@ -116,7 +116,16 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
             """SELECT b.id, b.rewind_child_position, b.rewind_mother_label, b.weight_kg,
                       q.status, b.sequence_number, b.management_start_year
                FROM vinto_txn.bobbin b JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id
-               WHERE b.source_capture_id=%s ORDER BY b.rewind_child_position""",
+               WHERE b.source_capture_id=%s AND b.rewind_child_position IS NOT NULL ORDER BY b.rewind_child_position""",
+            (capture_id,),
+        ).fetchall()
+
+    def mother(self, capture_id):
+        return self.connection.execute(
+            """SELECT b.id, b.code, b.source_capture_id, b.rewind_mother_capture_id,
+                      b.sequence_number, b.rewind_child_position
+               FROM vinto_txn.bobbin b
+               WHERE b.rewind_mother_capture_id=%s""",
             (capture_id,),
         ).fetchall()
 
@@ -138,6 +147,13 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, 201, result.text)
         capture_id = body["capture_id"]
         rows = self.children(capture_id)
+        mother = self.mother(capture_id)
+        self.assertEqual(len(mother), 1)
+        self.assertEqual(mother[0][1], "MADRE-" + capture_id.replace("-", ""))
+        self.assertEqual(str(mother[0][2]), capture_id)
+        self.assertEqual(str(mother[0][3]), capture_id)
+        self.assertIsNone(mother[0][4])
+        self.assertIsNone(mother[0][5])
         self.assertEqual([r[1] for r in rows], [1, 2, 13])
         self.assertEqual([str(r[3]) for r in rows], ["12.50", "11.25", "9.80"])
         self.assertTrue(all(r[2] == "MADRE-TEXTO-0001" and r[4] == "pending"
@@ -192,6 +208,7 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
         replay, _ = await self.capture(assignment, values, capture_id=capture_id, device_key=device_key)
         self.assertEqual(replay.status, 200, replay.text)
         self.assertEqual((len(self.children(capture_id)), self.count("vinto_txn.bobbin")), (count, before))
+        self.assertEqual(len(self.mother(capture_id)), 1)
         conflict, _ = await self.capture(assignment, {**values, "peso_cria_3": "8.41"},
                                          capture_id=capture_id, device_key=device_key)
         self.assertEqual(conflict.status, 409)
