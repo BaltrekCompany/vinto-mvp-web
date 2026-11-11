@@ -159,8 +159,9 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setOpen(false); setReview(false); }}>Cancelar</Button>
                 </div>
             </>}
+            {isChild && error && <p role="alert" className="rounded-md bg-red-50 p-2 text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
         </section></div>}
-        {error && <p role="alert" className="text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
+        {!isChild && error && <p role="alert" className="text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
         {done && <p role="status" className="text-xs font-medium text-green-800">Decisión guardada</p>}
     </div>;
 }
