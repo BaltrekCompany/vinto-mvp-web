@@ -122,7 +122,7 @@ class _BobbinContext:
 # El artículo y la OT/línea/PV salen de la asignación HISTÓRICA de la captura (la misma que la F3 de origen; lo garantiza 0005).
 _VIEW_SQL = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at, c.operating_date, f.code, fv.version_number, fv.name,
                       b.id, CASE WHEN b.rewind_mother_capture_id IS NOT NULL THEN
-                        (SELECT d.value_text FROM vinto_txn.capture_detail d
+                        (SELECT btrim(d.value_text) FROM vinto_txn.capture_detail d
                          JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
                          WHERE d.capture_id=b.rewind_mother_capture_id AND fd.key='etiqueta_numero_de_bobina' LIMIT 1)
                         ELSE b.code END, m.code, m.name, sh.code, sh.name,
@@ -219,7 +219,7 @@ def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):
     declared = clean.get(key)
     code = connection.execute(
         """SELECT CASE WHEN b.rewind_mother_capture_id IS NULL THEN b.code ELSE
-            (SELECT d.value_text FROM vinto_txn.capture_detail d
+            (SELECT btrim(d.value_text) FROM vinto_txn.capture_detail d
              JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
              WHERE d.capture_id=b.rewind_mother_capture_id
                AND fd.key='etiqueta_numero_de_bobina' LIMIT 1) END
