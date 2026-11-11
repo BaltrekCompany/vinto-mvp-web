@@ -71,9 +71,9 @@ class ApprovedBundleTests(unittest.TestCase):
         # MF-13-01B.2: P1-10 pasa a la versión 3 (cinco máquinas de Rebobinado; mismos campos).
         # RG-MP3-01: se incorporó VINTO-MP3-01 y se actualizó el manifest del bundle.
         # Valor calculado mediante load_bundle().source_checksum del manifest aprobado
-        # en main c10d0c8 (2026-11-09). No modificar el manifest ni los formularios aquí.
+        # en main c10d0c8 (2026-11-09). CV-P111-v3: nuevo manifest y checksum tras versión aditiva P1-11; versiones anteriores no se modifican.
         self.assertEqual(BUNDLE.source_checksum, compute_source_checksum(BUNDLE.manifest))
-        self.assertEqual(BUNDLE.source_checksum, "03c6041da52757eb7e075c3abcb6b2fafde86d9ee034cb37dbd24b1a839155aa")
+        self.assertEqual(BUNDLE.source_checksum, "77c4bd49f2e773a2932c21457f119c255506e2ad328e94de820ee928b4ae3149")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
         self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])
