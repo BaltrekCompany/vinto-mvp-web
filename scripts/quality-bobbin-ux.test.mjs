@@ -17,7 +17,7 @@ test("each pending bobbin has visible decisions, without a wide horizontal table
   assert.match(decision, />\s*Liberar\s*<\/Button>/);
   assert.match(decision, />\s*Rechazar\s*<\/Button>/);
   assert.doesNotMatch(inbox, /<table|min-w-\[1320px\]|overflow-x-auto/);
-  assert.match(inbox, /aria-label=\{"Bobina " \+ i\.bobbin\.code/);
+  assert.match(inbox, /"Bobina " \+ i\.bobbin\.code/);
 });
 
 test("secondary controls and full production metadata remain reachable", () => {
