@@ -6,7 +6,7 @@
   "name": "Consumo de bobinas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -15,29 +15,20 @@
   "groups": [
     {
       "code": "bobinas",
-      "label": "Bobinas declaradas",
+      "label": "Bobinas e insumos consumidos",
       "display_order": 1,
       "repeatable": true,
       "min_rows": 1,
-      "max_rows": null,
+      "max_rows": 3,
       "fields": [
         {
-          "key": "numero_bobina",
-          "label": "N.º de bobina (declarado)",
-          "value_type": "text",
-          "source": "manual",
-          "required": true,
-          "unit": null,
-          "display_order": 1
-        },
-        {
           "key": "posicion",
-          "label": "Posición (declarada)",
+          "label": "Posición",
           "value_type": "text",
           "source": "manual",
           "required": true,
           "unit": null,
-          "display_order": 2,
+          "display_order": 1,
           "options": [
             {
               "option_key": "superior",
@@ -48,21 +39,35 @@
               "option_key": "inferior",
               "label": "Inferior",
               "display_order": 2
+            },
+            {
+              "option_key": "no_aplica",
+              "label": "No aplica",
+              "display_order": 3
             }
           ]
         },
         {
-          "key": "saldo_inicial_kg",
-          "label": "Saldo inicial declarado",
-          "value_type": "decimal",
+          "key": "tipo_material",
+          "label": "Tipo según receta",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2
+        },
+        {
+          "key": "numero_bobina",
+          "label": "N.º bobina",
+          "value_type": "text",
           "source": "manual",
           "required": true,
           "unit": null,
           "display_order": 3
         },
         {
-          "key": "ingreso_kg",
-          "label": "Ingreso declarado",
+          "key": "saldo_inicial_kg",
+          "label": "Saldo inicial",
           "value_type": "decimal",
           "source": "manual",
           "required": true,
@@ -70,36 +75,27 @@
           "display_order": 4
         },
         {
-          "key": "saldo_final_kg",
-          "label": "Saldo final declarado",
+          "key": "ingreso_kg",
+          "label": "Ingreso",
           "value_type": "decimal",
           "source": "manual",
           "required": true,
           "unit": null,
           "display_order": 5
+        },
+        {
+          "key": "saldo_final_kg",
+          "label": "Saldo final",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 6
         }
       ]
     }
   ],
   "fields": [
-    {
-      "key": "hora_inicio",
-      "label": "Hora inicio",
-      "value_type": "time",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 1
-    },
-    {
-      "key": "hora_fin",
-      "label": "Hora fin",
-      "value_type": "time",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 2
-    },
     {
       "key": "observaciones",
       "label": "Observaciones",
@@ -107,8 +103,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 3
+      "display_order": 1
     }
   ],
-  "definition_checksum": "a6c2eeb7bc52e3add73c14b37fbdde5e47f093da752fe23cc3c60e890721b6a3"
+  "definition_checksum": "2fa92e66ca779d7d524b4fcc0f27678c5090aece94366466b7ff88e425a2d26b"
 }
