@@ -67,8 +67,8 @@ class EquivalenceCase(unittest.TestCase):
 
     def user(self, profile="OPERACION", sectors=("BOBINAS", "REBOBINADO", "CONVERSION")):
         user_id = create_user(self.connection, username=f"eq.{uuid4().hex[:12]}", display_name=profile, profile_code=profile, password="pw-" + uuid4().hex, sectors=sectors).user_id
-        if profile == "OPERACION":  # perfiles múltiples: aísla la lógica de versión de la de permisos
-            self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (user_id,))
+        # USR-02 garantiza exactamente un perfil por usuario. La prueba del
+        # motor sigue aislando la versión mediante principal() (permisos sintéticos).
         return user_id
 
     def add_version(self, form, number, area, machine=None):
@@ -108,7 +108,8 @@ class EquivalenceCase(unittest.TestCase):
                 "listed": form in (forms_listed(production_machines(c, ("BOBINAS", "REBOBINADO", "CONVERSION")).model_dump(), machine) or [])}
 
     def readiness_offers(self, operation, machine, form):
-        twin = self.user()
+        # La cobertura consulta perfiles reales: no mezclar roles en un usuario.
+        twin = self.user("CALIDAD" if operation == Q_BOBBIN else "OPERACION")
         name = self.connection.execute("SELECT username FROM vinto_auth.credential WHERE user_id = %s", (twin,)).fetchone()[0]
         report = coverage_report(self.connection)[operation.value]["blocked"]
         return any(i["username"] == name and i["machine"] == machine and i["form"] == form for i in report)
