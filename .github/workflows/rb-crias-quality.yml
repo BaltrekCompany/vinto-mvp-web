@@ -14,6 +14,10 @@ on:
       - 'backend/tests/test_mf10_rebobinado_conversion.py'
       - 'lib/vinto/p1-07.ts'
       - 'lib/vinto/quality-bobbins.ts'
+      - 'lib/vinto/quality-api.ts'
+      - 'scripts/quality-bobbin-inbox.test.mjs'
+      - 'scripts/quality-bobbin-ux.test.mjs'
+      - 'docs/RB-P107-MOTHER-family-ux.md'
       - 'lib/vinto/rebobinado-candidates.ts'
       - 'components/vinto/quality-bobbin-*.tsx'
       - 'scripts/rb-crias-quality.test.mjs'
@@ -101,5 +105,5 @@ jobs:
       - name: Types, changed components lint and portable frontend build
         run: |
           pnpm exec tsc --noEmit
-          pnpm exec eslint             components/vinto/quality-bobbin-decision.tsx             components/vinto/quality-bobbin-inbox.tsx             lib/vinto/quality-bobbins.ts lib/vinto/p1-07.ts             lib/vinto/rebobinado-candidates.ts
+          pnpm exec eslint             components/vinto/quality-bobbin-decision.tsx             components/vinto/quality-bobbin-inbox.tsx             lib/vinto/quality-bobbins.ts lib/vinto/quality-api.ts lib/vinto/p1-07.ts             lib/vinto/rebobinado-candidates.ts
           pnpm run build
