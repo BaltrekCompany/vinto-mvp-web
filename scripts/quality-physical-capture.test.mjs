@@ -380,7 +380,8 @@ test("the form: decimal text inputs, locked while pending, double-click guard, d
 });
 
 test("the header is inherited (read-only) and separates nominal grammage from the measured one", () => {
-  for (const label of ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Número de cortes (Producción)", "Gramaje nominal de Producción"]) {
+  assert.match(component, /<Auto label=\{bobbin\.mother_quality \? "Bobina madre" : "Bobina"\} value=\{bobbin\.code\}/, "la madre debe quedar identificada sin alterar F3");
+  for (const label of ["Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Número de cortes (Producción)", "Gramaje nominal de Producción"]) {
     assert.ok(component.includes(`<Auto label="${label}"`), label);
   }
   assert.match(component, /grammageLabel\(bobbin\.grammage_g_m2\)/);
