@@ -183,7 +183,9 @@ class StaticScopeTests(unittest.TestCase):
                        ("0026_rewinding_child_quality.sql",
                         "967df3e19f2b26373bec8a6ea2ef10e399c58e6eb60dcd8efd3dc30c89f87e99"),
                        ("0027_conversion_pallet.sql",
-                        "e99ea944cac70c257450cf9d135266f77521de0f5b1d0ee25d825a1a949dcecb")])
+                        "e99ea944cac70c257450cf9d135266f77521de0f5b1d0ee25d825a1a949dcecb"),
+                       ("0028_conversion_pallet_grants.sql",
+                        "c72cf77921c512da1e4f8b389f6a9b48b80374608bd19f7fd5b07a438e4b50fa")])
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

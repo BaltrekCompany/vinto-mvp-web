@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/cv-p112-pallet.yml'
       - 'backend/migrations/0027_conversion_pallet.sql'
+      - 'backend/migrations/0028_conversion_pallet_grants.sql'
       - 'backend/app/production_pallets.py'
       - 'backend/app/capture_service.py'
       - 'backend/app/capture_schemas.py'
@@ -62,6 +63,15 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r backend/requirements.txt
+      - name: Provision restricted application role in disposable PG17
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ["TEST_ADMIN_DATABASE_URL"], autocommit=True) as db:
+              db.execute("CREATE ROLE vinto_app NOLOGIN")
+          print("P112_ACL_CI_ROLE=PASS")
+          PY
       - name: Syntax + schema PG17
         working-directory: backend
         run: |
