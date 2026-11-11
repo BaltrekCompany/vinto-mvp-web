@@ -424,7 +424,7 @@ class ApplyTests(DatabaseCase):
         self.assertEqual(connection.execute("SELECT id,published_at FROM vinto_config.form_version").fetchall(), before)
         # CLOUD-DEP G.12-C4/G.12-C4-COMPLETE/G.12-C4-FINAL25: 30 -> 389 y 444 -> 1926 por los 25 formularios del bundle
         # expandido (ver comentario de test_import_records_cover_every_entity_with_unique_keys).
-        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 578)  # CV-P112-01: 597 - 19 campos del formulario P1-12 v4 = 578
+        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 577)  # CV-P112-01: CV-P111-v3: nuevo esquema de seis campos y sin horas generales = 577
         self.assertEqual(self.count(connection, "vinto_audit.import_record", "issues='[\"already_present\"]'::jsonb"), 2067)
 
     def test_identical_existing_article_is_not_modified(self):

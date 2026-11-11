@@ -45,7 +45,7 @@ ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["ma
 SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 2, "VINTO-P1-12": 4, "VINTO-P1-13": 2,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 2,
             "VINTO-P1-16": 3, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 4, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 RED = ("apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela")
@@ -121,7 +121,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(FORMS[P131]["machines"], ["MP3"])
         for code in ("VINTO-P1-02", "VINTO-P1-03", P104, "VINTO-P1-06"):
             self.assertEqual(sorted(FORMS[code]["machines"]), ["MP1", "MP3"], f"{code}: la disponibilidad no cambia")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 578)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 577)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
     def test_p1_01_v4_removes_replaces_and_adds_exactly_what_was_approved(self):
         v3 = [f["key"] for f in V3["fields"]]
