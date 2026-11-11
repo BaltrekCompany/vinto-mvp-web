@@ -26,7 +26,7 @@ import { CentralCaptures } from "@/components/vinto/central-captures";
 import { F3BobbinCapture } from "@/components/vinto/f3-bobbin-capture";
 import { F6Capture } from "@/components/vinto/f6-capture";
 import { P110CaptureForm } from "@/components/vinto/p1-10-capture";
-import { P111CaptureForm } from "@/components/vinto/p1-11-capture";
+import { P111RecipeCaptureForm as P111CaptureForm } from "@/components/vinto/p1-11-v3-capture";
 import { P129CaptureForm } from "@/components/vinto/p1-29-capture";
 import { ConversionCentral } from "@/components/vinto/conversion-central";
 import { RebobinadoCentral } from "@/components/vinto/rebobinado-central";
@@ -42,7 +42,7 @@ import { F3_FORM_ID, type PendingBobbinAttempt } from "@/lib/vinto/bobbins";
 import { F6_FORM_ID, type CentralCapture, type PendingAttempt } from "@/lib/vinto/captures";
 import type { FormScreen } from "@/lib/vinto/availability";
 import type { P110Attempt } from "@/lib/vinto/p1-10";
-import type { P111Attempt } from "@/lib/vinto/p1-11";
+import type { P111V3Attempt } from "@/lib/vinto/p1-11-v3";
 import type { P129Attempt } from "@/lib/vinto/p1-29";
 import { useAssignments, useMachineExecution, useOperationSelection, useResource, useWorkOrders } from "@/lib/vinto/use-central";
 import { operationBlockedMessage, selectedContextAllowed } from "@/lib/vinto/machine-execution";
@@ -105,7 +105,7 @@ export default function Home() {
     const [convCapture, setConvCapture] = useState<{ screen: FormScreen; context: CaptureContext } | null>(null), [convRefresh, setConvRefresh] = useState(0);
     // G.12-C4-FINAL25: fichas candidatas de Conversión (P1-12 / P1-13 / P1-16), mismo patrón que REBOBINADO_CANDIDATES; el intento pendiente conserva SU contexto original por formulario.
     const [convCandAttempts, setConvCandAttempts] = useState<Partial<Record<ConversionCandidateScreen, { attempt: CandidateAttempt; context: CaptureContext }>>>({});
-    const [p111Attempt, setP111Attempt] = useState<P111Attempt | null>(null), [p111Context, setP111Context] = useState<CaptureContext | null>(null);
+    const [p111Attempt, setP111Attempt] = useState<P111V3Attempt | null>(null), [p111Context, setP111Context] = useState<CaptureContext | null>(null);
     // Autenticación: la autoridad es GET /api/auth/me (cookie HttpOnly). Nada de esto se persiste en el navegador.
     const { view, retry, setSession } = useSession();
     const user = view.status === "authenticated" ? view.user : null;
