@@ -10,6 +10,7 @@ from pydantic import SecretStr
 from app import capture_service
 from app.assignments import service as assignments_service
 from app.auth.service import create_user
+from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
 from app.config import settings
 from app.ephemeral_db import (
     build_reference_template, connect, copy_database, database_url, drop_database,
@@ -137,6 +138,136 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
 
     def count(self, table):
         return self.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+
+    async def test_mother_owns_all_six_quality_forms_with_real_grants_and_history(self):
+        # Backend real PG17: una madre técnica SIN secuencia, nunca cría/F3.
+        # Reutiliza formulario oficial publicado sin alterar MP1/MP3.
+        assignment = await self.assignment()
+        created, body = await self.capture(assignment, self.values(peso_cria_2="9.30"))
+        self.assertEqual(created.status, 201, created.text)
+        capture_id = body["capture_id"]
+        mother_id = self.mother(capture_id)[0][0]
+        child_id = self.children(capture_id)[0][0]
+        actor = self.users["JEFATURA"][0].user_id
+        quality_user = self.users["CALIDAD"][0].user_id
+        form_codes = ("VINTO-P1-19", "VINTO-P1-20", "VINTO-P1-21",
+                      "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28")
+        quality_before = self.connection.execute(
+            "SELECT count(*) FROM vinto_txn.quality_release WHERE status='pending'"
+        ).fetchone()[0]
+        self.assertIsNone(self.connection.execute(
+            "SELECT 1 FROM vinto_txn.quality_release WHERE bobbin_id=%s", (mother_id,),
+        ).fetchone())
+        self.assertFalse(self.connection.execute(
+            "SELECT 1 FROM vinto_config.form_version_machine fvm "
+            "JOIN vinto_master.machine m ON m.id=fvm.machine_id "
+            "WHERE m.code='COPASA' AND fvm.form_version_id IN "
+            "(SELECT id FROM vinto_config.form_version WHERE area='quality')"
+        ).fetchone())  # catálogo F3 NO se modifica por madre
+
+        async def post(code, values, capture=None, device=None, bobbin=mother_id):
+            payload = {"capture_id": capture or str(uuid4()), "device_key": device or str(uuid4()),
+                       "form_code": code, "values": values}
+            return await call("POST", f"/api/quality/bobbins/{bobbin}/captures",
+                              json_body=payload, cookie=await self.cookie("CALIDAD")), payload
+
+        def values_for(code):
+            form = next(f for f in BUNDLE.forms if f["code"] == code)
+            values = {}
+            for fld in form["fields"]:
+                if not fld["required"] or fld["source"] != "manual":
+                    continue
+                values[fld["key"]] = (
+                    "1.50" if fld["value_type"] == "decimal" else
+                    1 if fld["value_type"] == "integer" else "texto de QA"
+                )
+            if code == "VINTO-P1-21":
+                values.update(gramaje_01="1.50", peso_seco_01="1.50", humedad_01="1.50")
+            if code == "VINTO-P1-28":
+                values["numero_de_bobina"] = "MADRE-TEXTO-0001"
+            return values
+
+        before = await call("GET", "/api/quality/bobbin-forms",
+                            cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(before.status, 200, before.text)
+        for code in form_codes:
+            refused, _ = await post(code, values_for(code))
+            self.assertEqual(refused.status, 403, (code, refused.text))
+
+        saved_ids = []
+        try:
+            for code in form_codes:
+                self.assertTrue(grant_machine_form(
+                    self.connection, user_id=quality_user, machine_code="COPASA",
+                    form_code=code, actor_id=actor,
+                ), code)
+            offered = await call("GET", "/api/quality/bobbin-forms",
+                                 cookie=await self.cookie("CALIDAD"))
+            self.assertEqual(offered.status, 200, offered.text)
+            copasa = next(m for sec in offered.json()["sectors"]
+                          for m in sec["machines"] if m["code"] == "COPASA")
+            eligible = {v["code"] for v in copasa["forms"] + copasa.get("bobbin_forms", [])
+                        if v.get("eligible")}
+            self.assertTrue(set(form_codes).issubset(eligible), eligible)
+
+            for code in form_codes:
+                response, payload = await post(code, values_for(code))
+                self.assertEqual(response.status, 201, (code, response.text))
+                data = response.json()["capture"]
+                self.assertEqual(data["bobbin"], {"id": str(mother_id), "code": "MADRE-TEXTO-0001"})
+                self.assertEqual(data["machine"]["code"], "COPASA")
+                self.assertEqual(data["work_order"]["id"], assignment["work_order"]["id"] if "work_order" in assignment else data["work_order"]["id"])
+                self.assertEqual(data["form"]["code"], code)
+                saved_ids.append(payload["capture_id"])
+                replay, _ = await post(code, values_for(code),
+                                        capture=payload["capture_id"],
+                                        device=payload["device_key"])
+                self.assertEqual(replay.status, 200, (code, replay.text))
+                self.assertTrue(replay.json()["already_submitted"])
+
+            listed = await call("GET", f"/api/quality/bobbins/{mother_id}/captures",
+                                cookie=await self.cookie("CALIDAD"))
+            self.assertEqual(listed.status, 200, listed.text)
+            self.assertEqual({x["id"] for x in listed.json()}, set(saved_ids))
+            wrong = await call("GET", f"/api/quality/bobbins/{child_id}/captures",
+                               cookie=await self.cookie("CALIDAD"))
+            self.assertEqual(wrong.status, 404)
+            decision = await call(
+                "POST", f"/api/quality/bobbins/{mother_id}/decision",
+                json_body={"decision_id": str(uuid4()), "action": "release"},
+                cookie=await self.cookie("CALIDAD"),
+            )
+            self.assertEqual(decision.status, 404)
+            self.assertEqual(self.connection.execute(
+                "SELECT count(*) FROM vinto_txn.quality_release WHERE status='pending'"
+            ).fetchone()[0], quality_before)
+
+            # Con todas las crías ya decididas, histórico de madre aún visible
+            # mediante opt-in, sin convertir el inbox legado en historial.
+            for row in self.children(capture_id):
+                done = await call(
+                    "POST", f"/api/quality/bobbins/{row[0]}/decision",
+                    json_body={"decision_id": str(uuid4()), "action": "release"},
+                    cookie=await self.cookie("CALIDAD"),
+                )
+                self.assertEqual(done.status, 200, done.text)
+            gone = await self.inbox()
+            self.assertFalse(any(v["production"]["capture_id"] == capture_id for v in gone))
+            history = await call(
+                "GET", "/api/quality/bobbins?include_rewinding_family=true&include_completed_mothers=true",
+                cookie=await self.cookie("CALIDAD"),
+            )
+            self.assertEqual(history.status, 200, history.text)
+            self.assertEqual(sum(v["production"]["capture_id"] == capture_id for v in history.json()), 2)
+        finally:
+            for code in form_codes:
+                revoke_machine_form(self.connection, user_id=quality_user,
+                                    machine_code="COPASA", form_code=code, actor_id=actor)
+        denied, _ = await post("VINTO-P1-19", values_for("VINTO-P1-19"))
+        self.assertEqual(denied.status, 403, denied.text)
+        persisted = await call("GET", f"/api/quality/captures/{saved_ids[0]}",
+                               cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(persisted.status, 200, persisted.text)
 
     async def test_one_and_three_children_with_real_independent_pending_states(self):
         self.assertEqual(P107["version_number"], 4)
