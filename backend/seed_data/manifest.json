@@ -233,8 +233,8 @@
     },
     {
       "path": "forms/VINTO-P1-11.json",
-      "sha256": "a1f9ce69a366673219b77e3a00867e0d40ca67211837c05fdae86ccdd1a19cf4",
-      "bytes": 2744
+      "sha256": "7399842401ae3b4842f4cea584cc075e2620609dfff82a0bfb6730bc581cccc3",
+      "bytes": 2690
     },
     {
       "path": "forms/VINTO-P1-12.json",
@@ -367,8 +367,8 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 26,
-    "form_fields": 578,
-    "form_options": 34,
+    "form_fields": 577,
+    "form_options": 35,
     "form_groups": 3
   },
   "authority_rules": {
