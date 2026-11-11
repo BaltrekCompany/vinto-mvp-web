@@ -168,7 +168,8 @@ export function groupQualityBobbinFamilies(items: QualityBobbinInboxItem[]): Qua
 export function motherQualityItem(child: QualityBobbinInboxItem): QualityBobbinInboxItem | null {
     const rw = child.bobbin.rewinding;
     if (!rw?.mother_bobbin_id || !rw.mother_label.trim()) return null;
-    const { rewinding: _rewinding, ...physical } = child.bobbin;
+    const physical = { ...child.bobbin };
+    delete physical.rewinding;
     return {
         ...child,
         bobbin: {
