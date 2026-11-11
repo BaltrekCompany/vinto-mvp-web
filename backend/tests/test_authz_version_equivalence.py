@@ -175,7 +175,7 @@ class MixedAreaTests(EquivalenceCase):
         self.assertTrue(self.readiness_offers(PRODUCTION, "MP1", P101))
 
     def test_a_vigente_version_of_another_area_closes_a_quality_route_pair_in_the_engine_only(self):
-        holder = self.user()
+        holder = self.user("CALIDAD")  # único perfil real con permiso de calidad
         self.assertTrue(self.grant(holder, "MP1", P119))
         self.add_version(P119, 2, "production", "MP1")  # una vigente de OTRA área para un formulario de Calidad por bobina
         seen = self.observe(holder, Q_BOBBIN, "MP1", P119)
@@ -189,9 +189,9 @@ class RealBundleEquivalenceTests(EquivalenceCase):
 
     def test_for_every_machine_grantable_equals_catalog_offered_equals_engine_open_equals_capture_available(self):
         """Compatibilidad con los formularios existentes: P1-01, P1-03, P1-10, P1-19 y P1-31, en TODAS las máquinas del bundle."""
-        holder = self.user()
         machines = [row[0] for row in self.connection.execute("SELECT code FROM vinto_master.machine WHERE active ORDER BY code").fetchall()]
         for form, operation in self.FORMS:
+            holder = self.user("CALIDAD" if operation == Q_BOBBIN else "OPERACION")
             open_machines = []
             for machine in machines:
                 with self.subTest(form=form, machine=machine):
