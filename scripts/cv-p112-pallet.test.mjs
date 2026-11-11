@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { P112, P112_FIELDS, P112_LEGACY_FIELDS } from "../lib/vinto/p1-12.ts";
+import { P112, P112_FIELDS, P112_LEGACY_FIELDS, PENDING_NOTES, normalizeP112Draft } from "../lib/vinto/p1-12.ts";
 import { parsePalletPreview, previewTotalKg } from "../lib/vinto/pallet-weight.ts";
 
 const seed = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-12.json", import.meta.url), "utf8"));
@@ -40,6 +40,16 @@ test("valida jabas positivas y horas manuales; rechaza valores extra", () => {
     }
     const invalid = P112.createAttempt({ ...draft, hora_fin: "29:99" }, assign, device, () => captureId);
     assert.equal(invalid.ok, false);
+});
+
+test("v4: validador auxiliar bloquea cantidades no positivas y notas pendientes obsoletas", () => {
+    assert.deepEqual(PENDING_NOTES, [], "correlativo y pesos ya fueron homologados");
+    assert.deepEqual(normalizeP112Draft(draft), { ok: true, values: { cantidad_jabas: 2, hora_inicio: "08:15", hora_fin: "09:05" } });
+    for (const bad of ["0", "-1", "1.5", "0000000000", "1000000000", ""]) {
+        assert.equal(normalizeP112Draft({ ...draft, cantidad_jabas: bad }).ok, false, bad);
+        assert.equal(P112.createAttempt({ ...draft, cantidad_jabas: bad }, assign, device, () => captureId).ok, false, bad);
+    }
+    assert.equal(normalizeP112Draft({ ...draft, cantidad_jabas: "999999999" }).ok, true);
 });
 
 test("P1-12 v4 solo acepta snapshots de pallet persistidos por backend", () => {
