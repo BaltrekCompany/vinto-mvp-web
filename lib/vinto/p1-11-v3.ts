@@ -23,7 +23,14 @@ export type P111V3Payload = { capture_id: string; form_code: "VINTO-P1-11"; assi
 export type P111V3Attempt = PendingAttemptOf<P111V3Payload, P111V3Draft>;
 
 export function materialOptionsFor(productCode: string) {
-    return RECIPES_BY_PRODUCT[productCode] ?? [];
+    // Una ruta puede repetir el mismo código de material en usos distintos:
+    // el selector identifica materiales por código, no duplica opciones iguales.
+    const seen = new Set<string>();
+    return (RECIPES_BY_PRODUCT[productCode] ?? []).filter(item => {
+        if (seen.has(item.code)) return false;
+        seen.add(item.code);
+        return true;
+    });
 }
 
 export function emptyP111V3Draft(makeKey: () => string = newRowKey): P111V3Draft {

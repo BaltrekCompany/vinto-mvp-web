@@ -34,6 +34,13 @@ test("el artículo 10327 tiene las diez opciones exactas del Excel",()=>{
   assert.deepEqual(codes,["9483","9484","9481","9482","M3-3038","9534","9397","9733","9455","9670"]);
   assert.equal(materialOptionsFor("INEXISTENTE").length,0);
 });
+test("se deduplican las opciones por código cuando el Excel repite materiales",()=>{
+  const raw=RECIPES_BY_PRODUCT["10345"];
+  assert.ok(raw.length > new Set(raw.map(item=>item.code)).size);
+  const unique=materialOptionsFor("10345");
+  assert.equal(unique.length,new Set(unique.map(item=>item.code)).size);
+  assert.equal(unique.length,new Set(raw.map(item=>item.code)).size);
+});
 test("la lista backend se deriva exactamente del catálogo de frontend",()=>{
   const backend=JSON.parse(readFileSync(new URL("../backend/app/p111_material_codes.json",import.meta.url),"utf8"));
   for(const [article,materials] of Object.entries(RECIPES_BY_PRODUCT)){
