@@ -164,10 +164,10 @@ export function QualityBobbinHistory({ item, resource, refresh, back }: Props) {
     return <main className="min-h-screen bg-[#f3f6f4] text-slate-950">
         <header className="border-b bg-white p-4"><Button variant="ghost" onClick={back}><ArrowLeft className="mr-2 h-4 w-4"/>Volver al inbox</Button></header>
         <section className="mx-auto max-w-6xl p-4 md:p-8"><div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-            <div className="bg-[#123f32] p-6 text-white"><p className="text-emerald-200">Calidad · Solo lectura</p><h1 className="mt-2 text-2xl font-black">Historial de controles · Bobina {bobbin.code}</h1></div>
+            <div className="bg-[#123f32] p-6 text-white"><p className="text-emerald-200">Calidad · Solo lectura</p><h1 className="mt-2 text-2xl font-black">Historial de controles · {bobbin.mother_quality ? "Bobina madre" : "Bobina"} {bobbin.code}</h1></div>
             <dl className="grid gap-3 border-b bg-emerald-50 p-5 sm:grid-cols-2 md:grid-cols-4">
-                <Fact label="Bobina" value={bobbin.code}/><Fact label="Máquina" value={bobbin.machine.code}/><Fact label="OT" value={production.work_order.number}/><Fact label="Línea / PV" value={`${production.line.line_code} / ${production.line.pv_reference}`}/>
-                <Fact label="Artículo" value={`${production.line.article.code} · ${production.line.article.description}`}/><Fact label="Fecha operativa" value={production.operating_date}/><Fact label="Turno" value={production.shift.name}/><Fact label="Estado de Calidad (inbox)" value={qualityStatusLabel(quality.status)}/>
+                <Fact label={bobbin.mother_quality ? "Bobina madre" : "Bobina"} value={bobbin.code}/><Fact label="Máquina" value={bobbin.machine.code}/><Fact label="OT" value={production.work_order.number}/><Fact label="Línea / PV" value={`${production.line.line_code} / ${production.line.pv_reference}`}/>
+                <Fact label="Artículo" value={`${production.line.article.code} · ${production.line.article.description}`}/><Fact label="Fecha operativa" value={production.operating_date}/><Fact label="Turno" value={production.shift.name}/><Fact label={bobbin.mother_quality ? "Liberación / rechazo de madre" : "Estado de Calidad (inbox)"} value={bobbin.mother_quality ? "No aplica: decisiones individuales por cría" : qualityStatusLabel(quality.status)}/>
                 <Fact label="Gramaje nominal de Producción" value={grammageLabel(bobbin.grammage_g_m2)}/>
             </dl>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
