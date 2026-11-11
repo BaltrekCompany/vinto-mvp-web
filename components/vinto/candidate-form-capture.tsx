@@ -48,7 +48,10 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             { label: "OT", value: bobbin ? bobbin.production.work_order.number : "—" }, { label: "Línea / PV", value: bobbin ? `${bobbin.production.line.line_code} / ${bobbin.production.line.pv_reference}` : "—" },
             { label: "Artículo", value: bobbin ? `${bobbin.production.line.article.code} · ${bobbin.production.line.article.description}` : "—" }, { label: "Turno y fecha operativa", value: "Los deriva el backend de la producción de la bobina" },
             { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Hora", value: "Hora de registro (no del ensayo)" },
-            ...(candidate.officialStatusNote && bobbin ? [{ label: "Estado oficial de Calidad de la bobina (solo lectura)", value: qualityStatusLabel(bobbin.quality.status) }] : [])]
+            ...(candidate.officialStatusNote && bobbin ? [{
+                label: bobbin.bobbin.mother_quality ? "Estado de liberación de la madre" : "Estado oficial de Calidad de la bobina (solo lectura)",
+                value: bobbin.bobbin.mother_quality ? "No aplica: liberar/rechazar corresponde a cada cría" : qualityStatusLabel(bobbin.quality.status),
+            }] : [])]
         : form.context === "machine"
         ? [{ label: "Máquina", value: machine ? `${machine.code} · ${machine.name}` : "—" }, { label: "Turno y fecha operativa", value: "Los resuelve el backend al registrar" }, { label: "Registra", value: user?.display_name ?? "Usuario autenticado" }, { label: "Bobina / OT / asignación", value: "No aplica" }, { label: "Hora", value: "Hora de registro (no del ensayo)" }]
         : context ? contextItems(context) : [];
