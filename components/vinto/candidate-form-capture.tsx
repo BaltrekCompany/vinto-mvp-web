@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CaptureNotice, CaptureSection, CaptureShell, ChoiceField, ContextStrip, SubmitBar, TextAreaField, TextField, contextItems, type ContextItem } from "@/components/vinto/capture-kit";
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
@@ -11,6 +11,7 @@ import type { CaptureContext } from "@/lib/vinto/orders";
 import { Input } from "@/components/ui/input";
 import { qualityStatusLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
+import { getPalletPreview, previewTotalKg, type PalletPreview } from "@/lib/vinto/pallet-preview";
 
 // Pantalla de captura CENTRAL CANDIDATA de un formulario declarativo (candidate-form.ts): la usan P1-05 y P1-31 y la usarán las fichas simples siguientes. Envía SOLO a la API central
 // (POST /api/captures con el código del formulario) y se reconcilia con GET por id; nunca escribe en vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El contexto (OT,
@@ -38,6 +39,7 @@ type ReadBack = { state: "reading" } | { state: "ok" } | { state: "mismatch" } |
 
 export function CandidateFormCapture({ candidate, context, machine, bobbin, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps }: Props) {
     const { form, api } = candidate;
+    const palletMode = candidate.code === "VINTO-P1-12";
     const contextId = form.context === "machine" ? machine?.code : form.context === "bobbin" ? bobbin?.bobbin.id : context?.assignmentId; // assignment_id, código de máquina o id de bobina, según el formulario
     const codeField = form.context === "bobbin" ? candidate.bobbinCodeField : undefined; // campo que declara el número de bobina: precargado y de solo lectura
     const initialDraft = (): CandidateDraft => { const draft = form.emptyDraft(); if (codeField && bobbin) draft[codeField] = bobbin.bobbin.code; return draft; };
@@ -54,6 +56,19 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const io = deps ?? realDeps;
     const [draft, setDraft] = useState<CandidateDraft>(attempt ? { ...attempt.draft } : initialDraft());
     const [sending, setSending] = useState(false);
+    const [palletSource, setPalletSource] = useState<{ assignmentId: string; preview: PalletPreview | null } | null>(null);
+    // La vista previa se acepta solo para la asignación que originó la consulta.
+    const palletPreview = palletSource && palletSource.assignmentId === context?.assignmentId ? palletSource.preview : null;
+    const palletLoading = palletMode && palletSource?.assignmentId !== context?.assignmentId;
+    useEffect(() => {
+        if (!palletMode || !context?.assignmentId) return;
+        const controller = new AbortController();
+        const sourceId = context.assignmentId;
+        getPalletPreview(sourceId, controller.signal)
+            .then(result => { if (!controller.signal.aborted) setPalletSource({ assignmentId: sourceId, preview: result.ok ? result.data : null }); })
+            .catch(() => { if (!controller.signal.aborted) setPalletSource({ assignmentId: sourceId, preview: null }); });
+        return () => controller.abort();
+    }, [palletMode, context?.assignmentId]);
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
     const busy = useRef(false);
@@ -64,6 +79,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
+        if (palletMode && !attempt && (!palletPreview || !palletPreview.weight_available)) return void setNotice("No se puede registrar: falta peso nominal válido del artículo programado.");
         let current = attempt;
         if (!current) {
             if (!contextId) return void setNotice(SUBMIT_MESSAGES.notFound);
@@ -86,7 +102,8 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
                 const read = await io.get(outcome.capture.id);
                 if (!live()) return; // INT-01: la sesión cambió mientras se enviaba: esta respuesta es de otra sesión y no modifica el estado compartido
                 const sameBobbin = form.context !== "bobbin" || (read.ok && read.data.bobbin?.id === bobbin?.bobbin.id && outcome.capture.bobbin?.id === bobbin?.bobbin.id); // la captura debe seguir asociada a ESTA bobina
-                setSaved(old => old && { ...old, readBack: !read.ok ? { state: "error" } : sameBobbin && JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values) ? { state: "ok" } : { state: "mismatch" } });
+                setSaved(old => old && { ...old, readBack: !read.ok ? { state: "error" } : sameBobbin && JSON.stringify(read.data.values) === JSON.stringify(outcome.capture.values)
+                    && (!palletMode || JSON.stringify(read.data.pallet) === JSON.stringify(outcome.capture.pallet)) ? { state: "ok" } : { state: "mismatch" } });
                 return;
             }
             if (outcome.kind === "session") { setAttempt(null); return void onSessionLost(); }
@@ -138,24 +155,46 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
 
     const head = candidate.titleFor ? candidate.titleFor(form.context === "assignment" ? context?.machine : undefined) : { kicker: candidate.kicker, title: candidate.title }; // MF-09A: la máquina sale del contexto de la asignación
     return <CaptureShell kicker={head.kicker} title={head.title} onBack={back}>
-        <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
+        {!palletMode && <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
             <p className="font-black">Ficha NO homologada · solo donde el backend la publique</p>
             <p className="mt-1">Los campos son los de la definición legacy como punto de partida técnico. Esta captura solo funciona donde el formulario esté habilitado explícitamente y no sustituye ninguna decisión de VINTO.</p>
-        </div>
+        </div>}
         <ContextStrip items={items}/>
         {candidate.officialStatusNote && <p role="note" className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-950" data-section="official-status">{candidate.officialStatusNote}</p>}
-        <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
+        {!palletMode && <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
             {candidate.pending.map(note => <div key={note.label}><p className="text-xs font-semibold text-emerald-800">{note.label}</p><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
-        </div>
-        <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="automatic">
+        </div>}
+        {!palletMode && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="automatic">
             Campos automáticos (no se digitan): {candidate.automatic.join(", ")}.{user ? <> Sesión iniciada como <b>{user.display_name}</b>: es solo la identificación del usuario autenticado, no una firma.</> : null}
-        </p>
+        </p>}
         {(candidate.unresolved || candidate.calculated) && <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-950" data-section="gaps">
             {candidate.unresolved && <p>Automáticos sin fuente confirmada (no se generan ni se sustituyen por la hora de envío): <b>{candidate.unresolved.join(", ")}</b>.</p>}
             {candidate.calculated && <p>Calculados sin fórmula aprobada (no se calculan, no se guardan ni se muestran como oficiales): <b>{candidate.calculated.join(", ")}</b>.</p>}</div>}
         {renderTable()}
         {table && renderCalculated()}
-        {groups.map(group => candidate.collapsibleSections
+        {palletMode && <section className="border-b bg-white p-5 md:p-6" data-section="p112-pallet">
+            <h2 className="text-lg font-black text-slate-950">Producción por pallet</h2>
+            <p className="mb-4 text-sm text-slate-700">Cada envío registra un pallet independiente. Su número se genera al guardar dentro de esta OT y línea.</p>
+            <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-300 bg-blue-50 p-3" data-pallet-number="automatic">
+                    <p className="text-xs font-semibold text-blue-900">N.º pallet</p>
+                    <p className="mt-1 font-bold">Automático al enviar</p>
+                </div>
+                {form.fields.filter(f => f.key === "cantidad_jabas").map(renderField)}
+                <div className="rounded-xl border border-slate-300 bg-blue-50 p-3" data-pallet-nominal>
+                    <p className="text-xs font-semibold text-blue-900">Peso nominal por jaba · maestro</p>
+                    <p className="mt-1 font-bold">{palletPreview?.nominal_weight_kg ? `${palletPreview.nominal_weight_kg} kg` : palletLoading ? "Consultando maestro…" : "No disponible"}</p>
+                </div>
+                <div className="rounded-xl border border-slate-300 bg-blue-50 p-3" data-pallet-total>
+                    <p className="text-xs font-semibold text-blue-900">Peso total calculado · vista previa</p>
+                    <p className="mt-1 font-bold">{previewTotalKg(palletPreview?.nominal_weight_kg ?? null, (draft.cantidad_jabas ?? "").trim()) ?? "0.00"} kg</p>
+                </div>
+                {form.fields.filter(f => f.key === "hora_inicio" || f.key === "hora_fin").map(renderField)}
+            </div>
+            {!palletLoading && (!palletPreview || !palletPreview.weight_available) && <p role="alert" className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">El producto programado no tiene peso maestro disponible o la consulta no está autorizada. El registro permanecerá bloqueado hasta resolverlo.</p>}
+            <p className="mt-3 text-xs text-slate-600">El peso definitivo y el correlativo se calculan en el servidor al guardar; el operador no puede editarlos.</p>
+        </section>}
+        {!palletMode && groups.map(group => candidate.collapsibleSections
             ? <details key={group.title} className="border-b border-slate-200 bg-white" open={group.title === "Pulper" ? true : undefined}>
                 <summary className="cursor-pointer px-5 py-4 font-bold text-[#146b4f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
                     {group.title}{group.title === "Pulper" ? " · 7 campos obligatorios" : " · opcional"}
@@ -170,6 +209,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         <CaptureNotice text={notice}/>
         {saved && <div role="status" className="border-b border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950" data-section="saved">
             <p className="font-black">{saved.message}</p>
+            {saved.capture.pallet && <p data-pallet-confirmed className="mt-2 font-bold">Pallet N.º {saved.capture.pallet.number} · {saved.capture.pallet.quantity_jabas} jabas · {saved.capture.pallet.nominal_weight_kg} kg/jaba · Total {saved.capture.pallet.total_weight_kg} kg</p>}
             <p className="mt-1">Captura {saved.capture.id} · revisión {saved.capture.revision} · {saved.capture.bobbin ? `Bobina ${saved.capture.bobbin.code} · ` : ""}{saved.capture.machine.code} · {saved.capture.work_order ? `OT ${saved.capture.work_order.number}` : `Turno ${saved.capture.shift.name} · fecha operativa ${saved.capture.operating_date}`}</p>
             <p className="mt-1" data-readback={saved.readBack.state}>{saved.readBack.state === "reading" ? "Consultando la captura en la API central…" : saved.readBack.state === "ok" ? "Verificada con una consulta posterior por id en la API central." : saved.readBack.state === "mismatch" ? "La consulta posterior no coincide con lo enviado; revisa el registro." : "No se pudo verificar con una consulta posterior; el envío ya fue confirmado por el servidor."}</p>
         </div>}

@@ -211,6 +211,11 @@ class CommittedFlowTests(unittest.TestCase):
         c = self.connection
         one = lambda sql, params=(): c.execute(sql, params).fetchone()[0]
         self.user = one('INSERT INTO vinto_master."user" (display_name) VALUES (%s) RETURNING id', ("REVISION FIXTURE",))
+        # El ensayo 0001-0002 debe llegar a la migración 0024 con un perfil
+        # válido por usuario; el invariante USR-02 no permite usuarios huérfanos.
+        c.execute("INSERT INTO vinto_master.profile (code,name) VALUES ('REVISION_FIXTURE','Revision fixture') ON CONFLICT (code) DO NOTHING")
+        c.execute("""INSERT INTO vinto_master.user_profile (user_id,profile_id)
+                     SELECT %s,id FROM vinto_master.profile WHERE code='REVISION_FIXTURE'""", (self.user,))
         sector = one("INSERT INTO vinto_master.sector (code,name) VALUES ('TECH','Technical') RETURNING id")
         self.machine = one("INSERT INTO vinto_master.machine (sector_id,code,name) VALUES (%s,'TECH','Technical') RETURNING id", (sector,))
         self.device = one("INSERT INTO vinto_master.device (external_key,machine_id) VALUES ('TECH',%s) RETURNING id", (self.machine,))

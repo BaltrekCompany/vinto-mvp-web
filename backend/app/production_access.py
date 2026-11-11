@@ -10,10 +10,11 @@ No hay flags ni variables de entorno que habiliten sectores o formularios: la fu
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid import UUID
 from pydantic import BaseModel
 
 from app import capture_service, mp3_inspection_policy
-from app.auth.dependencies import FORBIDDEN, current_user
+from app.auth.dependencies import FORBIDDEN, current_user, require_permission
 from app.auth.permissions import ASSIGNMENT_READ, PRODUCTION_CAPTURE, WORK_ORDER_READ
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
@@ -111,6 +112,30 @@ def production_machines(connection, sectors, *, include_articles: bool = False, 
                                           bobbin_forms=(bobbin_forms.get(machine_id, []) if user is not None else None)))
     return ProductionMachinesOut(sectors=list(out.values()))
 
+
+class PalletPreviewOut(BaseModel):
+    work_order: str
+    line_code: str
+    pv_reference: str
+    machine: str
+    article_code: str
+    article_description: str
+    nominal_weight_kg: str | None
+    weight_available: bool
+    unit: str | None
+
+
+@router.get("/pallet-preview", response_model=PalletPreviewOut)
+def pallet_preview(assignment_id: UUID, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)),
+                   connection=Depends(get_connection)):
+    """Fuente oficial de peso P1-12: OT/linea verificadas por sesion; solo lectura."""
+    from app.production_pallets import preview
+    from app.authz.availability import is_eligible
+    from app.authz.policies import Operation
+    result = preview(connection, assignment_id, user.sectors)
+    if not is_eligible(connection, user, Operation.PRODUCTION_CAPTURE, result["machine"], "VINTO-P1-12"):
+        raise HTTPException(status_code=404, detail="Asignacion no disponible")
+    return PalletPreviewOut(**result)
 
 @router.get("/machines", response_model=ProductionMachinesOut, response_model_exclude_none=True,
             responses={401: {"description": "No autenticado"}, 403: {"description": "Sin permiso de consulta de producción"}, 503: {"description": "Consulta no disponible"}})

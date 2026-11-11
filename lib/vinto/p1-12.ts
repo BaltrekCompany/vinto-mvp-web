@@ -1,16 +1,8 @@
 // Captura CENTRAL CANDIDATA de VINTO-P1-12 «Producción diaria de papel higiénico» (Conversión), M6-B: valores, borrador, validación ESTRUCTURAL, payload e intento pendiente. Reutiliza el núcleo
 // común (capture-core.ts) y aporta su propio parser estricto de `values` con el código esperado «VINTO-P1-12».
 //
-// CLOUD-DEP G.12-C4-FINAL25: el contrato REAL usado por el backend (seed_data, política, UI) es `P112_FIELDS` + `defineCandidateForm`, más abajo en este archivo -- los 20 campos MANUALES
-// exactos de la definición legacy (form_12_produccion_diaria_de_papel_higienico, 37 campos: 9 automáticos, 20 manuales, 8 calculados), igual que P1-01/02/04/05/etc. Todo lo de ARRIBA de esta
-// nota (P112Values/parseValues/P112_LABELS/normalizeP112Draft/createP112Attempt/...) es la HIPÓTESIS DE PRUEBA original (3 campos: cantidad de jabas + dos horas, interpretación de
-// `PalletProduction`, la pantalla legacy de app/page.tsx) y ya NO se usa desde app/page.tsx: queda como código muerto, sin eliminar, documentando esa hipótesis descartada (igual que
-// components/vinto/p1-10-preview.tsx). No la reutilices para nada nuevo: no es el contrato que el backend acepta.
-//
-// QUÉ NO HACE el contrato real (decisiones pendientes de VINTO, docs/M6-B-conversion-p112.md): no calcula ni envía los 8 saldos finales/mermas (calculados, sin fórmula aprobada), no genera
-// firma ni asume el peso nominal/total (maestro no homologado). Solo exige lo estructural que la propia definición declara: texto/decimal, obligatorio según corresponda.
-//
-// Todo es PURO (sin red, sin DOM).
+// CV-P112-01: captura homologada v4; se registran jabas y dos horas.
+ // Correlativo y pesos se derivan y almacenan en servidor. Historico intacto.
 
 import {
     freezeAttempt, isRec, newCaptureId, parseCaptureListOf, parseCaptureOf, parseSubmissionOf, reconcileOf, submitAttemptOf,
@@ -20,14 +12,10 @@ import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_12_CODE = "VINTO-P1-12";
 
-// ---- decisiones pendientes de VINTO (NO son reglas confirmadas) --------------------------------------------------------------------------
-
-export const PENDING_NOTES: readonly { key: string; label: string; pending: string }[] = [
-    { key: "pallet", label: "Número oficial de pallet", pending: "Pendiente de definición: no se genera ni se asume ningún correlativo. La captura se identifica solo con su identificador técnico." },
-    { key: "peso", label: "Peso nominal y peso total", pending: "Pendiente: el maestro de pesos nominales no está homologado. No se calcula ni se guarda ningún peso." },
-    { key: "balances", label: "Empaque, saldos y mermas", pending: "La definición legacy los declara (37 campos); esta hipótesis solo registra el pallet." },
-    { key: "firma", label: "Firma / grupo", pending: "Sin mecanismo de firma ni concepto de grupo en el modelo central; no se simulan." },
-];
+// CV-P112-01: decisiones de pallet, correlativo y peso ya homologadas en v4.
+// Mantener la exportación legacy evita romper consumidores antiguos; no quedan
+// avisos pendientes para la captura vigente. Los formularios v1-v3 son históricos.
+export const PENDING_NOTES: readonly { key: string; label: string; pending: string }[] = [];
 
 // ---- valores y respuestas ----------------------------------------------------------------------------------------------------------------
 
@@ -37,7 +25,7 @@ export type P112Submission = SubmissionOf<P112Capture>;
 
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/; // lo que envía el cliente
 const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQL devuelve la hora con segundos (HH:MM:SS)
-const INTEGER = /^-?\d+$/; // entero con signo opcional: es el mismo formato que acepta el backend; NO hay mínimo industrial (ver docs/M6-B-conversion-p112.md)
+const INTEGER = /^-?\d+$/; // Helper histórico M6-B compartido con P1-13; no valida la captura v4 operativa
 
 // Hora tal como se muestra: HH:MM (los segundos que añade PostgreSQL no se muestran).
 export const shortHour = (value: string): string => value.slice(0, 5);
@@ -66,6 +54,8 @@ export const P112_LABELS = { cantidad_jabas: "Cantidad de jabas", hora_inicio: "
 
 export type P112DraftCheck = { ok: true; values: P112Values } | { ok: false; errors: string[] };
 
+// Contrato legacy: conserva entero con signo en pruebas M6-B y P1-13.
+// P1-12 v4 usa P112.createAttempt (defineCandidateForm), que exige 1..999999999.
 export function normalizeP112Draft(draft: P112Draft): P112DraftCheck {
     const errors: string[] = [];
     const jabas = draft.cantidad_jabas.trim(), start = draft.hora_inicio.trim(), end = draft.hora_fin.trim();
@@ -105,35 +95,47 @@ export const reconcileP112 = (captureId: string, deps: P112SubmitDeps): Promise<
 // Fuente única: form-definitions.ts / form_12_produccion_diaria_de_papel_higienico. Automáticos excluidos (fecha, operador, turno, grupo,
 // maquina, merma_maquina, merma_maquina_kg, firma_operador, firma_encargada); calculados excluidos (empaque/subempaque/bolsa/segundas/asas
 // _saldo_final, merma_logs, merma_cola, total_produccion): sin fórmula aprobada, no se calculan ni se aceptan del cliente.
+// CV-P112-01: v4 = un pallet independiente por envio, correlativo por OT + linea.
 export const P112_FIELDS: readonly FieldSpec[] = [
-    { key: "hora_inicio", label: "Hora inicio", kind: "time", required: true, sinceVersion: 3 }, // MF-11 (MD_Ejec 48): horas GENERALES de producción, no las del pallet de la hipótesis anterior
-    { key: "hora_fin", label: "Hora fin", kind: "time", required: true, sinceVersion: 3 },
-    { key: "empaque_saldo_inicial", label: "Empaque saldo inicial", kind: "text", required: true },
-    { key: "empaque_solicitado", label: "Empaque solicitado", kind: "text", required: true },
-    { key: "empaque_utilizado", label: "Empaque utilizado", kind: "text", required: true },
-    { key: "subempaque_saldo_inicial", label: "Subempaque saldo inicial", kind: "text", required: true },
-    { key: "subempaque_solicitado", label: "Subempaque solicitado", kind: "text", required: true },
-    { key: "subempaque_utilizado", label: "Subempaque utilizado", kind: "text", required: true },
-    { key: "bolsa_saldo_inicial", label: "Bolsa saldo inicial", kind: "text", required: true },
-    { key: "bolsa_solicitado", label: "Bolsa solicitado", kind: "text", required: true },
-    { key: "bolsa_utilizado", label: "Bolsa utilizado", kind: "text", required: true },
-    { key: "segundas_saldo_inicial", label: "Segundas saldo inicial", kind: "text", required: true },
-    { key: "segundas_solicitado", label: "Segundas solicitado", kind: "text", required: true },
-    { key: "segundas_utilizado", label: "Segundas utilizado", kind: "text", required: true },
-    { key: "asas_saldo_inicial", label: "Asas saldo inicial", kind: "text", required: true },
-    { key: "asas_solicitado", label: "Asas solicitado", kind: "text", required: true },
-    { key: "asas_utilizado", label: "Asas utilizado", kind: "text", required: true },
-    { key: "codigo_producto", label: "Código producto", kind: "text", required: true },
-    { key: "producto", label: "Producto", kind: "text", required: true },
-    { key: "formato", label: "Formato", kind: "text", required: true }, // MF-10 (MD_Ejec 43): texto libre (4*12, 4X12, 4x12, 4.12); se guarda exactamente como se digita. La v1 era decimal.
-    { key: "cantidad_producida_jabas", label: "Cantidad producida jabas", kind: "text", required: true },
-    { key: "cantidad_producida_segundas", label: "Cantidad producida segundas", kind: "text", required: true },
+    { key: "hora_inicio", label: "Hora inicio pallet", kind: "time", required: true, sinceVersion: 3 },
+    { key: "hora_fin", label: "Hora fin pallet", kind: "time", required: true, sinceVersion: 3 },
+    { key: "cantidad_jabas", label: "Cantidad de jabas", kind: "integer", required: true, sinceVersion: 4 },
 ];
-export const P112 = defineCandidateForm(P1_12_CODE, P112_FIELDS);
-
-export const P112_AUTOMATIC = ["Fecha", "Operador", "Turno", "Grupo", "Máquina", "Merma de máquina", "Merma de máquina (kg)", "Firma del operador", "Firma de la encargada"] as const;
+// Solo lectura: P1-12 v1/v2/v3 siguen disponibles sin inventar pallets.
+export const P112_LEGACY_FIELDS: readonly FieldSpec[] = [
+    { key: "empaque_saldo_inicial", label: "Empaque saldo inicial", kind: "text", required: false },
+    { key: "empaque_solicitado", label: "Empaque solicitado", kind: "text", required: false },
+    { key: "empaque_utilizado", label: "Empaque utilizado", kind: "text", required: false },
+    { key: "subempaque_saldo_inicial", label: "Subempaque saldo inicial", kind: "text", required: false },
+    { key: "subempaque_solicitado", label: "Subempaque solicitado", kind: "text", required: false },
+    { key: "subempaque_utilizado", label: "Subempaque utilizado", kind: "text", required: false },
+    { key: "bolsa_saldo_inicial", label: "Bolsa saldo inicial", kind: "text", required: false },
+    { key: "bolsa_solicitado", label: "Bolsa solicitado", kind: "text", required: false },
+    { key: "bolsa_utilizado", label: "Bolsa utilizado", kind: "text", required: false },
+    { key: "segundas_saldo_inicial", label: "Segundas saldo inicial", kind: "text", required: false },
+    { key: "segundas_solicitado", label: "Segundas solicitado", kind: "text", required: false },
+    { key: "segundas_utilizado", label: "Segundas utilizado", kind: "text", required: false },
+    { key: "asas_saldo_inicial", label: "Asas saldo inicial", kind: "text", required: false },
+    { key: "asas_solicitado", label: "Asas solicitado", kind: "text", required: false },
+    { key: "asas_utilizado", label: "Asas utilizado", kind: "text", required: false },
+    { key: "codigo_producto", label: "Código producto", kind: "text", required: false },
+    { key: "producto", label: "Producto", kind: "text", required: false },
+    { key: "formato", label: "Formato", kind: "text", required: false },
+    { key: "cantidad_producida_jabas", label: "Cantidad producida jabas", kind: "text", required: false },
+    { key: "cantidad_producida_segundas", label: "Cantidad producida segundas", kind: "text", required: false },
+];
+const P112_BASE = defineCandidateForm(P1_12_CODE, P112_FIELDS, { legacy: P112_LEGACY_FIELDS });
+export const P112 = {
+    ...P112_BASE,
+    createAttempt: (...args: Parameters<typeof P112_BASE.createAttempt>): ReturnType<typeof P112_BASE.createAttempt> => {
+        const q = (args[0].cantidad_jabas ?? "").trim();
+        if (!/^\d{1,9}$/.test(q) || Number(q) <= 0) {
+            return { ok: false, errors: ["Cantidad de jabas: debe ser un entero positivo."] };
+        }
+        return P112_BASE.createAttempt(...args);
+    },
+};
+export const P112_AUTOMATIC = ["OT, linea, PV, articulo y maquina (asignacion)", "Turno y fecha operativa (servidor)", "N.º pallet (al guardar, por OT + linea)", "Peso nominal por jaba (maestro)", "Peso total (calculado en servidor)"] as const;
 export const P112_PENDING: readonly { label: string; pending: string }[] = [
-    { label: "Horas de inicio y fin", pending: "Se digitan (HH:MM, hora local de planta) y son obligatorias desde la versión 3; no son la hora de registro del sistema ni las de un pallet, no se calcula la duración ni se valida el orden, y no se asume otra fecha si cruzan la medianoche." },
-    { label: "Saldos finales y mermas", pending: "8 campos calculados de la definición legacy (saldos finales de empaque/subempaque/bolsa/segundas/asas, merma de logs, merma de cola, producción total): sin fórmula aprobada, no se calculan ni se aceptan del cliente." },
-    { label: "Firma", pending: "La definición legacy declara firma del operador y firma de la encargada; sin mecanismo de firma en el modelo central, no se simulan." },
+    { label: "Historico", pending: "Las versiones 1-3 se mantienen en solo lectura, sin convertirlas a pallets." },
 ];

@@ -67,8 +67,8 @@ class EquivalenceCase(unittest.TestCase):
 
     def user(self, profile="OPERACION", sectors=("BOBINAS", "REBOBINADO", "CONVERSION")):
         user_id = create_user(self.connection, username=f"eq.{uuid4().hex[:12]}", display_name=profile, profile_code=profile, password="pw-" + uuid4().hex, sectors=sectors).user_id
-        if profile == "OPERACION":  # perfiles múltiples: aísla la lógica de versión de la de permisos
-            self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (user_id,))
+        # USR-02 garantiza exactamente un perfil por usuario. La prueba del
+        # motor sigue aislando la versión mediante principal() (permisos sintéticos).
         return user_id
 
     def add_version(self, form, number, area, machine=None):
@@ -108,7 +108,8 @@ class EquivalenceCase(unittest.TestCase):
                 "listed": form in (forms_listed(production_machines(c, ("BOBINAS", "REBOBINADO", "CONVERSION")).model_dump(), machine) or [])}
 
     def readiness_offers(self, operation, machine, form):
-        twin = self.user()
+        # La cobertura consulta perfiles reales: no mezclar roles en un usuario.
+        twin = self.user("CALIDAD" if operation == Q_BOBBIN else "OPERACION")
         name = self.connection.execute("SELECT username FROM vinto_auth.credential WHERE user_id = %s", (twin,)).fetchone()[0]
         report = coverage_report(self.connection)[operation.value]["blocked"]
         return any(i["username"] == name and i["machine"] == machine and i["form"] == form for i in report)
@@ -174,7 +175,7 @@ class MixedAreaTests(EquivalenceCase):
         self.assertTrue(self.readiness_offers(PRODUCTION, "MP1", P101))
 
     def test_a_vigente_version_of_another_area_closes_a_quality_route_pair_in_the_engine_only(self):
-        holder = self.user()
+        holder = self.user("CALIDAD")  # único perfil real con permiso de calidad
         self.assertTrue(self.grant(holder, "MP1", P119))
         self.add_version(P119, 2, "production", "MP1")  # una vigente de OTRA área para un formulario de Calidad por bobina
         seen = self.observe(holder, Q_BOBBIN, "MP1", P119)
@@ -188,9 +189,9 @@ class RealBundleEquivalenceTests(EquivalenceCase):
 
     def test_for_every_machine_grantable_equals_catalog_offered_equals_engine_open_equals_capture_available(self):
         """Compatibilidad con los formularios existentes: P1-01, P1-03, P1-10, P1-19 y P1-31, en TODAS las máquinas del bundle."""
-        holder = self.user()
         machines = [row[0] for row in self.connection.execute("SELECT code FROM vinto_master.machine WHERE active ORDER BY code").fetchall()]
         for form, operation in self.FORMS:
+            holder = self.user("CALIDAD" if operation == Q_BOBBIN else "OPERACION")
             open_machines = []
             for machine in machines:
                 with self.subTest(form=form, machine=machine):

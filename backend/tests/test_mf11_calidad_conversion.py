@@ -48,8 +48,9 @@ QUALITY = (P124, P126, P127)
 NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
+_P112_V3 = json.loads((Path(__file__).with_name("cv_p112_v3.json")).read_text(encoding="utf-8"))  # Fixture auténtica MF-11: v3 P1-12, sin la lógica de pallets v4.
 _REAL = load_bundle()
-BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else f for f in _REAL.forms))
+BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else _P112_V3 if f["code"] == P112 else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 MACHINE = {P111: "GAMBINI", P112: "GAMBINI", P113: "OMET_I", P116: "OMET_I"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in {r["machine_code"] for r in BUNDLE.article_machines}}
@@ -197,7 +198,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 597)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 578)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
@@ -210,6 +211,14 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
         cls.install_p116_v2_as_current()
+        # Este ensayo MF-11 reproduce P1-12 v3 antes de la ficha de pallet v4.
+        # La plantilla general ya contiene v4: importar v3 de forma aditiva
+        # y retirar v4 SOLO dentro de esta base efímera de pruebas.
+        with contextlib.redirect_stdout(io.StringIO()):
+            reference.apply(cls.connection, variant("8" * 64, {}))
+        cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
+                                  FROM vinto_config.form f
+                                  WHERE v.form_id=f.id AND f.code=%s AND v.version_number=4""", (P112,))
         cls.current = {code: cls.version(code, NEW_VERSION[code]) for code in NEW_VERSION}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, old_spec(CONVERSION + (P126, P127))))  # las versiones anteriores, publicadas como en producción (aditivo)

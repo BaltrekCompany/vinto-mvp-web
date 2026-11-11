@@ -181,7 +181,9 @@ class StaticScopeTests(unittest.TestCase):
                        ("0025_credential_username_immutable.sql",
                         "f94ff417b7f353d3493c60c07490d222b513f4d198cbcd8f6292de2bd96b0aa7"),
                        ("0026_rewinding_child_quality.sql",
-                        "967df3e19f2b26373bec8a6ea2ef10e399c58e6eb60dcd8efd3dc30c89f87e99")])
+                        "967df3e19f2b26373bec8a6ea2ef10e399c58e6eb60dcd8efd3dc30c89f87e99"),
+                       ("0027_conversion_pallet.sql",
+                        "e99ea944cac70c257450cf9d135266f77521de0f5b1d0ee25d825a1a949dcecb")])
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import UUID4, BaseModel, ConfigDict
+from pydantic import UUID4, BaseModel, ConfigDict, model_serializer
 
 from app.capture_service import CaptureResult, CaptureView
 
@@ -52,6 +52,13 @@ class LineOut(BaseModel):
     article: ArticleOut
 
 
+class PalletOut(BaseModel):
+    number: int
+    quantity_jabas: int
+    nominal_weight_kg: str
+    total_weight_kg: str
+
+
 class CaptureOut(BaseModel):
     id: UUID
     status: str
@@ -66,6 +73,15 @@ class CaptureOut(BaseModel):
     work_order: WorkOrderRefOut
     line: LineOut
     values: dict[str, Any]  # decimales como texto para no perder precisión
+    pallet: PalletOut | None = None  # P1-12 v4; ausente en capturas históricas
+
+    @model_serializer(mode="wrap")
+    def serialize_without_legacy_pallet_null(self, handler):
+        """La API histórica no emite 'pallet':null para F6 y P1-12 v1-v3."""
+        data = handler(self)
+        if self.pallet is None:
+            data.pop("pallet", None)
+        return data
 
 
 class CaptureResultOut(BaseModel):
@@ -82,7 +98,7 @@ def capture_out(v: CaptureView) -> CaptureOut:
         operating_date=v.operating_date, assignment=AssignmentRefOut(id=v.assignment_id),
         work_order=WorkOrderRefOut(id=v.work_order_id, number=v.work_order_number),
         line=LineOut(id=v.line_id, line_code=v.line_code, pv_reference=v.pv_reference, article=ArticleOut(code=v.article_code, description=v.article_description)),
-        values=v.values)
+        values=v.values, pallet=PalletOut(**v.pallet) if v.pallet else None)
 
 
 def result_out(result: CaptureResult) -> CaptureResultOut:

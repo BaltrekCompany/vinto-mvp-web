@@ -184,9 +184,9 @@ test("historial de P1-24: la captura v3 se muestra como «Crepado» con su valor
 const CONTEXT = (machine) => ({ assignmentId: "44444444-4444-4444-8444-444444444444", workOrderId: "22222222-2222-4222-8222-222222222222", otId: "OT-2026-0001", lineId: "L1", pv: "PV-1", productCode: "M1-1024", productName: "BOBINA 1024", machine, shift: "Día", date: "2026-10-06" });
 const convScreen = (screen, machine) => server.renderToStaticMarkup(React.createElement(ui.CandidateFormCapture, { candidate: ui.CONVERSION_CANDIDATES[screen], context: CONTEXT(machine), online: true, attempt: null, setAttempt: noop, back: noop, onAssignmentChanged: noop, onSessionLost: noop }));
 // MF-12B: P1-16 pasó a la versión 3 (una pesada por captura); sus horas se prueban en mf12b-fibra-merma.test.mjs
-const forms = () => [["p112", ui.P112, "GAMBINI", 22, 3], ["p113", ui.P113, "OMET_I", 20, 2]];
+const forms = () => [["p113", ui.P113, "OMET_I", 20, 2]]; // P1-12 v4 ya tiene un circuito independiente de pallet; estos son los contratos históricos de horas generales.
 
-test("P1-12, P1-13 y P1-16: sección «Horas de producción» con Hora inicio y Hora fin obligatorias (campos de hora), antes de los demás campos; un único par", () => {
+test("P1-13 (horas generales heredadas): sección «Horas de producción» con Hora inicio y Hora fin obligatorias (campos de hora), antes de los demás campos; un único par", () => {
   for (const [screen, , machine, total] of forms()) {
     const html = convScreen(screen, machine), text = textOf(html);
     assert.ok(text.includes("Horas de producción"), screen);
@@ -201,7 +201,7 @@ test("P1-12, P1-13 y P1-16: sección «Horas de producción» con Hora inicio y 
   }
 });
 
-test("P1-12, P1-13 y P1-16: horas obligatorias HH:MM; aceptan 00:00 y 23:59; rechazan formatos incorrectos; fin anterior a inicio se acepta y se guarda tal cual", () => {
+test("P1-13 (horas generales heredadas): horas obligatorias HH:MM; aceptan 00:00 y 23:59; rechazan formatos incorrectos; fin anterior a inicio se acepta y se guarda tal cual", () => {
   for (const [, form] of forms()) {
     const draft = Object.fromEntries(form.fields.map((f) => [f.key, f.kind === "time" ? "07:30" : f.key === "formato" ? "4*12" : f.kind === "decimal" ? "1,5" : "dato"]));
     assert.equal(form.normalizeDraft(draft).ok, true);
@@ -217,7 +217,7 @@ test("P1-12, P1-13 y P1-16: horas obligatorias HH:MM; aceptan 00:00 y 23:59; rec
   }
 });
 
-test("P1-12, P1-13 y P1-16: la captura de la versión anterior se lee sin horas y la nueva las trae; ninguna se inventa", () => {
+test("P1-13 (horas generales heredadas): la captura de la versión anterior se lee sin horas y la nueva las trae; ninguna se inventa", () => {
   for (const [screen, form, machine, , version] of forms()) {
     const base = Object.fromEntries(form.fields.filter((f) => f.kind !== "time").map((f) => [f.key, f.kind === "decimal" ? "1.5" : "dato"]));
     const env = (v, values, id) => ({ id, status: "submitted", revision: 1, captured_at: "2026-10-06T16:00:00Z", submitted_at: "2026-10-06T16:00:01Z", form: { code: ui.CONVERSION_CANDIDATES[screen].code, version_number: v, name: "x" },
@@ -236,9 +236,11 @@ test("P1-12, P1-13 y P1-16: la captura de la versión anterior se lee sin horas 
   }
 });
 
-test("las horas generales no sustituyen a las del pallet de la hipótesis anterior de P1-12 (sus etiquetas siguen distintas)", () => {
-  assert.deepEqual({ ...ui.P112_LABELS }, { cantidad_jabas: "Cantidad de jabas", hora_inicio: "Hora inicio del pallet", hora_fin: "Hora fin del pallet" });
-  for (const [, form] of forms()) assert.equal(form.fields.filter((f) => /pallet/i.test(f.key + f.label)).length, 0, "la definición vigente no tiene campos de pallet");
+test("P1-12 v4 usa horas de pallet y jabas sin alterar las horas generales de P1-13", () => {
+  assert.deepEqual(ui.P112.fields.map(f => f.key), ["hora_inicio", "hora_fin", "cantidad_jabas"]);
+  assert.deepEqual(ui.P112.fields.filter(f => f.kind === "time").map(f => f.label), ["Hora inicio pallet", "Hora fin pallet"]);
+  assert.ok(ui.P112.fields.find(f => f.key === "cantidad_jabas")?.required);
+  for (const [, form] of forms()) assert.equal(form.fields.filter(f => /pallet/i.test(f.key + f.label)).length, 0, "P1-13 no recibió campos de pallet");
 });
 
 // ---- P1-11 (grupo repetible de bobinas, componente propio) ------------------------------------------------------------------------------------------
@@ -285,11 +287,11 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 2, "VINTO-P1-12": 3, "VINTO-P1-13": 2, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
+  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 2, "VINTO-P1-12": 4, "VINTO-P1-13": 2, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
   assert.equal(versions["VINTO-P1-25"], 3);
-  assert.equal(manifest.counts.form_fields, 597, "464 existentes + 133 campos RG-MP3-01; los formularios previos mantienen sus versiones");
+  assert.equal(manifest.counts.form_fields, 578, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
   assert.equal(versions["VINTO-MP3-01"], 1);
   assert.deepEqual(JSON.parse(readFileSync(join(root, "backend/seed_data/forms/VINTO-MP3-01.json"), "utf8")).machines, ["MP3"]);
 });

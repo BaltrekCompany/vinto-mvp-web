@@ -21,7 +21,7 @@ class ImportGateStaticTests(unittest.TestCase):
         self.assertEqual(len([f for f in rg["fields"] if f["required"]]), 7)
         old = [f for f in BUNDLE.forms if f["code"] != FORM_CODE]
         self.assertEqual(len(old), 25)
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in old), 464)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in old), 445)
 
     def test_gate_refuses_unexpected_mutations_and_conflicts(self):
         class Report:

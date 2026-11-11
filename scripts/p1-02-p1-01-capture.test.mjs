@@ -262,12 +262,13 @@ test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial,
   assert.equal(manifest.scope.forms.length, 26, "25 formularios aprobados + solo RG01");
   assert.equal(new Set(manifest.scope.forms).size, 26, "no se repiten códigos");
   assert.equal(manifest.scope.forms.at(-1), "VINTO-MP3-01", "RG01 es la única incorporación");
-  assert.equal(manifest.counts.form_fields, 597, "464 campos anteriores + 133 RG01");
+  assert.equal(manifest.counts.form_fields, 578, "464 campos anteriores + 133 RG01");
   const rg = JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json"));
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 26, "USR-02/03 y RB-CRIA-01 agregan 0024-0026 sin cambiar MP1/MP3");
+  assert.equal(migrations.length, 27, "CV-P112-01 añade migración 0027 aislada sin modificar MP1/MP3");
+  assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   assert.ok(migrations.includes("0023_quality_release_decision.sql"));
   assert.equal(readdirSync(join(root, "components/vinto")).some((f) => /p1-0[12]/.test(f)), false, "no hay componentes de pantalla propios");
   assert.equal(/requestJson|\/api\//.test(code("lib/vinto/p1-02.ts") + code("lib/vinto/p1-01.ts")), false);
