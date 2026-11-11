@@ -140,7 +140,7 @@ export function groupQualityBobbinFamilies(items: QualityBobbinInboxItem[]): Qua
                 || existing.bobbin.machine.code !== item.bobbin.machine.code
                 || existing.production.work_order.id !== item.production.work_order.id
                 || existing.production.line.id !== item.production.line.id
-                || existing.children?.some(c => c.bobbin.rewinding?.child_position === rw.child_position))
+                || existing.children?.some(c => c.bobbin.id === item.bobbin.id || c.bobbin.rewinding?.child_position === rw.child_position))
                 return null;
             existing.children?.push(item);
         } else {
