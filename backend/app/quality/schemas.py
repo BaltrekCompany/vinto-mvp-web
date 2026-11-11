@@ -12,6 +12,7 @@ from app.quality.service import QualityBobbinView
 class RewindingChildOut(BaseModel):
     mother_label: str
     child_position: int
+    mother_bobbin_id: UUID | None = None  # mother identity, NOT an F3 bobbin
 
 
 class InboxBobbinOut(BaseModel):
@@ -71,7 +72,8 @@ def quality_bobbin_out(v: QualityBobbinView) -> QualityBobbinOut:
     )
     if v.rewind_child_position is not None:
         bobbin = InboxRewindingChildOut(**common, rewinding=RewindingChildOut(
-            mother_label=v.rewind_mother_label, child_position=v.rewind_child_position))
+            mother_label=v.rewind_mother_label, child_position=v.rewind_child_position,
+            mother_bobbin_id=v.rewind_mother_bobbin_id))
     else:
         bobbin = InboxBobbinOut(**common)
     return QualityBobbinOut(

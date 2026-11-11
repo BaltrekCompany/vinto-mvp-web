@@ -18,7 +18,8 @@ export type QualityBobbinInboxItem = {
         weight_kg: string;
         grammage_g_m2: string | null; // null: el producto no tiene gramaje en el maestro (no es un error)
         number_of_cuts: string | null;
-        rewinding?: { mother_label: string; child_position: number };
+        rewinding?: { mother_label: string; child_position: number; mother_bobbin_id?: string | null };
+        mother_quality?: { source_capture_id: string; label: string }; // sólo vista sintética local, nunca respuesta cría/F3
         notes: string | null;
     };
     production: {
@@ -62,7 +63,9 @@ export function parseQualityBobbinInboxItem(value: unknown): QualityBobbinInboxI
             || !isInt(rw.child_position) || rw.child_position < 1 || rw.child_position > 22
             || rw.child_position === 12 || b.sequence_number !== null || b.number_of_cuts !== null
             || !isStr(p.capture_id)
-            || b.code !== `CRIA-${p.capture_id.replace(/-/g, "")}-${rw.child_position}`) return null;
+            || b.code !== `CRIA-${p.capture_id.replace(/-/g, "")}-${rw.child_position}`
+            || !(rw.mother_bobbin_id === undefined || rw.mother_bobbin_id === null ||
+                 (isStr(rw.mother_bobbin_id) && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(rw.mother_bobbin_id)))) return null;
     } else {
         if (rw !== undefined && rw !== null) return null;
         if (!isInt(b.sequence_number) || b.sequence_number <= 0 || b.code !== String(b.sequence_number)
@@ -88,7 +91,8 @@ export function parseQualityBobbinInboxItem(value: unknown): QualityBobbinInboxI
             start_time: b.start_time, end_time: b.end_time, diameter_mm: diameter, weight_kg: weight, grammage_g_m2: grammage,
             number_of_cuts: b.number_of_cuts as string | null, notes: b.notes,
             ...(isChild ? { rewinding: { mother_label: (rw as Rec).mother_label as string,
-                                       child_position: (rw as Rec).child_position as number } } : {}),
+                                       child_position: (rw as Rec).child_position as number,
+                                       mother_bobbin_id: (rw as Rec).mother_bobbin_id as string | null | undefined } } : {}),
         },
         production: {
             capture_id: p.capture_id, captured_at: p.captured_at, operating_date: p.operating_date, shift,
@@ -140,6 +144,8 @@ export function groupQualityBobbinFamilies(items: QualityBobbinInboxItem[]): Qua
                 || existing.bobbin.machine.code !== item.bobbin.machine.code
                 || existing.production.work_order.id !== item.production.work_order.id
                 || existing.production.line.id !== item.production.line.id
+                || (existing.bobbin.rewinding?.mother_bobbin_id && rw.mother_bobbin_id &&
+                    existing.bobbin.rewinding.mother_bobbin_id !== rw.mother_bobbin_id)
                 || existing.children?.some(c => c.bobbin.id === item.bobbin.id || c.bobbin.rewinding?.child_position === rw.child_position))
                 return null;
             existing.children?.push(item);
@@ -152,4 +158,26 @@ export function groupQualityBobbinFamilies(items: QualityBobbinInboxItem[]): Qua
     for (const family of byCapture.values())
         family.children?.sort((a, b) => (a.bobbin.rewinding?.child_position ?? 0) - (b.bobbin.rewinding?.child_position ?? 0));
     return result;
+}
+
+
+// P107-MQ: convertir el ITEM de una cría en el CONTEXTO de la MADRE real.
+// Nunca usar la cría para guardar controles ni usar la etiqueta como identidad.
+// El backend devuelve la etiqueta visible en el campo bobbin.code de capturas
+// de madre, mientras bobbin.id es la identidad técnica única.
+export function motherQualityItem(child: QualityBobbinInboxItem): QualityBobbinInboxItem | null {
+    const rw = child.bobbin.rewinding;
+    if (!rw?.mother_bobbin_id || !rw.mother_label.trim()) return null;
+    const physical = { ...child.bobbin };
+    delete physical.rewinding;
+    return {
+        ...child,
+        bobbin: {
+            ...physical,
+            id: rw.mother_bobbin_id,
+            code: rw.mother_label,
+            mother_quality: { source_capture_id: child.production.capture_id, label: rw.mother_label },
+        },
+        quality: { status: "pending" }, // estado técnico de compatibilidad; madre NO tiene quality_release
+    };
 }

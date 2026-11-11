@@ -86,6 +86,18 @@ def load_catalog(connection) -> Catalog:
         for version_id, machine_id in connection.execute("SELECT form_version_id, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = ANY(%s)", (list(effective_ids),)).fetchall():
             if machine_id in code_of:
                 links.add((code_of[machine_id], effective_ids[version_id]))
+    # RB-P107-MQ: proyección LÓGICA de oferta de Calidad de madre.
+    # Las definiciones publicadas son inmutables (guard_form_child), por lo
+    # que NO se insertan vínculos form_version_machine: este catálogo muestra
+    # adicionalmente las 3x6 ofertas exactas autorizadas por mother_policy.
+    # No crea grants; la concesión efectiva es individual y auditada.
+    from app.quality.mother_policy import allows_mother_form
+    for machine in machines:
+        for code, form in forms.items():
+            if (allows_mother_form(machine["code"], code)
+                    and form["active"] and form["effective_version"] is not None
+                    and form["area"] == "quality"):
+                links.add((machine["code"], code))
     return Catalog(forms, machines, links)
 
 

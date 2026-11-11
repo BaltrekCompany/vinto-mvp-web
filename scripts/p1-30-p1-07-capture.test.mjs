@@ -235,7 +235,7 @@ test("la pantalla reutiliza el motor: la ficha se abre con SU contexto y el inte
   assert.match(code("components/vinto/candidate-form-capture.tsx"), /Ficha NO homologada/);
 });
 
-test("alcance actualizado: Rebobinado operativo y sus formularios intactos; RG01 no altera genealogía ni Calidad", () => {
+test("alcance actualizado: Rebobinado conserva sus formularios y P1-07 añade madre técnica sin vínculo F3", () => {
   const sectors = read("backend/app/sectors.py"), capture = read("backend/app/capture_service.py"), manifest = JSON.parse(read("backend/seed_data/manifest.json"));
   assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS, SECTOR_REBOBINADO, SECTOR_CONVERSION\)$/m, "conserva los tres sectores del baseline");
   assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{/m);
@@ -247,7 +247,8 @@ test("alcance actualizado: Rebobinado operativo y sus formularios intactos; RG01
   assert.equal(manifest.scope.forms.length, 26, "RG01 es la única incorporación");
   assert.deepEqual(JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json")).machines, ["MP3"], "ningún vínculo accidental con Rebobinado");
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 27, "CV-P112-01 añade solo migración 0027 a la línea base 0026");
+  assert.equal(migrations.length, 30, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
+  for (const name of ["0028_conversion_pallet_grants.sql", "0029_p107_rewinding_mother_identity.sql", "0030_p107_mother_quality_forms.sql"]) assert.ok(migrations.includes(name), `migración esperada: ${name}`);
   assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts"]) assert.equal(/quality_release|bobbins?-api|\/api\/bobbins|from "[^"]*(bobbin|genealog)[^"]*"/i.test(code(file)), false, file);
   assert.match(read("docs/DEV-R2-rebobinado-candidatos.md"), /NO equivale a una genealogía funcional/);

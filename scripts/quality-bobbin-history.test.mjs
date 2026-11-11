@@ -296,7 +296,10 @@ test("the history screen renders every UI state and the header context from the 
   assert.match(component, /Actualizando…/);
   assert.match(component, /historyForBobbin\(resource, bobbin\.id\)/, "late results of another bobbin are hidden");
   assert.match(component, /entries\.map\(\(e, i\) => <EntryCard key=\{e\.meta\.id\}/, "rendered in backend order, keyed by capture id");
-  for (const label of ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Estado de Calidad (inbox)"]) assert.ok(component.includes(`label="${label}"`), label);
+  for (const label of ["Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno"]) assert.ok(component.includes(`label="${label}"`), label);
+  assert.match(component, /bobbin\.mother_quality \? "Bobina madre" : "Bobina"/, "la madre tiene título propio y F3 conserva su etiqueta");
+  assert.match(component, /bobbin\.mother_quality \? "Liberación \/ rechazo de madre" : "Estado de Calidad \(inbox\)"/);
+  assert.match(component, /bobbin\.mother_quality \? "No aplica: decisiones individuales por cría" : qualityStatusLabel\(quality\.status\)/);
   assert.match(component, /qualityStatusLabel\(quality\.status\)/);
   for (const label of ["Ensayo (hora de planta)", "Envío (hora de planta)"]) assert.ok(component.includes(`label="${label}"`), label);
   assert.match(component, /PLANT_TIME_ZONE/);

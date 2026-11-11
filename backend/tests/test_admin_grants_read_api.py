@@ -23,6 +23,7 @@ from app.auth.service import create_user
 from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
 from app.quality import capture_service as quality_capture_service
+from app.quality.mother_policy import MOTHER_FORM_CODES, MOTHER_MACHINE_CODES
 from app.seed import reference
 from app.seed.bundle import compute_definition_checksum, load_bundle
 
@@ -305,6 +306,8 @@ class CatalogTests(Base):
         self.assertEqual(len(machines), 18)
         for code, machine in machines.items():
             expected = {f["code"]: (f["name"], f["area"], f["version_number"]) for f in BUNDLE.forms if code in f["machines"]}
+            if code in MOTHER_MACHINE_CODES:
+                expected.update({f["code"]: (f["name"], f["area"], f["version_number"]) for f in BUNDLE.forms if f["code"] in MOTHER_FORM_CODES})
             self.assertEqual({f["code"]: (f["name"], f["area"], f["effective_version"]) for f in machine["forms"]}, expected, code)
             self.assertTrue(all(f["published"] for f in machine["forms"]), code)
 
@@ -322,13 +325,25 @@ class CatalogTests(Base):
         self.assertEqual(sorted(c for c, forms in machines.items() if P131 in forms), ["MP3"])
         self.assertEqual((machines["MP3"][P131]["area"], machines["MP3"][P131]["effective_version"]), ("production", 2))
 
-    async def test_no_quality_form_is_invented_for_rebobinado_or_conversion(self):
-        for sector in (await self.tree())["sectors"]:
+    async def test_only_six_mother_quality_offers_exist_on_three_rewinding_machines(self):
+        tree = await self.tree()
+        for sector in tree["sectors"]:
             areas = {f["area"] for m in sector["machines"] for f in m["forms"]}
-            self.assertEqual(areas, {"quality", "production"} if sector["code"] == "BOBINAS" else {"production"}, sector["code"])
+            expected = {"production"} if sector["code"] == "CONVERSION" else {"quality", "production"}
+            self.assertEqual(areas, expected, sector["code"])
+            if sector["code"] == "REBOBINADO":
+                for m in sector["machines"]:
+                    qualified = {f["code"] for f in m["forms"] if f["area"] == "quality"}
+                    self.assertEqual(qualified, MOTHER_FORM_CODES if m["code"] in MOTHER_MACHINE_CODES else set(), m["code"])
+                    for f in m["forms"]:
+                        if f["code"] in MOTHER_FORM_CODES:
+                            self.assertTrue(f["offered"] and f["enabled_for_capture"], f)
         forms = {f["code"]: f for f in (await self.get("/api/admin/catalog/forms")).json()["forms"]}
-        quality_machines = {m["sector_code"] for f in forms.values() if f["area"] == "quality" for m in f["machines"]}
-        self.assertEqual(quality_machines, {"BOBINAS"}, "los formularios de Calidad solo están vinculados a MP1 y MP3 en el catálogo")
+        for code, f in forms.items():
+            if f["area"] == "quality":
+                machines = {m["code"] for m in f["machines"]}
+                self.assertEqual(machines, set(FORMS[code]["machines"]) |
+                                 (set(MOTHER_MACHINE_CODES) if code in MOTHER_FORM_CODES else set()), code)
 
     async def test_the_form_view_lists_every_form_with_its_effective_version_and_linked_machines(self):
         body = (await self.get("/api/admin/catalog/forms")).json()
@@ -336,7 +351,7 @@ class CatalogTests(Base):
         self.assertEqual(sorted(forms), sorted(FORMS))
         for code, f in forms.items():
             self.assertEqual((f["name"], f["area"], f["effective_version"], f["published"], f["active"]), (FORMS[code]["name"], FORMS[code]["area"], FORMS[code]["version_number"], True, True), code)
-            self.assertEqual(sorted(m["code"] for m in f["machines"]), sorted(FORMS[code]["machines"]), code)
+            self.assertEqual(sorted(m["code"] for m in f["machines"]), sorted(set(FORMS[code]["machines"]) | (set(MOTHER_MACHINE_CODES) if code in MOTHER_FORM_CODES else set())), code)
 
     async def test_published_enabled_and_offered_are_different_things(self):
         machines = {m["code"]: {f["code"]: f for f in m["forms"]} for s in (await self.tree())["sectors"] for m in s["machines"]}

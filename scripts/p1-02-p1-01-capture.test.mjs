@@ -253,7 +253,7 @@ test("aislamiento por usuario y formulario: los historiales de otra cuenta o de 
   for (const file of ["lib/vinto/p1-02.ts", "lib/vinto/p1-01.ts", "lib/vinto/bobinas-candidates.ts", "lib/vinto/candidate-form.ts", "components/vinto/candidate-form-capture.tsx"]) assert.equal(/localStorage|sessionStorage|vinto-p1-records|document\.cookie/.test(code(file)), false, file);
 });
 
-test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial, versiones previas ni esquema", () => {
+test("alcance actualizado: RG01 no altera los formularios MP1/MP3 y P1-07 madre usa migraciones aditivas", () => {
   const sectors = read("backend/app/sectors.py"), capture = read("backend/app/capture_service.py"), manifest = JSON.parse(read("backend/seed_data/manifest.json"));
   assert.match(sectors, /^DEFAULT_OPERATIONAL_SECTORS = \(SECTOR_BOBINAS, SECTOR_REBOBINADO, SECTOR_CONVERSION\)$/m, "conserva los tres sectores operativos del baseline");
   assert.match(capture, /^CENTRAL_FORM_CODES = frozenset\(\{/m);
@@ -267,7 +267,8 @@ test("alcance actualizado: RG01 solo agrega MP3 sin cambiar política sectorial,
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 27, "CV-P112-01 añade migración 0027 aislada sin modificar MP1/MP3");
+  assert.equal(migrations.length, 30, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
+  for (const name of ["0028_conversion_pallet_grants.sql", "0029_p107_rewinding_mother_identity.sql", "0030_p107_mother_quality_forms.sql"]) assert.ok(migrations.includes(name), `migración esperada: ${name}`);
   assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   assert.ok(migrations.includes("0023_quality_release_decision.sql"));
   assert.equal(readdirSync(join(root, "components/vinto")).some((f) => /p1-0[12]/.test(f)), false, "no hay componentes de pantalla propios");

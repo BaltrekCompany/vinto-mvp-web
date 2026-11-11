@@ -5,6 +5,8 @@ import { parseQualityBobbinInbox, type QualityBobbinInboxItem } from "@/lib/vint
 // La interfaz solicita además todas las hermanas de una madre con al menos una cría pendiente.
 // F3 y los filtros status de la API legada permanecen sin cambios.
 
-export function listQualityBobbins(signal?: AbortSignal): Promise<ApiResult<QualityBobbinInboxItem[]>> {
-    return requestJson("/api/quality/bobbins?include_rewinding_family=true", { signal }, parseQualityBobbinInbox);
+export function listQualityBobbins(signal?: AbortSignal, allMothers = false): Promise<ApiResult<QualityBobbinInboxItem[]>> {
+    const url = "/api/quality/bobbins?include_rewinding_family=true" +
+        (allMothers ? "&include_completed_mothers=true" : "");
+    return requestJson(url, { signal }, parseQualityBobbinInbox);
 }

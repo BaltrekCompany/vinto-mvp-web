@@ -51,16 +51,18 @@ class QualityBobbinView:
     quality_status: str
     rewind_child_position: int | None
     rewind_mother_label: str | None
+    rewind_mother_bobbin_id: uuid.UUID | None
 
 
 # Orden de presentación determinista (marca temporal estable + id). NO es una prioridad de negocio: Calidad no confirmó ninguna.
 _SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year, vinto_txn.management_start_year(c.operating_date)), b.sequence_number, b.start_time, b.end_time,
                  b.diameter_mm, b.weight_kg, b.grammage_g_m2, b.number_of_cuts, b.notes,
                  c.id, c.captured_at, c.operating_date, sh.code, sh.name,
-                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status, b.rewind_child_position, b.rewind_mother_label
+                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status, b.rewind_child_position, b.rewind_mother_label, mother.id
           FROM vinto_txn.bobbin b
           JOIN vinto_txn.quality_release q ON q.bobbin_id = b.id
           JOIN vinto_txn.capture c ON c.id = b.source_capture_id
+          LEFT JOIN vinto_txn.bobbin mother ON mother.rewind_mother_capture_id = b.source_capture_id
           JOIN vinto_master.machine m ON m.id = b.machine_id
           JOIN vinto_master.sector s ON s.id = m.sector_id
           JOIN vinto_config.shift_schedule sc ON sc.id = c.shift_schedule_id
@@ -83,6 +85,7 @@ _SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year,
                     AND sibling.rewind_child_position IS NOT NULL
                     AND sibling_quality.status = 'pending'
               ))
+              OR (%s AND b.rewind_child_position IS NOT NULL)
             )
           ORDER BY c.captured_at DESC, b.id DESC"""
 
@@ -91,14 +94,15 @@ def _text(value):
     return None if value is None else format(value, "f")  # decimales como texto exacto, sin float
 
 
-def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors, include_rewinding_family: bool = False) -> list[QualityBobbinView]:
+def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors, include_rewinding_family: bool = False, include_completed_mothers: bool = False) -> list[QualityBobbinView]:
     if status not in QUALITY_STATUSES:
         raise ValueError(f"Estado de calidad desconocido: {status!r}")
     # Opt-in de la interfaz: conservar visibles las hermanas ya decididas mientras
     # quede alguna cría pendiente de esa MISMA captura P1-07. El endpoint legado,
     # incluidos los filtros released/rejected, conserva exactamente su contrato.
     expand = include_rewinding_family and status == DEFAULT_STATUS
-    rows = connection.execute(_SQL, (list(scoped_sector_codes(sectors)), status, expand)).fetchall()
+    all_mothers = expand and include_completed_mothers
+    rows = connection.execute(_SQL, (list(scoped_sector_codes(sectors)), status, expand, all_mothers)).fetchall()
     views = []
     for row in rows:
         r = list(row)

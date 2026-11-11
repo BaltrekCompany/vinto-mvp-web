@@ -5,6 +5,7 @@ formularios: nada se ofrece. Esta función no decide qué formulario está habil
 """
 
 from app.sectors import scoped_sector_codes
+from app.authz.policies import Operation
 
 
 def available_quality_forms(connection, sectors, codes, *, user=None, operation=None, extra_codes=None) -> list[dict]:
@@ -37,6 +38,35 @@ def available_quality_forms(connection, sectors, codes, *, user=None, operation=
             if extra_codes:
                 for machine_id, items in published_forms_by_machine(connection, ids, extra_codes, "quality").items():
                     extra[machine_id] = [{**item, "eligible": is_eligible(connection, user, operation, codes_by_id[machine_id], item["code"])} for item in items]
+            # Política madre P1-07: ofrecer los SEIS formularios existentes sobre
+            # COPASA/BELOIT/OVER, sin modificar las definiciones F3 inmutables.
+            # La elegibilidad usa el MISMO MF13 (incluida concesión activa).
+            if operation == Operation.QUALITY_BOBBIN_CAPTURE:
+                from app.quality.mother_policy import MOTHER_FORM_CODES, allows_mother_form
+                published = connection.execute(
+                    """SELECT DISTINCT ON (f.id) f.code, fv.name, fv.version_number
+                       FROM vinto_config.form f
+                       JOIN vinto_config.form_version fv ON fv.form_id=f.id
+                       WHERE f.active AND f.code=ANY(%s) AND fv.status='published'
+                         AND fv.area='quality'
+                       ORDER BY f.id, fv.version_number DESC""",
+                    (sorted(MOTHER_FORM_CODES),),
+                ).fetchall()
+                for sector_code, sector_name, machine_id, machine_code, machine_name in machines:
+                    if not any(allows_mother_form(machine_code, form_code) for form_code, _, _ in published):
+                        continue
+                    for form_code, name, version in published:
+                        if not allows_mother_form(machine_code, form_code):
+                            continue
+                        target = extra if extra_codes is not None and form_code in extra_codes else forms
+                        if not (form_code in codes or (extra_codes is not None and form_code in extra_codes)):
+                            continue
+                        if any(item["code"] == form_code for item in target.get(machine_id, [])):
+                            continue
+                        target.setdefault(machine_id, []).append({
+                            "code": form_code, "name": name, "version_number": version,
+                            "eligible": is_eligible(connection, user, operation, machine_code, form_code),
+                        })
     out: dict = {}
     for sector_code, sector_name, machine_id, machine_code, machine_name in machines:
         sector = out.setdefault(sector_code, {"code": sector_code, "name": sector_name, "machines": []})

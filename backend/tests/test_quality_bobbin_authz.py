@@ -361,7 +361,7 @@ class EnforceDecisionTests(GateCase):
         def shifting(connection, bobbin_id, sectors):
             context = real(connection, bobbin_id, sectors)
             calls.append(1)
-            return context if len(calls) == 1 else type(context)(context.bobbin_id, uuid4(), context.shift_schedule_id, context.operating_date, context.assignment_id)
+            return context if len(calls) == 1 else type(context)(context.bobbin_id, uuid4(), context.shift_schedule_id, context.operating_date, context.assignment_id, context.is_mother)
         with mode("enforce"), patch.object(quality, "_bobbin_context", shifting):
             _, reply = await self.submit(bobbin)
         self.assertEqual(reply.status, 503)

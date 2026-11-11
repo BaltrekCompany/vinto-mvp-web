@@ -49,7 +49,8 @@ from psycopg import pq
 from app.auth.permissions import permissions_for_profiles
 from app.auth.service import AuthenticatedUser
 from app.authz.errors import AuthorizationDenied, AuthorizationUnavailable, ResourceNotFound
-from app.authz.policies import OperationPolicy, policy_for
+from app.authz.policies import Operation, OperationPolicy, policy_for
+from app.quality.mother_policy import allows_mother_form
 from app.mp3_inspection_policy import allowed_for_machine
 from app.sectors import is_operational_sector
 
@@ -170,8 +171,9 @@ def _evaluate(connection, user_id, policy: OperationPolicy, machine_code, form_c
     if version[2] != policy.area:
         return deny(R_EFFECTIVE_VERSION_OTHER_AREA)  # la vigente es de otra área: el catálogo ya no ofrece este par para esta ruta (una versión anterior del área no lo revive)
     linked = connection.execute("SELECT 1 FROM vinto_config.form_version_machine WHERE form_version_id = %s AND machine_id = %s", (version[0], machine_id)).fetchone()
-    if linked is None:
-        return deny(R_PAIR_NOT_OFFERED)  # un vínculo que solo existe en una versión histórica no cuenta
+    if linked is None and not (policy.operation == Operation.QUALITY_BOBBIN_CAPTURE
+                               and allows_mother_form(machine_code, form_code)):
+        return deny(R_PAIR_NOT_OFFERED)  # F3 sigue exigiendo el vínculo de su versión publicada
     # El vínculo y la concesión histórica P1-01/MP3 no deben reabrir capturas.
     if not allowed_for_machine(form_code, machine_code):
         return deny(R_PAIR_NOT_OFFERED)

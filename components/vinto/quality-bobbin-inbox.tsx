@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { QualityBobbinDecision } from "@/components/vinto/quality-bobbin-decision";
 import { CentralStatus } from "@/components/vinto/central-status";
-import { grammageLabel, qualityStatusLabel, groupQualityBobbinFamilies, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
+import { grammageLabel, qualityStatusLabel, groupQualityBobbinFamilies, motherQualityItem, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { QUALITY_BOBBIN_CANDIDATES } from "@/lib/vinto/quality-bobbin-candidates";
 import type { QualityBobbinScreen } from "@/lib/vinto/quality-offers";
 import type { Resource } from "@/lib/vinto/use-central";
@@ -22,7 +22,41 @@ type Props = {
     candidateOffers?: (machineCode: string) => QualityBobbinScreen[];
     onRegisterCandidate?: (screen: QualityBobbinScreen, item: QualityBobbinInboxItem) => void;
     actionOffers?: (machineCode: string) => { humidity: boolean; physical: boolean };
+    showAllMothers?: boolean;
+    onToggleAllMothers?: () => void;
 };
+
+// La ficha P1-07 puede registrar controles SOBRE SU MADRE (UUID único), no
+// sobre la primera cría ni sobre una bobina F3 de etiqueta coincidente.
+function MotherQualityPanel({ item, actionOffers, candidateOffers, onRegisterHumidity, onRegisterProperties,
+    onRegisterCandidate, onViewHistory }: Pick<Props, "actionOffers" | "candidateOffers" | "onRegisterHumidity" |
+    "onRegisterProperties" | "onRegisterCandidate" | "onViewHistory"> & { item: QualityBobbinInboxItem }) {
+    const mother = motherQualityItem(item);
+    if (!mother) return <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+        La identidad de esta madre no está disponible en el servidor. Actualiza la bandeja antes de registrar controles.
+    </p>;
+    const machine = mother.bobbin.machine.code;
+    const actions = actionOffers?.(machine) ?? { humidity: false, physical: false };
+    const candidates = candidateOffers?.(machine) ?? [];
+    const enabled = actions.humidity || actions.physical || candidates.length > 0;
+    return <div className="flex flex-col gap-2 border-t p-3">
+        {actions.humidity && <Button size="sm" variant="outline" className="h-auto min-h-8 whitespace-normal text-left"
+            onClick={() => onRegisterHumidity(mother)}>Registrar humedad</Button>}
+        {actions.physical && <Button size="sm" variant="outline" className="h-auto min-h-8 whitespace-normal text-left"
+            onClick={() => onRegisterProperties(mother)}>Registrar propiedades</Button>}
+        {candidates.map(screen => <Button key={screen} size="sm" variant="outline" className="h-auto min-h-8 whitespace-normal border-amber-300 text-amber-950"
+            data-form={QUALITY_BOBBIN_CANDIDATES[screen].code}
+            onClick={() => onRegisterCandidate?.(screen, mother)}>
+            {QUALITY_BOBBIN_CANDIDATES[screen].actionLabel ?? `${QUALITY_BOBBIN_CANDIDATES[screen].title} (candidato)`}
+        </Button>)}
+        {!enabled && <p className="text-xs text-amber-900">
+            Sin formularios habilitados para este usuario y máquina. Administración debe verificar las concesiones individuales de Calidad.
+        </p>}
+        <Button size="sm" variant="outline" onClick={() => onViewHistory(mother)}>
+            Ver controles de la madre
+        </Button>
+    </div>;
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
     return <div className="min-w-0">
@@ -31,7 +65,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </div>;
 }
 
-export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRegisterProperties, onViewHistory, candidateOffers, onRegisterCandidate, actionOffers }: Props) {
+export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRegisterProperties, onViewHistory, candidateOffers, onRegisterCandidate, actionOffers, showAllMothers = false, onToggleAllMothers }: Props) {
     if (resource.status !== "ready") return <CentralStatus state={resource} onRetry={refresh} title="No se pudo cargar el inbox de Calidad"/>;
     const items = groupQualityBobbinFamilies(resource.data);
     if (!items) return <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm">Las crías recibidas no pertenecen a una misma ficha de madre coherente. <Button size="sm" variant="outline" onClick={refresh}>Actualizar</Button></p>;
@@ -39,11 +73,12 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
     return <section className="min-w-0 max-w-full rounded-2xl border bg-white p-4 shadow-sm md:p-6" aria-live="polite">
         <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h2 className="text-xl font-black">Bobinas pendientes de Calidad</h2>
+                <h2 className="text-xl font-black">{showAllMothers ? "Bobinas pendientes y madres históricas" : "Bobinas pendientes de Calidad"}</h2>
                 <p className="mt-1 text-sm text-slate-700">Bobinas producidas pendientes de evaluación. El listado no depende de la asignación actualmente activa.</p>
             </div>
             <div className="flex items-center gap-3">
                 <span className="text-sm font-bold">Pendientes: {pendingCount} · Fichas: {items.length}</span>
+                {onToggleAllMothers && <Button variant="outline" size="sm" onClick={onToggleAllMothers}>{showAllMothers ? "Mostrar pendientes" : "Ver madres finalizadas"}</Button>}
                 <Button variant="outline" size="sm" disabled={resource.refreshing} onClick={refresh}>{resource.refreshing ? "Actualizando…" : "Actualizar"}</Button>
             </div>
         </div>
@@ -97,10 +132,9 @@ export function QualityBobbinInbox({ resource, refresh, onRegisterHumidity, onRe
                         {!i.bobbin.rewinding && <QualityBobbinDecision item={i} refresh={refresh}/>}
                         {i.bobbin.rewinding ? <details open className="rounded-lg border border-slate-200 bg-white">
                             <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#146b4f]">Controles e historial</summary>
-                            <div className="space-y-2 border-t p-3 text-xs text-slate-700">
-                                <p>Ficha madre declarada en P1-07 (Rebobinado). Las decisiones y el estado de cada cría se consultan en esta misma ficha.</p>
-                                <p>Los formularios de Calidad de una bobina F3 permanecen en su ficha original. La etiqueta declarada no constituye una vinculación F3 y no habilita sus controles físicos sobre las crías.</p>
-                            </div>
+                            <MotherQualityPanel item={i} actionOffers={actionOffers} candidateOffers={candidateOffers}
+                                onRegisterHumidity={onRegisterHumidity} onRegisterProperties={onRegisterProperties}
+                                onRegisterCandidate={onRegisterCandidate} onViewHistory={onViewHistory}/>
                         </details> : <details className="rounded-lg border border-slate-200 bg-white">
                             <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#146b4f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Controles e historial</summary>
                             <div className="flex flex-col gap-2 border-t p-3">

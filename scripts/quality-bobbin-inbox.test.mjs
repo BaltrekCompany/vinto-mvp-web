@@ -139,7 +139,11 @@ test("the inbox code never touches browser storage or local records", () => {
 test("the component lists read-only; its only actions are refresh, opening the humidity or physical-properties control and opening the control history of that bobbin", () => {
   assert.equal(/Liberar|Rechazar|liberar|rechazar/.test(component), false);
   const clicks = [...component.matchAll(/onClick=\{([^}]*)\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(clicks.sort(), ["() => onRegisterCandidate?.(screen, i)", "() => onRegisterHumidity(i)", "() => onRegisterProperties(i)", "() => onViewHistory(i)", "refresh", "refresh"].sort());
+  for (const expected of ["() => onRegisterCandidate?.(screen, i)", "() => onRegisterHumidity(i)", "() => onRegisterProperties(i)",
+    "() => onViewHistory(i)", "() => onRegisterHumidity(mother)", "() => onRegisterProperties(mother)",
+    "() => onRegisterCandidate?.(screen, mother)", "() => onViewHistory(mother)", "refresh"]) {
+    assert.ok(clicks.includes(expected), expected);
+  }
   // las acciones de la fila nombran la Bobina concreta (lectores de pantalla) y reciben ESE item
   assert.match(component, /aria-label=\{`Registrar humedad de la bobina \$\{i\.bobbin\.code\}/);
   assert.match(component, /aria-label=\{`Registrar propiedades físicas de la bobina \$\{i\.bobbin\.code\}/);
@@ -169,7 +173,10 @@ test("Calidad Execution renders the central inbox and no longer the demo Release
   const quality = executionBody.slice(executionBody.indexOf('if (front === "Calidad")'), executionBody.indexOf("return <><Panel"));
   assert.match(quality, /\{qualityInbox\}/);
   assert.equal(/ReleaseCards|releases|setReleases|Compuerta de liberación/.test(quality), false);
-  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\} onRegisterHumidity=\{item => setSelectedQualityBobbin\(humidityAttempt \? humidityAttempt\.bobbin : item\)\} onRegisterProperties=\{item => setSelectedPhysicalBobbin\(physicalAttempt \? physicalAttempt\.bobbin : item\)\} onViewHistory=\{openQualityHistory\} candidateOffers=\{bobbinOffers\} actionOffers=\{m => qualityBobbinActions\(access\.qualityBobbin\.status === "ready" \? access\.qualityBobbin\.data : null, m\)\} onRegisterCandidate=\{\(screen, item\) => setBobbinCand\(\{ screen, item \}\)\}\/>/);
+  assert.match(page, /<QualityBobbinInbox resource=\{qualityInbox\.view\} refresh=\{qualityInbox\.refresh\}/);
+  assert.match(page, /showAllMothers=\{showAllMothers\}/);
+  assert.match(page, /onToggleAllMothers=\{\(\) => setShowAllMothers/);
+  assert.match(page, /onRegisterCandidate=\{\(screen, item\) => setBobbinCand/);
   assert.equal(/Execution\(\{[^}]*\b(releases|setReleases|canRelease)\b/.test(executionBody), false);
   assert.equal(/<Execution [^>]*(releases=|setReleases=|canRelease=)/.test(page), false);
 });
@@ -194,7 +201,7 @@ test("the resource is enabled only for Calidad + quality.capture in Ejecución, 
   const declaration = page.split("\n").find(line => line.includes("const qualityInbox = useResource")) ?? "";
   assert.match(declaration, /useResource<QualityBobbinInboxItem\[\]>\(qualityInboxKey\(scope\)/);
   assert.match(declaration, /front === "Calidad" && canReadQualityInbox && activeModule === "ejecucion"/);
-  assert.match(declaration, /listQualityBobbins\(signal\)/);
+  assert.match(declaration, /listQualityBobbins\(signal, showAllMothers\)/);
   assert.match(declaration, /sessionLost\)/);
   assert.match(page, /canReadQualityInbox = hasPermission\(user, "quality\.capture"\)/);
   assert.equal(/activeAssignment|useActiveAssignment/.test(declaration), false);

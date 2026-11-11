@@ -32,11 +32,13 @@ _ERRORS = {
 @router.get("/bobbins", response_model=list[QualityBobbinOut], responses=_ERRORS)
 def quality_bobbin_inbox(status: Literal["pending", "released", "rejected"] = service.DEFAULT_STATUS,
                          include_rewinding_family: bool = Query(default=False),
+                         include_completed_mothers: bool = Query(default=False),
                          user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
-    """Bobinas F3 cuyo quality_release tiene el estado pedido (por defecto `pending`), independientemente de la asignación vigente.
+    """Bobinas F3 y crías P1-07 cuyo quality_release tiene el estado pedido (por defecto `pending`), independientemente de la asignación vigente.
     El orden es solo de presentación (captura más reciente primero), NO una prioridad de negocio."""
     return [quality_bobbin_out(v) for v in service.list_quality_bobbins(
-        connection, status, sectors=user.sectors, include_rewinding_family=include_rewinding_family)]
+        connection, status, sectors=user.sectors, include_rewinding_family=include_rewinding_family,
+        include_completed_mothers=include_completed_mothers)]
 
 
 # ---- capturas de Calidad ligadas a una Bobina (fundación) -------------------------------------------------------------------
@@ -55,8 +57,19 @@ def submit_quality_capture(bobbin_id: str, body: QualityCaptureIn, response: Res
                            user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """201 si se creó; 200 con already_submitted si es un reintento idéntico (idempotente por capture_id). No toca quality_release."""
     request_id = str(uuid.uuid4())
-    # MF-13-01D.2C.1: la autorización efectiva de Calidad por bobina depende SOLO de su propio modo de servidor (por defecto off = comportamiento anterior); el cliente no puede cambiarlo.
-    gate = gate_for(user, settings.authz_quality_bobbin_captures_mode, request_id, Operation.QUALITY_BOBBIN_CAPTURE)
+    # No cambiar el gate legado de F3. Las madres P1-07 son una superficie
+    # NUEVA: autorización efectiva ENFORCE obligatoria, independientemente del
+    # modo heredado de bobinas F3. El UUID y la clase real vienen de PostgreSQL.
+    try:
+        identity = uuid.UUID(bobbin_id)
+    except (ValueError, TypeError):
+        identity = None
+    mother = identity is not None and connection.execute(
+        "SELECT 1 FROM vinto_txn.bobbin WHERE id=%s AND rewind_mother_capture_id IS NOT NULL",
+        (identity,),
+    ).fetchone() is not None
+    gate = gate_for(user, "enforce" if mother else settings.authz_quality_bobbin_captures_mode,
+                    request_id, Operation.QUALITY_BOBBIN_CAPTURE)
     result = capture_service.submit_quality_capture(
         connection, actor_id=user.user_id, bobbin_id=bobbin_id, capture_id=body.capture_id, form_code=body.form_code,
         device_key=body.device_key, values=body.values, request_id=request_id, sectors=user.sectors, gate=gate)
@@ -66,7 +79,7 @@ def submit_quality_capture(bobbin_id: str, body: QualityCaptureIn, response: Res
 
 @router.get("/bobbin-forms", response_model=ProductionMachinesOut, response_model_exclude_none=True, responses={401: _ERRORS[401], 403: _ERRORS[403]})
 def bobbin_candidate_forms(user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
-    """Máquinas del alcance y candidatos de Calidad por Bobina (DEV-Q2) que el backend publica (vacío con la política real)."""
+    """Máquinas con formularios de Calidad F3 o madre P1-07 y elegibilidad de usuario (las madres exigen grant activo)."""
     return {"sectors": capture_service.available_bobbin_forms(connection, sectors=user.sectors, user=user)}
 
 
