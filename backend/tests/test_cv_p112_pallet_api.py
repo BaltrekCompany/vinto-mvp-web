@@ -107,6 +107,29 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
     def count(self, table):
         return self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
+    async def test_vinto_app_pallet_table_acl_is_least_privilege(self):
+        # The dedicated CI workflow provisions vinto_app BEFORE migrations.
+        # Other isolated suites without cluster roles may skip this focused ACL check.
+        role_present = self.connection.execute(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app')"
+        ).fetchone()[0]
+        if not role_present:
+            self.skipTest("Dedicated CV-P112 workflow provisions vinto_app for ACL coverage")
+
+        expected = {
+            "vinto_master.pallet_nominal_weight": {"SELECT"},
+            "vinto_txn.production_pallet": {"SELECT", "INSERT"},
+        }
+        for table, allowed in expected.items():
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE",
+                              "REFERENCES", "TRIGGER"):
+                with self.subTest(table=table, privilege=privilege):
+                    permitted = self.connection.execute(
+                        "SELECT has_table_privilege('vinto_app', %s, %s)",
+                        (table, privilege),
+                    ).fetchone()[0]
+                    self.assertEqual(permitted, privilege in allowed)
+
     async def test_source_and_v4_schema(self):
         form = next(f for f in BUNDLE.forms if f["code"] == FORM)
         self.assertEqual(form["version_number"], 4)
