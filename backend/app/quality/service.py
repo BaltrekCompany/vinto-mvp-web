@@ -51,16 +51,18 @@ class QualityBobbinView:
     quality_status: str
     rewind_child_position: int | None
     rewind_mother_label: str | None
+    rewind_mother_bobbin_id: uuid.UUID | None
 
 
 # Orden de presentación determinista (marca temporal estable + id). NO es una prioridad de negocio: Calidad no confirmó ninguna.
 _SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year, vinto_txn.management_start_year(c.operating_date)), b.sequence_number, b.start_time, b.end_time,
                  b.diameter_mm, b.weight_kg, b.grammage_g_m2, b.number_of_cuts, b.notes,
                  c.id, c.captured_at, c.operating_date, sh.code, sh.name,
-                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status, b.rewind_child_position, b.rewind_mother_label
+                 wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description, q.status, b.rewind_child_position, b.rewind_mother_label, mother.id
           FROM vinto_txn.bobbin b
           JOIN vinto_txn.quality_release q ON q.bobbin_id = b.id
           JOIN vinto_txn.capture c ON c.id = b.source_capture_id
+          LEFT JOIN vinto_txn.bobbin mother ON mother.rewind_mother_capture_id = b.source_capture_id
           JOIN vinto_master.machine m ON m.id = b.machine_id
           JOIN vinto_master.sector s ON s.id = m.sector_id
           JOIN vinto_config.shift_schedule sc ON sc.id = c.shift_schedule_id
