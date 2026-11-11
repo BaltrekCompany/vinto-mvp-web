@@ -80,7 +80,7 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
 
     async def assignment(self, article=PRODUCT):
         response = await call("POST", "/api/work-orders", cookie=await self.cookie("JEFATURA"),
-                              json_body={"machine_code": "GAMBINI", "lines": [{
+                              json_body={"machine_code": "SINCRO_II", "lines": [{
                                   "pv_reference": "PV-P111", "article_code": article,
                                   "quantity": 10, "due_date": "2026-11-01"}]})
         self.assertEqual(response.status, 201, response.text)
