@@ -5,6 +5,7 @@ formularios: nada se ofrece. Esta función no decide qué formulario está habil
 """
 
 from app.sectors import scoped_sector_codes
+from app.authz.policies import Operation
 
 
 def available_quality_forms(connection, sectors, codes, *, user=None, operation=None, extra_codes=None) -> list[dict]:
