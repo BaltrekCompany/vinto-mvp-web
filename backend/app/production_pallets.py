@@ -5,7 +5,7 @@ Las capturas v1/v2/v3 no generan pallets; el POST repetido retorna el registro
 original por la idempotencia de capture_service y nunca consume otro numero.
 """
 from app.capture_errors import CaptureNotFoundError, CaptureValidationError
-from app.sectors import scoped_sector_codes
+from app.sectors import SECTOR_CONVERSION, scoped_sector_codes
 
 FORM = "VINTO-P1-12"
 
@@ -78,7 +78,7 @@ def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_ver
     if source is None:
         raise CaptureNotFoundError()
     _, machine, sector, work_order_id, _, line_code, _, article_version_id, article_code, _ = source
-    if sector != "CONVERSION" or machine not in ("GAMBINI", "SINCRO_II", "SINCRO_III"):
+    if sector != SECTOR_CONVERSION or machine not in ("GAMBINI", "SINCRO_II", "SINCRO_III"):
         raise CaptureValidationError("Pallet: la asignacion no corresponde a produccion de papel higienico")
 
     # Segundo cerrojo por la clave funcional, adicional al de maquina ya obtenido.
