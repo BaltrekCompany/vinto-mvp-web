@@ -39,11 +39,14 @@ export function normalizeP111V3Draft(draft: P111V3Draft, productCode: string):
     const all = draft.groups.bobinas ?? [];
     const errors: RowError[] = [];
     if (all.length !== P111_V3_SLOTS) errors.push({ group: "bobinas", row: null, message: "Se esperan exactamente tres posiciones visibles." });
-    const filled = all.filter((row, i) => i === 0 || !isBlankOptionalRow(row));
+    const filledIndices = all.map((row, i) => i).filter(i => i === 0 || !isBlankOptionalRow(all[i]));
+    const filled = filledIndices.map(i => all[i]);
     const allowed = new Set(materialOptionsFor(productCode).map(item => item.code));
     if (!allowed.size) errors.push({ group: "bobinas", row: null, message: "No hay receta registrada para el producto de la OT. No se puede enviar." });
     const built = buildGroups(P111_V3_GROUPS, { bobinas: filled });
-    if (!built.ok) errors.push(...built.errors);
+    if (!built.ok) errors.push(...built.errors.map(error => ({ ...error,
+        row: error.row === null ? null : filledIndices[error.row - 1] + 1,
+    })));
     all.forEach((row, index) => {
         if (index !== 0 && isBlankOptionalRow(row)) return;
         const material = (row.cells.tipo_material ?? "").trim();
