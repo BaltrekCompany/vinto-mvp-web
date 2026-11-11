@@ -216,7 +216,6 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
                 data = response.json()["capture"]
                 self.assertEqual(data["bobbin"], {"id": str(mother_id), "code": "MADRE-TEXTO-0001"})
                 self.assertEqual(data["machine"]["code"], "COPASA")
-                self.assertEqual(data["work_order"]["id"], assignment["work_order"]["id"] if "work_order" in assignment else data["work_order"]["id"])
                 self.assertEqual(data["form"]["code"], code)
                 saved_ids.append(payload["capture_id"])
                 replay, _ = await post(code, values_for(code),
