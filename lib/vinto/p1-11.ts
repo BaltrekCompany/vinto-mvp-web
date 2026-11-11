@@ -33,7 +33,7 @@ const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQ
 export const P111_HOUR_FIELDS = [{ key: "hora_inicio", label: "Hora inicio" }, { key: "hora_fin", label: "Hora fin" }] as const;
 
 export const POSICION_OPTIONS = [{ value: "superior", label: "Superior" }, { value: "inferior", label: "Inferior" }] as const;
-export const positionLabel = (value: string): string => POSICION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+export const positionLabel = (value: string): string => value === "no_aplica" ? "No aplica" : POSICION_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
 // ---- especificación del contrato candidato -----------------------------------------------------------------------------------------------------
 
