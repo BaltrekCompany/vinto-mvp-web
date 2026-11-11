@@ -217,6 +217,7 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(data["bobbin"], {"id": str(mother_id), "code": "MADRE-TEXTO-0001"})
                 self.assertEqual(data["machine"]["code"], "COPASA")
                 self.assertEqual(data["form"]["code"], code)
+                self.assertEqual(data["revision"], 1, "la captura inicial nunca debe empezar en revisión 2")
                 saved_ids.append(payload["capture_id"])
                 replay, _ = await post(code, values_for(code),
                                         capture=payload["capture_id"],
