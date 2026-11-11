@@ -211,6 +211,14 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.db_patch.start()
         cls.install_p116_v2_as_current()
+        # Este ensayo MF-11 reproduce P1-12 v3 antes de la ficha de pallet v4.
+        # La plantilla general ya contiene v4: importar v3 de forma aditiva
+        # y retirar v4 SOLO dentro de esta base efímera de pruebas.
+        with contextlib.redirect_stdout(io.StringIO()):
+            reference.apply(cls.connection, variant("8" * 64, {}))
+        cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
+                                  FROM vinto_config.form f
+                                  WHERE v.form_id=f.id AND f.code=%s AND v.version_number=4""", (P112,))
         cls.current = {code: cls.version(code, NEW_VERSION[code]) for code in NEW_VERSION}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, old_spec(CONVERSION + (P126, P127))))  # las versiones anteriores, publicadas como en producción (aditivo)
