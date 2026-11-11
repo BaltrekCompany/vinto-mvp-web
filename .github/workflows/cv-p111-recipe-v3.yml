@@ -9,6 +9,8 @@ on:
       - "backend/app/capture_service.py"
       - "backend/seed_data/forms/VINTO-P1-11.json"
       - "backend/seed_data/manifest.json"
+      - "backend/seed_data/article_machines.json"
+      - "backend/tests/test_import_reference.py"
       - "backend/tests/test_cv_p111_recipe_api.py"
       - "lib/vinto/p1-11.ts"
       - "lib/vinto/p1-11-v3.ts"
@@ -69,6 +71,9 @@ jobs:
       - name: P1-11 v3 real capture API and regressions
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_cv_p111_recipe_api.py' -v
+      - name: 10327/Gambini additive master import on PG17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_import_reference.py' -k new_excel_product_10327_gambini_relation_imports_additively -v
 
   frontend:
     name: P1-11 v3 frontend + legacy regressions
