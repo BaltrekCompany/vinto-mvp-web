@@ -119,7 +119,12 @@ class _BobbinContext:
 
 # El artículo y la OT/línea/PV salen de la asignación HISTÓRICA de la captura (la misma que la F3 de origen; lo garantiza 0005).
 _VIEW_SQL = """SELECT c.id, c.status, c.revision, c.captured_at, c.submitted_at, c.operating_date, f.code, fv.version_number, fv.name,
-                      b.id, b.code, m.code, m.name, sh.code, sh.name, wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description
+                      b.id, CASE WHEN b.rewind_mother_capture_id IS NOT NULL THEN
+                        (SELECT d.value_text FROM vinto_txn.capture_detail d
+                         JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
+                         WHERE d.capture_id=b.rewind_mother_capture_id AND fd.key='etiqueta_numero_de_bobina' LIMIT 1)
+                        ELSE b.code END, m.code, m.name, sh.code, sh.name,
+                      wo.id, wo.number, l.id, l.line_code, l.pv_reference, ar.code, av.description
                FROM vinto_txn.capture c
                JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
                JOIN vinto_config.form f ON f.id = fv.form_id
@@ -159,19 +164,21 @@ def get_quality_capture(connection, capture_id, *, sectors) -> QualityCaptureVie
 
 
 def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
-    """Bobina numerada F3 del alcance (Bobinas) y el contexto productivo de su captura F3 de origen. 404 si no existe."""
+    """Bobina F3 numerada o madre técnica P1-07 del alcance, nunca cría. Contexto de la captura histórica, no de asignación activa."""
     row = connection.execute(
         """SELECT b.id, b.machine_id, c.shift_schedule_id, c.operating_date, c.assignment_id
            FROM vinto_txn.bobbin b JOIN vinto_txn.capture c ON c.id = b.source_capture_id
            JOIN vinto_master.machine m ON m.id = b.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
-           WHERE b.id = %s AND b.sequence_number IS NOT NULL AND s.code = ANY(%s)""", (bobbin_id, list(scoped_sector_codes(sectors)))).fetchone()
+           WHERE b.id = %s AND (b.sequence_number IS NOT NULL OR b.rewind_mother_capture_id IS NOT NULL)
+             AND b.rewind_child_position IS NULL AND s.code = ANY(%s)""",
+        (bobbin_id, list(scoped_sector_codes(sectors)))).fetchone()
     if row is None or row[4] is None:
         raise BobbinNotFoundError()
     return _BobbinContext(*row)
 
 
 def available_bobbin_forms(connection, *, sectors, user=None) -> list[dict]:
-    """Máquinas del alcance y candidatos por Bobina que el backend publica (política + versión publicada de área quality + vínculo). Vacío con la política real. Solo lectura."""
+    """Formularios por bobina F3 o madre P1-07, publicados y elegibles en cada máquina; no se confiere acceso automáticamente."""
     from app.authz.policies import Operation
     return available_quality_forms(connection, sectors, BOBBIN_CANDIDATE_FORM_CODES & ENABLED_BOBBIN_CANDIDATE_FORM_CODES, user=user, operation=Operation.QUALITY_BOBBIN_CAPTURE,
                                    extra_codes=CENTRAL_BOBBIN_FORM_CODES)
@@ -184,7 +191,13 @@ def _check_declared_bobbin(connection, form_code, bobbin_id, clean, fields):
     if key is None or key not in {f.key for f in fields}:
         return
     declared = clean.get(key)
-    code = connection.execute("SELECT code FROM vinto_txn.bobbin WHERE id = %s", (bobbin_id,)).fetchone()[0]
+    code = connection.execute(
+        """SELECT CASE WHEN b.rewind_mother_capture_id IS NULL THEN b.code ELSE
+            (SELECT d.value_text FROM vinto_txn.capture_detail d
+             JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
+             WHERE d.capture_id=b.rewind_mother_capture_id
+               AND fd.key='etiqueta_numero_de_bobina' LIMIT 1) END
+           FROM vinto_txn.bobbin b WHERE b.id = %s""", (bobbin_id,)).fetchone()[0]
     if not isinstance(declared, str) or declared.strip() != code:
         raise CaptureValidationError(f"{key} no coincide con la bobina seleccionada")
 
