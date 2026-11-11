@@ -22,7 +22,9 @@ BEGIN
      OR nullif(current_setting('vinto.reason',true),'') IS NULL) THEN
        RAISE EXCEPTION 'Capture correction requires an audited reason' USING ERRCODE = '23514';
    END IF;
-   NEW.revision := OLD.revision + 1;
+   IF OLD.status = 'draft' THEN NEW.revision := OLD.revision;
+   ELSE NEW.revision := OLD.revision + 1;
+   END IF;
  ELSE NEW.revision := 1;
  END IF;
  IF NOT EXISTS (SELECT 1 FROM vinto_config.form_version WHERE id = NEW.form_version_id
