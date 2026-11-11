@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { P107_CRIA_NUMBERS, P107_FIELDS } from "../lib/vinto/p1-07.ts";
-import { groupQualityBobbinFamilies, parseQualityBobbinInbox, parseQualityBobbinInboxItem } from "../lib/vinto/quality-bobbins.ts";
+import { groupQualityBobbinFamilies, motherQualityItem, parseQualityBobbinInbox, parseQualityBobbinInboxItem } from "../lib/vinto/quality-bobbins.ts";
 
 const id = "40b936c3-387f-4399-a394-33642813ffbd";
 const mother = "RB-MADRE-DECLARADA";
@@ -128,7 +128,7 @@ test("Quality child UI displays position and mother, not an official sequence; b
     const decision = readFileSync(new URL("../components/vinto/quality-bobbin-decision.tsx",import.meta.url),"utf8");
     assert.match(inbox,/Cría \{child\.bobbin\.rewinding\?\.child_position\}/);
     assert.match(inbox,/Etiqueta \/ bobina madre/);
-    assert.match(inbox,/no habilita sus controles físicos/i);
+    assert.match(inbox,/MotherQualityPanel item=\{i\}/);
     assert.match(decision,/mother_label/); // no usado como etiqueta literal: variable tipada
     assert.match(decision,/subject/);
     assert.match(decision,/submitQualityDecision\(item\.bobbin\.id/);
