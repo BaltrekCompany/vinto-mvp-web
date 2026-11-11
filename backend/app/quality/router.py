@@ -31,10 +31,12 @@ _ERRORS = {
 
 @router.get("/bobbins", response_model=list[QualityBobbinOut], responses=_ERRORS)
 def quality_bobbin_inbox(status: Literal["pending", "released", "rejected"] = service.DEFAULT_STATUS,
+                         include_rewinding_family: bool = Query(default=False),
                          user: AuthenticatedUser = Depends(require_permission(QUALITY_CAPTURE)), connection=Depends(get_connection)):
     """Bobinas F3 cuyo quality_release tiene el estado pedido (por defecto `pending`), independientemente de la asignación vigente.
     El orden es solo de presentación (captura más reciente primero), NO una prioridad de negocio."""
-    return [quality_bobbin_out(v) for v in service.list_quality_bobbins(connection, status, sectors=user.sectors)]
+    return [quality_bobbin_out(v) for v in service.list_quality_bobbins(
+        connection, status, sectors=user.sectors, include_rewinding_family=include_rewinding_family)]
 
 
 # ---- capturas de Calidad ligadas a una Bobina (fundación) -------------------------------------------------------------------
