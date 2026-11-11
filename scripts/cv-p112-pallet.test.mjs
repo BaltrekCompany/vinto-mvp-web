@@ -42,14 +42,17 @@ test("valida jabas positivas y horas manuales; rechaza valores extra", () => {
     assert.equal(invalid.ok, false);
 });
 
-test("v4: validador auxiliar bloquea cantidades no positivas y notas pendientes obsoletas", () => {
-    assert.deepEqual(PENDING_NOTES, [], "correlativo y pesos ya fueron homologados");
+test("v4 bloquea jabas no positivas y preserva el helper historico de P1-13", () => {
+    assert.deepEqual(PENDING_NOTES, [], "correlativo y pesos de P1-12 v4 homologados");
     assert.deepEqual(normalizeP112Draft(draft), { ok: true, values: { cantidad_jabas: 2, hora_inicio: "08:15", hora_fin: "09:05" } });
+    // El helper original era estructural y lo utiliza P1-13 (fuera del alcance).
+    for (const legacy of ["0", "-1", "1000000000"]) {
+        assert.equal(normalizeP112Draft({ ...draft, cantidad_jabas: legacy }).ok, true, legacy);
+    }
     for (const bad of ["0", "-1", "1.5", "0000000000", "1000000000", ""]) {
-        assert.equal(normalizeP112Draft({ ...draft, cantidad_jabas: bad }).ok, false, bad);
         assert.equal(P112.createAttempt({ ...draft, cantidad_jabas: bad }, assign, device, () => captureId).ok, false, bad);
     }
-    assert.equal(normalizeP112Draft({ ...draft, cantidad_jabas: "999999999" }).ok, true);
+    assert.equal(P112.createAttempt({ ...draft, cantidad_jabas: "999999999" }, assign, device, () => captureId).ok, true);
 });
 
 test("P1-12 v4 solo acepta snapshots de pallet persistidos por backend", () => {
