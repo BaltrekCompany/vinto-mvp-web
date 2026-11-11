@@ -1,0 +1,99 @@
+name: VINTO CV-P111-v3 consumos por receta QA
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cv-p111-recipe-v3.yml"
+      - "backend/app/p111_recipe_policy.py"
+      - "backend/app/p111_material_codes.json"
+      - "backend/app/capture_service.py"
+      - "backend/seed_data/forms/VINTO-P1-11.json"
+      - "backend/seed_data/manifest.json"
+      - "backend/tests/test_cv_p111_recipe_api.py"
+      - "lib/vinto/p1-11.ts"
+      - "lib/vinto/p1-11-v3.ts"
+      - "components/vinto/p1-11-v3-capture.tsx"
+      - "components/vinto/central-form-history.tsx"
+      - "components/vinto/capture-kit.tsx"
+      - "app/page.tsx"
+      - "scripts/p1-11-v3.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pg17:
+    name: P1-11 v3 real API PostgreSQL17 + bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: cvp111-disposable-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:cvp111-disposable-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:cvp111-disposable-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:cvp111-disposable-only@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+      WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: Prepare real isolated PostgreSQL17
+        working-directory: backend
+        run: |
+          python -B prepare_test_db.py
+          python -B migrate.py --target test --check
+      - name: Validate canonical reference bundle
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_bundle_validation.py' -v
+      - name: P1-11 v3 real capture API and regressions
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_cv_p111_recipe_api.py' -v
+
+  frontend:
+    name: P1-11 v3 frontend + legacy regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      VINTO_MVP_DOMAIN: vinto-mvp.baltrekservices.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: P1-11 v3 and historical v1/v2 contracts
+        run: |
+          node --test scripts/p1-11-v3.test.mjs
+          node --test scripts/p1-11-capture.test.mjs
+      - name: TypeScript and lint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm exec eslint components/vinto/p1-11-v3-capture.tsx components/vinto/central-form-history.tsx components/vinto/capture-kit.tsx lib/vinto/p1-11.ts lib/vinto/p1-11-v3.ts app/page.tsx
+      - name: Portable production frontend build
+        run: pnpm run build
