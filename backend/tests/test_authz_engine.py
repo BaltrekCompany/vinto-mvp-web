@@ -216,13 +216,20 @@ class DecisionTests(DatabaseCase):
         self.grant(admin)
         self.assertDenied(admin, "PERMISSION_MISSING", PRODUCTION)
 
-    def test_multiple_active_profiles_keep_the_union_of_permissions(self):
+    def test_one_profile_per_user_never_unions_plant_permissions(self):
+        # USR-02: dos perfiles para el mismo usuario ya no son un estado legal.
+        # Ambos circuitos siguen probados, pero con usuarios separados.
         user = self.operator("MP1", P118, profile="OPERACION")
         self.grant(user, "MP1", P101)
         self.assertDenied(user, "PERMISSION_MISSING", Q_MACHINE)
-        self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (user,))
+        with self.assertRaises(psycopg.errors.UniqueViolation):
+            with self.connection.transaction():
+                self.connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code = 'CALIDAD'", (user,))
         self.assertAllowed(user, PRODUCTION, "MP1", P101)
-        self.assertAllowed(user, Q_MACHINE, "MP1", P118)
+        self.assertDenied(user, "PERMISSION_MISSING", Q_MACHINE)
+        quality = self.operator("MP1", P118, profile="CALIDAD")
+        self.assertAllowed(quality, Q_MACHINE, "MP1", P118)
+        self.assertDenied(quality, "PERMISSION_MISSING", PRODUCTION, "MP1", P101)
 
     def test_an_inactive_profile_contributes_nothing(self):
         user = self.operator()
