@@ -32,7 +32,8 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
-from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, UnsupportedFormDefinitionError, UnsupportedFormError
+from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError
+from app.quality.mother_policy import allows_mother_form
 from app.quality.form_availability import available_quality_forms
 from app.sectors import scoped_sector_codes
 
@@ -115,6 +116,7 @@ class _BobbinContext:
     shift_schedule_id: uuid.UUID
     operating_date: date
     assignment_id: uuid.UUID
+    is_mother: bool
 
 
 # El artículo y la OT/línea/PV salen de la asignación HISTÓRICA de la captura (la misma que la F3 de origen; lo garantiza 0005).
@@ -166,7 +168,8 @@ def get_quality_capture(connection, capture_id, *, sectors) -> QualityCaptureVie
 def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
     """Bobina F3 numerada o madre técnica P1-07 del alcance, nunca cría. Contexto de la captura histórica, no de asignación activa."""
     row = connection.execute(
-        """SELECT b.id, b.machine_id, c.shift_schedule_id, c.operating_date, c.assignment_id
+        """SELECT b.id, b.machine_id, c.shift_schedule_id, c.operating_date, c.assignment_id,
+                  b.rewind_mother_capture_id IS NOT NULL
            FROM vinto_txn.bobbin b JOIN vinto_txn.capture c ON c.id = b.source_capture_id
            JOIN vinto_master.machine m ON m.id = b.machine_id JOIN vinto_master.sector s ON s.id = m.sector_id
            WHERE b.id = %s AND (b.sequence_number IS NOT NULL OR b.rewind_mother_capture_id IS NOT NULL)
@@ -175,6 +178,29 @@ def _bobbin_context(connection, bobbin_id, sectors) -> _BobbinContext:
     if row is None or row[4] is None:
         raise BobbinNotFoundError()
     return _BobbinContext(*row)
+
+
+def _published_mother_form_version(connection, form_code: str, machine_id):
+    """La política propia de madres no modifica el catálogo F3 inmutable.
+    Solo seis formularios de área quality y máquinas P1-07. Se exige
+    autorización MF13 con grant individual en el router antes del INSERT.
+    """
+    machine = connection.execute(
+        "SELECT code FROM vinto_master.machine WHERE id=%s", (machine_id,),
+    ).fetchone()
+    if machine is None or not allows_mother_form(machine[0], form_code):
+        raise FormNotAvailableError()
+    latest = connection.execute(
+        """SELECT fv.id FROM vinto_config.form f
+           JOIN vinto_config.form_version fv ON fv.form_id=f.id
+           WHERE f.code=%s AND f.active AND fv.status='published'
+             AND fv.area='quality'
+           ORDER BY fv.version_number DESC LIMIT 1""",
+        (form_code,),
+    ).fetchone()
+    if latest is None:
+        raise FormNotAvailableError()
+    return latest[0]
 
 
 def available_bobbin_forms(connection, *, sectors, user=None) -> list[dict]:
@@ -355,7 +381,9 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         if gate is not None:  # con los bloqueos ya tomados, la bobina y su máquina definitivas deben ser las autorizadas
             gate.confirm_context(authorized_machine, _bobbin_context(connection, bobbin_id, sectors).machine_id)
-        form_version_id = cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA)
+        form_version_id = (_published_mother_form_version(connection, form_code, context.machine_id)
+                           if context.is_mother else
+                           cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA))
         fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
         _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
         _check_minimums(form_code, clean)
