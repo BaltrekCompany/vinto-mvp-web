@@ -20,6 +20,7 @@ from datetime import datetime
 
 from app.auth.errors import FormNotFoundError, FormNotLinkedToMachineError, MachineNotFoundError, UserNotFoundError
 from app.mp3_inspection_policy import allowed_for_machine
+from app.quality.mother_policy import allows_mother_form
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,7 @@ def _require_offered(connection, form_id, machine_id, machine_code, form_code) -
         raise FormNotLinkedToMachineError(f"El formulario {form_code!r} está inactivo")
     if not (machine_active and sector_active):
         raise FormNotLinkedToMachineError(f"La máquina {machine_code!r} o su sector está inactivo")
-    if not linked:
+    if not linked and not allows_mother_form(machine_code, form_code):
         raise FormNotLinkedToMachineError(f"La versión publicada vigente de {form_code!r} no está vinculada a la máquina {machine_code!r}")
 
 
