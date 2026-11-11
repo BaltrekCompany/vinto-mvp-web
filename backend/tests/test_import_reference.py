@@ -440,6 +440,76 @@ class ApplyTests(DatabaseCase):
         ).fetchall(), before_versions)
         self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
 
+    def test_upgrade_from_deployed_v2_to_v3_and_gambini_is_strictly_additive(self):
+        """Reproduce el release base 83c3a257: P1-11 v2 y 339 asociaciones.
+        El nuevo bundle solo añade P1-11 v3 y 10327/GAMBINI, sin sobrescrituras.
+        """
+        connection = self.open(self.new_database())
+        baseline = Path(__file__).parent / "fixtures" / "VINTO-P1-11-v2-baseline.json"
+        old_p111 = json.loads(baseline.read_text(encoding="utf-8"))
+        self.assertEqual((old_p111["code"], old_p111["version_number"]),
+                         ("VINTO-P1-11", 2))
+        old_pairs = tuple(
+            rel for rel in BUNDLE.article_machines
+            if not (rel["article_code"] == "10327" and rel["machine_code"] == "GAMBINI")
+        )
+        self.assertEqual(len(old_pairs), 339)
+        old_forms = tuple(
+            old_p111 if form["code"] == "VINTO-P1-11" else form
+            for form in BUNDLE.forms
+        )
+        previous = dataclasses.replace(
+            BUNDLE, article_machines=old_pairs, forms=old_forms,
+            source_checksum="4" * 64,
+        )
+        imported = reference.apply(connection, previous)
+        self.assertEqual(imported.mode, "applied")
+        before = connection.execute(
+            """SELECT fm.code, fv.version_number, fv.id, fv.definition_checksum, fv.published_at
+               FROM vinto_config.form_version fv
+               JOIN vinto_config.form fm ON fm.id=fv.form_id
+               ORDER BY fm.code, fv.version_number"""
+        ).fetchall()
+        self.assertEqual(sum(1 for row in before if row[0] == "VINTO-P1-11"), 1)
+        self.assertEqual(self.count(connection, "vinto_master.article_machine"), 339)
+
+        # El plan se examina antes del apply y no produce escrituras.
+        plan = reference.dry_run(connection, BUNDLE)
+        self.assertEqual(plan.state, "pending")
+        self.assertEqual(plan.conflicts, [])
+        expected = {
+            "article_machine": 1, "form_version": 1,
+            "form_version_machine": 3, "field_group": 1, "field": 7,
+            "option": 3,
+        }
+        actual = {entity: counts["create"] for entity, counts in plan.counts.items()
+                  if counts["create"] > 0}
+        self.assertEqual(actual, expected)
+        self.assertEqual(plan.pending_creates, 16)
+        self.assertEqual(self.count(connection, "vinto_master.article_machine"), 339)
+        self.assertEqual(connection.execute(
+            "SELECT count(*) FROM vinto_config.form_version v JOIN vinto_config.form f "
+            "ON v.form_id=f.id WHERE f.code='VINTO-P1-11'"
+        ).fetchone()[0], 1)
+
+        done = reference.apply(connection, BUNDLE)
+        self.assertEqual(done.mode, "applied")
+        self.assertEqual({entity: counts["create"] for entity, counts in done.counts.items()
+                          if counts["create"] > 0}, expected)
+        after = connection.execute(
+            """SELECT fm.code, fv.version_number, fv.id, fv.definition_checksum, fv.published_at
+               FROM vinto_config.form_version fv
+               JOIN vinto_config.form fm ON fm.id=fv.form_id
+               ORDER BY fm.code, fv.version_number"""
+        ).fetchall()
+        self.assertEqual([row for row in after if row in before], before)
+        new_versions = [row for row in after if row not in before]
+        self.assertEqual([(row[0], row[1]) for row in new_versions], [("VINTO-P1-11", 3)])
+        self.assertIsNotNone(new_versions[0][4])
+        self.assertEqual(self.count(connection, "vinto_master.article_machine"), 340)
+        self.assertEqual(reference.dry_run(connection, BUNDLE).state, "consistent")
+        self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
+
     def test_cli_dry_run_then_apply_then_noop(self):
         name = self.new_database()
         with patch.object(import_reference, "open_connection", side_effect=lambda target: connect(name)):
