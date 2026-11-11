@@ -115,3 +115,41 @@ export function parseQualityBobbinInbox(value: unknown): QualityBobbinInboxItem[
 export const NO_GRAMMAGE_LABEL = "Sin gramaje en maestro";
 export const grammageLabel = (grammage: string | null): string => (grammage === null ? NO_GRAMMAGE_LABEL : `${grammage} g/m²`);
 export const qualityStatusLabel = (status: QualityInboxStatus): string => (status === "pending" ? "Pendiente" : status === "released" ? "Liberada" : "Rechazada");
+
+
+// RB-P107-MOTHER: una captura P1-07 representa UNA madre declarada, no
+// 21 fichas independientes. La consulta opt-in incluye hermanas ya decididas
+// mientras quede una cría pendiente. No agrupar por etiqueta: la misma etiqueta
+// declarada puede repetirse en capturas distintas, y NO es una FK a F3.
+export type QualityBobbinFamily = QualityBobbinInboxItem & { children?: QualityBobbinInboxItem[] };
+
+export function groupQualityBobbinFamilies(items: QualityBobbinInboxItem[]): QualityBobbinFamily[] | null {
+    const result: QualityBobbinFamily[] = [];
+    const byCapture = new Map<string, QualityBobbinFamily>();
+    for (const item of items) {
+        const rw = item.bobbin.rewinding;
+        if (!rw) {
+            result.push(item);
+            continue;
+        }
+        const key = item.production.capture_id;
+        const existing = byCapture.get(key);
+        if (existing) {
+            // Fail closed: never combine children of distinct mother, OT, line or machine.
+            if (existing.bobbin.rewinding?.mother_label !== rw.mother_label
+                || existing.bobbin.machine.code !== item.bobbin.machine.code
+                || existing.production.work_order.id !== item.production.work_order.id
+                || existing.production.line.id !== item.production.line.id
+                || existing.children?.some(c => c.bobbin.id === item.bobbin.id || c.bobbin.rewinding?.child_position === rw.child_position))
+                return null;
+            existing.children?.push(item);
+        } else {
+            const family: QualityBobbinFamily = { ...item, children: [item] };
+            byCapture.set(key, family);
+            result.push(family);
+        }
+    }
+    for (const family of byCapture.values())
+        family.children?.sort((a, b) => (a.bobbin.rewinding?.child_position ?? 0) - (b.bobbin.rewinding?.child_position ?? 0));
+    return result;
+}

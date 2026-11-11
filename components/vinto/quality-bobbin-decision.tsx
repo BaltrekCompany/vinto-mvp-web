@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { REJECTION_CLASSES, REJECTION_TYPES, submitQualityDecision } from "@/lib/vinto/quality-decision-api";
@@ -9,6 +9,7 @@ type Props = { item: QualityBobbinInboxItem; refresh: () => void };
 
 export function QualityBobbinDecision({ item, refresh }: Props) {
     const [open, setOpen] = useState(false);
+    const dialogRef = useRef<HTMLElement>(null);
     const [review, setReview] = useState(false);
     const [rejectionType, setRejectionType] = useState("");
     const [classification, setClassification] = useState("");
@@ -23,10 +24,43 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
     const typeLabel = REJECTION_TYPES.find(x => x.value === rejectionType)?.label ?? "Sin seleccionar";
     const classLabel = REJECTION_CLASSES.find(x => x.value === classification)?.label ?? "Sin seleccionar";
     const child = item.bobbin.rewinding;
+    const isChild = Boolean(child);
+    const actionable = item.quality.status === "pending";
+
+    // Sólo crías P1-07: modal con foco encerrado y Escape para cancelar.
+    // F3 conserva su presentación anterior y sus propios controles.
+    useEffect(() => {
+        if (!open || !isChild) return;
+        const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+        ) ?? []);
+        focusable()[0]?.focus();
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === "Escape" && !busy) {
+                event.preventDefault();
+                setOpen(false);
+                setReview(false);
+            }
+            if (event.key !== "Tab") return;
+            const nodes = focusable();
+            if (nodes.length === 0) { event.preventDefault(); return; }
+            const first = nodes[0], last = nodes[nodes.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => { window.removeEventListener("keydown", onKey); previous?.focus(); };
+    }, [open, isChild, busy]);
     const subject = child ? `cría ${child.child_position} de la madre ${child.mother_label}` : `bobina ${item.bobbin.code}`;
 
     async function submit(action: "release" | "reject") {
-        if (busy || done || (action === "reject" && (!canReject || !review))) return;
+        if (!actionable || busy || done || (action === "reject" && (!canReject || !review))) return;
         // La identidad/idempotencia y el control transaccional siguen en el backend.
         // Cada decision confirmada conserva exactamente el contrato de PR #159.
         const decision_id = crypto.randomUUID();
@@ -56,7 +90,7 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
 
     return <div className="min-w-0 space-y-2" data-quality-decision={item.bobbin.id}>
         <div className="grid grid-cols-2 gap-2">
-            <Button size="sm" className="bg-[#146b4f]" disabled={busy || done}
+            <Button size="sm" className="bg-[#146b4f]" disabled={!actionable || busy || done}
                 aria-label={`Liberar ${subject}`}
                 onClick={() => {
                     if (window.confirm(`¿Liberar definitivamente ${subject} de ${item.bobbin.machine.code} (OT ${item.production.work_order.number}, línea ${item.production.line.line_code})? Esta decisión quedará registrada y no se puede deshacer desde esta pantalla.`))
@@ -64,13 +98,16 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
                 }}>
                 Liberar
             </Button>
-            <Button size="sm" variant="outline" disabled={busy || done} aria-expanded={open}
+            <Button size="sm" variant="outline" disabled={!actionable || busy || done} aria-expanded={open}
                 aria-label={`Rechazar ${subject}`}
                 onClick={() => { setOpen(v => !v); setReview(false); setError(""); }}>
                 Rechazar
             </Button>
         </div>
-        {open && <section className="min-w-0 space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm" aria-label={`Rechazo de ${subject}`}>
+        {open && <div className={isChild ? "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6" : ""}>
+            {isChild && <button type="button" className="absolute inset-0 bg-slate-950/50" aria-label="Cerrar rechazo sin guardar" disabled={busy} onClick={() => { setOpen(false); setReview(false); }}/>}
+            <section ref={dialogRef} role={isChild ? "dialog" : undefined} aria-modal={isChild ? true : undefined}
+                className={isChild ? "relative z-10 max-h-[90vh] w-full max-w-xl space-y-3 overflow-y-auto rounded-xl border border-rose-200 bg-white p-4 text-sm shadow-xl sm:p-6" : "min-w-0 space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm"} aria-label={`Rechazo de ${subject}`}>
             <h4 className="font-bold">Rechazar {subject} — {item.bobbin.machine.code}</h4>
             {child && <p className="rounded-md border border-rose-200 bg-white p-2 text-xs text-slate-900">
                 Madre declarada: <strong>{child.mother_label}</strong> · Cría <strong>{child.child_position}</strong> ·
@@ -122,8 +159,9 @@ export function QualityBobbinDecision({ item, refresh }: Props) {
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setOpen(false); setReview(false); }}>Cancelar</Button>
                 </div>
             </>}
-        </section>}
-        {error && <p role="alert" className="text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
+            {isChild && error && <p role="alert" className="rounded-md bg-red-50 p-2 text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
+        </section></div>}
+        {!isChild && error && <p role="alert" className="text-xs font-medium text-red-800">{error} <button type="button" className="underline" onClick={refresh}>Actualizar</button></p>}
         {done && <p role="status" className="text-xs font-medium text-green-800">Decisión guardada</p>}
     </div>;
 }

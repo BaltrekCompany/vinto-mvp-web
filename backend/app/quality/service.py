@@ -1,4 +1,4 @@
-"""Bandeja central de Calidad para Bobinas F3 (solo lectura).
+"""Bandeja central de Calidad para Bobinas F3 y crías P1-07 (solo lectura).
 
 La autoridad de la bandeja es vinto_txn.quality_release.status. NO depende de la asignación activa, del turno o la fecha
 actuales, de la máquina seleccionada ni de la OT en ejecución: una Bobina pendiente sigue ahí aunque su asignación haya
@@ -72,7 +72,18 @@ _SQL = """SELECT b.id, b.code, m.code, m.name, COALESCE(b.management_start_year,
           JOIN vinto_master.article_version av ON av.id = b.article_version_id
           JOIN vinto_master.article ar ON ar.id = av.article_id
           WHERE (b.sequence_number IS NOT NULL OR b.rewind_child_position IS NOT NULL)
-            AND q.status = %s AND s.code = ANY(%s)
+            AND s.code = ANY(%s)
+            AND (
+              q.status = %s
+              OR (%s AND b.rewind_child_position IS NOT NULL AND EXISTS (
+                  SELECT 1
+                  FROM vinto_txn.bobbin sibling
+                  JOIN vinto_txn.quality_release sibling_quality ON sibling_quality.bobbin_id = sibling.id
+                  WHERE sibling.source_capture_id = b.source_capture_id
+                    AND sibling.rewind_child_position IS NOT NULL
+                    AND sibling_quality.status = 'pending'
+              ))
+            )
           ORDER BY c.captured_at DESC, b.id DESC"""
 
 
@@ -80,10 +91,14 @@ def _text(value):
     return None if value is None else format(value, "f")  # decimales como texto exacto, sin float
 
 
-def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors) -> list[QualityBobbinView]:
+def list_quality_bobbins(connection, status: str = DEFAULT_STATUS, *, sectors, include_rewinding_family: bool = False) -> list[QualityBobbinView]:
     if status not in QUALITY_STATUSES:
         raise ValueError(f"Estado de calidad desconocido: {status!r}")
-    rows = connection.execute(_SQL, (status, list(scoped_sector_codes(sectors)))).fetchall()
+    # Opt-in de la interfaz: conservar visibles las hermanas ya decididas mientras
+    # quede alguna cría pendiente de esa MISMA captura P1-07. El endpoint legado,
+    # incluidos los filtros released/rejected, conserva exactamente su contrato.
+    expand = include_rewinding_family and status == DEFAULT_STATUS
+    rows = connection.execute(_SQL, (list(scoped_sector_codes(sectors)), status, expand)).fetchall()
     views = []
     for row in rows:
         r = list(row)

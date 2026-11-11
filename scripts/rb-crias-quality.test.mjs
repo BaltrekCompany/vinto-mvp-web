@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { P107_CRIA_NUMBERS, P107_FIELDS } from "../lib/vinto/p1-07.ts";
-import { parseQualityBobbinInbox, parseQualityBobbinInboxItem } from "../lib/vinto/quality-bobbins.ts";
+import { groupQualityBobbinFamilies, parseQualityBobbinInbox, parseQualityBobbinInboxItem } from "../lib/vinto/quality-bobbins.ts";
 
 const id = "40b936c3-387f-4399-a394-33642813ffbd";
 const mother = "RB-MADRE-DECLARADA";
@@ -29,6 +29,7 @@ const child = (position = 13) => ({
     ...source,
     bobbin: {
         ...source.bobbin,
+        id: `f96d57a1-ab3d-4d5d-93c0-${String(position).padStart(12,"0")}`,
         machine: { code: "COPASA", name: "Copasa" },
         code: `CRIA-${id.replace(/-/g,"")}-${position}`,
         sequence_number: null,
@@ -91,13 +92,46 @@ test("F3 item remains strict and without added origin keys", () => {
     assert.equal(parseQualityBobbinInboxItem({...source,bobbin:{...source.bobbin,sequence_number:null}}),null);
 });
 
+test("P1-07 mother shows one family card while F3 stays independent", () => {
+    const f3 = source;
+    const items = [child(13), f3, child(1), child(2)];
+    const groups = groupQualityBobbinFamilies(parseQualityBobbinInbox(items));
+    assert.ok(groups);
+    assert.equal(groups.length, 2);
+    assert.equal(groups[0].production.capture_id, id);
+    assert.deepEqual(groups[0].children.map(x => x.bobbin.rewinding.child_position), [1, 2, 13]);
+    assert.equal(groups[1].children, undefined);
+    assert.equal(groups[1].bobbin.code, "1");
+
+    // Dos capturas con la MISMA etiqueta declarada son dos madres, nunca una.
+    const secondId = "9a4c7542-912a-4afd-89ba-3f956ef2c831";
+    const otherCapture = { ...child(1),
+        production: { ...child(1).production, capture_id: secondId },
+        bobbin: { ...child(1).bobbin, code: `CRIA-${secondId.replace(/-/g,"")}-1` },
+    };
+    const separate = groupQualityBobbinFamilies(parseQualityBobbinInbox([child(1), otherCapture]));
+    assert.equal(separate?.length, 2);
+    assert.equal(separate[0].bobbin.rewinding.mother_label, separate[1].bobbin.rewinding.mother_label);
+
+    const decided = { ...child(13), quality: { status: "rejected" } };
+    const withSibling = groupQualityBobbinFamilies(parseQualityBobbinInbox([child(2), decided]));
+    assert.deepEqual(withSibling[0].children.map(x => x.quality.status), ["pending", "rejected"]);
+    assert.equal(groupQualityBobbinFamilies(parseQualityBobbinInbox([child(13), child(13)])), null);
+    assert.equal(groupQualityBobbinFamilies(parseQualityBobbinInbox([
+        child(13), { ...child(2), bobbin: { ...child(2).bobbin,
+            rewinding: { ...child(2).bobbin.rewinding, mother_label: "OTRA MADRE" } } },
+    ])), null);
+});
+
 test("Quality child UI displays position and mother, not an official sequence; buttons reuse existing endpoint", () => {
     const inbox = readFileSync(new URL("../components/vinto/quality-bobbin-inbox.tsx",import.meta.url),"utf8");
     const decision = readFileSync(new URL("../components/vinto/quality-bobbin-decision.tsx",import.meta.url),"utf8");
-    assert.match(inbox,/Cría \$\{i\.bobbin\.rewinding\.child_position\}/);
+    assert.match(inbox,/Cría \{child\.bobbin\.rewinding\?\.child_position\}/);
     assert.match(inbox,/Etiqueta \/ bobina madre/);
-    assert.match(inbox,/controles físicos F3 no se habilitan/i);
-    assert.match(decision,/mother_label|mother_label|mother_label/); // no usado como etiqueta literal: variable tipada
+    assert.match(inbox,/no habilita sus controles físicos/i);
+    assert.match(decision,/mother_label/); // no usado como etiqueta literal: variable tipada
     assert.match(decision,/subject/);
     assert.match(decision,/submitQualityDecision\(item\.bobbin\.id/);
+    assert.match(inbox,/groupQualityBobbinFamilies\(resource\.data\)/);
+    assert.match(decision,/role=\{isChild \? "dialog" : undefined\}/);
 });

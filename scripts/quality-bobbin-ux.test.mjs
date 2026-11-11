@@ -11,13 +11,13 @@ const decision = read("../components/vinto/quality-bobbin-decision.tsx");
 const api = read("../lib/vinto/quality-decision-api.ts");
 
 test("each pending bobbin has visible decisions, without a wide horizontal table", () => {
-  assert.match(inbox, /items\.map\(i => <article key=\{i\.bobbin\.id\}/);
+  assert.match(inbox, /items\.map\(i => <article key=\{i\.bobbin\.rewinding \? i\.production\.capture_id : i\.bobbin\.id\}/);
   assert.match(inbox, /<QualityBobbinDecision item=\{i\} refresh=\{refresh\}\/>/);
   assert.match(decision, /grid grid-cols-2 gap-2/);
   assert.match(decision, />\s*Liberar\s*<\/Button>/);
   assert.match(decision, />\s*Rechazar\s*<\/Button>/);
   assert.doesNotMatch(inbox, /<table|min-w-\[1320px\]|overflow-x-auto/);
-  assert.match(inbox, /aria-label=\{"Bobina " \+ i\.bobbin\.code/);
+  assert.match(inbox, /"Bobina " \+ i\.bobbin\.code/);
 });
 
 test("secondary controls and full production metadata remain reachable", () => {
@@ -58,6 +58,9 @@ test("release still confirms context and the endpoint contract remains unchanged
   assert.match(decision, /submit\("release"\)/);
   assert.match(decision, /submitQualityDecision\(item\.bobbin\.id, body\)/);
   assert.match(decision, /crypto\.randomUUID\(\)/);
+  assert.match(decision, /role=\{isChild \? "dialog" : undefined\}/);
+  assert.match(decision, /aria-modal=\{isChild \? true : undefined\}/);
+  assert.match(decision, /!actionable \|\| busy \|\| done/);
   assert.match(api, /requestJson\(\`\/api\/quality\/bobbins\/\$\{encodeURIComponent\(bobbinId\)\}\/decision\`/);
   for (const text of [inbox, decision]) {
     assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB|document\.cookie|setInterval|\bfetch\(/);
