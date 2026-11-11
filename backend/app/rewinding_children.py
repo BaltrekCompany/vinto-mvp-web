@@ -1,6 +1,7 @@
 """RB-CRIA-01: crear N crías auditables para UNA captura P1-07 versión 3+.
 
 La madre es una etiqueta DECLARADA (opción A), no una FK a bobina F3.
+La fila técnica madre se identifica por captura y no representa una bobina F3.
 Cada cría se crea con su UUID y una fila quality_release pending en la MISMA
 transacción de captura; sin numeración industrial inventada ni bobbin_relation.
 El lock/idempotencia de capture_id lo impone capture_service antes de entrar.
@@ -48,6 +49,16 @@ def create_children(connection, *, capture_id, form_version_id, machine_id, assi
 
     if not entries or entries[0][0] != 1:
         raise CaptureValidationError("peso_cria_1: obligatorio")
+
+    # Una madre por CAPTURA P1-07, no por texto declarado ni por posición.
+    # No consume secuencias industriales ni tiene quality_release: las
+    # decisiones independientes siguen perteneciendo SOLO a las crías.
+    connection.execute(
+        """INSERT INTO vinto_txn.bobbin
+           (code, source_capture_id, article_version_id, machine_id, rewind_mother_capture_id)
+           VALUES (%s,%s,%s,%s,%s)""",
+        (f"MADRE-{capture_id.hex}", capture_id, article[0], machine_id, capture_id),
+    )
 
     for position, weight in entries:
         # Código exclusivamente técnico estable; el UI muestra "Cría N", nunca
