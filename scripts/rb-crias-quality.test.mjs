@@ -103,6 +103,16 @@ test("P1-07 mother shows one family card while F3 stays independent", () => {
     assert.equal(groups[1].children, undefined);
     assert.equal(groups[1].bobbin.code, "1");
 
+    // Dos capturas con la MISMA etiqueta declarada son dos madres, nunca una.
+    const secondId = "9a4c7542-912a-4afd-89ba-3f956ef2c831";
+    const otherCapture = { ...child(1),
+        production: { ...child(1).production, capture_id: secondId },
+        bobbin: { ...child(1).bobbin, code: `CRIA-${secondId.replace(/-/g,"")}-1` },
+    };
+    const separate = groupQualityBobbinFamilies(parseQualityBobbinInbox([child(1), otherCapture]));
+    assert.equal(separate?.length, 2);
+    assert.equal(separate[0].bobbin.rewinding.mother_label, separate[1].bobbin.rewinding.mother_label);
+
     const decided = { ...child(13), quality: { status: "rejected" } };
     const withSibling = groupQualityBobbinFamilies(parseQualityBobbinInbox([child(2), decided]));
     assert.deepEqual(withSibling[0].children.map(x => x.quality.status), ["pending", "rejected"]);
