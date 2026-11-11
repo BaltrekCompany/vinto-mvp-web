@@ -73,7 +73,7 @@ class ApprovedBundleTests(unittest.TestCase):
         # Valor calculado mediante load_bundle().source_checksum del manifest aprobado
         # en main c10d0c8 (2026-11-09). CV-P111-v3: nuevo manifest y checksum tras versión aditiva P1-11; versiones anteriores no se modifican.
         self.assertEqual(BUNDLE.source_checksum, compute_source_checksum(BUNDLE.manifest))
-        self.assertEqual(BUNDLE.source_checksum, "77c4bd49f2e773a2932c21457f119c255506e2ad328e94de820ee928b4ae3149")
+        self.assertEqual(BUNDLE.source_checksum, "45c09d5f2d0e6812e87161012532aca243f7166ad9b74cc5dfca0dc2d622054f")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
         self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])
@@ -81,7 +81,10 @@ class ApprovedBundleTests(unittest.TestCase):
         self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "REBOBINADO"), ["BELOIT", "COPASA", "OVER", "PERICHUN", "TUBETERA"])
         self.assertEqual(sorted(m["code"] for m in BUNDLE.machines if m["sector"] == "CONVERSION"),
                          ["8002", "8_2", "8_5", "GAMBINI", "OMET_I", "OMET_II", "PANUELERA", "SERV_4", "SINCRO_II", "SINCRO_III", "WALLY"])
-        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (315, 339))
+        self.assertEqual((len(BUNDLE.articles), len(BUNDLE.article_machines)), (315, 340))
+        # CV-P111: excepción artículo/máquina aprobada para Conversión: preservar SINCRO II/III.
+        self.assertEqual({r["machine_code"] for r in BUNDLE.article_machines if r["article_code"] == "10327"},
+                         {"GAMBINI", "SINCRO_II", "SINCRO_III"})
 
     def test_a_sector_without_schedules_is_allowed_because_it_stays_blocked_by_the_missing_shift(self):
         # CLOUD-DEP G.12-C4-FINAL25: BOBINAS/REBOBINADO/CONVERSION ya son todos reales; with_future_sector

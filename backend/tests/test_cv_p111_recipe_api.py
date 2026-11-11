@@ -78,9 +78,9 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
             self.cookies[role] = response.set_cookie_value()
         return self.cookies[role]
 
-    async def assignment(self, article=PRODUCT):
+    async def assignment(self, article=PRODUCT, machine="SINCRO_II"):
         response = await call("POST", "/api/work-orders", cookie=await self.cookie("JEFATURA"),
-                              json_body={"machine_code": "SINCRO_II", "lines": [{
+                              json_body={"machine_code": machine, "lines": [{
                                   "pv_reference": "PV-P111", "article_code": article,
                                   "quantity": 10, "due_date": "2026-11-01"}]})
         self.assertEqual(response.status, 201, response.text)
@@ -146,6 +146,24 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
         again = await self.post(request)
         self.assertEqual(again.status, 200, again.text)
         self.assertTrue(again.json()["already_submitted"])
+
+    async def test_10327_is_approved_in_gambini_preserving_sincro_links(self):
+        """Excepción operativa autorizada: 10327 es Conversión en el Excel;
+        la máquina GAMBINI es una decisión explícita, no un campo del Excel."""
+        permitted = self.connection.execute(
+            """SELECT m.code FROM vinto_master.article_machine am
+               JOIN vinto_master.article a ON a.id=am.article_id
+               JOIN vinto_master.machine m ON m.id=am.machine_id
+               WHERE a.code=%s ORDER BY m.code""", (PRODUCT,)).fetchall()
+        self.assertEqual([r[0] for r in permitted], ["GAMBINI", "SINCRO_II", "SINCRO_III"])
+        assignment = await self.assignment(machine="GAMBINI")
+        result = await self.post(self.payload(assignment, [
+            self.row(tipo_material="M3-3038", numero_bobina="M3-EN-GAMBINI")]))
+        self.assertEqual(result.status, 201, result.text)
+        capture = result.json()["capture"]
+        self.assertEqual(capture["machine"]["code"], "GAMBINI")
+        self.assertEqual(capture["line"]["article"]["code"], PRODUCT)
+        self.assertEqual(capture["values"]["_groups"]["bobinas"][0]["tipo_material"], "M3-3038")
 
     async def test_three_rows_and_positions_persist_in_order(self):
         assignment = await self.assignment()

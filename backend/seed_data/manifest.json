@@ -178,8 +178,8 @@
   "files": [
     {
       "path": "article_machines.json",
-      "sha256": "31a064e13da78ad2ad7ea193c5007cfe161989e73e51f0c4e44a87053ddd68d2",
-      "bytes": 25922
+      "sha256": "1f6c02ff4906bcd1dcf19b9a9492dddca1b024fbbf1caf3bef68f51eae65f02a",
+      "bytes": 25998
     },
     {
       "path": "articles.json",
@@ -358,7 +358,7 @@
     "sectors": 3,
     "machines": 18,
     "articles": 315,
-    "article_machines": 339,
+    "article_machines": 340,
     "articles_also_material": 110,
     "articles_with_nominal_weight": 0,
     "articles_with_grammage": 236,
