@@ -67,7 +67,7 @@ export function createP111V3Attempt(draft: P111V3Draft, assignmentId: string, de
 }
 
 // Vista derivada; los números originales se envían como texto normalizado sin redondeo.
-export function calculatedConsumption(row: Readonly<Record<string, string>>): string {
+export function calculatedConsumption(row: Readonly<Partial<Record<"saldo_inicial_kg" | "ingreso_kg" | "saldo_final_kg", string>>>): string {
     const get = (key: string) => {
         const raw = (row[key] ?? "").trim().replace(",", ".");
         return /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
