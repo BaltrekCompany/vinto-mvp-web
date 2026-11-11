@@ -240,6 +240,35 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
         pending = await self.inbox()
         self.assertEqual([x["bobbin"]["rewinding"]["child_position"] for x in pending
                           if x["production"]["capture_id"] == body["capture_id"]], [3])
+
+        # Opt-in UI: UNA ficha de madre muestra las 3 crías, incluso las
+        # decididas, mientras la tercera siga pendiente. La API legacy no cambia.
+        family = await call(
+            "GET", "/api/quality/bobbins?include_rewinding_family=true",
+            cookie=await self.cookie("CALIDAD"),
+        )
+        self.assertEqual(family.status, 200, family.text)
+        siblings = [x for x in family.json() if x["production"]["capture_id"] == body["capture_id"]]
+        self.assertEqual(
+            [(x["bobbin"]["rewinding"]["child_position"], x["quality"]["status"]) for x in
+             sorted(siblings, key=lambda row: row["bobbin"]["rewinding"]["child_position"])],
+            [(1, "released"), (2, "rejected"), (3, "pending")],
+        )
+        self.assertEqual({x["bobbin"]["rewinding"]["mother_label"] for x in siblings}, {"MADRE-TEXTO-0001"})
+        self.assertEqual({x["bobbin"]["id"] for x in siblings}, {str(i) for i in ids})
+        # La cría 3 termina: ninguna ficha de madre completamente decidida
+        # permanece en una bandeja de PENDIENTES; los historiales siguen en BD.
+        third = await call("POST", endpoint(ids[2]),
+                           json_body={"decision_id": str(uuid4()), "action": "release"},
+                           cookie=await self.cookie("CALIDAD"))
+        self.assertEqual(third.status, 200, third.text)
+        finished = await call(
+            "GET", "/api/quality/bobbins?include_rewinding_family=true",
+            cookie=await self.cookie("CALIDAD"),
+        )
+        self.assertEqual(finished.status, 200, finished.text)
+        self.assertFalse(any(x["production"]["capture_id"] == body["capture_id"] for x in finished.json()))
+
         self.assertEqual(sum(x["bobbin"]["id"] == str(ids[0]) for x in await self.inbox("released")), 1)
         self.assertEqual(sum(x["bobbin"]["id"] == str(ids[1]) for x in await self.inbox("rejected")), 1)
 
