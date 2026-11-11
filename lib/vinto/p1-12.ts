@@ -12,14 +12,10 @@ import { defineCandidateForm, type FieldSpec } from "./candidate-form.ts";
 
 export const P1_12_CODE = "VINTO-P1-12";
 
-// ---- decisiones pendientes de VINTO (NO son reglas confirmadas) --------------------------------------------------------------------------
-
-export const PENDING_NOTES: readonly { key: string; label: string; pending: string }[] = [
-    { key: "pallet", label: "Número oficial de pallet", pending: "Pendiente de definición: no se genera ni se asume ningún correlativo. La captura se identifica solo con su identificador técnico." },
-    { key: "peso", label: "Peso nominal y peso total", pending: "Pendiente: el maestro de pesos nominales no está homologado. No se calcula ni se guarda ningún peso." },
-    { key: "balances", label: "Empaque, saldos y mermas", pending: "La definición legacy los declara (37 campos); esta hipótesis solo registra el pallet." },
-    { key: "firma", label: "Firma / grupo", pending: "Sin mecanismo de firma ni concepto de grupo en el modelo central; no se simulan." },
-];
+// CV-P112-01: decisiones de pallet, correlativo y peso ya homologadas en v4.
+// Mantener la exportación legacy evita romper consumidores antiguos; no quedan
+// avisos pendientes para la captura vigente. Los formularios v1-v3 son históricos.
+export const PENDING_NOTES: readonly { key: string; label: string; pending: string }[] = [];
 
 // ---- valores y respuestas ----------------------------------------------------------------------------------------------------------------
 
@@ -29,7 +25,7 @@ export type P112Submission = SubmissionOf<P112Capture>;
 
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/; // lo que envía el cliente
 const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/; // PostgreSQL devuelve la hora con segundos (HH:MM:SS)
-const INTEGER = /^-?\d+$/; // entero con signo opcional: es el mismo formato que acepta el backend; NO hay mínimo industrial (ver docs/M6-B-conversion-p112.md)
+const INTEGER = /^\d{1,9}$/; // P1-12 v4: misma cota de jabas enteras positivas del formulario vigente
 
 // Hora tal como se muestra: HH:MM (los segundos que añade PostgreSQL no se muestran).
 export const shortHour = (value: string): string => value.slice(0, 5);
@@ -62,7 +58,7 @@ export function normalizeP112Draft(draft: P112Draft): P112DraftCheck {
     const errors: string[] = [];
     const jabas = draft.cantidad_jabas.trim(), start = draft.hora_inicio.trim(), end = draft.hora_fin.trim();
     if (!jabas) errors.push(`${P112_LABELS.cantidad_jabas}: es obligatorio.`);
-    else if (!INTEGER.test(jabas) || !Number.isSafeInteger(Number(jabas))) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un número entero.`);
+    else if (!INTEGER.test(jabas) || Number(jabas) <= 0) errors.push(`${P112_LABELS.cantidad_jabas}: debe ser un entero positivo de hasta 9 dígitos.`);
     for (const [key, text] of [["hora_inicio", start], ["hora_fin", end]] as const) {
         if (!text) errors.push(`${P112_LABELS[key]}: es obligatorio.`);
         else if (!HOUR.test(text)) errors.push(`${P112_LABELS[key]}: debe tener formato HH:MM.`);
