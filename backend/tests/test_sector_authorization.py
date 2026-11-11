@@ -684,13 +684,14 @@ class DataBaltrekCompatibilityTests(unittest.IsolatedAsyncioTestCase):
         late = create_user(self.connection, username="bfc.late", display_name="late", profile_code="DATA_BALTREK", password="pw-late-" + uuid4().hex)
         self.assertEqual(sector_codes_for_user(self.connection, late.user_id), frozenset())
 
-    async def test_a_user_with_several_profiles_gets_exactly_one_grant_and_inactive_profiles_or_users_none(self):
+    async def test_a_single_profile_gets_exactly_one_grant_and_inactive_profiles_or_users_none(self):
         database = copy_database(f3.STATE["template"], "vinto_bfmulti")
         try:
             with scope.connect(database) as connection:
                 connection.execute("DROP TABLE vinto_master.user_sector")
-                multi = create_user(connection, username="bfm.multi", display_name="multi", profile_code="JEFATURA", password="pw-" + uuid4().hex).user_id
-                connection.execute("INSERT INTO vinto_master.user_profile (user_id, profile_id) SELECT %s, id FROM vinto_master.profile WHERE code IN ('CALIDAD','DATA_BALTREK')", (multi,))
+                # USR-02: cada usuario tiene exactamente un perfil; el backfill 0006
+                # debe conceder una sola fila sin depender del viejo modelo multiperfil.
+                multi = create_user(connection, username="bfm.multi", display_name="multi", profile_code="DATA_BALTREK", password="pw-" + uuid4().hex).user_id
                 only_inactive_profile = create_user(connection, username="bfm.inactiveprofile", display_name="ip", profile_code="SUPERVISION", password="pw-" + uuid4().hex).user_id
                 connection.execute("UPDATE vinto_master.profile SET active=false WHERE code='SUPERVISION'")
                 gone = create_user(connection, username="bfm.gone", display_name="gone", profile_code="OPERACION", password="pw-" + uuid4().hex).user_id
