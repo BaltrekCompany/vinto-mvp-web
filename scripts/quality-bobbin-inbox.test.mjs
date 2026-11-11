@@ -123,7 +123,7 @@ const programmingBody = page.slice(page.indexOf("function QualityProgrammingNote
 const trackingBody = page.slice(page.indexOf("function Tracking("), page.indexOf("// ====", page.indexOf("function Tracking(")));
 
 test("the API consumes GET /api/quality/bobbins and nothing else", () => {
-  assert.match(api, /"\/api\/quality\/bobbins"/);
+  assert.match(api, /"\/api\/quality\/bobbins\?include_rewinding_family=true"/);
   assert.equal(/POST|PATCH|PUT|DELETE|method:/.test(api), false);
   assert.equal(/Authorization|document\.cookie|localStorage|sessionStorage/.test(api), false);
   assert.match(api, /requestJson/);
@@ -139,7 +139,7 @@ test("the inbox code never touches browser storage or local records", () => {
 test("the component lists read-only; its only actions are refresh, opening the humidity or physical-properties control and opening the control history of that bobbin", () => {
   assert.equal(/Liberar|Rechazar|liberar|rechazar/.test(component), false);
   const clicks = [...component.matchAll(/onClick=\{([^}]*)\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(clicks.sort(), ["() => onRegisterCandidate?.(screen, i)", "() => onRegisterHumidity(i)", "() => onRegisterProperties(i)", "() => onViewHistory(i)", "refresh"]);
+  assert.deepEqual(clicks.sort(), ["() => onRegisterCandidate?.(screen, i)", "() => onRegisterHumidity(i)", "() => onRegisterProperties(i)", "() => onViewHistory(i)", "refresh", "refresh"].sort());
   // las acciones de la fila nombran la Bobina concreta (lectores de pantalla) y reciben ESE item
   assert.match(component, /aria-label=\{`Registrar humedad de la bobina \$\{i\.bobbin\.code\}/);
   assert.match(component, /aria-label=\{`Registrar propiedades físicas de la bobina \$\{i\.bobbin\.code\}/);
@@ -156,7 +156,8 @@ test("the component lists read-only; its only actions are refresh, opening the h
 test("the inbox retains loading/error, empty, counter and all operational information", () => {
   assert.match(component, /CentralStatus/);
   assert.match(component, /No hay bobinas pendientes de Calidad\./);
-  assert.match(component, /Pendientes: \{items\.length\}/);
+  assert.match(component, /Pendientes: \{pendingCount\}/);
+  assert.match(component, /Fichas: \{items\.length\}/);
   for (const label of ["Bobina", "Máquina", "OT", "Línea / PV", "Artículo", "Fecha operativa", "Turno", "Hora inicio", "Hora fin", "Gramaje", "Diámetro (mm)", "Peso (kg)", "Cortes", "Observaciones", "Estado"]) {
     assert.ok(component.includes(label), label);
   }
@@ -204,7 +205,7 @@ test("UX: responsive compact cards keep primary decisions visible and disclose s
   assert.match(page, /lg:grid-cols-\[270px_minmax\(0,1fr\)\]/);
   assert.match(page, /<section className="min-w-0 p-4 md:p-8">/);
   assert.match(component, /min-w-0 max-w-full rounded-2xl/);
-  assert.match(component, /<article key=\{i\.bobbin\.id\}/);
+  assert.match(component, /<article key=\{i\.bobbin\.rewinding \? i\.production\.capture_id : i\.bobbin\.id\}/);
   assert.match(component, /grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3/);
   assert.match(component, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(260px,310px\)\]/);
   assert.match(component, /<QualityBobbinDecision item=\{i\} refresh=\{refresh\}\/>/);
