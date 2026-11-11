@@ -1,29 +1,31 @@
-# VINTO P1-07 — Controles de Calidad propios de madre (contrato funcional confirmado 11/11/2026)
+# RB-P107-MQ — Calidad propia de la madre P1-07
 
-**Estado:** en desarrollo, rama aislada. No fusionar ni desplegar mientras falten las rutas de Calidad, disponibilidad, UI y QA integral.
+**Contrato aprobado:** 11/11/2026. **Estado:** implementación en PR #176 DRAFT; sin merge ni despliegue.
 
-## Contrato aprobado
-- UNA madre por captura P1-07 (versión 3+), identificada por el UUID de la captura, **no por la etiqueta** declarada y sin FK a una bobina F3 de MP1/MP3.
-- Mostrar a la derecha de la madre los controles de la referencia: P1-19 (humedad), P1-20 (propiedades físicas), P1-21 (perfil de gramaje y humedad), P1-24 (propiedades físicas en húmedo), P1-25 (resistencia en húmedo-curado), P1-28 (ficha documental) y **Ver controles**.
-- Cada registro de Calidad pertenece a esa madre; persistir con autor, fechas, versión, valores y trazabilidad de captura. Permitir múltiples ensayos e historial; no asumir cardinalidad uno-a-uno.
-- Estos controles NUNCA cambian automáticamente el estado de la madre ni el de sus crías. La madre no tendrá acciones liberar/rechazar. Las crías mantienen sus decisiones, UUID, posiciones y auditoría existentes.
-- F3 MP1/MP3 y sus versiones publicadas, elegibilidad, números correlativos, endpoints e historiales permanecen sin alterarse.
-- Para crías pendientes o ya decididas, la ficha madre debe poder consultarse sin depender de asignaciones activas; no esconder sus controles al cerrar la última cría.
+## Contrato funcional
+- Cada captura P1-07 v3+ genera UNA identidad de madre basada en el UUID de captura, aunque la etiqueta se repita. No es bobina F3 numerada.
+- Sus controles: P1-19 Humedad; P1-20 Propiedades físicas; P1-21 Perfil gramaje y humedad (candidato); P1-24 Propiedades físicas en húmedo (candidato); P1-25 Resistencia en húmedo-curado (candidato); P1-28 Ficha documental (candidato), con `Ver controles` e historial.
+- Las decisiones liberar/rechazar y sus estados se conservan por cría, nunca en la madre. Capturar un control NO modifica `quality_release`.
+- El panel de F3 MP1/MP3 y sus formularios publicables originales quedan iguales.
+- Consulta opcional de madres con todas las crías ya decididas mediante "Ver madres finalizadas".
 
-## Auditoría de restricciones existentes
-1. `vinto_txn.capture.bobbin_id` y `guard_capture_bobbin` (migración 0005) aceptan **únicamente F3 numeradas** y exigen coincidencia de contexto.
-2. `quality.capture_service._bobbin_context` exige `sequence_number`; `cs.published_form_version` exige versión publicada vinculada a la máquina.
-3. P1-19/20/21/24/25/28 están publicados y vinculados únicamente a MP1/MP3, no a COPASA/BELOIT/OVER.
-4. Disponibilidad y autorizaciones del MF-13 consideran permiso `quality.capture`, sector, formulario publicado y concesión por usuario/máquina/formulario.
-5. Las variantes candidatas P1-21/24/25/28 se conservan como `candidato`, sin homologar sus campos industriales.
+## Modelo y migraciones
+- `0029_p107_rewinding_mother_identity.sql`: `bobbin.rewind_mother_capture_id` único y FK al origen P1-07, código técnico `MADRE-{uuid}`, guardia de captura/máquina/artículo y backfill únicamente de madres con crías existentes. Nuevas capturas crean madre en la misma transacción que las crías. Sin correlativo ni `quality_release`.
+- `0030_p107_mother_quality_forms.sql`: **NO ALTERA `form_version_machine`**. La definición de formulario publicada es inmutable (`guard_form_child` de 0001). Reemplaza únicamente las guardias de `capture` y `capture.bobbin_id` para aceptar la captura de Calidad sobre una madre P1-07. La excepción está acotada a COPASA/BELOIT/OVER y a los seis códigos aprobados. F3 y crías siguen sus reglas previas. El bundle de referencia y sus checksums no se modifican; un dry-run posterior no debe presentar drift.
+- `app/quality/mother_policy.py`: política whitelist (3 máquinas y 6 formularios); otros formularios o máquinas nunca se admiten por excepción. Se selecciona la versión más reciente PUBLICADA de área Calidad para la madre; F3 sigue exigiendo versión vinculada a la máquina.
 
-## Diseño de implementación
-**Fase A — Identidad (commit de fundación):** migración 0029 con `bobbin.rewind_mother_capture_id` único, código técnico `MADRE-{uuid}`, guardia de origen P1-07, retroactividad únicamente de capturas v3+ que ya generaron crías; nuevas capturas crean la madre técnica en la misma transacción que sus crías. Sin `quality_release` ni secuencia oficial.
+## Seguridad y autorización
+- Para la NUEVA ruta madre se exige MF-13 `enforce` en todos los POST aun si F3 usa flag `off` u `observe`: permiso `quality.capture`, sector REBOBINADO, máquina/formulario activos, versión publicada vigente, concesión activa `user_machine_form_grant`. Reintentos también se reautorizan y una revocación los bloquea. La concesión se puede dar/revocar desde el servicio existente de administración, gracias a la política acotada de oferta madre.
+- El módulo de disponibilidad marca formularios madre como elegibles únicamente si el motor MF13 los permite. Sin grant se presenta mensaje, no botones de escritura. El backend no convierte una elegibilidad visual en autorización.
+- GET conserva la política histórica de permiso `quality.capture` y alcance por sector. Capturas e historial pertenecen exclusivamente al UUID de madre, no al texto ni al UUID de cría.
 
-**Fase B — Capturas Calidad (pendiente):** extender de forma ADITIVA el contrato de captura exclusivamente para madre P1-07. No quitar guardas F3 ni publicar formularios genéricamente en otras máquinas. Declarar elegibilidad real por cada máquina de Rebobinado y formulario, incluyendo concesiones compatibles con política MF-13; la interfaz sólo ofrece formularios efectivamente autorizados. Mantener bloqueo, idempotencia, valores calculados y tipados, historial y auditoría.
+## Identidad en las pantallas
+- La bandeja de crías incluye el `mother_bobbin_id` derivado del JOIN a la madre única de la misma captura P1-07.
+- La interfaz transforma únicamente los callbacks de formularios e historial al contexto sintético de esa madre: `bobbin.id = mother_bobbin_id`, `bobbin.code = mother_label` (visual), nunca `child.id`.
+- El backend devuelve la misma etiqueta humana al listar capturas de la madre (CASE de origen), pero conserva en SQL el código técnico estable `MADRE-{uuid}`.
+- P1-28 no debe etiquetar un estado oficial de liberación en la madre, porque ese estado no existe. Los formularios candidatos siguen sin homologarse.
 
-**Fase C — UI/QA (pendiente):** en la ficha única de madre, renderizar los 6 formularios de la referencia y `Ver controles` utilizando el identificador técnico de la madre; el texto de etiqueta continúa visible pero jamás es llave de unión. QA PG17 efímero: backfill, no mezcla entre etiquetas homónimas, permisos 401/403, candidato disabled, 6 formularios, idempotencia, historial, anulación/denegación al revocar, crías independientes, F3 original.
-
-## Gates de despliegue
-Código completo + migraciones + catálogo/elegibilidad + frontend + ensayos PG17 + CI SHA final, revisión formal, merge explícito, respaldo y ensayo de restauración, migración 0029 controlada, activación aislada y QA productivo sobre OT autorizada.
-**No inferir PASS de fase A como aprobación de todo el correctivo.**
+## QA / puertas de control
+- PG17 real aislado: madre nueva + backfill antiguo, seis formularios, 401/403/404/409, calidad sin grants, grants individuales, revocación posterior, reintento idéntico, valores calculados, historial por UUID, madres completamente decididas, F3/Crías sin cambios, no drift del catálogo.
+- Frontend: parser estricto de mother UUID y de crías, acciones a identidad madre (no cría), controles sólo elegibles, estado de madre "no aplica", historial por UUID, cierre de sesión, TypeScript/ESLint/build.
+- Revisión SHA final y todos los CI PASS antes de poner PR listo; merge requiere autorización explícita, y cualquier despliegue requiere preflight, backup/restauración verificado y activación controlada.
