@@ -29,6 +29,7 @@ const child = (position = 13) => ({
     ...source,
     bobbin: {
         ...source.bobbin,
+        id: `f96d57a1-ab3d-4d5d-93c0-${String(position).padStart(12,"0")}`,
         machine: { code: "COPASA", name: "Copasa" },
         code: `CRIA-${id.replace(/-/g,"")}-${position}`,
         sequence_number: null,
