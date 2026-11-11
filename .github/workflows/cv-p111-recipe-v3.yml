@@ -11,6 +11,7 @@ on:
       - "backend/seed_data/manifest.json"
       - "backend/seed_data/article_machines.json"
       - "backend/tests/test_import_reference.py"
+      - "backend/tests/fixtures/VINTO-P1-11-v2-baseline.json"
       - "backend/tests/test_cv_p111_recipe_api.py"
       - "lib/vinto/p1-11.ts"
       - "lib/vinto/p1-11-v3.ts"
@@ -74,6 +75,9 @@ jobs:
       - name: 10327/Gambini additive master import on PG17
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_import_reference.py' -k new_excel_product_10327_gambini_relation_imports_additively -v
+      - name: Actual release v2 to v3 upgrade rehearsal on PG17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_import_reference.py' -k upgrade_from_deployed_v2_to_v3_and_gambini_is_strictly_additive -v
 
   frontend:
     name: P1-11 v3 frontend + legacy regressions
