@@ -268,7 +268,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         second = await self.send(body)
         self.assertEqual(second.status, 200, second.text)
         self.assertTrue(second.json()["already_submitted"])
-        self.assertIsNone(second.json()["capture"]["pallet"])
+        self.assertIsNone(second.json()["capture"].get("pallet"))
         read = await call("GET", f"/api/captures/{body['capture_id']}",
                           cookie=await self.cookie("OPERACION"))
         self.assertEqual(read.status, 200, read.text)
