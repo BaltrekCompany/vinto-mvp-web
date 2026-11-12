@@ -131,7 +131,8 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
         const parsed = context === "machine" ? parseMachineEnvelope(value, parseValues, code)
             : context === "bobbin" ? parseBobbinEnvelope(value, parseValues, code)
             : parseCaptureOf(value, parseValues, code);
-        if (!parsed || code !== "VINTO-P1-12" || parsed.form.version_number < 4) return parsed;
+        if (!parsed || !((code === "VINTO-P1-12" && parsed.form.version_number >= 4) ||
+            (code === "VINTO-P1-13" && parsed.form.version_number >= 3))) return parsed;
         const pallet = isRec(value) ? value.pallet : null;
         if (!isRec(pallet) || !Number.isSafeInteger(pallet.number) || Number(pallet.number) < 1
             || !Number.isSafeInteger(pallet.quantity_jabas) || Number(pallet.quantity_jabas) < 1
