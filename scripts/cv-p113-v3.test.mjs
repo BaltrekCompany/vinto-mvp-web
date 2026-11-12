@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { P113_V3, P113_V3_FIELDS, P113_LEGACY_FIELDS, checkP113Recipe, materialOptionsFor, calculatedConsumption } from "../lib/vinto/p1-13-v3.ts";
+import { P113_V3, P113_V3_FIELDS, P113_V4, P113_V4_FIELDS, P113_LEGACY_FIELDS, checkP113Recipe, materialOptionsFor, calculatedConsumption } from "../lib/vinto/p1-13-v3.ts";
 import { previewTotalKg } from "../lib/vinto/pallet-weight.ts";
 
 const seed = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-13.json", import.meta.url), "utf8"));
@@ -18,9 +18,10 @@ function capture(version, values, pallet) {
         values,...(pallet?{pallet}:{}) };
 }
 test("P113 v3: definicion nueva, legacy intacto y dos bloques funcionales",()=>{
-    assert.equal(seed.version_number,3);
+    assert.equal(seed.version_number,4);
     assert.equal(seed.fields.length,9);
-    assert.deepEqual(seed.fields.map(f=>f.key),P113_V3_FIELDS.map(f=>f.key));
+    assert.deepEqual(seed.fields.map(f=>f.key),P113_V4_FIELDS.map(f=>f.key));
+    assert.deepEqual(seed.fields.filter(f=>f.required).map(f=>f.key), ["tipo_bobina", "numero_bobina"]);
     assert.ok(P113_LEGACY_FIELDS.length>10);
     const source=readFileSync(new URL("../components/vinto/p1-13-v3-capture.tsx",import.meta.url),"utf8");
     assert.equal(source.includes("Sobreempaque e insumos"),false);
@@ -51,4 +52,46 @@ test("captura v3 exige pallet persistido; v2 legible sin pallet",()=>{
     assert.ok(legacy);
     assert.equal(legacy.values.numero_bobina_consumida,"X-1");
     assert.equal(legacy.pallet,undefined);
+});
+
+test("P113 v4: únicamente dos campos requeridos; opcionales omitidos del payload", () => {
+    const only = { tipo_bobina: "9570", numero_bobina: "QA-ONLY-TWO" };
+    const made = P113_V4.createAttempt(only,assign,device,()=>id);
+    assert.equal(made.ok, true);
+    if (!made.ok) return;
+    assert.deepEqual(made.attempt.payload.values,only);
+    assert.equal(P113_V4.createAttempt({numero_bobina:"12"},assign,device,()=>id).ok,false);
+    assert.equal(P113_V4.createAttempt({tipo_bobina:"9570"},assign,device,()=>id).ok,false);
+    for (const jabas of ["0","-1","1.5","1000000000"]) {
+        assert.equal(P113_V4.createAttempt({...only,cantidad_jabas:jabas},assign,device,()=>id).ok,false,jabas);
+    }
+    const withJabas=P113_V4.createAttempt({...only,cantidad_jabas:"10"},assign,device,()=>id);
+    assert.equal(withJabas.ok,true);
+    if (withJabas.ok) assert.equal(withJabas.attempt.payload.values.cantidad_jabas,"10");
+    const withPartials=P113_V4.createAttempt({...only,saldo_inicial_kg:"15",hora_inicio:"08:15"},assign,device,()=>id);
+    assert.equal(withPartials.ok,true);
+    if (withPartials.ok) assert.deepEqual(withPartials.attempt.payload.values,
+        {...only,saldo_inicial_kg:"15",hora_inicio:"08:15"});
+});
+test("P113 v4: captura sin jabas no requiere pallet, con jabas sí; v3 conserva su contrato",()=>{
+    const only={tipo_bobina:"9570",numero_bobina:"QA-ONLY-TWO"};
+    const without=P113_V4.parseCapture(capture(4,only));
+    assert.ok(without);
+    assert.equal(without.pallet,undefined);
+    const pallet={number:1,quantity_jabas:10,nominal_weight_kg:"2.020000",total_weight_kg:"20.200000"};
+    assert.equal(P113_V4.parseCapture(capture(4,only,pallet)),null);
+    assert.equal(P113_V4.parseCapture(capture(4,{...only,cantidad_jabas:10})),null);
+    assert.ok(P113_V4.parseCapture(capture(4,{...only,cantidad_jabas:10},pallet)));
+    const old={...base,cantidad_jabas:10,hora_inicio:"08:15:00",hora_fin:"09:05:00"};
+    assert.ok(P113_V3.parseCapture(capture(3,old,pallet)));
+    assert.equal(P113_V3.parseCapture(capture(3,old)),null);
+});
+test("P113 v4: asteriscos solo en dos campos, sin consumo ni peso falso",()=>{
+    const source=readFileSync(new URL("../components/vinto/p1-13-v3-capture.tsx",import.meta.url),"utf8");
+    assert.ok(source.includes('field.required ? " *" : ""'));
+    assert.ok(source.includes('quantityProvided ? (previewTotalKg'));
+    assert.ok(source.includes('consumptionAvailable ? calculatedConsumption(draft) : "—"'));
+    assert.ok(!source.includes('Cantidad de jabas *'));
+    assert.ok(!source.includes('Hora inicio pallet *'));
+    assert.ok(!source.includes('Hora fin pallet *'));
 });

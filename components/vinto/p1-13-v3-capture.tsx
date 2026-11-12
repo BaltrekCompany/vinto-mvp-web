@@ -10,9 +10,9 @@ import { candidateApi } from "@/lib/vinto/candidate-form-api";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft } from "@/lib/vinto/candidate-form";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { getPalletPreview, previewTotalKg, type PalletPreview } from "@/lib/vinto/pallet-preview";
-import { P113_V3, calculatedConsumption, checkP113Recipe, materialOptionsFor } from "@/lib/vinto/p1-13-v3";
+import { P113_V4, calculatedConsumption, checkP113Recipe, materialOptionsFor } from "@/lib/vinto/p1-13-v3";
 
-const api = candidateApi(P113_V3);
+const api = candidateApi(P113_V4);
 type Props = {
     context: CaptureContext; online: boolean;
     attempt: CandidateAttempt | null; setAttempt: (value: CandidateAttempt | null) => void;
@@ -23,15 +23,15 @@ type Props = {
 type StoredPreview = { assignmentId: string; preview: PalletPreview | null };
 type ReadBack = "reading" | "ok" | "mismatch" | "error";
 const COIL_FIELDS = [
-    { key: "numero_bobina", label: "N.º bobina", inputMode: "text" },
-    { key: "saldo_inicial_kg", label: "Saldo inicial", inputMode: "decimal" },
-    { key: "ingreso_kg", label: "Ingreso", inputMode: "decimal" },
-    { key: "saldo_final_kg", label: "Saldo final", inputMode: "decimal" },
+    { key: "numero_bobina", label: "N.º bobina", inputMode: "text", required: true },
+    { key: "saldo_inicial_kg", label: "Saldo inicial", inputMode: "decimal", required: false },
+    { key: "ingreso_kg", label: "Ingreso", inputMode: "decimal", required: false },
+    { key: "saldo_final_kg", label: "Saldo final", inputMode: "decimal", required: false },
 ] as const;
 
 export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, onSubmitted,
     onAssignmentChanged, onSessionLost, user }: Props) {
-    const [draft, setDraft] = useState<CandidateDraft>(() => attempt ? { ...attempt.draft } : P113_V3.emptyDraft());
+    const [draft, setDraft] = useState<CandidateDraft>(() => attempt ? { ...attempt.draft } : P113_V4.emptyDraft());
     const [palletSource, setPalletSource] = useState<StoredPreview | null>(null);
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
@@ -44,6 +44,10 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
         palletSource.preview?.machine === context.machine ? palletSource.preview : null;
     const loading = palletSource?.assignmentId !== context.assignmentId;
     const nominal = preview?.nominal_weight_kg ?? null;
+    const quantityProvided = (draft.cantidad_jabas ?? "").trim() !== "";
+    const consumptionAvailable = ["saldo_inicial_kg", "ingreso_kg", "saldo_final_kg"]
+        .every(key => /^-?\d+(?:[.,]\d+)?$/.test((draft[key] ?? "").trim()) &&
+            Number.isFinite(Number((draft[key] ?? "").trim().replace(",", "."))));
 
     useEffect(() => {
         const controller = new AbortController();
@@ -63,18 +67,18 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
         if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
         let current = attempt;
         if (!current) {
-            if (!preview?.weight_available || !nominal)
-                return void setNotice("No se puede registrar: falta peso nominal autorizado del artículo de la OT.");
+            if (quantityProvided && (!preview?.weight_available || !nominal))
+                return void setNotice("No se puede generar pallet: falta peso nominal autorizado del artículo de la OT.");
             const issue = checkP113Recipe(draft, context.productCode);
             if (issue) return void setNotice(issue);
-            const made = P113_V3.createAttempt(draft, context.assignmentId, getDeviceKey());
+            const made = P113_V4.createAttempt(draft, context.assignmentId, getDeviceKey());
             if (!made.ok) return void setNotice(made.errors.join(" "));
             current = made.attempt;
             setAttempt(current);
         }
         busy.current = true; setSending(true); setNotice(null);
         try {
-            const result = await P113_V3.submitAttempt(current, { post: api.submit, get: id => api.get(id) });
+            const result = await P113_V4.submitAttempt(current, { post: api.submit, get: id => api.get(id) });
             if (!sameSession()) return;
             if (result.kind === "submitted") {
                 setAttempt(null);
@@ -112,7 +116,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
 
         <section className="border-b px-5 py-6" data-p113-v3="consumo-bobina">
             <h2 className="text-lg font-black">1. Consumo de bobina</h2>
-            <p className="mt-1 text-sm text-slate-600">Una bobina o material declarado por pallet. Consumo = saldo inicial + ingreso − saldo final.</p>
+            <p className="mt-1 text-sm text-slate-600">Solo Tipo de bobina y N.º bobina son obligatorios. El consumo se calcula cuando se informan los tres saldos.</p>
             {materials.length === 0 && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
                 El artículo {context.productCode} no tiene receta. Se bloquea el envío; no se utilizará una lista genérica.
             </p>}
@@ -126,7 +130,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
                             {materials.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
                         </select>
                     </label>
-                    {COIL_FIELDS.map(field => <label key={field.key} className="text-xs font-semibold">{field.label} *
+                    {COIL_FIELDS.map(field => <label key={field.key} className="text-xs font-semibold">{field.label}{field.required ? " *" : ""}
                         <span className="relative block">
                             <input className={inputClass} data-field={field.key} type="text" inputMode={field.inputMode}
                                 disabled={locked} value={draft[field.key] ?? ""} onChange={e => set(field.key)(e.target.value)}/>
@@ -135,7 +139,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
                     </label>)}
                     <div className="text-xs font-semibold">Consumo calculado
                         <output data-p113-consumo className="mt-2 flex h-10 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-base font-black">
-                            {calculatedConsumption(draft)}
+                            {consumptionAvailable ? calculatedConsumption(draft) : "—"}
                         </output>
                     </div>
                 </div>
@@ -148,29 +152,29 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
 
         <section className="border-b px-5 py-6" data-p113-v3="produccion-pallet">
             <h2 className="text-lg font-black">2. Producción por pallet</h2>
-            <p className="mt-1 text-sm text-slate-600">Un envío crea un pallet independiente; correlativo por OT y línea, generado en el servidor.</p>
+            <p className="mt-1 text-sm text-slate-600">Esta sección es opcional. Solo se genera un pallet cuando se informa una cantidad de jabas válida.</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className={boxClass} data-pallet-number><p className="text-xs font-semibold text-blue-900">N.º pallet</p>
-                    <p className="mt-1 font-bold">Automático al enviar</p></div>
-                <label className="text-xs font-semibold">Cantidad de jabas *
+                    <p className="mt-1 font-bold">{quantityProvided ? "Automático al enviar" : "Sin pallet (jabas no informadas)"}</p></div>
+                <label className="text-xs font-semibold">Cantidad de jabas (opcional)
                     <input className={inputClass} data-field="cantidad_jabas" inputMode="numeric" disabled={locked}
                         value={draft.cantidad_jabas ?? ""} onChange={e => set("cantidad_jabas")(e.target.value)}/>
                 </label>
                 <div className={boxClass} data-pallet-nominal><p className="text-xs font-semibold text-blue-900">Peso nominal por jaba · maestro</p>
                     <p className="mt-1 font-bold">{nominal ? nominal + " kg" : loading ? "Consultando..." : "No disponible"}</p></div>
                 <div className={boxClass} data-pallet-total><p className="text-xs font-semibold text-blue-900">Peso total calculado</p>
-                    <p className="mt-1 font-bold">{previewTotalKg(nominal, (draft.cantidad_jabas ?? "").trim()) ?? "0.00"} kg</p></div>
-                <label className="text-xs font-semibold">Hora inicio pallet *
+                    <p className="mt-1 font-bold">{quantityProvided ? (previewTotalKg(nominal, (draft.cantidad_jabas ?? "").trim()) ?? "—") + " kg" : "—"}</p></div>
+                <label className="text-xs font-semibold">Hora inicio pallet (opcional)
                     <input className={inputClass} data-field="hora_inicio" type="time" disabled={locked}
                         value={draft.hora_inicio ?? ""} onChange={e => set("hora_inicio")(e.target.value)}/>
                 </label>
-                <label className="text-xs font-semibold">Hora fin pallet *
+                <label className="text-xs font-semibold">Hora fin pallet (opcional)
                     <input className={inputClass} data-field="hora_fin" type="time" disabled={locked}
                         value={draft.hora_fin ?? ""} onChange={e => set("hora_fin")(e.target.value)}/>
                 </label>
             </div>
             {!loading && !nominal && <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                No hay peso nominal válido para este producto, o no tienes acceso a la consulta. Registro bloqueado.
+                No hay peso nominal válido para este producto, o no tienes acceso a la consulta. Puedes registrar la bobina sin jabas, pero no generar un pallet.
             </p>}
             <p className="mt-3 text-xs text-slate-500">Los pesos y el correlativo definitivos se verifican y guardan en PostgreSQL al registrar.</p>
         </section>
@@ -180,7 +184,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
             <p className="font-black">{saved.message}</p>
             <p data-pallet-confirmed>{saved.capture.pallet ? "Pallet N.º " + saved.capture.pallet.number + " · " +
                 saved.capture.pallet.quantity_jabas + " jabas · " + saved.capture.pallet.nominal_weight_kg + " kg/jaba · total " +
-                saved.capture.pallet.total_weight_kg + " kg" : "No se recibió el pallet: revisar el registro."}</p>
+                saved.capture.pallet.total_weight_kg + " kg" : "Captura registrada sin pallet (cantidad de jabas no informada)."}</p>
             <p>Captura {saved.capture.id}</p>
             <p data-readback={saved.readBack}>{saved.readBack === "ok" ? "Registro verificado mediante lectura posterior." :
                 saved.readBack === "reading" ? "Consultando captura..." : "Lectura posterior no confirmada; revisar."}</p>

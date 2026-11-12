@@ -85,6 +85,10 @@ def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_ver
     if version is None or version[0] < minimum_version:
         return
     amount = clean.get("cantidad_jabas")
+    # CV-P113-02: v4 permite registrar la bobina sin generar pallet.
+    # Sin jabas no se crea una fila ni se consume un correlativo.
+    if form_code == P113_FORM and version[0] >= 4 and amount is None:
+        return
     if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
         raise CaptureValidationError("Cantidad de jabas: debe ser un entero positivo")
 

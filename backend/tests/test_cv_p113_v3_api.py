@@ -106,10 +106,12 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
     async def test_reference_recipe_and_weight_source(self):
         bundle = load_bundle()
         form = next(f for f in bundle.forms if f["code"] == FORM)
-        self.assertEqual(form["version_number"], 3)
+        self.assertEqual(form["version_number"], 4)
         self.assertEqual({f["key"] for f in form["fields"]}, {
             "tipo_bobina", "numero_bobina", "saldo_inicial_kg", "ingreso_kg", "saldo_final_kg",
             "cantidad_jabas", "hora_inicio", "hora_fin", "observaciones"})
+        self.assertEqual({f["key"] for f in form["fields"] if f["required"]},
+                         {"tipo_bobina", "numero_bobina"})
         self.assertEqual(recipe_codes()["11203"], frozenset({"BC-1229-210", "9570", "9632"}))
         self.assertNotIn("11104", recipe_codes())
         self.assertNotIn("11202", recipe_codes())
@@ -148,7 +150,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         created = await self.send(body)
         self.assertEqual(created.status, 201, created.text)
         record = created.json()["capture"]
-        self.assertEqual(record["form"]["version_number"], 3)
+        self.assertEqual(record["form"]["version_number"], 4)
         self.assertEqual(record["values"]["tipo_bobina"], "BC-1229-210")
         self.assertNotIn("consumo", record["values"])
         self.assertNotIn("peso_total_pallet", record["values"])
@@ -165,7 +167,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
             (order["id"],)).fetchone()[0], 1)
         second = await self.send(self.payload(a))
         self.assertEqual(second.status, 201, second.text)
-        self.assertEqual(second.json()["capture"]["pallet"]["number"], 2)
+        self.assertEqual(second.json()["capture"].get("pallet")["number"], 2)
 
     async def test_accepts_all_three_materials_but_rejects_outside_recipe(self):
         _, a = await self.assignment()
@@ -247,3 +249,90 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
                     "SELECT count(*) FROM vinto_txn.production_pallet WHERE work_order_id=%s",
                     (order["id"],),
                 ).fetchone()[0], 1)
+
+    async def test_v4_only_two_required_and_no_pallet_or_counter(self):
+        """Con solo material y numero guarda captura, sin pallet ficticio."""
+        order, assignment = await self.assignment()
+        body = self.payload(assignment)
+        body["values"] = {"tipo_bobina": "9570", "numero_bobina": "QA-V4-ONLY-TWO"}
+        first = await self.send(body)
+        self.assertEqual(first.status, 201, first.text)
+        created = first.json()["capture"]
+        self.assertEqual(created["form"]["version_number"], 4)
+        self.assertEqual(created["values"], body["values"])
+        self.assertIsNone(created.get("pallet"))
+        self.assertEqual(self.connection.execute(
+            "SELECT count(*) FROM vinto_txn.production_pallet WHERE work_order_id = %s",
+            (order["id"],)).fetchone()[0], 0)
+        # Reintento idempotente tampoco debe consumir correlativo.
+        second = await self.send(body)
+        self.assertEqual(second.status, 200, second.text)
+        self.assertTrue(second.json()["already_submitted"])
+        self.assertIsNone(second.json()["capture"].get("pallet"))
+        read = await call("GET", f"/api/captures/{body['capture_id']}",
+                          cookie=await self.cookie("OPERACION"))
+        self.assertEqual(read.status, 200, read.text)
+        self.assertIsNone(read.json().get("pallet"))
+        # Solo jabas + campos obligatorios: aun sin horas/saldos se crea pallet N.1.
+        with_jabas = self.payload(assignment)
+        with_jabas["values"] = {
+            "tipo_bobina": "9632", "numero_bobina": "QA-V4-WITH-PALLET",
+            "cantidad_jabas": 10,
+        }
+        pallet_reply = await self.send(with_jabas)
+        self.assertEqual(pallet_reply.status, 201, pallet_reply.text)
+        snapshot = pallet_reply.json()["capture"]["pallet"]
+        self.assertEqual((snapshot["number"], snapshot["quantity_jabas"]), (1, 10))
+        self.assertEqual(Decimal(snapshot["nominal_weight_kg"]), Decimal("2.02"))
+        self.assertEqual(Decimal(snapshot["total_weight_kg"]), Decimal("20.20"))
+        self.assertNotIn("hora_inicio", pallet_reply.json()["capture"]["values"])
+        self.assertNotIn("saldo_final_kg", pallet_reply.json()["capture"]["values"])
+
+    async def test_v4_partial_optional_saldos_hours_and_missing_weight_without_pallet(self):
+        _, assignment = await self.assignment()
+        body = self.payload(assignment)
+        body["values"] = {
+            "tipo_bobina": "BC-1229-210", "numero_bobina": "QA-PARTIAL",
+            "saldo_inicial_kg": "15.5", "hora_inicio": "08:15",
+        }
+        response = await self.send(body)
+        self.assertEqual(response.status, 201, response.text)
+        values = response.json()["capture"]["values"]
+        self.assertEqual(Decimal(values["saldo_inicial_kg"]), Decimal("15.5"))
+        self.assertNotIn("ingreso_kg", values)
+        self.assertNotIn("saldo_final_kg", values)
+        self.assertNotIn("hora_fin", values)
+        self.assertIsNone(response.json()["capture"].get("pallet"))
+        # La unidad de inventario UN de 11503 bloquea PALLET, no captura sin jabas.
+        _, no_weight = await self.assignment(machine="PANUELERA", article="11503")
+        payload = self.payload(no_weight)
+        payload["values"] = {
+            "tipo_bobina": "BC-3451-420", "numero_bobina": "QA-NO-WEIGHT",
+        }
+        without_pallet = await self.send(payload)
+        self.assertEqual(without_pallet.status, 201, without_pallet.text)
+        self.assertIsNone(without_pallet.json()["capture"].get("pallet"))
+
+    async def test_v4_invalid_optional_input_rejected_without_partial_writes(self):
+        _, assignment = await self.assignment()
+        for key, bad in (
+            ("cantidad_jabas", 0), ("cantidad_jabas", -1), ("cantidad_jabas", "1.5"),
+            ("saldo_inicial_kg", "abc"), ("ingreso_kg", "xyz"),
+            ("saldo_final_kg", "1,2,3"), ("hora_inicio", "25:00"),
+            ("hora_fin", "09:89"),
+        ):
+            with self.subTest(key=key, bad=bad):
+                payload = self.payload(assignment)
+                payload["values"] = {
+                    "tipo_bobina": "9570", "numero_bobina": "QA-INVALID",
+                    key: bad,
+                }
+                response = await self.send(payload)
+                self.assertEqual(response.status, 422, response.text)
+        for mandatory in ("tipo_bobina", "numero_bobina"):
+            payload = self.payload(assignment)
+            payload["values"] = {
+                "tipo_bobina": "9570", "numero_bobina": "QA-MISSING",
+            }
+            del payload["values"][mandatory]
+            self.assertEqual((await self.send(payload)).status, 422)
