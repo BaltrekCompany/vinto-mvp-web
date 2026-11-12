@@ -78,7 +78,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
         }
         busy.current = true; setSending(true); setNotice(null);
         try {
-            const result = await P113_V3.submitAttempt(current, { post: api.submit, get: id => api.get(id) });
+            const result = await P113_V4.submitAttempt(current, { post: api.submit, get: id => api.get(id) });
             if (!sameSession()) return;
             if (result.kind === "submitted") {
                 setAttempt(null);
