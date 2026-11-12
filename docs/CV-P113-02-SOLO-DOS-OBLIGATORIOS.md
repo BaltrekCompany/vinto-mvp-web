@@ -15,7 +15,7 @@ Son **opcionales**: saldo inicial, ingreso, saldo final, cantidad de jabas, hora
 - Sin `cantidad_jabas` se guarda la captura de bobina, **sin fila de production_pallet, número, total ni consumo de correlativo**. Así los dos únicos campos obligatorios bastan para registrar.
 - Si `cantidad_jabas` está presente, debe ser entero positivo y el backend obtiene el peso nominal del catálogo versionado, calcula el total y genera el pallet atómicamente. Las horas siguen siendo opcionales aunque se genere un pallet.
 - Si falta peso homologado (p. ej. artículo 11503 con unidad de inventario `UN`), se bloquea solo la creación del pallet; la captura sin jabas sigue permitida siempre que exista receta válida.
-- Lectura de capturas P1-13 v3 **requiere** pallet histórico; P1-13 v4 admite pallet nulo únicamente si no se informó jabas. P1-12 v4 no cambia.
+- Lectura de capturas P1-13 v3 **requiere** pallet histórico; P1-13 v4 admite pallet ausente o nulo únicamente si no se informó jabas (la API actual omite la propiedad en ese caso). P1-12 v4 no cambia.
 - No nuevas migraciones SQL, no modificación de recetas, pesos, permisos, auditoría o inventario. Los campos existentes con datos válidos se guardan tal cual. Opcionales omitidos no se rellenan artificialmente.
 
 ## Plan de control

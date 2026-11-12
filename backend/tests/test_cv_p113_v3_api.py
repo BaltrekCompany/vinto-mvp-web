@@ -167,7 +167,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
             (order["id"],)).fetchone()[0], 1)
         second = await self.send(self.payload(a))
         self.assertEqual(second.status, 201, second.text)
-        self.assertEqual(second.json()["capture"]["pallet"]["number"], 2)
+        self.assertEqual(second.json()["capture"].get("pallet")["number"], 2)
 
     async def test_accepts_all_three_materials_but_rejects_outside_recipe(self):
         _, a = await self.assignment()
@@ -260,7 +260,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         created = first.json()["capture"]
         self.assertEqual(created["form"]["version_number"], 4)
         self.assertEqual(created["values"], body["values"])
-        self.assertIsNone(created["pallet"])
+        self.assertIsNone(created.get("pallet"))
         self.assertEqual(self.connection.execute(
             "SELECT count(*) FROM vinto_txn.production_pallet WHERE work_order_id = %s",
             (order["id"],)).fetchone()[0], 0)
@@ -272,7 +272,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         read = await call("GET", f"/api/captures/{body['capture_id']}",
                           cookie=await self.cookie("OPERACION"))
         self.assertEqual(read.status, 200, read.text)
-        self.assertIsNone(read.json()["pallet"])
+        self.assertIsNone(read.json().get("pallet"))
         # Solo jabas + campos obligatorios: aun sin horas/saldos se crea pallet N.1.
         with_jabas = self.payload(assignment)
         with_jabas["values"] = {
@@ -302,7 +302,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ingreso_kg", values)
         self.assertNotIn("saldo_final_kg", values)
         self.assertNotIn("hora_fin", values)
-        self.assertIsNone(response.json()["capture"]["pallet"])
+        self.assertIsNone(response.json()["capture"].get("pallet"))
         # La unidad de inventario UN de 11503 bloquea PALLET, no captura sin jabas.
         _, no_weight = await self.assignment(machine="PANUELERA", article="11503")
         payload = self.payload(no_weight)
@@ -311,7 +311,7 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
         }
         without_pallet = await self.send(payload)
         self.assertEqual(without_pallet.status, 201, without_pallet.text)
-        self.assertIsNone(without_pallet.json()["capture"]["pallet"])
+        self.assertIsNone(without_pallet.json()["capture"].get("pallet"))
 
     async def test_v4_invalid_optional_input_rejected_without_partial_writes(self):
         _, assignment = await self.assignment()
