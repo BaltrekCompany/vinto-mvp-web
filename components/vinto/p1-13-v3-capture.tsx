@@ -41,7 +41,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
     const materials = materialOptionsFor(context.productCode);
     const preview = palletSource?.assignmentId === context.assignmentId &&
         palletSource.preview?.article_code === context.productCode &&
-        palletSource.preview?.machine === context.machine.code ? palletSource.preview : null;
+        palletSource.preview?.machine === context.machine ? palletSource.preview : null;
     const loading = palletSource?.assignmentId !== context.assignmentId;
     const nominal = preview?.nominal_weight_kg ?? null;
 
