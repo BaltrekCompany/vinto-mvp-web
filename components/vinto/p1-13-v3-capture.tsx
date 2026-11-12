@@ -46,7 +46,8 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
     const nominal = preview?.nominal_weight_kg ?? null;
     const quantityProvided = (draft.cantidad_jabas ?? "").trim() !== "";
     const consumptionAvailable = ["saldo_inicial_kg", "ingreso_kg", "saldo_final_kg"]
-        .every(key => (draft[key] ?? "").trim() !== "");
+        .every(key => /^-?\d+(?:[.,]\d+)?$/.test((draft[key] ?? "").trim()) &&
+            Number.isFinite(Number((draft[key] ?? "").trim().replace(",", "."))));
 
     useEffect(() => {
         const controller = new AbortController();
