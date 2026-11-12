@@ -8,6 +8,17 @@ from app.capture_errors import CaptureNotFoundError, CaptureValidationError
 from app.sectors import SECTOR_CONVERSION, scoped_sector_codes
 
 FORM = "VINTO-P1-12"
+P113_FORM = "VINTO-P1-13"
+P112_MACHINES = ("GAMBINI", "SINCRO_II", "SINCRO_III")
+P113_MACHINES = ("OMET_I", "OMET_II", "8_2", "8_5", "8002", "SERV_4", "WALLY", "PANUELERA")
+
+
+def form_for_machine(machine):
+    if machine in P112_MACHINES:
+        return FORM
+    if machine in P113_MACHINES:
+        return P113_FORM
+    return None
 
 
 def _nominal(connection, article_code: str):
@@ -45,7 +56,7 @@ def preview(connection, assignment_id, sectors):
         if source is None or source[0] != "active" or source[2] not in scoped_sector_codes(sectors):
             raise CaptureNotFoundError()
         _, machine, _, _, number, line, pv, _, article, description = source
-        if machine not in ("GAMBINI", "SINCRO_II", "SINCRO_III"):
+        if form_for_machine(machine) is None:
             raise CaptureNotFoundError()
         nominal = _nominal(connection, article)
         return {
@@ -58,7 +69,7 @@ def preview(connection, assignment_id, sectors):
         }
 
 
-def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_version_id, clean):
+def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_version_id, clean, form_code=FORM):
     """Llamado DENTRO de la transaccion de /api/captures, tras validar el formulario.
 
     Una sola serializacion por OT+linea evita duplicados entre sesiones. La clave
@@ -68,7 +79,10 @@ def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_ver
         "SELECT version_number FROM vinto_config.form_version WHERE id = %s",
         (form_version_id,),
     ).fetchone()
-    if version is None or version[0] < 4:
+    if form_code not in (FORM, P113_FORM):
+        raise CaptureValidationError("Pallet: formulario no admitido")
+    minimum_version = 4 if form_code == FORM else 3
+    if version is None or version[0] < minimum_version:
         return
     amount = clean.get("cantidad_jabas")
     if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
@@ -78,8 +92,8 @@ def create_pallet(connection, *, capture_id, assignment_id, machine_id, form_ver
     if source is None:
         raise CaptureNotFoundError()
     _, machine, sector, work_order_id, _, line_code, _, article_version_id, article_code, _ = source
-    if sector != SECTOR_CONVERSION or machine not in ("GAMBINI", "SINCRO_II", "SINCRO_III"):
-        raise CaptureValidationError("Pallet: la asignacion no corresponde a produccion de papel higienico")
+    if sector != SECTOR_CONVERSION or form_for_machine(machine) != form_code:
+        raise CaptureValidationError("Pallet: maquina y formulario no corresponden")
 
     # Segundo cerrojo por la clave funcional, adicional al de maquina ya obtenido.
     from app.capture_service import _lock

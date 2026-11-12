@@ -152,7 +152,7 @@
     {
       "path": "lib/vinto/p1-13.ts",
       "sha256": "6be5ac8d55aee07a057cbb07b067928b86919279f85d0ee5b1ce33a6da607723",
-      "scope": "candidate-fields:VINTO-P1-13"
+      "scope": "historical-v1-v2 fields, retained only; v3 specification in docs/CV-P113-01-CONTINUIDAD.md"
     },
     {
       "path": "lib/vinto/p1-16.ts",
@@ -243,8 +243,8 @@
     },
     {
       "path": "forms/VINTO-P1-13.json",
-      "sha256": "260b975ea52de0e0e1b44292d9718c73079526b3988e652371c3bf789ae93f2a",
-      "bytes": 4642
+      "sha256": "9cfd2423344a3e90b225a6265147d732a182f4fa720b8097a8b35acc59ed4962",
+      "bytes": 2339
     },
     {
       "path": "forms/VINTO-P1-16.json",
@@ -367,7 +367,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 26,
-    "form_fields": 577,
+    "form_fields": 566,
     "form_options": 35,
     "form_groups": 3
   },

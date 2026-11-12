@@ -475,7 +475,7 @@ def _stored_values(connection, capture_id) -> dict:
 
 def _to_view(connection, row) -> CaptureView:
     pallet = None
-    if row[6] == "VINTO-P1-12" and row[7] >= 4:
+    if (row[6] == "VINTO-P1-12" and row[7] >= 4) or (row[6] == "VINTO-P1-13" and row[7] >= 3):
         from app.production_pallets import snapshot
         pallet = snapshot(connection, row[0])
     return CaptureView(*row, values=_serialize_values(_stored_values(connection, row[0])), pallet=pallet)
@@ -678,6 +678,10 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
             from app.p111_recipe_policy import validate_p111_recipe
             validate_p111_recipe(connection, form_version_id=form_version_id,
                                  article_version_id=context.article_version_id, values=clean)
+        if form_code == "VINTO-P1-13":
+            from app.p113_recipe_policy import validate_p113_recipe
+            validate_p113_recipe(connection, form_version_id=form_version_id,
+                                 article_version_id=context.article_version_id, values=clean)
         _check_unique_correlative(connection, form_code, form_version_id, assignment_id, machine_id, clean)
         # El advisory lock de máquina está tomado por lock_active_assignment:
         # serializa inclusive dos capturas simultáneas desde diferentes OT/dispositivos.
@@ -694,10 +698,10 @@ def submit_production_capture(connection, *, actor_id, capture_id, form_code, as
         if groups:
             _insert_groups(connection, capture_id, form_version_id, fields, groups, clean[GROUPS_KEY])
         connection.execute("UPDATE vinto_txn.capture SET status = 'submitted', submitted_at = clock_timestamp() WHERE id = %s", (capture_id,))
-        if form_code == "VINTO-P1-12":
+        if form_code in ("VINTO-P1-12", "VINTO-P1-13"):
             from app.production_pallets import create_pallet
             create_pallet(connection, capture_id=capture_id, assignment_id=assignment_id,
-                          machine_id=machine_id, form_version_id=form_version_id, clean=clean)
+                          machine_id=machine_id, form_version_id=form_version_id, clean=clean, form_code=form_code)
         if form_code == "VINTO-P1-07":
             # Solo la v3+ genera crías; misma transacción, idempotencia y permisos
             # de la captura central. Ningún cambio en F3 ni en P1-07 histórico.
