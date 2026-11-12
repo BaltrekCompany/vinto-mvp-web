@@ -139,7 +139,7 @@ class PalletTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.connection.execute(
             "SELECT nominal_weight_kg FROM vinto_master.pallet_nominal_weight WHERE article_code=%s AND revision=1",
             (ARTICLE,)).fetchone()[0], Decimal("1.74"))
-        self.assertEqual(self.count("vinto_master.pallet_nominal_weight"), 52)
+        self.assertEqual(self.count("vinto_master.pallet_nominal_weight"), 73)  # 52 originales P1-12 + 21 aditivos P1-13
 
     async def test_authorized_weight_preview_is_bound_to_ot_and_line(self):
         order, assignment = await self.assignment()
