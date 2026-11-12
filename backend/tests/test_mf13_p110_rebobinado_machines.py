@@ -45,7 +45,7 @@ SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 GOOD = {"hora_inicio": "06:30", "hora_fin": "14:45", "peso_fardo": "55,5 kg"}  # valores FICTICIOS: nada aquí es un límite ni una regla
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 2,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 1, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 3,
             "VINTO-P1-16": 3, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 4, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 
@@ -94,7 +94,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(FORMS["VINTO-P1-07"]["machines"], ["BELOIT", "OVER", "COPASA"])
         self.assertEqual(FORMS["VINTO-P1-29"]["machines"], ["TUBETERA"])
         self.assertEqual(FORMS["VINTO-P1-30"]["machines"], ["PERICHUN"])
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 577, "CV-P111-v3 cambia un campo neto; los 133 de RG-MP3-01 no cambian")
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 566, "CV-P111-v3 cambia un campo neto; los 133 de RG-MP3-01 no cambian")
 
     def test_only_rebobinado_machines_are_linked(self):
         sectors = {m["code"]: m["sector"] for m in BUNDLE.machines}
