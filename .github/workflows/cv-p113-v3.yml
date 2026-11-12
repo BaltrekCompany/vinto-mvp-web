@@ -104,7 +104,7 @@ jobs:
         run: |
           node --test scripts/cv-p113-v3.test.mjs
           node --test scripts/cv-p112-pallet.test.mjs
-          node --test scripts/cv-p111-recipe-v3.test.mjs
+          node --test scripts/p1-11-capture.test.mjs
       - name: Types and lint
         run: |
           pnpm exec tsc --noEmit

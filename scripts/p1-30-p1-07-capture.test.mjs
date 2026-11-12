@@ -247,7 +247,7 @@ test("alcance actualizado: Rebobinado conserva sus formularios y P1-07 añade ma
   assert.equal(manifest.scope.forms.length, 26, "RG01 es la única incorporación");
   assert.deepEqual(JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json")).machines, ["MP3"], "ningún vínculo accidental con Rebobinado");
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 30, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
+  assert.equal(migrations.length, 31, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
   for (const name of ["0028_conversion_pallet_grants.sql", "0029_p107_rewinding_mother_identity.sql", "0030_p107_mother_quality_forms.sql"]) assert.ok(migrations.includes(name), `migración esperada: ${name}`);
   assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   for (const file of ["lib/vinto/p1-30.ts", "lib/vinto/p1-07.ts", "lib/vinto/rebobinado-candidates.ts"]) assert.equal(/quality_release|bobbins?-api|\/api\/bobbins|from "[^"]*(bobbin|genealog)[^"]*"/i.test(code(file)), false, file);

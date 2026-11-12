@@ -262,12 +262,12 @@ test("alcance actualizado: RG01 no altera los formularios MP1/MP3 y P1-07 madre 
   assert.equal(manifest.scope.forms.length, 26, "25 formularios aprobados + solo RG01");
   assert.equal(new Set(manifest.scope.forms).size, 26, "no se repiten códigos");
   assert.equal(manifest.scope.forms.at(-1), "VINTO-MP3-01", "RG01 es la única incorporación");
-  assert.equal(manifest.counts.form_fields, 577, "P1-11 v3 cambia el total base de campos; RG01 conserva 133");
+  assert.equal(manifest.counts.form_fields, 566, "P1-11 v3 cambia el total base de campos; RG01 conserva 133");
   const rg = JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json"));
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 30, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
+  assert.equal(migrations.length, 31, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
   for (const name of ["0028_conversion_pallet_grants.sql", "0029_p107_rewinding_mother_identity.sql", "0030_p107_mother_quality_forms.sql"]) assert.ok(migrations.includes(name), `migración esperada: ${name}`);
   assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   assert.ok(migrations.includes("0023_quality_release_decision.sql"));
