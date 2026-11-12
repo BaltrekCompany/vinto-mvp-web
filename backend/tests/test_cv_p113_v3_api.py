@@ -195,3 +195,55 @@ class P113V3Tests(unittest.IsolatedAsyncioTestCase):
             "SELECT count(*) FROM vinto_txn.production_pallet WHERE article_version_id IN "
             "(SELECT id FROM vinto_master.article_version WHERE article_id IN "
             "(SELECT id FROM vinto_master.article WHERE code IN ('11104','11503')))").fetchone()[0], 0)
+
+
+    async def test_all_eight_conversion_machines_create_pallets(self):
+        """Prueba funcional real por las ocho maquinas aprobadas de P1-13.
+        Articulo/material son parejas vigentes de article_machines y receta homologada.
+        Una captura valida registra un pallet con el peso correspondiente al PRODUCTO,
+        no al material. Ningun caso modifica inventario.
+        """
+        from app.production_pallets import P113_MACHINES, form_for_machine
+
+        samples = [
+            ("OMET_I", "11103", "9126", "2.48"),
+            ("OMET_II", "11203", "BC-1229-210", "2.02"),
+            ("8_2", "11204", "BC-1458", "2.66"),
+            ("8_5", "11205", "BC-1234-200", "2.89"),
+            ("8002", "11110", "9120", "1.3962"),
+            ("SERV_4", "11102", "9120", "1.33"),
+            ("WALLY", "11307", "9123", "1.6"),
+            ("PANUELERA", "11502", "9188", "6"),
+        ]
+        self.assertEqual({machine for machine, *_ in samples}, set(P113_MACHINES))
+        form = next(f for f in load_bundle().forms if f["code"] == FORM)
+        self.assertEqual(set(form["machines"]), set(P113_MACHINES))
+        for machine, article, material, nominal in samples:
+            with self.subTest(machine=machine, article=article):
+                self.assertEqual(form_for_machine(machine), FORM)
+                self.assertIn(material, recipe_codes()[article])
+                available = self.connection.execute(
+                    """SELECT 1 FROM vinto_master.article_machine am
+                       JOIN vinto_master.article a ON a.id = am.article_id
+                       JOIN vinto_master.machine m ON m.id = am.machine_id
+                       WHERE a.code = %s AND m.code = %s""",
+                    (article, machine),
+                ).fetchone()
+                self.assertIsNotNone(available, (machine, article))
+                order, assignment = await self.assignment(machine=machine, article=article)
+                request = self.payload(assignment)
+                request["values"]["tipo_bobina"] = material
+                result = await self.send(request)
+                self.assertEqual(result.status, 201, (machine, result.text))
+                capture = result.json()["capture"]
+                self.assertEqual(capture["machine"]["code"], machine)
+                self.assertEqual(capture["line"]["article"]["code"], article)
+                pallet = capture["pallet"]
+                self.assertEqual(pallet["number"], 1)
+                self.assertEqual(pallet["quantity_jabas"], 10)
+                self.assertEqual(Decimal(pallet["nominal_weight_kg"]), Decimal(nominal))
+                self.assertEqual(Decimal(pallet["total_weight_kg"]), 10 * Decimal(nominal))
+                self.assertEqual(self.connection.execute(
+                    "SELECT count(*) FROM vinto_txn.production_pallet WHERE work_order_id=%s",
+                    (order["id"],),
+                ).fetchone()[0], 1)
