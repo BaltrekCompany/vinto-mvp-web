@@ -29,6 +29,23 @@ export const P113_V3 = {
         return base.createAttempt(...args);
     },
 };
+// CV-P113-02: la v4 solo exige tipo de bobina y numero de bobina.
+// La definicion v3 se mantiene para el contrato historico del formulario.
+export const P113_V4_FIELDS: readonly FieldSpec[] = P113_V3_FIELDS.map(field => ({
+    ...field,
+    required: field.key === "tipo_bobina" || field.key === "numero_bobina",
+}));
+const v4Base = defineCandidateForm(P1_13_CODE, P113_V4_FIELDS, { legacy: P113_LEGACY_FIELDS });
+export const P113_V4 = {
+    ...v4Base,
+    createAttempt: (...args: Parameters<typeof v4Base.createAttempt>): ReturnType<typeof v4Base.createAttempt> => {
+        const quantity = (args[0].cantidad_jabas ?? "").trim();
+        if (quantity && (!/^\d{1,9}$/.test(quantity) || Number(quantity) < 1)) {
+            return { ok: false, errors: ["Cantidad de jabas: si se indica, debe ser un entero positivo."] };
+        }
+        return v4Base.createAttempt(...args);
+    },
+};
 export function checkP113Recipe(draft: CandidateDraft, productCode: string): string | null {
     const materials = materialOptionsFor(productCode);
     if (materials.length === 0) return "El producto de la OT no tiene receta. No se puede registrar.";

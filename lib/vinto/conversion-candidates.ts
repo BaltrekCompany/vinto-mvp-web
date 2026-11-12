@@ -10,7 +10,7 @@ import type { CandidateScreen } from "./candidate-screen.ts";
 import type { FieldSpec } from "./candidate-form.ts";
 import { P112, P112_AUTOMATIC, P112_PENDING, P1_12_CODE } from "./p1-12.ts";
 import { P113_AUTOMATIC, P1_13_CODE } from "./p1-13.ts";
-import { P113_V3, P113_V3_FIELDS } from "./p1-13-v3.ts";
+import { P113_V4, P113_V4_FIELDS } from "./p1-13-v3.ts";
 import { P116, P116_AUTOMATIC, P116_FIELDS, P116_PENDING, P1_16_CODE } from "./p1-16.ts";
 
 export const CONVERSION_CANDIDATE_SCREENS = ["p112", "p113", "p116"] as const;
@@ -30,10 +30,10 @@ export const CONVERSION_CANDIDATES: Record<ConversionCandidateScreen, Conversion
     p112: { code: P1_12_CODE, form: P112, api: candidateApi(P112), kicker: "Papel higiénico · Conversión", title: "Producción diaria de papel higiénico", automatic: P112_AUTOMATIC, pending: P112_PENDING,
         sections: [{ title: "Producción por pallet", keys: ["cantidad_jabas", "hora_inicio", "hora_fin"] }],
         historyNote: "P1-12 v4: un pallet por captura, número por OT y línea; peso nominal maestro y peso total congelados al guardar. Las versiones 1-3 conservan sus campos históricos sin conversiones." },
-    p113: { code: P1_13_CODE, form: P113_V3, api: candidateApi(P113_V3), kicker: "Servilletas y especiales · Conversión", title: "Producción diaria de servilletas y especiales", automatic: P113_AUTOMATIC, pending: [],
-        sections: [{ title: "Consumo de bobina", keys: P113_V3_FIELDS.filter(f => !["cantidad_jabas", "hora_inicio", "hora_fin"].includes(f.key)).map(f => f.key) },
+    p113: { code: P1_13_CODE, form: P113_V4, api: candidateApi(P113_V4), kicker: "Servilletas y especiales · Conversión", title: "Producción diaria de servilletas y especiales", automatic: P113_AUTOMATIC, pending: [],
+        sections: [{ title: "Consumo de bobina", keys: P113_V4_FIELDS.filter(f => !["cantidad_jabas", "hora_inicio", "hora_fin"].includes(f.key)).map(f => f.key) },
             { title: "Producción por pallet", keys: ["cantidad_jabas", "hora_inicio", "hora_fin"] }],
-        historyNote: "P1-13 v3: receta de producto y un pallet por envío, pesos congelados por artículo. Versiones 1/2 disponibles en solo lectura." },
+        historyNote: "P1-13 v4: solo tipo y número de bobina obligatorios; pallet únicamente cuando se informan jabas. Versiones 1/2/3 históricas conservadas." },
     p116: { code: P1_16_CODE, form: P116, api: candidateApi(P116), kicker: "Control de merma · Conversión", title: "Registro de control de merma", automatic: P116_AUTOMATIC, pending: P116_PENDING,
         sections: withHours(P116_FIELDS, "Pesada de merma"),
         historyNote: "Una pesada por registro (desde la versión 3: tipo, origen y peso real en kg) con las horas generales de la versión 2; las capturas de las versiones 1 y 2 muestran sus seis cantidades como «versión anterior» y no se convierten en pesadas." },

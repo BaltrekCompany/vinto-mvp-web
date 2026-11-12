@@ -134,6 +134,12 @@ export function defineCandidateForm(code: string, fields: readonly FieldSpec[], 
         if (!parsed || !((code === "VINTO-P1-12" && parsed.form.version_number >= 4) ||
             (code === "VINTO-P1-13" && parsed.form.version_number >= 3))) return parsed;
         const pallet = isRec(value) ? value.pallet : null;
+        // P1-13 v4: un registro sin cantidad de jabas no tiene pallet.
+        // P1-13 v3 y P1-12 v4 mantienen el pallet obligatorio.
+        if (code === "VINTO-P1-13" && parsed.form.version_number >= 4 &&
+            !Object.hasOwn(parsed.values, "cantidad_jabas")) {
+            return pallet == null ? parsed : null;
+        }
         if (!isRec(pallet) || !Number.isSafeInteger(pallet.number) || Number(pallet.number) < 1
             || !Number.isSafeInteger(pallet.quantity_jabas) || Number(pallet.quantity_jabas) < 1
             || typeof pallet.nominal_weight_kg !== "string" || !isDecimalText(pallet.nominal_weight_kg)
