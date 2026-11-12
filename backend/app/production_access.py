@@ -128,12 +128,13 @@ class PalletPreviewOut(BaseModel):
 @router.get("/pallet-preview", response_model=PalletPreviewOut)
 def pallet_preview(assignment_id: UUID, user: AuthenticatedUser = Depends(require_permission(PRODUCTION_CAPTURE)),
                    connection=Depends(get_connection)):
-    """Fuente oficial de peso P1-12: OT/linea verificadas por sesion; solo lectura."""
-    from app.production_pallets import preview
+    """Peso de pallet P1-12/P1-13: OT/linea verificadas por sesion; solo lectura."""
+    from app.production_pallets import preview, form_for_machine
     from app.authz.availability import is_eligible
     from app.authz.policies import Operation
     result = preview(connection, assignment_id, user.sectors)
-    if not is_eligible(connection, user, Operation.PRODUCTION_CAPTURE, result["machine"], "VINTO-P1-12"):
+    form_code = form_for_machine(result["machine"])
+    if form_code is None or not is_eligible(connection, user, Operation.PRODUCTION_CAPTURE, result["machine"], form_code):
         raise HTTPException(status_code=404, detail="Asignacion no disponible")
     return PalletPreviewOut(**result)
 

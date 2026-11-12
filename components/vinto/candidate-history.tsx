@@ -17,7 +17,7 @@ export function CandidateHistory({ candidate, resource, refresh }: { candidate: 
     const extra = [...candidate.form.calculated, ...candidate.form.legacy];
     const extraLabels = [...candidate.form.calculated.map(f => f.label), ...candidate.form.legacy.map(f => `${f.label} (versión anterior)`)];
     const derivedLabels = derived.map(d => `${d.label}${d.suffix ? ` (${d.suffix})` : ""}`);
-    const palletHistory = candidate.code === "VINTO-P1-12";
+    const palletHistory = candidate.code === "VINTO-P1-12" || candidate.code === "VINTO-P1-13";
     const palletHeaders = ["N.º pallet", "Peso nominal por jaba (kg)", "Peso total (kg)"];
     const headers = bobbinLevel ? ["Fecha operativa", "Bobina", "OT", "Línea / PV", "Máquina", "Turno", "Hora de registro", ...candidate.form.fields.map(f => f.label), ...extraLabels, ...derivedLabels, "Rev."] : machineLevel ? ["Fecha operativa", "Máquina", "Turno", "Hora de registro", "Registrado por", ...candidate.form.fields.map(f => f.label), ...extraLabels, ...derivedLabels, "Rev."] : ["Fecha operativa", "OT", "Línea / PV", "Máquina", "Turno", ...candidate.form.fields.map(f => f.label), ...extraLabels, ...derivedLabels, ...(palletHistory ? palletHeaders : []), "Rev."];
     return <div className="rounded-2xl border bg-white p-6 shadow-sm" aria-live="polite" data-history={title}>

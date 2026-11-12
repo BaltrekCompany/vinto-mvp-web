@@ -186,19 +186,17 @@ const convScreen = (screen, machine) => server.renderToStaticMarkup(React.create
 // MF-12B: P1-16 pasó a la versión 3 (una pesada por captura); sus horas se prueban en mf12b-fibra-merma.test.mjs
 const forms = () => [["p113", ui.P113, "OMET_I", 20, 2]]; // P1-12 v4 ya tiene un circuito independiente de pallet; estos son los contratos históricos de horas generales.
 
-test("P1-13 (horas generales heredadas): sección «Horas de producción» con Hora inicio y Hora fin obligatorias (campos de hora), antes de los demás campos; un único par", () => {
-  for (const [screen, , machine, total] of forms()) {
-    const html = convScreen(screen, machine), text = textOf(html);
-    assert.ok(text.includes("Horas de producción"), screen);
-    assert.ok(text.includes("Hora inicio *") && text.includes("Hora fin *"), screen);
-    assert.equal(count(html, 'type="time"'), 2, `${screen}: exactamente dos campos de hora (sin duplicados)`);
-    assert.equal(count(text, "Hora inicio *"), 1);
-    assert.match(text, /Hora local de planta \(HH:MM\), digitada\. No es la hora de registro del sistema ni la hora de un pallet\./);
-    assert.ok(text.indexOf("Hora inicio *") < text.indexOf("Hora fin *"));
-    const first = text.indexOf("Hora inicio *"), other = ui.CONVERSION_CANDIDATES[screen].form.fields.find((f) => f.key !== "hora_inicio" && f.key !== "hora_fin");
-    assert.ok(first < text.indexOf(`${other.label}${other.required ? " *" : ""}`, first), `${screen}: las horas abren el formulario`);
-    assert.equal(count(html, "<input") + count(html, "<textarea"), total, `${screen}: ${total} campos`);
-  }
+test("P1-13: contrato histórico v2 conserva las horas, el nuevo v3 separa bobina y pallet", () => {
+  const old = ui.P113;
+  assert.equal(old.fields.length, 20, "v2 histórica conserva sus veinte campos");
+  assert.ok(old.fields.some(f => f.key === "hora_inicio" && f.required));
+  assert.ok(old.fields.some(f => f.key === "hora_fin" && f.required));
+  const current = ui.CONVERSION_CANDIDATES.p113;
+  assert.equal(current.form.fields.length, 9, "v3 declara solo nueve entradas");
+  assert.ok(current.form.fields.some(f => f.key === "tipo_bobina"));
+  assert.ok(current.form.fields.some(f => f.key === "cantidad_jabas"));
+  assert.deepEqual(current.sections.map(s => s.title), ["Consumo de bobina", "Producción por pallet"]);
+  assert.equal(current.sections.some(s => /Sobreempaque e insumos/.test(s.title)), false);
 });
 
 test("P1-13 (horas generales heredadas): horas obligatorias HH:MM; aceptan 00:00 y 23:59; rechazan formatos incorrectos; fin anterior a inicio se acepta y se guarda tal cual", () => {
@@ -287,11 +285,11 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 2, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
+  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 4, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 3, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
   assert.equal(versions["VINTO-P1-25"], 3);
-  assert.equal(manifest.counts.form_fields, 577, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
+  assert.equal(manifest.counts.form_fields, 566, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
   assert.equal(versions["VINTO-MP3-01"], 1);
   assert.deepEqual(JSON.parse(readFileSync(join(root, "backend/seed_data/forms/VINTO-MP3-01.json"), "utf8")).machines, ["MP3"]);
 });

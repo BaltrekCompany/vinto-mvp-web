@@ -73,7 +73,7 @@ class ApprovedBundleTests(unittest.TestCase):
         # Valor calculado mediante load_bundle().source_checksum del manifest aprobado
         # en main c10d0c8 (2026-11-09). CV-P111-v3: nuevo manifest y checksum tras versión aditiva P1-11; versiones anteriores no se modifican.
         self.assertEqual(BUNDLE.source_checksum, compute_source_checksum(BUNDLE.manifest))
-        self.assertEqual(BUNDLE.source_checksum, "45c09d5f2d0e6812e87161012532aca243f7166ad9b74cc5dfca0dc2d622054f")
+        self.assertEqual(BUNDLE.source_checksum, "6e11f0eb4f152a98c01cb31e2e3ff1cfa2a50da159f00de668afcdf4aea4a9db")
         bobinas_schedules = [(s["shift"], s["starts_at"], s["ends_at"], s["valid_from"], s["valid_to"]) for s in BUNDLE.schedules if s["sector"] == "BOBINAS"]
         self.assertEqual(bobinas_schedules, [("DIA", "07:00", "19:00", "2026-01-01", None), ("NOCHE", "19:00", "07:00", "2026-01-01", None)])
         self.assertEqual(sorted(s["code"] for s in BUNDLE.sectors), ["BOBINAS", "CONVERSION", "REBOBINADO"])

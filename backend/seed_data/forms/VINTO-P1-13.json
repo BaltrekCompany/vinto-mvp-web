@@ -6,7 +6,7 @@
   "name": "Producción diaria de servilletas y especiales",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 2,
+  "version_number": 3,
   "machines": [
     "OMET_I",
     "OMET_II",
@@ -20,175 +20,76 @@
   "groups": [],
   "fields": [
     {
-      "key": "hora_inicio",
-      "label": "Hora inicio",
-      "value_type": "time",
+      "key": "tipo_bobina",
+      "label": "Tipo de bobina",
+      "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 1
     },
     {
-      "key": "hora_fin",
-      "label": "Hora fin",
-      "value_type": "time",
+      "key": "numero_bobina",
+      "label": "N.º bobina",
+      "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 2
     },
     {
-      "key": "saldo_inicial",
+      "key": "saldo_inicial_kg",
       "label": "Saldo inicial",
-      "value_type": "text",
+      "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 3
     },
     {
-      "key": "numero_bobina_consumida",
-      "label": "Número bobina consumida",
-      "value_type": "text",
+      "key": "ingreso_kg",
+      "label": "Ingreso",
+      "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 4
     },
     {
-      "key": "peso_bobina_consumida",
-      "label": "Peso bobina consumida",
-      "value_type": "text",
+      "key": "saldo_final_kg",
+      "label": "Saldo final",
+      "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 5
     },
     {
-      "key": "formato_bobina_consumida",
-      "label": "Formato bobina consumida",
-      "value_type": "text",
+      "key": "cantidad_jabas",
+      "label": "Cantidad de jabas",
+      "value_type": "integer",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 6
     },
     {
-      "key": "observacion",
-      "label": "Observación",
-      "value_type": "textarea",
+      "key": "hora_inicio",
+      "label": "Hora inicio pallet",
+      "value_type": "time",
       "source": "manual",
-      "required": false,
+      "required": true,
       "unit": null,
       "display_order": 7
     },
     {
-      "key": "codigo_producto",
-      "label": "Código producto",
-      "value_type": "text",
+      "key": "hora_fin",
+      "label": "Hora fin pallet",
+      "value_type": "time",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 8
-    },
-    {
-      "key": "producto",
-      "label": "Producto",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 9
-    },
-    {
-      "key": "formato_producto",
-      "label": "Formato producto",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 10
-    },
-    {
-      "key": "cantidad_producida",
-      "label": "Cantidad producida",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 11
-    },
-    {
-      "key": "empaque_saldo_inicial",
-      "label": "Empaque saldo inicial",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 12
-    },
-    {
-      "key": "empaque_solicitado",
-      "label": "Empaque solicitado",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 13
-    },
-    {
-      "key": "empaque_utilizado",
-      "label": "Empaque utilizado",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 14
-    },
-    {
-      "key": "insumo_codigo",
-      "label": "Insumo código",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 15
-    },
-    {
-      "key": "insumo_nombre",
-      "label": "Insumo nombre",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 16
-    },
-    {
-      "key": "insumo_saldo_inicial",
-      "label": "Insumo saldo inicial",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 17
-    },
-    {
-      "key": "insumo_solicitado",
-      "label": "Insumo solicitado",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 18
-    },
-    {
-      "key": "insumo_utilizado",
-      "label": "Insumo utilizado",
-      "value_type": "text",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 19
     },
     {
       "key": "observaciones",
@@ -197,8 +98,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 20
+      "display_order": 9
     }
   ],
-  "definition_checksum": "ab88bc0d76166e6859155c3f1486b717351be456693025fa03cf4529a69496e1"
+  "definition_checksum": "2f151ccc423e55e072766cd100f2a61a46ed6ac15c04e330dc0f5c2526599772"
 }

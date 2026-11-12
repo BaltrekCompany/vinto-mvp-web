@@ -95,8 +95,8 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(len(FORMS[P116]["machines"]), 11)
         self.assertEqual(sorted(FORMS[P116]["machines"]), sorted(PREVIOUS[P116]["machines"]), "P1-16 conserva sus 11 máquinas")
         self.assertEqual({c: FORMS[c]["version_number"] for c in ("VINTO-P1-01", "VINTO-P1-05", "VINTO-P1-31", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13")},
-                         {"VINTO-P1-01": 4, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 2}, "P1-11 cambia aditivamente a v3; P1-12 sigue en v4")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 577)
+                         {"VINTO-P1-01": 4, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 3}, "P1-11 cambia aditivamente a v3; P1-12 sigue en v4")
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 566)
 
     def test_p1_04_v2_fields_and_literal_catalogs(self):
         fields = FORMS[P104]["fields"]
