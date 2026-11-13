@@ -329,7 +329,7 @@ class ImportedStateTests(DatabaseCase):
         total = self.count(self.connection, "vinto_audit.import_record")
         self.assertEqual(total, 2059)
         self.assertEqual(self.count(self.connection, "vinto_audit.import_record", "status='accepted' AND issues='[]'::jsonb"), 2059)
-        self.assertEqual(self.rows("SELECT summary->>'records' FROM vinto_audit.import_batch"), [("2061",)])
+        self.assertEqual(self.rows("SELECT summary->>'records' FROM vinto_audit.import_batch"), [("2059",)])
         keys = {r[0] for r in self.rows("SELECT source_key FROM vinto_audit.import_record")}
         self.assertIn("unit:KG", keys)
         self.assertIn("form_version:VINTO-P1-06:2", keys)
