@@ -41,7 +41,7 @@ except ModuleNotFoundError:
 service, line, internal = base.service, base.line, base.internal
 bobbins, work_orders = internal(_bobbins), internal(_work_orders)
 P103, P106 = "VINTO-P1-03", "VINTO-P1-06"
-VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}
+VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "ok"}
 ARTICLES = {a["code"]: a["version"] for a in base.BUNDLE.articles}
 WITH_GRAMMAGE = [c for c in base.MP1_CODES if ARTICLES[c]["grammage_g_m2"] is not None]
 WITH_GRAMMAGE_MP3 = [c for c in base.MP3_ONLY if ARTICLES[c]["grammage_g_m2"] is not None]

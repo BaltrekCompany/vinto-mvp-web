@@ -98,7 +98,7 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         reply = await call("POST", "/api/bobbins", cookie=await self.cookie("OPERACION"),
                            json_body={"capture_id": str(uuid4()), "assignment_id": assignment["id"], "device_key": str(uuid4()),
                                       "values": {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5",
-                                                  "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}})
+                                                  "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "ok"}})
         self.assertIn(reply.status, (200, 201), reply.text)
         bobbin = reply.json()["bobbin"]
         return bobbin["id"], bobbin["code"]

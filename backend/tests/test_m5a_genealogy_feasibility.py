@@ -41,7 +41,7 @@ SHIPPED_POLICY = _capture_service.CENTRAL_FORM_CODES
 SHIPPED_SECTORS = _sectors.operational_sector_codes()
 BUNDLE = load_bundle()
 MP1_ARTICLE = sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == "MP1")[0]
-F3_VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "madre sintética"}
+F3_VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "madre sintética"}
 STATE = {}
 
 
