@@ -317,7 +317,7 @@ class CatalogTests(Base):
         self.assertIn(P102, machines["MP1"])
         self.assertIn(P102, machines["MP3"])
         for code in REBOBINADORAS:
-            self.assertEqual(machines[code][P110]["effective_version"], 3, code)
+            self.assertEqual(machines[code][P110]["effective_version"], 4, code)
         self.assertEqual(sorted(c for c, forms in machines.items() if P110 in forms), sorted(REBOBINADORAS), "P1-10 solo en las cinco rebobinadoras")
 
     async def test_p1_31_stays_on_mp3_and_keeps_its_area(self):
@@ -414,9 +414,9 @@ class HistoricalLinkTests(Base):
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.status = 'published'", (P105,)), 2)
         machines = {m["code"]: {f["code"] for f in m["forms"]} for s in (await self.get("/api/admin/catalog")).json()["sectors"] for m in s["machines"]}
         self.assertNotIn(P105, machines["MP1"])
-        self.assertIn(P105, machines["MP3"])
+        self.assertNotIn(P105, machines["MP3"], "P181: Tubetes tampoco puede ofrecerse en MP3")
         form = next(f for f in (await self.get("/api/admin/catalog/forms")).json()["forms"] if f["code"] == P105)
-        self.assertEqual((form["effective_version"], [m["code"] for m in form["machines"]]), (2, ["MP3"]))
+        self.assertEqual((form["effective_version"], [m["code"] for m in form["machines"]]), (2, []), "el historial permanece, sin pares concedibles")
 
     async def test_a_stored_grant_whose_pair_is_no_longer_offered_is_shown_as_not_offered(self):
         uid = self.target()
