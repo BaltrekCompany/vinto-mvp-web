@@ -118,40 +118,36 @@ test("historial de P1-04: una columna Subtotal (kg) calculada de lo guardado, lo
   assert.ok(text.includes("Un registro por consumo"));
 });
 
-const P116_DRAFT = { hora_inicio: "06:30", hora_fin: "14:45", numero_correlativo: "M-0001", tipo_merma: "Hoja doble", origen_merma: "Logs", peso_merma_kg: "12,5", observacion: "" };
+const P116_DRAFT = { numero_correlativo: "M-0001", tipo_merma: "Hoja doble", origen_merma: "Logs", peso_merma_kg: "12,5", observacion: "" };
 
-test("P1-16 v3: una pesada por captura con tipo (6 opciones), origen (3), peso real en kg, correlativo manual, observación opcional y las horas generales de MF-11", () => {
+test("P1-16 v4: una pesada, sin horas y sin paneles de prueba", () => {
   const html = screen(ui.CONVERSION_CANDIDATES.p116, "GAMBINI"), text = textOf(html);
-  for (const label of ["Hora inicio *", "Hora fin *", "Número correlativo *", "Tipo de merma *", "Origen de la merma *", "Peso real *"]) assert.ok(text.includes(label), label);
+  for (const label of ["Número correlativo *", "Tipo de merma *", "Origen de la merma *", "Peso real *"]) assert.ok(text.includes(label), label);
+  for (const retired of ["Hora inicio *", "Hora fin *", "Horas de producción", "Ficha NO homologada", "Merma total"]) assert.equal(text.includes(retired), false, retired);
   assert.ok(text.includes("Observación") && !text.includes("Observación *"));
-  assert.ok(text.includes("Horas de producción") && text.includes("Pesada de merma"));
-  assert.equal(count(html, 'type="time"'), 2, "un único par de horas");
+  assert.ok(text.includes("Pesada de merma"));
+  assert.equal(count(html, 'type="time"'), 0);
   assert.equal(count(html, "<select"), 2);
   assert.deepEqual(optionsOf(html, "Tipo de merma *").map((o) => o[1]), ["Seleccionar…", "Hoja doble", "Hoja simple", "Servilleta", "Toalla", "Cartón", "Plástico"]);
   assert.deepEqual(optionsOf(html, "Origen de la merma *").map((o) => o[1]), ["Seleccionar…", "Logs", "Cola", "Máquina"]);
-  assert.ok(text.indexOf("Hora inicio *") < text.indexOf("Número correlativo *"), "las horas abren el formulario");
-  assert.equal(/Hoja doble kg|Servilleta kg|Toalla kg|Cartón kg|Hoja simple kg|Plástico kg/.test(text), false, "las seis cantidades de las versiones 1 y 2 ya no se piden");
-  assert.match(text, /NO puede repetirse en la misma OT y máquina/, "la regla del correlativo es visible");
   assert.equal(ui.P116.emptyDraft().peso_merma_kg, "");
 });
 
-test("P1-16 v3: validación estructural (listas cerradas, peso decimal, correlativo y horas obligatorios, horas sin orden ni duración) y payload sin campos anteriores", () => {
+test("P1-16 v4: validación estructural y payload sin horas ni cantidades legacy", () => {
   const ok = ui.P116.normalizeDraft(P116_DRAFT);
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.values, { hora_inicio: "06:30", hora_fin: "14:45", numero_correlativo: "M-0001", tipo_merma: "Hoja doble", origen_merma: "Logs", peso_merma_kg: "12.5" }, "textos literales; coma → punto");
-  for (const key of ["hora_inicio", "hora_fin", "numero_correlativo", "tipo_merma", "origen_merma", "peso_merma_kg"]) assert.match(ui.P116.normalizeDraft({ ...P116_DRAFT, [key]: "" }).errors.join(" "), /es obligatori|elige una/, key);
+  assert.deepEqual(ok.values, { numero_correlativo: "M-0001", tipo_merma: "Hoja doble", origen_merma: "Logs", peso_merma_kg: "12.5" });
+  for (const key of ["numero_correlativo", "tipo_merma", "origen_merma", "peso_merma_kg"]) assert.match(ui.P116.normalizeDraft({ ...P116_DRAFT, [key]: "" }).errors.join(" "), /es obligatori|elige una/, key);
   for (const tipo of ui.P116_TIPO_OPTIONS) assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, tipo_merma: tipo }).values.tipo_merma, tipo);
   for (const origen of ui.P116_ORIGEN_OPTIONS) assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, origen_merma: origen }).values.origen_merma, origen);
   assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, tipo_merma: "Otro" }).ok, false);
   assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, origen_merma: "Otro" }).ok, false);
   for (const bad of ["abc", "1e3", "12.5.1", "12 kg"]) assert.match(ui.P116.normalizeDraft({ ...P116_DRAFT, peso_merma_kg: bad }).errors.join(" "), /número decimal/, bad);
-  for (const [start, end] of [["00:00", "23:59"], ["23:30", "00:15"], ["10:00", "09:00"], ["08:00", "08:00"]]) {
-    const check = ui.P116.normalizeDraft({ ...P116_DRAFT, hora_inicio: start, hora_fin: end });
-    assert.deepEqual([check.ok, check.values.hora_inicio, check.values.hora_fin], [true, start, end], "tal como se digitó: sin UTC, sin duración, sin orden");
-  }
   const { attempt } = ui.P116.createAttempt(P116_DRAFT, ASSIGNMENT, DEVICE, () => "3f2b8a9e-1c4d-4e5f-8a6b-7c8d9e0f1a2b");
-  for (const key of ["hoja_doble_kg", "servilleta_kg", "toalla_kg", "carton_kg", "hoja_simple_kg", "plastico_kg", "total_merma_kg"]) assert.equal(key in attempt.payload.values, false, key);
-  assert.equal(ui.P116.normalizeDraft({ ...P116_DRAFT, numero_correlativo: "M-0001" }).ok, true, "el correlativo se acepta tal como se digita; la unicidad por OT + máquina la decide el backend");
+  for (const key of ["hora_inicio", "hora_fin", "hoja_doble_kg", "servilleta_kg", "toalla_kg", "carton_kg", "hoja_simple_kg", "plastico_kg", "total_merma_kg"]) assert.equal(key in attempt.payload.values, false, key);
+  const withOldHours = ui.P116.normalizeDraft({ ...P116_DRAFT, hora_inicio: "06:30", hora_fin: "14:45" });
+  assert.equal(withOldHours.ok, true);
+  assert.equal("hora_inicio" in withOldHours.values || "hora_fin" in withOldHours.values, false, "v4 ignores retired inputs");
 });
 
 test("historial de P1-16: v1 y v2 conservan sus seis cantidades como «versión anterior» y v3 muestra tipo, origen y peso; las antiguas no se convierten en pesadas", () => {
@@ -189,7 +185,7 @@ test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las de
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const forms = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) forms[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8"));
-  const expected = { "VINTO-P1-01": 4, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-16": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-02": 1 };
+  const expected = { "VINTO-P1-01": 4, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-16": 4, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-02": 1 };
   for (const [code, version] of Object.entries(expected)) assert.equal(forms[code].version_number, version, code);
   const p104 = forms["VINTO-P1-04"], p116 = forms["VINTO-P1-16"];
   assert.deepEqual(p104.fields.map((f) => f.key), ui.P104_FIELDS.map((f) => f.key));
@@ -202,11 +198,11 @@ test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las de
   assert.deepEqual(opts(p116, "origen_merma").map((o) => o[0]), [...ui.P116_ORIGEN_OPTIONS]);
   for (const [form, key] of [[p104, "material"], [p104, "origen"], [p104, "presentacion"], [p116, "tipo_merma"], [p116, "origen_merma"]]) assert.equal(opts(form, key).every(([k, l]) => k === l), true, `${key}: el valor guardado es el texto literal`);
   assert.deepEqual(p104.fields.map((f) => [f.value_type, f.required, f.unit]), [["time", true, null], ["text", true, null], ["text", true, null], ["text", true, null], ["integer", true, null], ["decimal", true, "KG"], ["textarea", false, null]]);
-  assert.deepEqual(p116.fields.map((f) => [f.value_type, f.required, f.unit]), [["time", true, null], ["time", true, null], ["text", true, null], ["text", true, null], ["text", true, null], ["decimal", true, "KG"], ["textarea", false, null]]);
+  assert.deepEqual(p116.fields.map((f) => [f.value_type, f.required, f.unit]), [["text", true, null], ["text", true, null], ["text", true, null], ["decimal", true, "KG"], ["textarea", false, null]]);
   assert.deepEqual(p104.machines, ["MP1", "MP3"]);
   assert.equal(p116.machines.length, 11);
   assert.equal(p104.fields.some((f) => /subtotal|total/.test(f.key)), false, "el subtotal no se persiste");
-  assert.equal(manifest.counts.form_fields, 570, "P1-12 v4 retira 19 campos; RG-MP3-01 no cambia");
+  assert.equal(manifest.counts.form_fields, 568, "P1-12 v4 retira 19 campos; RG-MP3-01 no cambia");
   assert.deepEqual(forms["VINTO-MP3-01"].machines, ["MP3"]);
   assert.equal(forms["VINTO-MP3-01"].version_number, 1);
 });

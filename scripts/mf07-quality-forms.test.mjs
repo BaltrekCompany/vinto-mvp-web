@@ -103,7 +103,7 @@ test("P1-24: posiciones Comando / Medio / Transversal, promedios de solo lectura
 
 test("P1-25: Comando / Medio / Transversal, promedios de resistencia longitudinal, elongaciones sin duplicar y los ajustes de MF-06 intactos", () => {
   const html = capture("p125"), text = textOf(html);
-  for (const label of ["Resistencia longitudinal – Comando kgf *", "Resistencia longitudinal – Medio kgf *", "Resistencia longitudinal – Transversal kgf *", "Resistencia longitudinal húmeda – Comando kgf *", "Resistencia longitudinal húmeda – Medio kgf *", "Resistencia longitudinal húmeda – Transversal kgf *"]) assert.ok(text.includes(label), label);
+  for (const label of ["Resistencia en Húmedo Longitudinal - Comando *", "Resistencia en Húmedo Longitudinal - Medio *", "Resistencia en Húmedo Longitudinal - Transversal *", "Resistencia en Húmedo Transversal - Comando *", "Resistencia en Húmedo Transversal - Medio *", "Resistencia en Húmedo Transversal - Transversal *"]) assert.ok(text.includes(label), label);
   assert.match(text, /Promedio resistencia longitudinal kgf/);
   assert.match(text, /Promedio resistencia longitudinal húmeda kgf/);
   assert.equal(count(text, "Elongación media longitudinal *"), 1);
