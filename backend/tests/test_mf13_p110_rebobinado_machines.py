@@ -48,7 +48,7 @@ SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 GOOD = {"hora_inicio": "06:30", "hora_fin": "14:45", "peso_fardo": "55,5 kg"}  # valores FICTICIOS: nada aquí es un límite ni una regla
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 5, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 5, "VINTO-P1-10": 3, "VINTO-P1-11": 4, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
             "VINTO-P1-16": 4, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 5, "VINTO-P1-25": 4, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 
