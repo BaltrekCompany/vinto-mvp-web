@@ -64,7 +64,7 @@ MEANS = {
 
 
 def manual(code):
-    return [f for f in FORMS[code]["fields"] if f["source"] == "manual"]
+    return [f for f in FORMS[code]["fields"] if f["source"] == "manual" and (code != P124 or f["key"] not in ("elongacion_media_longitudinal", "elongacion_media_transversal"))]
 
 
 def setUpModule():
@@ -151,8 +151,8 @@ class Base(q2.BobbinBase):
 
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
-        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 4, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 4), ("VINTO-P1-10", 3), ("VINTO-P1-11", 2), ("VINTO-P1-12", 4), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 4), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
+        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 5, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 4), ("VINTO-P1-10", 3), ("VINTO-P1-11", 2), ("VINTO-P1-12", 4), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 5), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
                          "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2; MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
@@ -471,18 +471,18 @@ class ProductionImportScenarioTests(unittest.TestCase):
         dry = reference.dry_run(self.connection, BUNDLE)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 3)
-        self.assertEqual(dry.counts["field"]["create"], 86 + 12 + 15)
+        self.assertEqual(dry.counts["field"]["create"], 86 + 14 + 15)
         self.assertEqual(dry.counts["form_version_machine"]["create"], 6)
         self.assertEqual(self.snapshot(old_where), old, "el dry-run no escribe")
         result = reference.apply(self.connection, BUNDLE)
         self.assertEqual((result.mode, result.conflicts), ("applied", []))
         self.assertEqual(self.snapshot(old_where), old, "las versiones anteriores y sus campos quedan idénticos")
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
-        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (4, "published")]), (P125, [(1, "published"), (2, "published"), (3, "published")])):
+        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (5, "published")]), (P125, [(1, "published"), (2, "published"), (3, "published")])):
             self.assertEqual(self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall(), expected)
         sources = self.connection.execute("""SELECT f.code, d.source, count(*) FROM vinto_config.field_definition d JOIN vinto_config.form_version v ON v.id = d.form_version_id JOIN vinto_config.form f ON f.id = v.form_id
-                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',4),('VINTO-P1-25',3)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
-        self.assertEqual(sources, [(P121, "calculated", 4), (P121, "manual", 82), (P124, "calculated", 2), (P124, "manual", 10), (P125, "calculated", 2), (P125, "manual", 13)])
+                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',5),('VINTO-P1-25',3)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
+        self.assertEqual(sources, [(P121, "calculated", 4), (P121, "manual", 82), (P124, "calculated", 2), (P124, "manual", 12), (P125, "calculated", 2), (P125, "manual", 13)])
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")
 
