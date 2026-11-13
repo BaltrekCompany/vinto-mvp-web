@@ -351,12 +351,12 @@ class AvailabilityTests(Base):
         offered = await self.machines()
         mp1_before = sorted(["VINTO-P1-01", P102, P104, "VINTO-P1-06", P105, P131])
         self.assertEqual(offered["MP1"], sorted(set(mp1_before) - {P105, P131}), "MP1 conserva P1-01, P1-02, P1-04 y P1-06")
-        self.assertEqual(offered["MP3"], sorted((set(mp1_before) - {P101}) | {"VINTO-MP3-01"}), "MP3 solo reemplaza P1-01 con RG01")
+        self.assertEqual(offered["MP3"], sorted((set(mp1_before) - {P101, P105}) | {"VINTO-MP3-01"}), "MP3 solo reemplaza P1-01 con RG01")
 
     async def test_every_other_machine_keeps_exactly_the_offer_of_the_bundle(self):
         offered = await self.machines()
         for machine, codes in offered.items():
-            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and not (machine == "MP3" and f["code"] == P101))
+            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and f["code"] != P105 and not (machine == "MP3" and f["code"] == P101))
             self.assertEqual(codes, expected, machine)
 
     async def test_new_captures_are_rejected_in_mp1_even_through_the_direct_api(self):

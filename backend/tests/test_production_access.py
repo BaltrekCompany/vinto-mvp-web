@@ -38,7 +38,7 @@ F6 = "VINTO-P1-06"
 # quedarse en el subconjunto que SÍ aplica a MP1/MP3, no en la política entera.
 SHIPPED_FORMS = sorted(SHIPPED_POLICY & frozenset({"VINTO-P1-01", "VINTO-P1-02", "VINTO-P1-04", "VINTO-P1-05", "VINTO-P1-06", "VINTO-P1-31"}))
 MP1_FORMS = [c for c in SHIPPED_FORMS if c not in ("VINTO-P1-05", "VINTO-P1-31")]
-MP3_FORMS = sorted((set(SHIPPED_FORMS) - {"VINTO-P1-01"}) | {"VINTO-MP3-01"})  # RG01 retira solo la oferta nueva de P1-01 MP3  # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3
+MP3_FORMS = sorted((set(SHIPPED_FORMS) - {"VINTO-P1-01", "VINTO-P1-05"}) | {"VINTO-MP3-01"})  # RG01 retira solo la oferta nueva de P1-01 MP3  # MF-12A (MD_Ejec 20): P1-05 y P1-31 (v2) solo para MP3
 ARTICLE = sorted(r["article_code"] for r in load_bundle().article_machines if r["machine_code"] == "MP1")[0]
 STATE = {}
 

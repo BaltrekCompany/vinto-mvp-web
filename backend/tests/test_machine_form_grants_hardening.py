@@ -153,7 +153,7 @@ class GrantablePairPolicyTests(Db):
                     pass
         self.assertEqual(grantable, offered, "ni un par de más ni uno de menos que lo que ofrece /api/production/machines")
         self.assertNotIn(("MP1", P105), grantable)
-        self.assertIn(("MP3", P105), grantable)
+        self.assertNotIn(("MP3", P105), grantable, "P1-05 retirado no admite nuevas concesiones")
 
     def test_rg01_cutover_disallows_old_mp3_grant_but_preserves_mp1(self):
         # El vínculo histórico MP3/P1-01 queda para consultas antiguas,
