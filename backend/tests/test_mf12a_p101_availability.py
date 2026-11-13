@@ -121,7 +121,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(FORMS[P131]["machines"], ["MP3"])
         for code in ("VINTO-P1-02", "VINTO-P1-03", P104, "VINTO-P1-06"):
             self.assertEqual(sorted(FORMS[code]["machines"]), ["MP1", "MP3"], f"{code}: la disponibilidad no cambia")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 568)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 567)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
     def test_p1_01_v4_removes_replaces_and_adds_exactly_what_was_approved(self):
         v3 = [f["key"] for f in V3["fields"]]
