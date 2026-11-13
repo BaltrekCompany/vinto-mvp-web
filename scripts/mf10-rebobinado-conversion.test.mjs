@@ -127,5 +127,5 @@ test("MF-10 no toca TVC/ETL ni el resto del código: el seed solo trae las cinco
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-11"], 3, "P1-11 v3 añade receta; las horas de v2 siguen históricas");
   assert.equal(versions["VINTO-P1-13"], 4, "P1-13 v4 hace opcionales todos los campos salvo tipo y número de bobina; v3 histórica preservada");
-  assert.equal(versions["VINTO-P1-16"], 3, "P1-16 recibe sus horas en MF-11 y pasa a una pesada por captura en MF-12B (v3)");
+  assert.equal(versions["VINTO-P1-16"], 4, "P1-16 recibe sus horas en MF-11 y pasa a una pesada por captura en MF-12B (v3)");
 });

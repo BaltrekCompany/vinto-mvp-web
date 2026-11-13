@@ -631,7 +631,7 @@ class CaptureCompatibilityTests(SameOrderCase):
         order = self.order([line(with_grammage[0], pv="PV-1"), line(with_grammage[1], pv="PV-2")])
         a1, a2 = self.activate(order, 0).assignment, self.activate(order, 1).assignment
         operator = self.make_user("OPERACION")
-        values = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}
+        values = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "ok"}
         for assignment in (a1, a2, a1):  # a1 again AFTER a2 was activated: it must still be capturable
             bobbins.submit_bobbin_production(self.connection, actor_id=operator, capture_id=uuid4(), assignment_id=assignment.id, device_key=str(uuid4()), values=values)
         refs = self.connection.execute("SELECT assignment_id, count(*) FROM vinto_txn.capture GROUP BY assignment_id").fetchall()

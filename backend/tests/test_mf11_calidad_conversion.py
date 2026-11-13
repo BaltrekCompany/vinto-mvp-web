@@ -61,7 +61,7 @@ STATE = {}
 HOURS = {"hora_inicio": "06:30", "hora_fin": "14:45"}
 POINTS = ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]
 VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, P111: 3, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
-            "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 5, "VINTO-P1-25": 3, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
+            "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 5, "VINTO-P1-25": 4, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
 # claves que cada versión NUEVA añade respecto de la anterior
 ADDED = {P111: ("hora_inicio", "hora_fin"), P112: ("hora_inicio", "hora_fin"), P113: ("hora_inicio", "hora_fin"), P116: ("hora_inicio", "hora_fin"), P126: ("absorcion_de_humedad",), P127: ("alcalinidad_total",), P124: ()}
 
@@ -199,7 +199,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 570)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 568)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
