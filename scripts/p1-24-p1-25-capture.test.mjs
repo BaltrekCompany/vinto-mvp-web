@@ -327,6 +327,6 @@ test("CV-P124 v5: dos elongaciones opcionales, decimales, sin alterar promedios 
   assert.equal(labelFor(f, 2), "Resistencia longitudinal húmeda centro");
   assert.equal(labelFor(f, 4), "Resistencia longitudinal húmeda – Comando");
   assert.equal(labelFor(f, 5), "Resistencia Longitudinal - Comando");
-  const old = P124.parseCapture(envelope(P1_24_CODE, Object.fromEntries(Object.entries(fill(P124_FIELDS)).filter(([k]) => !k.startsWith("elongacion_"))), {form:{code:P1_24_CODE,version_number:4,name:"x"}}));
+  const old = P124.parseCapture(envelope(P1_24_CODE, Object.fromEntries(Object.entries(P124.normalizeDraft(fill(P124_FIELDS)).values).filter(([k]) => !k.startsWith("elongacion_"))), {form:{code:P1_24_CODE,version_number:4,name:"x"}}));
   assert.ok(old, "v4 no exige campos creados en v5");
 });
