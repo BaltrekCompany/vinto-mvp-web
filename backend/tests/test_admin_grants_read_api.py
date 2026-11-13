@@ -24,6 +24,7 @@ from app.config import settings
 from app.ephemeral_db import build_reference_template, connect, copy_database, database_url, drop_database
 from app.quality import capture_service as quality_capture_service
 from app.quality.mother_policy import MOTHER_FORM_CODES, MOTHER_MACHINE_CODES
+from app.mp3_inspection_policy import RETIRED_CAPTURE_FORMS
 from app.seed import reference
 from app.seed.bundle import compute_definition_checksum, load_bundle
 
@@ -305,7 +306,7 @@ class CatalogTests(Base):
         machines = {m["code"]: m for s in tree["sectors"] for m in s["machines"]}
         self.assertEqual(len(machines), 18)
         for code, machine in machines.items():
-            expected = {f["code"]: (f["name"], f["area"], f["version_number"]) for f in BUNDLE.forms if code in f["machines"]}
+            expected = {f["code"]: (f["name"], f["area"], f["version_number"]) for f in BUNDLE.forms if code in f["machines"] and f["code"] not in RETIRED_CAPTURE_FORMS}
             if code in MOTHER_MACHINE_CODES:
                 expected.update({f["code"]: (f["name"], f["area"], f["version_number"]) for f in BUNDLE.forms if f["code"] in MOTHER_FORM_CODES})
             self.assertEqual({f["code"]: (f["name"], f["area"], f["effective_version"]) for f in machine["forms"]}, expected, code)
@@ -351,7 +352,7 @@ class CatalogTests(Base):
         self.assertEqual(sorted(forms), sorted(FORMS))
         for code, f in forms.items():
             self.assertEqual((f["name"], f["area"], f["effective_version"], f["published"], f["active"]), (FORMS[code]["name"], FORMS[code]["area"], FORMS[code]["version_number"], True, True), code)
-            self.assertEqual(sorted(m["code"] for m in f["machines"]), sorted(set(FORMS[code]["machines"]) | (set(MOTHER_MACHINE_CODES) if code in MOTHER_FORM_CODES else set())), code)
+            self.assertEqual(sorted(m["code"] for m in f["machines"]), sorted((set(FORMS[code]["machines"]) | (set(MOTHER_MACHINE_CODES) if code in MOTHER_FORM_CODES else set())) if code not in RETIRED_CAPTURE_FORMS else set()), code)
 
     async def test_published_enabled_and_offered_are_different_things(self):
         machines = {m["code"]: {f["code"]: f for f in m["forms"]} for s in (await self.tree())["sectors"] for m in s["machines"]}
