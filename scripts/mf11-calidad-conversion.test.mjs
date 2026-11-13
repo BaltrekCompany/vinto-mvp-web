@@ -154,7 +154,7 @@ test("P1-24 v4: «Crepado (%)» con la unidad %, misma clave, tipo y obligatorie
   assert.equal(ui.P125_FIELDS.find((f) => f.key === "crepado").label, "Crepado");
   assert.equal(ui.P125_FIELDS.find((f) => f.key === "crepado").suffix, undefined);
   assert.equal(textOf(bobbinScreen("p125")).includes("Crepado (%)"), false, "P1-25 no cambia");
-  assert.equal(ui.P124_FIELDS.length, 10);
+  assert.equal(ui.P124_FIELDS.length, 12); // P1-24 v5 adds two optional elongations
 });
 
 test("P1-24 v4: Crepado no recibe rango ni conversión: el valor digitado viaja tal cual (coma → punto es la única normalización existente)", () => {
