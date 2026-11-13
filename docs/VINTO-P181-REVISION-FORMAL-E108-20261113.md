@@ -57,3 +57,26 @@ Las modificaciones de esta etapa están dirigidas al **QA**, sin cambios de regl
 - **Despliegue:** por separado, con preflight de solo lectura, backup nuevo verificado por restauración, importación de referencias dry-run y aplicación autorizada, artefacto frontend íntegro, activación y QA funcional.
 
 **Estado de esta acta:** documento de revisión y trazabilidad; NO equivale a certificación PASS ni aprobación de producción.
+
+
+## 7. Continuación autorizada: corrección administrativa P1-05 (13/11/2026)
+
+**Permiso:** desarrollo, QA y documentación exclusivamente en la rama del PR #181; **sin merge, importación ni despliegue VPS**.
+
+### Diagnóstico comprobado en el SHA `116bf260d64b8062261a46685996323cf5df8527`
+
+- Las ejecuciones aisladas USR-02, USR-03 y USR-04 terminaron FAIL en la misma prueba `HistoricalLinkTests.test_a_link_that_only_a_historical_version_has_is_not_offered_nor_listed`.
+- La API `/api/admin/catalog` seguía incluyendo P1-05 en la lista de MP3 aunque `Catalog.pair(...).offered` ya era `false`; `/api/admin/catalog/forms` seguía mostrando MP3 bajo P1-05. La expectativa aprobada para baja funcional es **cero máquinas ofrecidas**.
+- El control de seguridad **sí** rechazaba nuevas concesiones por `_require_offered` y las capturas por `assert_form_machine`; por eso el ajuste correcto es en la proyección administrativa y no en los registros de `vinto_config.form_version_machine`.
+
+### Corrección aplicada en la rama (sin producción)
+
+- `596ea36b`: las vistas `catalog_tree` y `catalog_forms` excluyen solo los códigos de `RETIRED_CAPTURE_FORMS` de sus asociaciones operativas. Se conserva la fila del formulario, su versión publicada y `Catalog.pair` para leer el estado inerte de concesiones existentes. No se modifican filas de BD.
+- `b5205cac`: las expectativas de catálogo en `test_admin_grants_read_api.py` no tratan los formularios retirados como opciones ofertables. Se conserva la prueba de historial P1-05, las pruebas de rechazo y la igualdad entre oferta y política de concesión.
+- **No** se excluyen por este mecanismo las máquinas inactivas ni otros formularios con `offered=false`: son estados distintos de una baja funcional. No se alteran `RETIRED_CAPTURE_FORMS`, permisos, formularios anteriores ni migraciones.
+
+### Puerta de salida de esta corrección
+
+Se requieren nuevos resultados CI en el SHA final y PASS verificado de USR-02/03/04, E1-08 amplio frontend/backend y foco 55 regresiones, además de las suites de formularios/PostgreSQL17. Si alguna falla, registrar diagnóstico exacto y mantener **NO-GO**. Los PASS de commits anteriores no certifican este cambio.
+
+**Estado en el momento de registrar este avance:** código y oráculos actualizados, certificación CI del nuevo HEAD todavía pendiente; PR sigue **Draft / NO-GO**.
