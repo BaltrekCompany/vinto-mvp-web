@@ -793,7 +793,7 @@ class F3ReferenceTests(DatabaseCase):
                                                   JOIN vinto_config.form_version v ON v.id=f.form_version_id JOIN vinto_config.form fm ON fm.id=v.form_id
                                                   LEFT JOIN vinto_master.unit u ON u.id=f.unit_id WHERE fm.code='VINTO-P1-03' ORDER BY f.display_order"""),
                          [("hora_inicio", "time", True, None), ("hora_fin", "time", True, None), ("diametro", "decimal", True, "MM"),
-                          ("peso_kg", "decimal", True, "KG"), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
+                          ("peso_kg", "decimal", True, "KG"), ("metraje", "integer", True, None), ("codigo_de_tubete", "integer", True, None), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
         self.assertEqual(self.rows_of(connection, "SELECT status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id=v.form_id WHERE f.code='VINTO-P1-03'"), [("published",)])
         snapshot = self.tables_snapshot(connection)
         again = reference.apply(connection, BUNDLE)
