@@ -477,3 +477,22 @@ test("capture values: observaciones optional, JSON numbers normalised, unknown k
   assert.equal("interno" in extra.capture.values, false);
   assert.equal(parseBobbinSubmission(submission()).capture.values.observaciones, "x");
 });
+
+
+test("CV-P103: metraje y código de tubete son enteros obligatorios en la nueva captura", () => {
+  assert.deepEqual([values().metraje, values().codigo_de_tubete], ["1200", "47"]);
+  for (const key of ["metraje", "codigo_de_tubete"]) {
+    for (const invalid of ["", " ", "3.5", "1e3", "texto", "9223372036854775808"]) {
+      assert.match(errors({ [key]: invalid }), key === "metraje" ? /Metraje/ : /Código de tubete/, key + invalid);
+    }
+    assert.equal(values({ [key]: "0007" })[key], "7");
+  }
+  const base = capture().values;
+  const current = parseBobbinSubmission(submission({}, {}, { form: { code: "VINTO-P1-03", version_number: 2, name: "x" }, values: base }));
+  assert.equal(current.capture.values.metraje, "1200");
+  assert.equal(current.capture.values.codigo_de_tubete, "47");
+  const previous = { ...base };
+  delete previous.metraje; delete previous.codigo_de_tubete;
+  assert.ok(parseBobbinSubmission(submission({}, {}, { form: { code: "VINTO-P1-03", version_number: 1, name: "x" }, values: previous })), "v1 sin campos nuevos sigue siendo legible");
+  assert.equal(parseBobbinSubmission(submission({}, {}, { form: { code: "VINTO-P1-03", version_number: 2, name: "x" }, values: previous })), null);
+});
