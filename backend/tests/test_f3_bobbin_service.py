@@ -145,6 +145,12 @@ class CreationTests(BobbinCase):
         self.assertEqual(rows["hora_inicio"], ("time", None, None, time(7, 15)))
         self.assertEqual(rows["diametro"], ("decimal", None, Decimal("1200.5"), None))
         self.assertEqual(rows["numero_de_cortes"], ("text", "3", None, None))
+        typed_integers = self.connection.execute("""
+            SELECT f.key, d.value_integer FROM vinto_txn.capture_detail d
+            JOIN vinto_config.field_definition f ON f.id = d.field_definition_id
+            WHERE d.capture_id = %s AND f.key IN ('metraje', 'codigo_de_tubete')
+        """, (result.capture.id,)).fetchall()
+        self.assertEqual(dict(typed_integers), {"metraje": 1200, "codigo_de_tubete": 47})
         b = result.bobbin
         self.assertEqual((b.start_time, b.end_time, b.diameter_mm, b.weight_kg, b.number_of_cuts, b.notes),
                          (time(7, 15), time(8, 40), "1200.5", "845.25", "3", "sin novedades"))
