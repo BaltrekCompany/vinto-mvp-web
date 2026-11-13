@@ -302,3 +302,31 @@ test("alcance: política vacía, producción y seed_data intactos, sin migracion
   assert.equal(/UPDATE vinto_txn\.quality_release|INSERT INTO vinto_txn\.(bobbin|assignment|work_order|quality_release)|decided_by|decision_reason/.test(bobbin.replace(/^"""[\s\S]*?"""/, "")), false);
   assert.match(read("lib/vinto/quality-history-api.ts"), /\[Q19_FORM_CODE\]: humidityViewer\(parseQualityCapture\), \[Q20_FORM_CODE\]: physicalViewer\(parsePhysicalCapture\)/);
 });
+
+
+test("CV-P124 v5: dos elongaciones opcionales, decimales, sin alterar promedios ni claves de resistencia", () => {
+  for (const [key, after] of [
+    ["elongacion_media_longitudinal", "resistencia_longitudinal_humeda_extremo"],
+    ["elongacion_media_transversal", "resistencia_transversal_humeda_extremo"],
+  ]) {
+    const index = P124_FIELDS.findIndex((f) => f.key === key);
+    const f = P124_FIELDS[index];
+    assert.equal(P124_FIELDS[index - 1].key, after);
+    assert.equal(f.kind, "decimal");
+    assert.equal(f.required, false);
+    assert.equal(f.sinceVersion, 5);
+    const empty = P124.normalizeDraft({ ...fill(P124_FIELDS), [key]: "" });
+    assert.equal(empty.ok, true);
+    assert.equal(key in empty.values, false);
+    const valid = P124.normalizeDraft({ ...fill(P124_FIELDS), [key]: "2,75" });
+    assert.equal(valid.values[key], "2.75");
+    assert.match(P124.normalizeDraft({ ...fill(P124_FIELDS), [key]: "1e3" }).errors.join(" "), /debe ser un número decimal/);
+  }
+  assert.equal(Object.values(P124_MEANS).flat().some((key) => key.startsWith("elongacion_")), false);
+  const f = P124_FIELDS.find((x) => x.key === "resistencia_longitudinal_humeda_centro");
+  assert.equal(labelFor(f, 2), "Resistencia longitudinal húmeda centro");
+  assert.equal(labelFor(f, 4), "Resistencia longitudinal húmeda – Comando");
+  assert.equal(labelFor(f, 5), "Resistencia Longitudinal - Comando");
+  const old = P124.parseCapture(envelope(P1_24_CODE, Object.fromEntries(Object.entries(fill(P124_FIELDS)).filter(([k]) => !k.startsWith("elongacion_"))), {form:{code:P1_24_CODE,version_number:4,name:"x"}}));
+  assert.ok(old, "v4 no exige campos creados en v5");
+});
