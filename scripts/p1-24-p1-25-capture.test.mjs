@@ -75,7 +75,7 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
       const f = fields.find((x) => x.key === key);
       assert.ok(f, key);
       const position = names[key.match(/(centro|medio|extremo)/)[1]];
-      assert.ok(f.label.endsWith(kgf ? ` – ${position} kgf` : ` - ${position}`), `${key}: ${f.label}`);
+      assert.ok(f.label.endsWith(` - ${position}`), `${key}: ${f.label}`);
       assert.equal(f.label.includes("Transmisión"), false);
       assert.ok(f.renamedAt.version === 3 && !f.renamedAt.previous.includes("–"), `${key}: las versiones 1 y 2 conservan su etiqueta`);
       assert.equal(labelFor(f, 2), f.renamedAt.previous);
@@ -84,7 +84,7 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
     }
   }
   assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Crepado (%)", "Resistencia Longitudinal - Comando", "Resistencia Longitudinal - Medio", "Resistencia Longitudinal - Transversal", "Resistencia Longitudinal Húmeda - Comando", "Resistencia Longitudinal Húmeda - Medio", "Resistencia Longitudinal Húmeda - Transversal"]);
-  assert.deepEqual(P125_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal – Comando kgf", "Resistencia longitudinal – Medio kgf", "Resistencia longitudinal – Transversal kgf", "Resistencia longitudinal húmeda – Comando kgf", "Resistencia longitudinal húmeda – Medio kgf", "Resistencia longitudinal húmeda – Transversal kgf"]);
+  assert.deepEqual(P125_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia en Húmedo Longitudinal - Comando", "Resistencia en Húmedo Longitudinal - Medio", "Resistencia en Húmedo Longitudinal - Transversal", "Resistencia en Húmedo Transversal - Comando", "Resistencia en Húmedo Transversal - Medio", "Resistencia en Húmedo Transversal - Transversal"]);
   assert.deepEqual(P124_CALCULATED_FIELDS.map((f) => f.key), ["promedio_longitudinal_humedo", "promedio_transversal_humedo"]);
   assert.deepEqual(P125_CALCULATED_FIELDS.map((f) => f.key), ["promedio_resistencia_longitudinal_kgf", "promedio_resistencia_longitudinal_humeda_kgf"]);
   assert.deepEqual(P124_MEANS.promedio_longitudinal_humedo, cmd("longitudinal", true, false));
@@ -108,7 +108,8 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
 });
 
 test("las brechas son visibles: sin fórmulas, rebobinadoras no cubiertas, alcance de P1-25 por definir, producto sin equivalencia, hora de registro y sin efecto sobre la bobina", () => {
-  for (const c of CASES) {
+  // Las brechas de P1-24 siguen visibles. En P1-25 se retiraron de la ficha definitiva.
+  for (const c of CASES.filter((item) => item.name === "P1-24")) {
     const text = c.pending.map((p) => `${p.label} ${p.pending}`).join(" ");
     assert.match(text, /los calcula el sistema al guardar; no se digitan/, c.name);
     assert.match(text, /rebobinadoras NO están cubiertas/, c.name);
@@ -117,8 +118,7 @@ test("las brechas son visibles: sin fórmulas, rebobinadoras no cubiertas, alcan
     assert.match(text, /Ya no se digitan \(MF-06\)/, c.name);
   }
   assert.match(P124_PENDING.map((p) => p.pending).join(" "), /MP1, MP3 y todas las rebobinadoras\. Solo se cubren bobinas F3 de MP1 \/ MP3/);
-  assert.match(P125_PENDING.map((p) => p.pending).join(" "), /«por definir»/);
-  assert.match(P125_PENDING.map((p) => p.pending).join(" "), /«Curado min» es TEXTO/);
+  assert.deepEqual(P125_PENDING, [], "P1-25 definitivo ya no muestra notas de ficha candidata");
   assert.match(read("lib/vinto/p1-24.ts"), /NO hay bobinas de rebobinadoras\s+\/\/ y no se fabrican|NO hay bobinas de rebobinadoras/);
   assert.match(read("lib/vinto/p1-25.ts"), /`por_definir`/);
 });
