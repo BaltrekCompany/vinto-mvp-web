@@ -13,7 +13,7 @@ import {
 const ASSIGNMENT = "44444444-4444-4444-8444-444444444444";
 const DEVICE = "99999999-9999-4999-8999-999999999999";
 const FIXED_ID = "0b0f8b6a-5b1e-4b8e-9a43-7d2f1a6c9e10";
-const draft = (o = {}) => ({ ...EMPTY_BOBBIN_DRAFT, hora_inicio: "07:15", hora_fin: "08:40", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", observaciones: "sin novedades", ...o });
+const draft = (o = {}) => ({ ...EMPTY_BOBBIN_DRAFT, hora_inicio: "07:15", hora_fin: "08:40", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", metraje: "1200", codigo_de_tubete: "47", observaciones: "sin novedades", ...o });
 const values = (o = {}) => { const c = normalizeBobbinDraft(draft(o)); assert.ok(c.ok, JSON.stringify(c)); return c.values; };
 const errors = (o = {}) => { const c = normalizeBobbinDraft(draft(o)); assert.equal(c.ok, false); return c.errors.join(" | "); };
 
@@ -27,7 +27,7 @@ const capture = (o = {}) => ({
   machine: { code: "MP1", name: "MP1" }, shift: { code: "DIA", name: "Día" }, operating_date: "2026-10-06", assignment: { id: ASSIGNMENT },
   work_order: { id: "22222222-2222-4222-8222-222222222222", number: "OT-2026-0001" },
   line: { id: "55555555-5555-4555-8555-555555555555", line_code: "L1", pv_reference: "PV-1", article: { code: "M1-1031", description: "BOBINA" } },
-  values: { hora_inicio: "07:15:00", hora_fin: "08:40:00", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", observaciones: "x" }, ...o,
+  values: { hora_inicio: "07:15:00", hora_fin: "08:40:00", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", metraje: 1200, codigo_de_tubete: 47, observaciones: "x" }, ...o,
 });
 const submission = (o = {}, b = {}, c = {}) => ({ created: true, already_submitted: false, bobbin: bobbin(b), capture: capture(c), ...o });
 const ctx = (o = {}) => ({ assignmentId: ASSIGNMENT, workOrderId: "22222222-2222-4222-8222-222222222222", otId: "OT-2026-0001", lineId: "L1", pv: "PV-1", productCode: "M1-1031", productName: "M1-BOBINA PH G-15.5 CR-22% R-540640", machine: "MP1", shift: "Día", date: "2026-10-06", ...o });
@@ -39,16 +39,16 @@ const attempt = (o = {}, context = ctx()) => { const made = createBobbinAttempt(
 test("the F3 payload is exactly the agreed shape (no form_code)", () => {
   assert.deepEqual(attempt().payload, {
     capture_id: FIXED_ID, assignment_id: ASSIGNMENT, device_key: DEVICE,
-    values: { hora_inicio: "07:15", hora_fin: "08:40", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", observaciones: "sin novedades" },
+    values: { hora_inicio: "07:15", hora_fin: "08:40", diametro: "1200.5", peso_kg: "845.25", numero_de_cortes: "3", metraje: "1200", codigo_de_tubete: "47", observaciones: "sin novedades" },
   });
 });
 
 test("the payload carries only capture_id, assignment_id, device_key and values", () => {
   const { payload } = attempt();
   assert.deepEqual(Object.keys(payload).sort(), ["assignment_id", "capture_id", "device_key", "values"]);
-  assert.deepEqual(Object.keys(payload.values).sort(), ["diametro", "hora_fin", "hora_inicio", "numero_de_cortes", "observaciones", "peso_kg"]);
+  assert.deepEqual(Object.keys(payload.values).sort(), ["codigo_de_tubete", "diametro", "hora_fin", "hora_inicio", "metraje", "numero_de_cortes", "observaciones", "peso_kg"]);
   const text = JSON.stringify(payload);
-  for (const forbidden of ["form_code", "machine", "shift", "turno", "operating_date", "work_order", "line", "article", "grammage", "gramaje", "bobbin", "code", "user", "revision", "status", "descripcion", "codigo_tubete"]) {
+  for (const forbidden of ["form_code", "machine", "shift", "turno", "operating_date", "work_order", "line", "article", "grammage", "gramaje", "bobbin", "code", "user", "revision", "status", "descripcion"]) {
     assert.equal(text.includes(forbidden), false, forbidden);
   }
 });
@@ -327,11 +327,12 @@ test("the old F3 override (codigo_tubete, manual grammage/description) is gone f
   for (const key of ["hora_inicio", "hora_fin", "diametro", "peso_kg", "numero_de_cortes", "observaciones"]) assert.ok(block.includes(`"${key}"`), key);
 });
 
-test("F3 code never touches localStorage records and the component asks only for the six manual fields", () => {
+test("F3 code never touches localStorage records and the component asks for eight manual fields", () => {
   for (const [name, text] of [["component", component], ["lib", lib], ["api", api]]) {
     assert.equal(/localStorage|sessionStorage|vinto-p1-records|setRecords/.test(text.replace(/^\s*\/\/.*$/gm, "")), false, name);
   }
-  assert.equal(component.includes("codigo_tubete"), false);
+  assert.match(component, /Código de tubete \*/);
+  assert.match(component, /Metraje \*/);
   assert.match(component, /se asignará al guardar/);
   assert.match(component, /se tomará del maestro central/);
   assert.equal(/G-\d|productName\.(match|replace|split)|\.match\(\/G-/.test(component + lib), false); // no parsea gramaje del nombre
