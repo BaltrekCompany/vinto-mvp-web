@@ -262,7 +262,7 @@ test("alcance actualizado: RG01 no altera los formularios MP1/MP3 y P1-07 madre 
   assert.equal(manifest.scope.forms.length, 26, "25 formularios aprobados + solo RG01");
   assert.equal(new Set(manifest.scope.forms).size, 26, "no se repiten códigos");
   assert.equal(manifest.scope.forms.at(-1), "VINTO-MP3-01", "RG01 es la única incorporación");
-  assert.equal(manifest.counts.form_fields, 566, "P1-11 v3 cambia el total base de campos; RG01 conserva 133");
+  assert.equal(manifest.counts.form_fields, 570, "P1-11 v3 cambia el total base de campos; RG01 conserva 133");
   const rg = JSON.parse(read("backend/seed_data/forms/VINTO-MP3-01.json"));
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
