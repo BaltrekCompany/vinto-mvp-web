@@ -6,7 +6,7 @@
   "name": "Registro de producción de bobinas rebobinadas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 4,
+  "version_number": 5,
   "machines": [
     "BELOIT",
     "OVER",
@@ -142,7 +142,7 @@
     },
     {
       "key": "formato_3",
-      "label": "Formato 3",
+      "label": "Cortes",
       "value_type": "decimal",
       "source": "manual",
       "required": false,
@@ -357,5 +357,5 @@
       "display_order": 38
     }
   ],
-  "definition_checksum": "5b26e23da432edd03a2d8d847d31b60a67d139c97916714c07fac6f711b16ce6"
+  "definition_checksum": "0faad23f19b983d6a5636f01fa089fc081c05a358e57d522978ea4c5b3cda7e7"
 }

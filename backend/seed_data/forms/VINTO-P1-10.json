@@ -6,7 +6,7 @@
   "name": "Registro de fardos",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 3,
+  "version_number": 4,
   "machines": [
     "BELOIT",
     "OVER",
@@ -17,31 +17,39 @@
   "groups": [],
   "fields": [
     {
-      "key": "hora_inicio",
-      "label": "Hora inicio",
-      "value_type": "time",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 1
-    },
-    {
-      "key": "hora_fin",
-      "label": "Hora fin",
-      "value_type": "time",
-      "source": "manual",
-      "required": true,
-      "unit": null,
-      "display_order": 2
-    },
-    {
       "key": "peso_fardo",
       "label": "Peso fardo",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 3
+      "display_order": 1
+    },
+    {
+      "key": "tipo",
+      "label": "Tipo",
+      "value_type": "text",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "options": [
+        {
+          "option_key": "Papel Higiénico",
+          "label": "Papel Higiénico",
+          "display_order": 1
+        },
+        {
+          "option_key": "Toalla",
+          "label": "Toalla",
+          "display_order": 2
+        },
+        {
+          "option_key": "Servilleta",
+          "label": "Servilleta",
+          "display_order": 3
+        }
+      ],
+      "display_order": 2
     },
     {
       "key": "observaciones",
@@ -50,8 +58,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 4
+      "display_order": 3
     }
   ],
-  "definition_checksum": "8649ed4241903579baec4b7575bac6ea3f2ac2d2c2426da0c4ea2f143686da21"
+  "definition_checksum": "382cce67c5725e992fb4d765141cebec2af90bb07e1e809e386c035edbcbc6b2"
 }
