@@ -424,13 +424,18 @@ class VersionTests(GateCase):
     async def test_a_vigente_version_of_another_area_or_not_offered_denies_and_writes_nothing(self):
         self.grant()
         _, assignment = await self.assignment()
-        self.add_version(2, "quality")  # vigente de OTRA área, sin vínculo
+        # P1-03 V2 ya existe en el catálogo actual; el escenario negativo
+        # debe crear versiones NUEVAS sin colisionar con la versión publicada.
+        next_version = self.scalar("""SELECT COALESCE(MAX(v.version_number), 0) + 1
+                                      FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id
+                                      WHERE f.code = %s""", (P103,))
+        self.add_version(next_version, "quality")  # vigente de OTRA área, sin vínculo
         start = self.counts()
         with mode("enforce"), self.assertLogs("vinto.authz", level="WARNING") as logs:
             _, other_area = await self.submit(assignment)
         self.assertEqual((other_area.status, self.counts()), (403, start))
         self.assertTrue(any("reason=EFFECTIVE_VERSION_OTHER_AREA" in m for m in logs.output))
-        self.add_version(3, "production")  # vigente de la misma área que ya no vincula MP1
+        self.add_version(next_version + 1, "production")  # vigente de la misma área que ya no vincula MP1
         with mode("enforce"), self.assertLogs("vinto.authz", level="WARNING") as logs:
             _, not_offered = await self.submit(assignment)
         self.assertEqual((not_offered.status, self.counts()), (403, start))
