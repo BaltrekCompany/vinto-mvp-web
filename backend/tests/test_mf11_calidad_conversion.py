@@ -162,8 +162,8 @@ class DefinitionTests(unittest.TestCase):
 
     def test_p1_24_v4_only_relabels_crepado(self):
         by = {f["key"]: f for f in FORMS[P124]["fields"]}
-        self.assertEqual(list(by), ["crepado", "gramaje", "resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo", "promedio_longitudinal_humedo",
-                                    "resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo", "promedio_transversal_humedo",
+        self.assertEqual(list(by), ["crepado", "gramaje", "resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo", "elongacion_media_longitudinal", "promedio_longitudinal_humedo",
+                                    "resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo", "elongacion_media_transversal", "promedio_transversal_humedo",
                                     "tiempo_de_curado_condicion", "observaciones"])
         c = by["crepado"]
         self.assertEqual((c["label"], c["value_type"], c["required"], c["source"], c["unit"]), ("Crepado (%)", "decimal", True, "manual", None), "misma clave, tipo y obligatoriedad; el % es solo visual")
