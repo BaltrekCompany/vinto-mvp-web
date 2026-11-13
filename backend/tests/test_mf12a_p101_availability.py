@@ -368,15 +368,21 @@ class AvailabilityTests(Base):
             self.assertIn("FORM_NOT_AVAILABLE", reply.text)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), n, "el rechazo no dejó filas")
 
-    async def test_new_captures_are_accepted_in_mp3_with_the_same_fields(self):
+    async def test_p105_retirement_rejects_new_mp3_captures_while_p131_keeps_working(self):
         assignment = await self.assignment("MP3")
-        for code in (P105, P131):
-            reply, _ = await self.post(assignment, code, fill(FORMS[code]["fields"]))
-            self.assertEqual(reply.status, 201, (code, reply.text))
-            capture = reply.json()["capture"]
-            self.assertEqual((capture["form"]["version_number"], capture["machine"]["code"]), (2, "MP3"))
+        original_count = self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],))
+        refused, _ = await self.post(assignment, P105, fill(FORMS[P105]["fields"]))
+        self.assertEqual((refused.status, refused.json()["code"]), (409, "FORM_NOT_AVAILABLE"), refused.text)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), original_count,
+                         "el rechazo no crea capturas ni altera el histórico")
+        # P1-31 conserva su vínculo a MP3 y su contrato exacto; el retiro es exclusivamente de P1-05.
+        allowed, _ = await self.post(assignment, P131, fill(FORMS[P131]["fields"]))
+        self.assertEqual(allowed.status, 201, allowed.text)
+        self.assertEqual((allowed.json()["capture"]["form"]["version_number"], allowed.json()["capture"]["machine"]["code"]), (2, "MP3"))
         missing, _ = await self.post(assignment, P105, {k: v for k, v in fill(FORMS[P105]["fields"]).items() if k != "numero_de_bobina"})
-        self.assertEqual(missing.status, 422, "las reglas de entrada no cambian")
+        self.assertEqual((missing.status, missing.json()["code"]), (409, "FORM_NOT_AVAILABLE"),
+                         "el retiro del formulario se aplica antes de validar valores; no se abre una nueva captura")
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), original_count + 1)
 
     async def test_the_existing_mp1_captures_of_v1_stay_readable_and_listed(self):
         assignment = await self.assignment("MP1")
