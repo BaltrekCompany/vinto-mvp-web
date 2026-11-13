@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_11_consumo_de_bobinas",
+  "code": "VINTO-P1-11",
+  "legacy_number": 11,
+  "name": "Consumo de bobinas",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 2,
+  "machines": [
+    "GAMBINI",
+    "SINCRO_II",
+    "SINCRO_III"
+  ],
+  "groups": [
+    {
+      "code": "bobinas",
+      "label": "Bobinas declaradas",
+      "display_order": 1,
+      "repeatable": true,
+      "min_rows": 1,
+      "max_rows": null,
+      "fields": [
+        {
+          "key": "numero_bobina",
+          "label": "N.º de bobina (declarado)",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 1
+        },
+        {
+          "key": "posicion",
+          "label": "Posición (declarada)",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2,
+          "options": [
+            {
+              "option_key": "superior",
+              "label": "Superior",
+              "display_order": 1
+            },
+            {
+              "option_key": "inferior",
+              "label": "Inferior",
+              "display_order": 2
+            }
+          ]
+        },
+        {
+          "key": "saldo_inicial_kg",
+          "label": "Saldo inicial declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 3
+        },
+        {
+          "key": "ingreso_kg",
+          "label": "Ingreso declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 4
+        },
+        {
+          "key": "saldo_final_kg",
+          "label": "Saldo final declarado",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 5
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "hora_inicio",
+      "label": "Hora inicio",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 1
+    },
+    {
+      "key": "hora_fin",
+      "label": "Hora fin",
+      "value_type": "time",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 2
+    },
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 3
+    }
+  ],
+  "definition_checksum": "a6c2eeb7bc52e3add73c14b37fbdde5e47f093da752fe23cc3c60e890721b6a3"
+}
