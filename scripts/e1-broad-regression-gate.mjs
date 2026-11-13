@@ -38,6 +38,18 @@ console.log("Historical baseline failures still present:", historical.length);
 console.log("Historical baseline failures resolved:", improved.length);
 console.log("NEW failures not present on main:", unexpected.length);
 for (const name of unexpected) console.error("NEW FAILURE:", name);
+// Diagnostico adicional sin cambiar la linea base ni las reglas del gate: muestra
+// las aserciones del TAP que causaron una nueva falla, no solo su titulo.
+if (unexpected.length > 0) {
+  const lines = output.split("\n");
+  for (const name of unexpected) {
+    const start = lines.findIndex(line => /^not ok \d+ - /.test(line) && line.slice(line.indexOf(" - ") + 3).trim() === name);
+    if (start < 0) continue;
+    const end = lines.findIndex((line, i) => i > start && /^(?:not ok|ok) \d+ - |^# Subtest: /.test(line));
+    const details = lines.slice(start, end < 0 ? Math.min(start + 48, lines.length) : Math.min(end, start + 48));
+    console.error("NEW FAILURE DETAIL:", name, "\n" + details.join("\n"));
+  }
+}
 for (const name of improved) console.log("HISTORICAL TEST FIXED:", name);
 
 if (run.error || run.signal || run.status === null || (run.status !== 0 && failures.length === 0)) {
