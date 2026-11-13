@@ -35,6 +35,6 @@ export const CONVERSION_CANDIDATES: Record<ConversionCandidateScreen, Conversion
             { title: "Producción por pallet", keys: ["cantidad_jabas", "hora_inicio", "hora_fin"] }],
         historyNote: "P1-13 v4: solo tipo y número de bobina obligatorios; pallet únicamente cuando se informan jabas. Versiones 1/2/3 históricas conservadas." },
     p116: { code: P1_16_CODE, form: P116, api: candidateApi(P116), kicker: "Control de merma · Conversión", title: "Registro de control de merma", automatic: P116_AUTOMATIC, pending: P116_PENDING,
-        sections: withHours(P116_FIELDS, "Pesada de merma"),
-        historyNote: "Una pesada por registro (desde la versión 3: tipo, origen y peso real en kg) con las horas generales de la versión 2; las capturas de las versiones 1 y 2 muestran sus seis cantidades como «versión anterior» y no se convierten en pesadas." },
+        sections: [{ title: "Pesada de merma", keys: P116_FIELDS.map(f => f.key) }],
+        historyNote: "Desde v4, registro por pesada con correlativo, tipo, origen y peso real; sin horas digitadas. Las versiones 2/3 conservan sus horas históricas y las versiones 1/2 sus cantidades antiguas." },
 };

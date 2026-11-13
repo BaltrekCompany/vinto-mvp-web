@@ -157,14 +157,15 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         : [{ title: candidate.title, hint: "Campos manuales de la definición candidata. Se guardan tal como se digitan; ninguno se calcula ni se valida contra un catálogo.", fields: form.fields.filter(f => !tableKeys.has(f.key)) }];
 
     const head = candidate.titleFor ? candidate.titleFor(form.context === "assignment" ? context?.machine : undefined) : { kicker: candidate.kicker, title: candidate.title }; // MF-09A: la máquina sale del contexto de la asignación
+    const isApprovedForm = candidate.code === "VINTO-P1-25" || candidate.code === "VINTO-P1-16";
     return <CaptureShell kicker={head.kicker} title={head.title} onBack={back}>
-        {!palletMode && <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
+        {!palletMode && !isApprovedForm && <div role="note" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="candidate">
             <p className="font-black">Ficha NO homologada · solo donde el backend la publique</p>
             <p className="mt-1">Los campos son los de la definición legacy como punto de partida técnico. Esta captura solo funciona donde el formulario esté habilitado explícitamente y no sustituye ninguna decisión de VINTO.</p>
         </div>}
         <ContextStrip items={items}/>
         {candidate.officialStatusNote && <p role="note" className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-950" data-section="official-status">{candidate.officialStatusNote}</p>}
-        {!palletMode && <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
+        {!palletMode && !isApprovedForm && candidate.pending.length > 0 && <div className="grid gap-3 border-b p-5 md:grid-cols-2" data-section="pending">
             {candidate.pending.map(note => <div key={note.label}><p className="text-xs font-semibold text-emerald-800">{note.label}</p><p className="mt-1 text-xs font-semibold text-amber-900">{note.pending}</p></div>)}
         </div>}
         {!palletMode && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="automatic">

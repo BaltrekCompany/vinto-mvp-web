@@ -6,7 +6,7 @@
   "name": "Resistencia en húmedo – curado",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 3,
+  "version_number": 4,
   "machines": [
     "MP1",
     "MP3"
@@ -42,7 +42,7 @@
     },
     {
       "key": "resistencia_longitudinal_centro_kgf",
-      "label": "Resistencia longitudinal – Comando kgf",
+      "label": "Resistencia en Húmedo Longitudinal - Comando",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -51,7 +51,7 @@
     },
     {
       "key": "resistencia_longitudinal_medio_kgf",
-      "label": "Resistencia longitudinal – Medio kgf",
+      "label": "Resistencia en Húmedo Longitudinal - Medio",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -60,7 +60,7 @@
     },
     {
       "key": "resistencia_longitudinal_extremo_kgf",
-      "label": "Resistencia longitudinal – Transversal kgf",
+      "label": "Resistencia en Húmedo Longitudinal - Transversal",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -87,7 +87,7 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_centro_kgf",
-      "label": "Resistencia longitudinal húmeda – Comando kgf",
+      "label": "Resistencia en Húmedo Transversal - Comando",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -96,7 +96,7 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_medio_kgf",
-      "label": "Resistencia longitudinal húmeda – Medio kgf",
+      "label": "Resistencia en Húmedo Transversal - Medio",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -105,7 +105,7 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_extremo_kgf",
-      "label": "Resistencia longitudinal húmeda – Transversal kgf",
+      "label": "Resistencia en Húmedo Transversal - Transversal",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -149,5 +149,5 @@
       "display_order": 15
     }
   ],
-  "definition_checksum": "946291b01d867fed26d0b029457d4fd281fc0647e697ef45f48437d959fc9391"
+  "definition_checksum": "98931956d1017506e5c90c7c9963a42316e3e5673dcafc6b3cb1938bfeb57e12"
 }
