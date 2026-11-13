@@ -113,3 +113,8 @@ Se requieren nuevos resultados CI en el SHA final y PASS verificado de USR-02/03
 **Corrección acotada:** commit `ae84ce3d`. Se cambia solo la expectativa `VERSIONS[P111]` de 3 a 2 en el ensayo histórico MF-11, dejando `NEW_VERSION[P111] = 3` y la versión real publicada V3 **sin cambios**. No se desactivan pruebas, no se modifican reglas de negocio, esquemas, migraciones, permisos ni baselines de regresiones. Tampoco se modifica la VPS.
 
 **Gate:** la integración E1-08 amplia seguía ejecutándose cuando se revisó el fallo; este cambio requiere nueva ejecución de los 13 workflows sobre el SHA actualizado. Mantener **NO-GO** hasta que el foco de 55, USR-06, E1-08 amplio y restantes suites cierren todos en PASS.
+
+
+### Aclaración del contrato histórico MF-11 (comparación con commit `83c3a257`)
+
+La comparación contra el archivo de pruebas original del commit `83c3a257` reveló que en este escenario el par coherente era **`VERSIONS[P111] = 2` y `NEW_VERSION[P111] = 2`**. El commit `8b2355a0` restaura la segunda constante, que se utiliza para importar/leer V2 y ejercitar V1 como versión anterior dentro de la base efímera. Dejar `NEW_VERSION[P111] = 3` habría provocado nuevas discrepancias en pruebas de lectura e importación de MF-11. La ficha **P1-11 V3 productiva no se modifica** ni se reclasifica; solo se reproduce el contrato histórico original de 2026-11-11 para verificar compatibilidad.
