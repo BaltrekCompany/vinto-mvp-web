@@ -1,4 +1,4 @@
-"""CV-P111 v3: contrato de receta sobre P1-11 con PostgreSQL17 real y API central aislada."""
+"""CV-P111 V4: saldos opcionales en P1-11 con PostgreSQL17 real y API central aislada."""
 import secrets
 import unittest
 from datetime import datetime, timezone
@@ -116,20 +116,22 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
     async def post(self, body):
         return await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
 
-    async def test_reference_is_real_v3_three_rows_and_three_position_options(self):
+    async def test_reference_is_real_v4_three_rows_and_optional_balances(self):
         definition = next(form for form in load_bundle().forms if form["code"] == FORM)
-        self.assertEqual(definition["version_number"], 3)
+        self.assertEqual(definition["version_number"], 4)
         self.assertEqual(definition["groups"][0]["max_rows"], 3)
         self.assertEqual([o["option_key"] for o in definition["groups"][0]["fields"][0]["options"]],
                          ["superior", "inferior", "no_aplica"])
         self.assertEqual([f["key"] for f in definition["groups"][0]["fields"]],
                          ["posicion", "tipo_material", "numero_bobina",
                           "saldo_inicial_kg", "ingreso_kg", "saldo_final_kg"])
+        self.assertEqual([f["required"] for f in definition["groups"][0]["fields"]],
+                         [True, True, True, False, False, False])
         latest = self.connection.execute(
             """SELECT MAX(fv.version_number) FROM vinto_config.form f
                JOIN vinto_config.form_version fv ON fv.form_id=f.id
                WHERE f.code=%s AND fv.status='published'""", (FORM,)).fetchone()[0]
-        self.assertEqual(latest, 3)
+        self.assertEqual(latest, 4)
         self.assertEqual(len(CATALOG[PRODUCT]), 10)
 
     async def test_one_required_row_and_server_receipt_with_recipe(self):
@@ -138,7 +140,7 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
         response = await self.post(request)
         self.assertEqual(response.status, 201, response.text)
         capture = response.json()["capture"]
-        self.assertEqual(capture["form"]["version_number"], 3)
+        self.assertEqual(capture["form"]["version_number"], 4)
         self.assertEqual(capture["line"]["article"]["code"], PRODUCT)
         self.assertEqual(capture["values"]["_groups"]["bobinas"][0]["tipo_material"], "9483")
         self.assertEqual(len(capture["values"]["_groups"]["bobinas"]), 1)
@@ -175,6 +177,23 @@ class RecipeConsumptionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201, response.text)
         stored = response.json()["capture"]["values"]["_groups"]["bobinas"]
         self.assertEqual([row["numero_bobina"] for row in stored], ["M3-001", "M3-002", "M3-003"])
+
+    async def test_three_positions_accept_missing_or_partial_balances_without_storing_zero(self):
+        assignment = await self.assignment()
+        rows = [
+            {"posicion": "no_aplica", "tipo_material": "9483", "numero_bobina": "QA-EMPTY"},
+            {"posicion": "superior", "tipo_material": "9484", "numero_bobina": "QA-ONE", "saldo_inicial_kg": "2"},
+            {"posicion": "inferior", "tipo_material": "M3-3038", "numero_bobina": "QA-TWO",
+             "saldo_inicial_kg": "2", "ingreso_kg": "3"},
+        ]
+        response = await self.post(self.payload(assignment, rows))
+        self.assertEqual(response.status, 201, response.text)
+        result = response.json()["capture"]
+        self.assertEqual(result["form"]["version_number"], 4)
+        self.assertEqual(result["values"]["_groups"]["bobinas"][0], rows[0])
+        self.assertEqual(result["values"]["_groups"]["bobinas"][1]["saldo_inicial_kg"], "2")
+        self.assertNotIn("saldo_final_kg", result["values"]["_groups"]["bobinas"][2])
+        self.assertNotIn("consumo_kg", str(result["values"]))
 
     async def test_foreign_material_is_rejected_atomically(self):
         assignment = await self.assignment()
