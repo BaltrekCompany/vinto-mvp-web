@@ -31,19 +31,21 @@ export const CONTEXT_NOTES: Readonly<Record<string, { origin: string; pending: s
 
 // ---- valores y respuestas ----------------------------------------------------------------------------------------------------------
 
-export type P110Values = { codigo_numero_de_producto?: string; numero_de_fardo?: string; peso_fardo: string; hora_inicio?: string; hora_fin?: string; observaciones?: string }; // código y número: solo capturas v1; horas: desde la v2
+export const P110_TIPOS = ["Papel Higiénico", "Toalla", "Servilleta"] as const;
+export type P110Tipo = (typeof P110_TIPOS)[number];
+export type P110Values = { codigo_numero_de_producto?: string; numero_de_fardo?: string; peso_fardo: string; tipo?: P110Tipo; hora_inicio?: string; hora_fin?: string; observaciones?: string }; // v1 código/número, v2-v3 horas, v4 tipo
 export const P110_V2 = 2; // primera versión sin código ni número de fardo y con horas
+export const P110_V4 = 4; // versión definitiva: sin horas; tipo de fardo cerrado y obligatorio
 const STORED_HOUR = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/; // el cliente envía HH:MM; PostgreSQL devuelve HH:MM:SS
-const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
 export type P110Capture = CaptureOf<P110Values>;
 export type P110Submission = SubmissionOf<P110Capture>;
 
 const nonEmpty = (value: unknown): value is string => typeof value === "string" && value !== "";
 
-// Parser ESTRICTO: los tres obligatorios son texto no vacío (el backend guarda el texto recortado), `observaciones` es texto opcional; los demás valores se ignoran.
+// Parser histórico por versión: v1 conserva código y número, v2/v3 conserva las horas; desde v4 peso y tipo cerrado. Las claves ajenas se ignoran.
 function parseValues(value: unknown, version?: number): P110Values | null {
     if (!isRec(value)) return null;
-    const { codigo_numero_de_producto: code, numero_de_fardo: bale, peso_fardo: weight, hora_inicio: start, hora_fin: end, observaciones: notes } = value;
+    const { codigo_numero_de_producto: code, numero_de_fardo: bale, peso_fardo: weight, tipo: kind, hora_inicio: start, hora_fin: end, observaciones: notes } = value;
     if (!nonEmpty(weight)) return null;
     if (notes !== undefined && typeof notes !== "string") return null;
     if (version !== undefined && version < P110_V2) { // versión 1: código, número de fardo y peso (sin horas)
@@ -52,7 +54,13 @@ function parseValues(value: unknown, version?: number): P110Values | null {
         if (notes !== undefined) old.observaciones = notes;
         return old;
     }
-    if (typeof start !== "string" || !STORED_HOUR.test(start) || typeof end !== "string" || !STORED_HOUR.test(end)) return null; // versión 2: peso y las dos horas
+    if (version !== undefined && version >= P110_V4) {
+        if (typeof kind !== "string" || !(P110_TIPOS as readonly string[]).includes(kind)) return null;
+        const latest: P110Values = { peso_fardo: weight, tipo: kind as P110Tipo };
+        if (notes !== undefined) latest.observaciones = notes;
+        return latest;
+    }
+    if (typeof start !== "string" || !STORED_HOUR.test(start) || typeof end !== "string" || !STORED_HOUR.test(end)) return null; // versión 2 y 3
     const clean: P110Values = { peso_fardo: weight, hora_inicio: start, hora_fin: end };
     if (notes !== undefined) clean.observaciones = notes;
     return clean;
@@ -63,12 +71,12 @@ export const parseP110Values = parseValues; // expuesto para pruebas: lectura po
 export const parseP110Submission = (value: unknown): P110Submission | null => parseSubmissionOf(value, parseP110Capture);
 export const parseP110List = (value: unknown): P110Capture[] | null => parseCaptureListOf(value, parseP110Capture);
 
-// ---- borrador, validación estructural y payload ------------------------------------------------------------------------------------
+// ---- borrador, validación estructural y payload v4 -------------------------------------------------------------------------------
 
-export type P110Draft = { peso_fardo: string; hora_inicio: string; hora_fin: string; observaciones: string };
-export const EMPTY_P110_DRAFT: P110Draft = { peso_fardo: "", hora_inicio: "", hora_fin: "", observaciones: "" };
+export type P110Draft = { peso_fardo: string; tipo: string; observaciones: string };
+export const EMPTY_P110_DRAFT: P110Draft = { peso_fardo: "", tipo: "", observaciones: "" };
 
-export const P110_LABELS = { codigo_numero_de_producto: "Código / número de producto", numero_de_fardo: "Número de fardo", peso_fardo: "Peso fardo", hora_inicio: "Hora inicio", hora_fin: "Hora fin", observaciones: "Observaciones" } as const;
+export const P110_LABELS = { codigo_numero_de_producto: "Código / número de producto", numero_de_fardo: "Número de fardo", peso_fardo: "Peso fardo", tipo: "Tipo", hora_inicio: "Hora inicio", hora_fin: "Hora fin", observaciones: "Observaciones" } as const;
 
 export type P110DraftCheck = { ok: true; values: P110Values } | { ok: false; errors: string[] };
 
@@ -78,14 +86,11 @@ export function normalizeP110Draft(draft: P110Draft): P110DraftCheck {
     const weight = clean("peso_fardo");
     if (!weight) errors.push(`${P110_LABELS.peso_fardo}: es obligatorio.`);
     else if (weight.length > MAX_TEXT_LENGTH) errors.push(`${P110_LABELS.peso_fardo}: supera ${MAX_TEXT_LENGTH} caracteres.`);
-    for (const key of ["hora_inicio", "hora_fin"] as const) { // HH:MM digitada, hora local de planta: se envía tal cual (sin UTC, sin fecha, sin comparar inicio y fin)
-        const text = clean(key);
-        if (!text) errors.push(`${P110_LABELS[key]}: es obligatorio.`);
-        else if (!HOUR.test(text)) errors.push(`${P110_LABELS[key]}: debe ser una hora válida HH:MM (por ejemplo 07:30).`);
-    }
+    const kind = clean("tipo");
+    if (!P110_TIPOS.some(option => option === kind)) errors.push(`${P110_LABELS.tipo}: selecciona Papel Higiénico, Toalla o Servilleta.`);
     if (clean("observaciones").length > MAX_TEXT_LENGTH) errors.push(`${P110_LABELS.observaciones}: supera ${MAX_TEXT_LENGTH} caracteres.`);
     if (errors.length) return { ok: false, errors };
-    const values: P110Values = { peso_fardo: weight, hora_inicio: clean("hora_inicio"), hora_fin: clean("hora_fin") };
+    const values: P110Values = { peso_fardo: weight, tipo: kind as P110Tipo };
     const notes = clean("observaciones");
     if (notes) values.observaciones = notes;
     return { ok: true, values };

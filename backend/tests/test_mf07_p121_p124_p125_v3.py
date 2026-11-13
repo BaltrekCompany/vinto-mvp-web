@@ -51,9 +51,9 @@ RENAMES = {  # clave técnica (sin cambios) -> etiqueta que debe tener la versi�
     P124: {"resistencia_longitudinal_humeda_centro": "Resistencia Longitudinal - Comando", "resistencia_longitudinal_humeda_medio": "Resistencia Longitudinal - Medio",
            "resistencia_longitudinal_humeda_extremo": "Resistencia Longitudinal - Transversal", "resistencia_transversal_humeda_centro": "Resistencia Longitudinal Húmeda - Comando",
            "resistencia_transversal_humeda_medio": "Resistencia Longitudinal Húmeda - Medio", "resistencia_transversal_humeda_extremo": "Resistencia Longitudinal Húmeda - Transversal"},
-    P125: {"resistencia_longitudinal_centro_kgf": "Resistencia longitudinal – Comando kgf", "resistencia_longitudinal_medio_kgf": "Resistencia longitudinal – Medio kgf",
-           "resistencia_longitudinal_extremo_kgf": "Resistencia longitudinal – Transversal kgf", "resistencia_longitudinal_humeda_centro_kgf": "Resistencia longitudinal húmeda – Comando kgf",
-           "resistencia_longitudinal_humeda_medio_kgf": "Resistencia longitudinal húmeda – Medio kgf", "resistencia_longitudinal_humeda_extremo_kgf": "Resistencia longitudinal húmeda – Transversal kgf"},
+    P125: {"resistencia_longitudinal_centro_kgf": "Resistencia en Húmedo Longitudinal - Comando", "resistencia_longitudinal_medio_kgf": "Resistencia en Húmedo Longitudinal - Medio",
+           "resistencia_longitudinal_extremo_kgf": "Resistencia en Húmedo Longitudinal - Transversal", "resistencia_longitudinal_humeda_centro_kgf": "Resistencia en Húmedo Transversal - Comando",
+           "resistencia_longitudinal_humeda_medio_kgf": "Resistencia en Húmedo Transversal - Medio", "resistencia_longitudinal_humeda_extremo_kgf": "Resistencia en Húmedo Transversal - Transversal"},
 }
 MEANS = {
     P124: {"promedio_longitudinal_humedo": ("resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo"),
@@ -151,8 +151,8 @@ class Base(q2.BobbinBase):
 
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
-        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 5, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-03", 2), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 4), ("VINTO-P1-10", 3), ("VINTO-P1-11", 2), ("VINTO-P1-12", 4), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 5), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
+        self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 5, P125: 4})  # P1-24 v4: MF-11 (Crepado (%))
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-03", 2), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 5), ("VINTO-P1-10", 4), ("VINTO-P1-11", 3), ("VINTO-P1-12", 4), ("VINTO-P1-13", 4), ("VINTO-P1-16", 4), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 5), ("VINTO-P1-25", 4), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
                          "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2; MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
@@ -207,7 +207,7 @@ class DefinitionTests(Base):
         labels = [f["label"] for code in (P124, P125) for f in FORMS[code]["fields"]]
         self.assertFalse([label for label in labels if "Transmisión" in label or "extremo" in label.lower() or " centro" in label.lower()])
         self.assertIn("Resistencia Longitudinal Húmeda - Transversal", labels)
-        self.assertIn("Resistencia longitudinal húmeda – Transversal kgf", labels)
+        self.assertIn("Resistencia en Húmedo Transversal - Transversal", labels)
 
 
 class P121Tests(Base):
@@ -478,10 +478,10 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual((result.mode, result.conflicts), ("applied", []))
         self.assertEqual(self.snapshot(old_where), old, "las versiones anteriores y sus campos quedan idénticos")
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
-        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (5, "published")]), (P125, [(1, "published"), (2, "published"), (3, "published")])):
+        for code, expected in ((P121, [(1, "published"), (2, "published")]), (P124, [(1, "published"), (2, "published"), (5, "published")]), (P125, [(1, "published"), (2, "published"), (4, "published")])):
             self.assertEqual(self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall(), expected)
         sources = self.connection.execute("""SELECT f.code, d.source, count(*) FROM vinto_config.field_definition d JOIN vinto_config.form_version v ON v.id = d.form_version_id JOIN vinto_config.form f ON f.id = v.form_id
-                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',5),('VINTO-P1-25',3)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
+                                             WHERE (f.code, v.version_number) IN (('VINTO-P1-21',2),('VINTO-P1-24',5),('VINTO-P1-25',4)) GROUP BY 1, 2 ORDER BY 1, 2""").fetchall()
         self.assertEqual(sources, [(P121, "calculated", 4), (P121, "manual", 82), (P124, "calculated", 2), (P124, "manual", 12), (P125, "calculated", 2), (P125, "manual", 13)])
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")

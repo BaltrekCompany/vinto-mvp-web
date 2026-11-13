@@ -294,7 +294,7 @@ class IndependenceTests(Base):
         uid = self.target(sectors_=("BOBINAS", "REBOBINADO"))
         for machine in FIVE:
             body = (await self.post(uid, GRANT, machine, P110)).json()
-            self.assertEqual((body["changed"], body["active"], body["catalog"]["published_version"], body["catalog"]["offered"], body["context"]["sector_code"]), (True, True, 3, True, "REBOBINADO"), machine)
+            self.assertEqual((body["changed"], body["active"], body["catalog"]["published_version"], body["catalog"]["offered"], body["context"]["sector_code"]), (True, True, 4, True, "REBOBINADO"), machine)
         self.assertEqual(await self.active(uid), sorted((m, P110) for m in FIVE))
         self.assertTrue((await self.post(uid, REVOKE, "COPASA", P110)).json()["changed"])
         self.assertEqual(await self.active(uid), sorted((m, P110) for m in FIVE if m != "COPASA"), "revocar COPASA no toca las otras cuatro")
@@ -331,7 +331,9 @@ class PairPolicyTests(Base):
         self.assertEqual((reply.status, reply.json()["code"]), (409, "PAIR_NOT_OFFERED"))
         self.assertEqual(set(reply.json()), {"detail", "code"}, "el error no expone nada más")
         self.assertEqual(self.rows(uid), 0)
-        self.assertEqual((await self.post(uid, GRANT, "MP3", P105)).status, 200)
+        blocked = await self.post(uid, GRANT, "MP3", P105)
+        self.assertEqual((blocked.status, blocked.json()["code"]), (409, "PAIR_NOT_OFFERED"), "P181: P1-05 también retirado de MP3")
+        self.assertEqual(self.rows(uid), 0)
 
     async def test_an_inactive_machine_or_form_is_not_granted_and_the_state_is_restored(self):
         uid = self.target()

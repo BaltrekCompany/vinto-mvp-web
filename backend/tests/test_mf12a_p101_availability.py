@@ -45,8 +45,8 @@ ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["ma
 SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
-            "VINTO-P1-16": 3, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 5, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 5, "VINTO-P1-10": 4, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
+            "VINTO-P1-16": 4, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 5, "VINTO-P1-25": 4, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 RED = ("apertura_purga_prensa", "presion_aceite_guia_tela", "presion_aceite_lubricacion", "vacio_tela")
 BLUE_DROPPED = ("vacio_prensa", "vacio_fieltro")  # su concepto ya existe como velocidad_secador / velocidad_fieltro
@@ -121,7 +121,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(FORMS[P131]["machines"], ["MP3"])
         for code in ("VINTO-P1-02", "VINTO-P1-03", P104, "VINTO-P1-06"):
             self.assertEqual(sorted(FORMS[code]["machines"]), ["MP1", "MP3"], f"{code}: la disponibilidad no cambia")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 570)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 567)  # 469 tras MF-12A; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
     def test_p1_01_v4_removes_replaces_and_adds_exactly_what_was_approved(self):
         v3 = [f["key"] for f in V3["fields"]]
@@ -351,12 +351,12 @@ class AvailabilityTests(Base):
         offered = await self.machines()
         mp1_before = sorted(["VINTO-P1-01", P102, P104, "VINTO-P1-06", P105, P131])
         self.assertEqual(offered["MP1"], sorted(set(mp1_before) - {P105, P131}), "MP1 conserva P1-01, P1-02, P1-04 y P1-06")
-        self.assertEqual(offered["MP3"], sorted((set(mp1_before) - {P101}) | {"VINTO-MP3-01"}), "MP3 solo reemplaza P1-01 con RG01")
+        self.assertEqual(offered["MP3"], sorted((set(mp1_before) - {P101, P105}) | {"VINTO-MP3-01"}), "MP3 solo reemplaza P1-01 con RG01")
 
     async def test_every_other_machine_keeps_exactly_the_offer_of_the_bundle(self):
         offered = await self.machines()
         for machine, codes in offered.items():
-            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and not (machine == "MP3" and f["code"] == P101))
+            expected = sorted(f["code"] for f in BUNDLE.forms if machine in f["machines"] and f["code"] in _capture_service.CENTRAL_FORM_CODES and f["area"] == "production" and f["code"] != P105 and not (machine == "MP3" and f["code"] == P101))
             self.assertEqual(codes, expected, machine)
 
     async def test_new_captures_are_rejected_in_mp1_even_through_the_direct_api(self):
@@ -368,15 +368,21 @@ class AvailabilityTests(Base):
             self.assertIn("FORM_NOT_AVAILABLE", reply.text)
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), n, "el rechazo no dejó filas")
 
-    async def test_new_captures_are_accepted_in_mp3_with_the_same_fields(self):
+    async def test_p105_retirement_rejects_new_mp3_captures_while_p131_keeps_working(self):
         assignment = await self.assignment("MP3")
-        for code in (P105, P131):
-            reply, _ = await self.post(assignment, code, fill(FORMS[code]["fields"]))
-            self.assertEqual(reply.status, 201, (code, reply.text))
-            capture = reply.json()["capture"]
-            self.assertEqual((capture["form"]["version_number"], capture["machine"]["code"]), (2, "MP3"))
+        original_count = self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],))
+        refused, _ = await self.post(assignment, P105, fill(FORMS[P105]["fields"]))
+        self.assertEqual((refused.status, refused.json()["code"]), (409, "FORM_NOT_AVAILABLE"), refused.text)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), original_count,
+                         "el rechazo no crea capturas ni altera el histórico")
+        # P1-31 conserva su vínculo a MP3 y su contrato exacto; el retiro es exclusivamente de P1-05.
+        allowed, _ = await self.post(assignment, P131, fill(FORMS[P131]["fields"]))
+        self.assertEqual(allowed.status, 201, allowed.text)
+        self.assertEqual((allowed.json()["capture"]["form"]["version_number"], allowed.json()["capture"]["machine"]["code"]), (2, "MP3"))
         missing, _ = await self.post(assignment, P105, {k: v for k, v in fill(FORMS[P105]["fields"]).items() if k != "numero_de_bobina"})
-        self.assertEqual(missing.status, 422, "las reglas de entrada no cambian")
+        self.assertEqual((missing.status, missing.json()["code"]), (409, "FORM_NOT_AVAILABLE"),
+                         "el retiro del formulario se aplica antes de validar valores; no se abre una nueva captura")
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_txn.capture WHERE assignment_id = %s", (assignment["id"],)), original_count + 1)
 
     async def test_the_existing_mp1_captures_of_v1_stay_readable_and_listed(self):
         assignment = await self.assignment("MP1")

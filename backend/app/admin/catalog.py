@@ -18,7 +18,7 @@ import contextlib
 
 from app import capture_service
 from app.quality import capture_service as quality_capture_service
-from app.mp3_inspection_policy import allowed_for_machine
+from app.mp3_inspection_policy import RETIRED_CAPTURE_FORMS, allowed_for_machine
 from app.quality import machine_capture_service
 from app.sectors import KNOWN_SECTOR_CODES, is_operational_sector
 
@@ -119,7 +119,9 @@ def catalog_tree(connection) -> dict:
                                                              "operational": bool(machine["sector_active"]) and is_operational_sector(machine["sector_code"]), "machines": []})
         forms = []
         for code in sorted(catalog.forms):
-            if (machine["code"], code) in catalog.links:
+            # No publicar opciones funcionalmente retiradas en el árbol operativo.
+            # Su versionado y sus concesiones anteriores siguen consultables por separado.
+            if (machine["code"], code) in catalog.links and code not in RETIRED_CAPTURE_FORMS:
                 form, state = catalog.forms[code], catalog.pair(machine["code"], code)
                 forms.append({"code": code, "name": form["name"], "area": form["area"], "active": form["active"], "effective_version": form["effective_version"],
                               "published": True, "capture_policies": state["capture_policies"], "offered": state["offered"], "enabled_for_capture": state["enabled_for_capture"]})
@@ -135,7 +137,9 @@ def catalog_forms(connection) -> dict:
     for code, form in catalog.forms.items():
         machines = []
         for machine in catalog.machines:
-            if (machine["code"], code) in catalog.links:
+            # Conservar el formulario en el listado histórico, pero sin máquinas
+            # concedibles cuando fue retirado funcionalmente (P1-05).
+            if (machine["code"], code) in catalog.links and code not in RETIRED_CAPTURE_FORMS:
                 state = catalog.pair(machine["code"], code)
                 machines.append({"code": machine["code"], "sector_code": machine["sector_code"], "active": machine["active"], "offered": state["offered"],
                                  "enabled_for_capture": state["enabled_for_capture"]})

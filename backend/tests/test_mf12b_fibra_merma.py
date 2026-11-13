@@ -39,7 +39,7 @@ except ModuleNotFoundError:
     from tests.test_assignments_api import call
 
 P104, P116 = "VINTO-P1-04", "VINTO-P1-16"
-NEW_VERSION = {P104: 2, P116: 3}
+NEW_VERSION = {P104: 2, P116: 4}
 HERE = Path(__file__).parent
 PREVIOUS = {P104: json.loads((HERE / "mf12b_p104_v1.json").read_text(encoding="utf-8")), P116: json.loads((HERE / "mf12b_p116_v2.json").read_text(encoding="utf-8"))}
 BUNDLE = load_bundle()
@@ -80,7 +80,7 @@ _SEQUENCE = itertools.count(1)
 
 def v116(**extra):
     """Una pesada válida; el correlativo por defecto es NUEVO en cada llamada (desde MF-12B no puede repetirse en la misma OT y máquina)."""
-    return {"hora_inicio": "06:30", "hora_fin": "14:45", "numero_correlativo": f"M-{next(_SEQUENCE):05d}", "tipo_merma": "Hoja doble", "origen_merma": "Logs", "peso_merma_kg": "12.5", **extra}
+    return {"numero_correlativo": f"M-{next(_SEQUENCE):05d}", "tipo_merma": "Hoja doble", "origen_merma": "Logs", "peso_merma_kg": "12.5", **extra}
 
 
 def without(values, *keys):
@@ -90,13 +90,13 @@ def without(values, *keys):
 class DefinitionTests(unittest.TestCase):
     def test_only_the_two_forms_get_a_new_version(self):
         self.assertEqual(FORMS[P104]["version_number"], 2)
-        self.assertEqual(FORMS[P116]["version_number"], 3)
+        self.assertEqual(FORMS[P116]["version_number"], 4)
         self.assertEqual(sorted(FORMS[P104]["machines"]), ["MP1", "MP3"], "P1-04 sigue en MP1 y MP3")
         self.assertEqual(len(FORMS[P116]["machines"]), 11)
         self.assertEqual(sorted(FORMS[P116]["machines"]), sorted(PREVIOUS[P116]["machines"]), "P1-16 conserva sus 11 máquinas")
         self.assertEqual({c: FORMS[c]["version_number"] for c in ("VINTO-P1-01", "VINTO-P1-05", "VINTO-P1-31", "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13")},
                          {"VINTO-P1-01": 4, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4}, "P1-11 cambia aditivamente a v3; P1-12 sigue en v4")
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 570)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in BUNDLE.forms), 567)
 
     def test_p1_04_v2_fields_and_literal_catalogs(self):
         fields = FORMS[P104]["fields"]
@@ -129,7 +129,7 @@ class DefinitionTests(unittest.TestCase):
     def test_p1_16_v3_fields_and_options(self):
         fields = FORMS[P116]["fields"]
         self.assertEqual([(f["key"], f["label"], f["value_type"], f["required"], f["unit"]) for f in fields], [
-            ("hora_inicio", "Hora inicio", "time", True, None), ("hora_fin", "Hora fin", "time", True, None), ("numero_correlativo", "Número correlativo", "text", True, None),
+            ("numero_correlativo", "Número correlativo", "text", True, None),
             ("tipo_merma", "Tipo de merma", "text", True, None), ("origen_merma", "Origen de la merma", "text", True, None), ("peso_merma_kg", "Peso real", "decimal", True, "KG"),
             ("observacion", "Observación", "textarea", False, None)])
         by = {f["key"]: f for f in fields}
@@ -164,7 +164,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, NEW_VERSION))  # P1-04 v1 y P1-16 v2 publicadas como en producción (aditivo)
-        cls.old = {code: cls.version(code, NEW_VERSION[code] - 1) for code in NEW_VERSION}
+        cls.old = {code: cls.version(code, {P104: 1, P116: 2}[code]) for code in NEW_VERSION}
         cls.new = {code: cls.version(code, NEW_VERSION[code]) for code in NEW_VERSION}
         cls.users, cls.cookies = {}, {}
         for name, profile, sectors in (("JEFATURA", "JEFATURA", SECTORS), ("SUPERVISION", "SUPERVISION", SECTORS), ("OPERACION", "OPERACION", SECTORS), ("CALIDAD", "CALIDAD", ("BOBINAS",)), ("SIN_SECTOR", "OPERACION", ())):
@@ -371,7 +371,7 @@ class P116Tests(Base):
                 reply, _ = await self.post(assignment, P116, v116(tipo_merma=tipo, origen_merma=origen, numero_correlativo=f"M-{n + 1:04d}"))
                 self.assertEqual(reply.status, 201, (tipo, origen, reply.text))
                 capture = reply.json()["capture"]
-                self.assertEqual(capture["form"]["version_number"], 3)
+                self.assertEqual(capture["form"]["version_number"], 4)
                 self.assertEqual((capture["values"]["tipo_merma"], capture["values"]["origen_merma"], capture["values"]["peso_merma_kg"]), (tipo, origen, "12.5"))
                 stored = self.stored(capture["id"])
                 self.assertEqual((stored["tipo_merma"], stored["origen_merma"]), (("text", tipo), ("text", origen)), "texto literal")
@@ -382,7 +382,7 @@ class P116Tests(Base):
     async def test_required_fields_closed_lists_and_decimal_weight(self):
         assignment = await self.assignment("OMET_I")
         good = v116()
-        for key in ("hora_inicio", "hora_fin", "numero_correlativo", "tipo_merma", "origen_merma", "peso_merma_kg"):
+        for key in ("numero_correlativo", "tipo_merma", "origen_merma", "peso_merma_kg"):
             reply, _ = await self.post(assignment, P116, without(good, key))
             self.assertEqual(reply.status, 422, key)
             self.assertIn(key, reply.text)
@@ -400,20 +400,22 @@ class P116Tests(Base):
             self.assertEqual(reply.status, 422, key)
             self.assertIn("campo desconocido", reply.text)
 
-    async def test_general_hours_of_mf11_are_kept(self):
+    async def test_hours_are_retired_from_current_capture_but_historical_version_keeps_them(self):
         assignment = await self.assignment("SINCRO_II")
-        n = self.count(assignment)
-        for bad in ("24:00", "12:60", "7:30", "abc", "", None):
-            for key in ("hora_inicio", "hora_fin"):
-                self.assertEqual((await self.post(assignment, P116, v116(**{key: bad})))[0].status, 422, (key, bad))
-        for start, end in (("00:00", "23:59"), ("23:30", "00:15"), ("10:00", "09:00"), ("08:00", "08:00")):
-            reply, _ = await self.post(assignment, P116, v116(hora_inicio=start, hora_fin=end, numero_correlativo=f"H-{start}"))
-            self.assertEqual(reply.status, 201, (start, end))
-            capture = reply.json()["capture"]
-            self.assertEqual((capture["values"]["hora_inicio"], capture["values"]["hora_fin"]), (f"{start}:00", f"{end}:00"), "tal como se digitó: sin UTC, sin duración, sin orden")
-            self.assertEqual(self.stored(capture["id"])["hora_inicio"], ("time", f"{start}:00"))
-            self.assertEqual(capture["operating_date"], "2026-10-06", "la fecha operativa no se deduce de las horas")
-        self.assertEqual(self.count(assignment), n + 4)
+        for key in ("hora_inicio", "hora_fin"):
+            reply, _ = await self.post(assignment, P116, v116(**{key: "06:30"}))
+            self.assertEqual(reply.status, 422, key)
+            self.assertIn("campo desconocido", reply.text)
+        reply, _ = await self.post(assignment, P116, v116())
+        self.assertEqual(reply.status, 201, reply.text)
+        self.assertNotIn("hora_inicio", reply.json()["capture"]["values"])
+        self.assertNotIn("hora_fin", reply.json()["capture"]["values"])
+        v2 = {"hora_inicio": "23:30", "hora_fin": "00:15", "numero_correlativo": "OLD-H",
+              **{key: "1" for key in SIX}}
+        old, _ = await self.post(assignment, P116, v2, old=True)
+        self.assertEqual(old.status, 201, old.text)
+        self.assertEqual(old.json()["capture"]["values"]["hora_inicio"], "23:30:00")
+        self.assertEqual(old.json()["capture"]["values"]["hora_fin"], "00:15:00")
 
     async def test_the_correlative_stays_manual_and_required(self):
         assignment = await self.assignment("GAMBINI")
@@ -430,7 +432,7 @@ class P116Tests(Base):
             """SELECT count(*) FROM vinto_txn.capture c JOIN vinto_txn.assignment a ON a.id = c.assignment_id JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
                JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id JOIN vinto_master.machine m ON m.id = c.machine_id JOIN vinto_txn.capture_detail d ON d.capture_id = c.id
                JOIN vinto_config.field_definition fd ON fd.id = d.field_definition_id JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
-               WHERE v.work_order_id = %s AND m.code = %s AND fd.key = 'numero_correlativo' AND d.value_text = %s AND fv.version_number = 3""", (work_order_id, machine, value))
+               WHERE v.work_order_id = %s AND m.code = %s AND fd.key = 'numero_correlativo' AND d.value_text = %s AND fv.version_number >= 3""", (work_order_id, machine, value))
 
     def order_of(self, assignment):
         return self.scalar("SELECT v.work_order_id FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id WHERE a.id = %s", (assignment["id"],))
@@ -539,14 +541,14 @@ class P116Tests(Base):
             self.assertEqual(reply.status, 422, f"la v2 no declara {key}")
         self.assertEqual(self.scalar("SELECT status FROM vinto_config.form_version WHERE id = %s", (self.old[P116],)), "published")
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.field_definition WHERE form_version_id = %s", (self.old[P116],)), 10)
-        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.field_definition WHERE form_version_id = %s", (self.new[P116],)), 7)
+        self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.field_definition WHERE form_version_id = %s", (self.new[P116],)), 5)
         v1_values = {"numero_correlativo": "C-1", **{k: "1" for k in SIX}, "observacion": "viejo"}
         v1, _ = await self.post(assignment, P116, v1_values, old=True)  # v1 se reproduce con la definición v2 sin horas: no es obligatorio verificarla aquí; las horas sí lo son en v2
         self.assertEqual(v1.status, 422, "las horas ya eran obligatorias en la v2")
         listed = await call("GET", f"/api/captures?form_code={P116}&machine_code=GAMBINI", cookie=await self.cookie("OPERACION"))
         self.assertIn(capture["id"], [c["id"] for c in listed.json()])
         new, _ = await self.post(assignment, P116, v116())
-        self.assertEqual(new.json()["capture"]["form"]["version_number"], 3)
+        self.assertEqual(new.json()["capture"]["form"]["version_number"], 4)
 
     async def test_p1_16_is_available_in_all_its_machines_and_idempotent(self):
         for machine in FORMS[P116]["machines"]:
@@ -597,14 +599,14 @@ class ProductionImportScenarioTests(unittest.TestCase):
 
     def test_the_bundle_adds_only_the_two_new_versions_and_is_idempotent(self):
         codes = ", ".join(f"'{c}'" for c in NEW_VERSION)
-        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = {NEW_VERSION[c] - 1})" for c in NEW_VERSION)
+        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = { {P104: 1, P116: 2}[c] })" for c in NEW_VERSION)
         other_where = f"f.code NOT IN ({codes})"
         old, other = self.snapshot(old_where), self.snapshot(other_where)
         self.assertEqual(len(old[0]), 2)
         dry = reference.dry_run(self.connection, BUNDLE)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 2)
-        self.assertEqual(dry.counts["field"]["create"], 7 + 7)
+        self.assertEqual(dry.counts["field"]["create"], 7 + 5)  # P1-16 V4 elimina dos horas; V2 permanece intacta
         self.assertEqual(dry.counts["form_version_machine"]["create"], 2 + 11)
         self.assertEqual(dry.counts["field_group"]["create"], 0)
         self.assertEqual(dry.counts["option"]["create"], (3 + 6 + 2) + (6 + 3))
@@ -615,7 +617,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
         for code, number in NEW_VERSION.items():
             rows = self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall()
-            self.assertEqual([r for r in rows if r[0] >= number - 1], [(number - 1, "published"), (number, "published")], code)
+            self.assertEqual(rows, [({P104: 1, P116: 2}[code], "published"), (number, "published")], code)
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")
 

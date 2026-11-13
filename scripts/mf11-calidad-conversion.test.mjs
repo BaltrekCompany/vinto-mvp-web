@@ -285,11 +285,11 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const versions = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) versions[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8")).version_number;
-  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 5, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-16": 3 }; // MF-12B: P1-16 v3
+  const expected = { "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-24": 5, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-16": 4 }; // MF-12B: P1-16 v3
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
-  assert.equal(versions["VINTO-P1-25"], 3);
-  assert.equal(manifest.counts.form_fields, 570, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
+  assert.equal(versions["VINTO-P1-25"], 4);
+  assert.equal(manifest.counts.form_fields, 567, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
   assert.equal(versions["VINTO-MP3-01"], 1);
   assert.deepEqual(JSON.parse(readFileSync(join(root, "backend/seed_data/forms/VINTO-MP3-01.json"), "utf8")).machines, ["MP3"]);
 });

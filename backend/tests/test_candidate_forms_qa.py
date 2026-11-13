@@ -98,55 +98,48 @@ class CandidateFormsCase(unittest.IsolatedAsyncioTestCase):
         reply = await call("POST", "/api/bobbins", cookie=await self.cookie("OPERACION"),
                            json_body={"capture_id": str(uuid4()), "assignment_id": assignment["id"], "device_key": str(uuid4()),
                                       "values": {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5",
-                                                  "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}})
+                                                  "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "ok"}})
         self.assertIn(reply.status, (200, 201), reply.text)
         bobbin = reply.json()["bobbin"]
         return bobbin["id"], bobbin["code"]
 
     # ---- VINTO-P1-05 (Bobinas, contexto "assignment", vía /api/captures) ------------------------------
 
-    async def test_p1_05_submitted_by_operacion_is_persisted_and_retrievable(self):
-        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
+    async def test_p1_05_new_capture_is_rejected_and_no_capture_is_created(self):
+        # P181: P1-05 queda en catálogo e historial, pero no admite nuevas capturas.
+        assignment = await self.assignment("MP3")
         capture_id = str(uuid4())
         values = {"numero_de_bobina": "B-1", "numero_codigo_de_tubete": "TB-7", "tipo_de_tubete": "carton",
                   "cantidad_utilizada": "3", "cantidad_recuperada": "1", "cantidad_devuelta": "0", "estado_del_tubete": "bueno",
                   "procedencia": "almacen", "destino": "produccion"}
         body = {"capture_id": capture_id, "assignment_id": assignment["id"], "device_key": str(uuid4()), "form_code": "VINTO-P1-05", "values": values}
         reply = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
-        self.assertEqual(reply.status, 201, reply.text)
-        created = reply.json()["capture"]
-        self.assertEqual(created["form"]["code"], "VINTO-P1-05")
-        self.assertEqual(created["values"], values)
-
-        fetched = await call("GET", f"/api/captures/{capture_id}", cookie=await self.cookie("OPERACION"))
-        self.assertEqual(fetched.status, 200)
-        self.assertEqual(fetched.json()["values"], values)
-
-    async def test_p1_05_identical_retry_is_idempotent_never_duplicated(self):
-        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
-        capture_id = str(uuid4())
-        values = {"numero_de_bobina": "B-2", "numero_codigo_de_tubete": "TB-8", "tipo_de_tubete": "plastico",
-                  "cantidad_utilizada": "2", "cantidad_recuperada": "2", "cantidad_devuelta": "0", "estado_del_tubete": "regular",
-                  "procedencia": "proveedor", "destino": "devolucion"}
-        body = {"capture_id": capture_id, "assignment_id": assignment["id"], "device_key": str(uuid4()), "form_code": "VINTO-P1-05", "values": values}
-        first = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
-        self.assertEqual(first.status, 201)
-        second = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
-        self.assertIn(second.status, (200, 201), second.text)
-        self.assertTrue(second.json()["already_submitted"])
-        self.assertEqual(second.json()["capture"]["id"], first.json()["capture"]["id"])
+        self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"), reply.text)
         count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (capture_id,)).fetchone()[0]
-        self.assertEqual(count, 1, "un reintento idéntico no debe crear una segunda fila")
+        self.assertEqual(count, 0)
+        fetched = await call("GET", f"/api/captures/{capture_id}", cookie=await self.cookie("OPERACION"))
+        self.assertEqual(fetched.status, 404)
 
-    async def test_p1_05_missing_required_field_is_rejected(self):
-        assignment = await self.assignment("MP3")  # MF-12A (MD_Ejec 20): P1-05 (v2) solo está disponible en MP3
+    async def test_p1_05_identical_retry_stays_denied_without_inserting_rows(self):
+        assignment = await self.assignment("MP3")
         capture_id = str(uuid4())
-        values = {"numero_de_bobina": "B-3", "numero_codigo_de_tubete": "TB-9"}  # faltan 7 obligatorios
+        body = {"capture_id": capture_id, "assignment_id": assignment["id"], "device_key": str(uuid4()), "form_code": "VINTO-P1-05",
+                "values": {"numero_de_bobina": "B-2", "numero_codigo_de_tubete": "TB-8"}}
+        for _ in range(2):
+            response = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
+            self.assertEqual((response.status, response.json()["code"]), (409, "FORM_NOT_AVAILABLE"), response.text)
+        count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (capture_id,)).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    async def test_p1_05_retirement_precedes_field_validation(self):
+        assignment = await self.assignment("MP3")
+        capture_id = str(uuid4())
+        values = {"numero_de_bobina": "B-3", "numero_codigo_de_tubete": "TB-9"}  # faltan siete campos
         body = {"capture_id": capture_id, "assignment_id": assignment["id"], "device_key": str(uuid4()), "form_code": "VINTO-P1-05", "values": values}
         reply = await call("POST", "/api/captures", json_body=body, cookie=await self.cookie("OPERACION"))
-        self.assertEqual(reply.status, 422, reply.text)
+        self.assertEqual((reply.status, reply.json()["code"]), (409, "FORM_NOT_AVAILABLE"), reply.text)
         count = self.connection.execute("SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (capture_id,)).fetchone()[0]
-        self.assertEqual(count, 0, "una validación fallida no debe dejar ninguna fila para ESE capture_id")
+        self.assertEqual(count, 0)
 
     async def test_p1_05_denied_to_calidad_profile_without_production_capture_permission(self):
         assignment = await self.assignment("MP1")

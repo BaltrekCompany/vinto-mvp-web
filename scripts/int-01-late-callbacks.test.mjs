@@ -4,7 +4,7 @@
 // onAssignmentChanged() sobre el estado de B; una respuesta tardía de la MISMA sesión sigue funcionando.
 //
 // El banco de pruebas ejecuta el protocolo REAL de los componentes de captura (beginSessionOperation al empezar, `if (!live()) return` tras cada await) sobre el motor real de las fichas (createAttempt /
-// submitAttempt / reconciliación, con promesas pendientes que se resuelven a mano) y un «padre» que descarta el estado exactamente como resetSessionState(). Además se verifica en el código de los 11 componentes de
+// submitAttempt / reconciliación, con promesas pendientes que se resuelven a mano) y un «padre» que descarta el estado exactamente como resetSessionState(). Además se verifica en el código de los 12 componentes de
 // captura que cada await de send() va seguido de la guarda. Lógica PURA: sin DOM ni red.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -192,9 +192,9 @@ test("un cambio de sesión invalida TODAS las operaciones en vuelo de la cuenta 
 
 // ---- verificación del código real de los componentes ---------------------------------------------------------------------------------------------------------
 
-const CAPTURE_COMPONENTS = ["candidate-form-capture", "f6-capture", "f3-bobbin-capture", "quality-humidity-capture", "quality-physical-capture", "p1-10-capture", "p1-29-capture", "p1-11-capture", "p1-12-capture", "p1-13-capture", "p1-16-capture"];
+const CAPTURE_COMPONENTS = ["candidate-form-capture", "f6-capture", "f3-bobbin-capture", "quality-humidity-capture", "quality-physical-capture", "p1-10-capture", "p1-29-capture", "p1-11-capture", "p1-11-v3-capture", "p1-12-capture", "p1-13-capture", "p1-16-capture"];
 
-test("los 11 componentes de captura toman la guarda al empezar send() y comprueban live() tras CADA await antes de tocar el estado compartido", () => {
+test("los 12 componentes de captura toman la guarda al empezar send() y comprueban live() tras CADA await antes de tocar el estado compartido", () => {
   for (const name of CAPTURE_COMPONENTS) {
     const source = read(`components/vinto/${name}.tsx`);
     assert.match(source, /import \{ beginSessionOperation \} from "@\/lib\/vinto\/session-epoch";/, name);
@@ -213,7 +213,7 @@ test("los 11 componentes de captura toman la guarda al empezar send() y comprueb
     const firstAwait = awaits[0][1], firstGuard = body.findIndex((l, i) => i > firstAwait && /if \(!live\(\)\) return;/.test(l));
     const earlyEffect = body.slice(firstAwait + 1, firstGuard).some((l) => /setAttempt\(|onSubmitted|onSessionLost|onAssignmentChanged/.test(l));
     assert.equal(earlyEffect, false, `${name}: ningún efecto entre el await y la guarda`);
-    assert.match(source, /\} finally \{ busy\.current = false; setSending\(false\); \}/, `${name}: el finally sigue igual`);
+    assert.match(source, /\}\s*finally\s*\{\s*busy\.current = false;\s*setSending\(false\);\s*\}/, `${name}: el finally sigue igual`);
   }
 });
 

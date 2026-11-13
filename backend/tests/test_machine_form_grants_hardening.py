@@ -13,6 +13,7 @@ import re
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 import psycopg
@@ -112,17 +113,24 @@ class GrantablePairPolicyTests(Db):
 
     def test_a_link_that_only_an_older_published_version_has_does_not_count(self):
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.status = 'published'", (P105,)), 2)
-        with self.assertRaises(FormNotLinkedToMachineError) as raised:
-            self.grant(self.other, "MP1", P105)  # la v1 (publicada) la vincula a MP1, pero la vigente (v2) solo a MP3
+        # Verifica el contrato histórico de versionamiento sin reabrir P1-05 hoy.
+        with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):
+            with self.assertRaises(FormNotLinkedToMachineError) as raised:
+                self.grant(self.other, "MP1", P105)
         self.assertIn("vigente", str(raised.exception))
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP3", P105)  # el retiro actual prevalece
         self.assertEqual(machine_form_grants_for_user(self.c, self.other, include_revoked=True), (), "el rechazo no dejó filas")
-        self.assertTrue(self.grant(self.other, "MP3", P105))
+        # Emula temporalmente la política histórica: a partir de P181 ya no puede crearse esta concesión.
+        with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):
+            self.assertTrue(self.grant(self.other, "MP3", P105))
 
     def test_the_effective_version_follows_the_published_state(self):
         with self.assertRaises(FormNotLinkedToMachineError):
             self.grant(self.other, "MP1", P105)
         self.c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = (SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = 2)", (P105,))
-        self.assertTrue(self.grant(self.other, "MP1", P105), "al retirarse la v2, la v1 pasa a ser la versión publicada vigente y vincula MP1")
+        with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):
+            self.assertTrue(self.grant(self.other, "MP1", P105), "en el contrato histórico de MF-13 la v1 queda vigente")
 
     def test_a_form_without_any_published_version_cannot_be_granted(self):
         self.c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE form_id = (SELECT id FROM vinto_config.form WHERE code = %s)", (P105,))
@@ -153,7 +161,7 @@ class GrantablePairPolicyTests(Db):
                     pass
         self.assertEqual(grantable, offered, "ni un par de más ni uno de menos que lo que ofrece /api/production/machines")
         self.assertNotIn(("MP1", P105), grantable)
-        self.assertIn(("MP3", P105), grantable)
+        self.assertNotIn(("MP3", P105), grantable, "P1-05 retirado no admite nuevas concesiones")
 
     def test_rg01_cutover_disallows_old_mp3_grant_but_preserves_mp1(self):
         # El vínculo histórico MP3/P1-01 queda para consultas antiguas,
@@ -166,7 +174,10 @@ class GrantablePairPolicyTests(Db):
             self.grant(self.other, "MP1", "VINTO-MP3-01")
 
     def test_an_existing_grant_whose_pair_stops_being_offered_stays_stored_and_can_be_revoked(self):
-        self.assertTrue(self.grant(self.other, "MP3", P105))
+        with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):
+            self.assertTrue(self.grant(self.other, "MP3", P105))
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.user(), "MP3", P105)  # Retiro P181: ya no es concedible
         self.c.execute("UPDATE vinto_master.machine SET active = false WHERE code = 'MP3'")
         self.assertTrue(has_active_machine_form_grant(self.c, self.other, "MP3", P105), "la fila no se borra ni se reescribe: queda inerte")
         self.assertTrue(self.revoke(self.other, "MP3", P105), "revocar no exige que el par siga ofrecido")

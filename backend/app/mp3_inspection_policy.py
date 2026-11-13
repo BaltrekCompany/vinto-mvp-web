@@ -16,6 +16,8 @@ from app.capture_errors import FormNotAvailableError, ShiftCaptureAlreadyExistsE
 RG_MP3_FORM_CODE = "VINTO-MP3-01"
 SHARED_OLD_FORM_CODE = "VINTO-P1-01"
 MP3_MACHINE_CODE = "MP3"
+# Retirado funcionalmente: versiones y capturas históricas permanecen consultables.
+RETIRED_CAPTURE_FORMS = frozenset({"VINTO-P1-05"})
 
 SHIFT_ALREADY_TAKEN_SQL = """
     SELECT 1
@@ -35,6 +37,8 @@ SHIFT_ALREADY_TAKEN_SQL = """
 
 def allowed_for_machine(form_code: str, machine_code: str) -> bool:
     """Alcance explícito adicional al vínculo de versión publicada."""
+    if form_code in RETIRED_CAPTURE_FORMS:
+        return False
     if form_code == RG_MP3_FORM_CODE:
         return machine_code == MP3_MACHINE_CODE
     if form_code == SHARED_OLD_FORM_CODE and machine_code == MP3_MACHINE_CODE:
@@ -43,7 +47,7 @@ def allowed_for_machine(form_code: str, machine_code: str) -> bool:
 
 
 def assert_form_machine(connection, form_code: str, machine_id) -> None:
-    if form_code not in {RG_MP3_FORM_CODE, SHARED_OLD_FORM_CODE}:
+    if form_code not in {RG_MP3_FORM_CODE, SHARED_OLD_FORM_CODE} | RETIRED_CAPTURE_FORMS:
         return
     row = connection.execute(
         "SELECT code FROM vinto_master.machine WHERE id = %s",

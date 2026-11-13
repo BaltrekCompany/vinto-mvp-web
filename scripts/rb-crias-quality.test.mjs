@@ -47,7 +47,7 @@ test("P1-07 v4: 21 positions with gap 12 and only first child required", () => {
     assert.deepEqual(fields.filter(f => f.required).map(f => f.key), ["peso_cria_1"]);
     assert.ok(fields.every(f => f.kind === "decimal" && f.suffix === "kg"));
     const manifest = JSON.parse(readFileSync(new URL("../backend/seed_data/forms/VINTO-P1-07.json",import.meta.url),"utf8"));
-    assert.equal(manifest.version_number, 4);
+    assert.equal(manifest.version_number, 5);
     const optional = ["producto_refilado", "auxiliar", "formato_2", "formato_3"];
     for (const key of optional) {
         assert.equal(P107_FIELDS.find(f => f.key === key)?.required, false, `frontend ${key}`);

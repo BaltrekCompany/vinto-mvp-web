@@ -454,7 +454,7 @@ class CaptureIntegrityTests(BulkCase):
         order = self.order([line(with_grammage[0], "MP1", "PV-1"), line(with_grammage[1], "MP1", "PV-2")])
         first = self.activate(order, 0).assignment
         operator = self.make_user("OPERACION")
-        values = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}
+        values = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": 1000, "codigo_de_tubete": 37, "observaciones": "ok"}
         base.internal(bobbins_service).submit_bobbin_production(self.connection, actor_id=operator, capture_id=uuid4(), assignment_id=first.id, device_key=str(uuid4()), values=values)
         captures = self.connection.execute("SELECT to_jsonb(c) FROM vinto_txn.capture c ORDER BY id").fetchall()
         assignment = self.connection.execute("SELECT to_jsonb(a) FROM vinto_txn.assignment a WHERE id=%s", (first.id,)).fetchall()

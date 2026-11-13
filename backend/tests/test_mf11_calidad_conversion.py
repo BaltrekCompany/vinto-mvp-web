@@ -45,13 +45,22 @@ P111, P112, P113, P116 = "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-
 P124, P126, P127 = "VINTO-P1-24", "VINTO-P1-26", "VINTO-P1-27"
 CONVERSION = (P111, P112, P113, P116)
 QUALITY = (P124, P126, P127)
-NEW_VERSION = {P111: 3, P112: 3, P113: 2, P116: 2, P124: 5, P126: 3, P127: 2}
+NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
+_P111_V2 = json.loads((Path(__file__).with_name("cv_p111_v2.json")).read_text(encoding="utf-8"))  # Copia autentica anterior a CV-P111 v3 (commit 83c3a257).
 _P112_V3 = json.loads((Path(__file__).with_name("cv_p112_v3.json")).read_text(encoding="utf-8"))  # Fixture auténtica MF-11: v3 P1-12, sin la lógica de pallets v4.
 _P113_V2 = json.loads((Path(__file__).with_name("cv_p113_v2.json")).read_text(encoding="utf-8"))  # Contrato historico aprobado antes de CV-P113 v3.
 _REAL = load_bundle()
-BUNDLE = dataclasses.replace(_REAL, forms=tuple(_P116_V2 if f["code"] == "VINTO-P1-16" else _P112_V3 if f["code"] == P112 else _P113_V2 if f["code"] == P113 else f for f in _REAL.forms))
+# Fixture historica autentica de P1-24 V4 (la V5 agrega dos elongaciones).
+_P124_V4 = {**next(f for f in _REAL.forms if f["code"] == P124), "version_number": 4}
+_P124_V4["fields"] = [{**f, "display_order": n} for n, f in enumerate(
+    (f for f in _P124_V4["fields"] if f["key"] not in ("elongacion_media_longitudinal", "elongacion_media_transversal")), start=1)]
+_P124_V4["definition_checksum"] = compute_definition_checksum(_P124_V4)
+BUNDLE = dataclasses.replace(_REAL, forms=tuple(
+    _P116_V2 if f["code"] == P116 else _P112_V3 if f["code"] == P112
+    else _P111_V2 if f["code"] == P111 else _P113_V2 if f["code"] == P113 else _P124_V4 if f["code"] == P124
+    else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 MACHINE = {P111: "GAMBINI", P112: "GAMBINI", P113: "OMET_I", P116: "OMET_I"}
 ARTICLE = {m: sorted(r["article_code"] for r in BUNDLE.article_machines if r["machine_code"] == m)[0] for m in {r["machine_code"] for r in BUNDLE.article_machines}}
@@ -60,8 +69,9 @@ DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 HOURS = {"hora_inicio": "06:30", "hora_fin": "14:45"}
 POINTS = ["Caja de formación – Colador", "Tela – Pick up", "Fieltro I", "Fieltro II", "Prensa succión", "Prensa ciega"]
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, P111: 3, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
-            "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 5, "VINTO-P1-25": 3, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
+# Versiones propias de la fixture historica MF-11; NO son las del catalogo vigente.
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 5, "VINTO-P1-10": 4, P111: 2, P112: 3, P113: 2, P116: 2, "VINTO-P1-18": 2,
+            "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, P124: 4, "VINTO-P1-25": 4, P126: 3, P127: 2, "VINTO-P1-28": 1, "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}  # MF-12A: P1-01 v4, P1-05 v2 y P1-31 v2
 # claves que cada versión NUEVA añade respecto de la anterior
 ADDED = {P111: ("hora_inicio", "hora_fin"), P112: ("hora_inicio", "hora_fin"), P113: ("hora_inicio", "hora_fin"), P116: ("hora_inicio", "hora_fin"), P126: ("absorcion_de_humedad",), P127: ("alcalinidad_total",), P124: ()}
 
@@ -162,8 +172,8 @@ class DefinitionTests(unittest.TestCase):
 
     def test_p1_24_v4_only_relabels_crepado(self):
         by = {f["key"]: f for f in FORMS[P124]["fields"]}
-        self.assertEqual(list(by), ["crepado", "gramaje", "resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo", "elongacion_media_longitudinal", "promedio_longitudinal_humedo",
-                                    "resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo", "elongacion_media_transversal", "promedio_transversal_humedo",
+        self.assertEqual(list(by), ["crepado", "gramaje", "resistencia_longitudinal_humeda_centro", "resistencia_longitudinal_humeda_medio", "resistencia_longitudinal_humeda_extremo", "promedio_longitudinal_humedo",
+                                    "resistencia_transversal_humeda_centro", "resistencia_transversal_humeda_medio", "resistencia_transversal_humeda_extremo", "promedio_transversal_humedo",
                                     "tiempo_de_curado_condicion", "observaciones"])
         c = by["crepado"]
         self.assertEqual((c["label"], c["value_type"], c["required"], c["source"], c["unit"]), ("Crepado (%)", "decimal", True, "manual", None), "misma clave, tipo y obligatoriedad; el % es solo visual")
@@ -199,7 +209,7 @@ class DefinitionTests(unittest.TestCase):
         self.assertEqual(next(f for f in FORMS[P112]["fields"] if f["key"] == "formato")["value_type"], "text", "MF-10 sigue vigente")
 
     def test_manifest_counts(self):
-        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 570)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
+        self.assertEqual(sum(len(f["fields"]) + sum(len(g["fields"]) for g in f["groups"]) for f in _REAL.forms), 567)  # MF-12A: P1-01 v4 pasa de 73 a 70 campos; MF-12B: P1-04 v2 (9 -> 7) y P1-16 v3 (10 -> 7)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):
@@ -220,6 +230,17 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
                                   FROM vinto_config.form f
                                   WHERE v.form_id=f.id AND f.code=%s AND v.version_number=4""", (P112,))
+        # MF-11 requiere P1-11 V2 y P1-13 V2 para probar sus horas originales.
+        # Sus versiones V3/V4 solo se retiran en esta BD efimera: las definiciones
+        # y validaciones de los releases actuales permanecen intactas.
+        cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
+                                  FROM vinto_config.form f
+                                  WHERE v.form_id=f.id AND ((f.code=%s AND v.version_number>2)
+                                  OR (f.code=%s AND v.version_number>2))""", (P111, P113))
+        # MF-11 se prueba con P1-24 V4, no la V5 contemporanea.
+        cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
+                                  FROM vinto_config.form f
+                                  WHERE v.form_id=f.id AND f.code=%s AND v.version_number=5""", (P124,))
         cls.current = {code: cls.version(code, NEW_VERSION[code]) for code in NEW_VERSION}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, old_spec(CONVERSION + (P126, P127))))  # las versiones anteriores, publicadas como en producción (aditivo)
@@ -239,7 +260,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
     def install_p116_v2_as_current(cls):
         """MF-12B: la plantilla trae P1-16 v3; aquí se publica la v2 de producción (con las horas) y se retira la v3 en la base efímera, de modo que el backend elige la v2 como en MF-11."""
         c = cls.connection
-        v3 = cls.version(P116, 3)
+        v3 = cls.version(P116, 4)  # V4 actual del template; ensayo MF-11 restaura su V2
         form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (v3,)).fetchone()
         v2 = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,2,%s,%s,%s,%s) RETURNING id", (form_id, name, area, workflow, _P116_V2["definition_checksum"])).fetchone()[0]
         for f in _P116_V2["fields"]:
@@ -490,6 +511,10 @@ class P124Tests(q2.BobbinBase):
     def setUpClass(cls):
         super().setUpClass()
         c = cls.connection
+        with contextlib.redirect_stdout(io.StringIO()):
+            reference.apply(c, dataclasses.replace(BUNDLE, source_checksum="9" * 64))
+        # Solo en este ensayo: V4 de MF-11 es vigente, V5 de CV-P124 no.
+        c.execute("UPDATE vinto_config.form_version v SET status='retired' FROM vinto_config.form f WHERE v.form_id=f.id AND f.code=%s AND v.version_number=5", (P124,))
         cls.v4 = c.execute("SELECT v.id FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = 4", (P124,)).fetchone()[0]
         form_id, workflow, area, name = c.execute("SELECT form_id, workflow_id, area, name FROM vinto_config.form_version WHERE id = %s", (cls.v4,)).fetchone()
         cls.v3 = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,3,%s,%s,%s,%s) RETURNING id", (form_id, name, area, workflow, "a" * 64)).fetchone()[0]

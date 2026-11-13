@@ -533,7 +533,7 @@ class ApplyTests(DatabaseCase):
         self.assertEqual(connection.execute("SELECT id,published_at FROM vinto_config.form_version").fetchall(), before)
         # CLOUD-DEP G.12-C4/G.12-C4-COMPLETE/G.12-C4-FINAL25: 30 -> 389 y 444 -> 1926 por los 25 formularios del bundle
         # expandido (ver comentario de test_import_records_cover_every_entity_with_unique_keys).
-        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 570)  # CV-P112-01: CV-P111-v3: nuevo esquema de seis campos y sin horas generales = 570
+        self.assertEqual(self.count(connection, "vinto_config.field_definition"), 567)  # CV-P112-01: CV-P111-v3: nuevo esquema de seis campos y sin horas generales = 570
         self.assertEqual(self.count(connection, "vinto_audit.import_record", "issues='[\"already_present\"]'::jsonb"), 2061)
 
     def test_identical_existing_article_is_not_modified(self):
@@ -793,7 +793,7 @@ class F3ReferenceTests(DatabaseCase):
                                                   JOIN vinto_config.form_version v ON v.id=f.form_version_id JOIN vinto_config.form fm ON fm.id=v.form_id
                                                   LEFT JOIN vinto_master.unit u ON u.id=f.unit_id WHERE fm.code='VINTO-P1-03' ORDER BY f.display_order"""),
                          [("hora_inicio", "time", True, None), ("hora_fin", "time", True, None), ("diametro", "decimal", True, "MM"),
-                          ("peso_kg", "decimal", True, "KG"), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
+                          ("peso_kg", "decimal", True, "KG"), ("metraje", "integer", True, None), ("codigo_de_tubete", "integer", True, None), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
         self.assertEqual(self.rows_of(connection, "SELECT status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id=v.form_id WHERE f.code='VINTO-P1-03'"), [("published",)])
         snapshot = self.tables_snapshot(connection)
         again = reference.apply(connection, BUNDLE)

@@ -270,7 +270,7 @@ class RewindingQualityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(persisted.status, 200, persisted.text)
 
     async def test_one_and_three_children_with_real_independent_pending_states(self):
-        self.assertEqual(P107["version_number"], 4)
+        self.assertEqual(P107["version_number"], 5)
         self.assertEqual(sum(x["required"] for x in P107["fields"] if x["key"].startswith("peso_cria_")), 1)
         assignment = await self.assignment()
         result, body = await self.capture(assignment, self.values(

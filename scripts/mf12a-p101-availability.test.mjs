@@ -186,7 +186,7 @@ test("seed: solo P1-01 v4, P1-05 v2 y P1-31 v2 cambian; P1-05 y P1-31 conservan 
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const forms = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) forms[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8"));
-  const expected = { "VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-24": 5, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-16": 3 };
+  const expected = { "VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-24": 5, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-31": 2, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-16": 4 };
   for (const [code, version] of Object.entries(expected)) assert.equal(forms[code].version_number, version, code);
   assert.deepEqual(forms["VINTO-P1-05"].machines, ["MP3"]);
   assert.deepEqual(forms["VINTO-P1-31"].machines, ["MP3"]);
@@ -195,7 +195,7 @@ test("seed: solo P1-01 v4, P1-05 v2 y P1-31 v2 cambian; P1-05 y P1-31 conservan 
   assert.equal(forms["VINTO-P1-05"].fields.length, 10);
   assert.equal(forms["VINTO-P1-31"].fields.length, 9);
   assert.deepEqual(forms["VINTO-P1-01"].fields.map((f) => f.key), ui.P101_FIELDS.map((f) => f.key), "el seed y la pantalla declaran los mismos campos en el mismo orden");
-  assert.equal(manifest.counts.form_fields, 570, "P1-12 v4 reduce 19 campos; MP3 RG01 mantiene sus 133");
+  assert.equal(manifest.counts.form_fields, 567, "P1-12 v4 reduce 19 campos; MP3 RG01 mantiene sus 133");
   assert.deepEqual(forms["VINTO-MP3-01"].machines, ["MP3"]);
   assert.equal(forms["VINTO-MP3-01"].fields.length, 133);
 });

@@ -43,7 +43,13 @@ FORMS = {f["code"]: f for f in BUNDLE.forms}
 
 def v2_fields(code):
     """Campos de la versión 2 (MF-06) de P1-24 / P1-25: los MANUALES de la versión vigente del bundle, renumerados."""
-    return [{**f, "display_order": n} for n, f in enumerate((f for f in FORMS[code]["fields"] if f["source"] == "manual" and f["key"] not in ("elongacion_media_longitudinal","elongacion_media_transversal")), start=1)]
+    # En MF-06 dos promedios eran manuales; MF-07 los hizo calculados.
+    # La fixture histórica V2 mantiene ambas claves sin modificar la V4.
+    return [{**f, "source": "manual", "display_order": n} for n, f in enumerate(
+        (f for f in FORMS[code]["fields"] if (f["source"] == "manual" or
+         (code == P125 and f["key"] in ("promedio_resistencia_longitudinal_kgf",
+                                       "promedio_resistencia_longitudinal_humeda_kgf")))
+         and f["key"] not in ("elongacion_media_longitudinal", "elongacion_media_transversal")), start=1)]
 STATE = {}
 
 
@@ -149,7 +155,7 @@ class DefinitionTests(Base):
     async def test_versions_and_bundle_match_the_request(self):
         for code in (P124, P125):
             v1, v2 = [k for k, _ in self.definition(self.v1[code])], [k for k, _ in self.definition(self.v2[code])]
-            self.assertEqual(FORMS[code]["version_number"], {P124: 5, P125: 3}[code])  # MF-07 (P1-24 v4: MF-11)
+            self.assertEqual(FORMS[code]["version_number"], {P124: 5, P125: 4}[code])  # MF-07 (P1-24 v4: MF-11)
             self.assertEqual(v2, [f["key"] for f in v2_fields(code)])
             self.assertEqual(sorted(set(v1) - set(v2)), sorted(REMOVED[code]), code)
             self.assertEqual(sorted(set(v2) - set(v1)), sorted(ADDED[code]), code)

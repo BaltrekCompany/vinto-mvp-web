@@ -2,11 +2,11 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CaptureNotice, CaptureSection, CaptureShell, ContextStrip, ContextValue, SubmitBar, TextAreaField, TextField, contextItems } from "@/components/vinto/capture-kit";
+import { CaptureNotice, CaptureSection, CaptureShell, ContextStrip, ContextValue, SubmitBar, TextAreaField, TextField, ChoiceField, contextItems } from "@/components/vinto/capture-kit";
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
-import { CONTEXT_NOTES, EMPTY_P110_DRAFT, P110_LABELS, createP110Attempt, submitP110Attempt, type P110Attempt, type P110Capture, type P110Draft, type P110SubmitDeps } from "@/lib/vinto/p1-10";
+import { CONTEXT_NOTES, EMPTY_P110_DRAFT, P110_LABELS, P110_TIPOS, createP110Attempt, submitP110Attempt, type P110Attempt, type P110Capture, type P110Draft, type P110SubmitDeps } from "@/lib/vinto/p1-10";
 import { getP110, submitP110 } from "@/lib/vinto/p1-10-api";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
@@ -93,9 +93,8 @@ export function P110CaptureForm({ context, online, attempt, setAttempt, back, on
         </div>
         {user && <p className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-700" data-section="session">Sesión iniciada como <b>{user.display_name}</b>. Es solo la identificación del usuario autenticado: no es el responsable aprobado ni una firma.</p>}
         <CaptureSection title="Registro de fardos" hint="El producto y la OT salen de la asignación (arriba): no se digitan. El número de fardo no se genera todavía (numeración automática pendiente de VINTO).">
-            <TextField label={P110_LABELS.hora_inicio} required type="time" disabled={locked} hint="Hora local de planta (HH:MM). No es la hora de registro del sistema." value={draft.hora_inicio} onChange={set("hora_inicio")}/>
-            <TextField label={P110_LABELS.hora_fin} required type="time" disabled={locked} hint="Hora local de planta (HH:MM). No es la hora de registro del sistema." value={draft.hora_fin} onChange={set("hora_fin")}/>
             <TextField label={P110_LABELS.peso_fardo} required suffix="kg" inputMode="decimal" disabled={locked} hint="Tipo declarado: texto. Formato y decimales por confirmar." value={draft.peso_fardo} onChange={set("peso_fardo")}/>
+            <ChoiceField label={P110_LABELS.tipo} required disabled={locked} options={P110_TIPOS.map(value => ({ value, label: value }))} value={draft.tipo} onChange={set("tipo")}/>
             <TextAreaField label={P110_LABELS.observaciones} disabled={locked} value={draft.observaciones} onChange={set("observaciones")}/>
         </CaptureSection>
         <CaptureNotice text={notice}/>

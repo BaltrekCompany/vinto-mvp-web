@@ -148,14 +148,15 @@ class MixedAreaTests(EquivalenceCase):
     def test_a_quality_version_vigente_linked_to_the_machine_offers_it_but_production_stays_closed(self):
         """Inverso: v2 production solo MP3 + v3 quality vinculada a MP1. El catálogo lo ofrece y se puede conceder, pero no es utilizable en Producción (ni captura ni motor)."""
         holder = self.user()
-        self.add_version(P105, 3, "quality", "MP1")
-        seen = self.observe(holder, PRODUCTION, "MP1", P105)
+        # Usa P1-31: P1-05 permanece retirado aun si se publica una versión nueva.
+        self.add_version(P131, 3, "quality", "MP1")
+        seen = self.observe(holder, PRODUCTION, "MP1", P131)
         self.assertTrue(seen["catalog_offered"])
-        self.assertTrue(self.grant(holder, "MP1", P105))
-        seen = self.observe(holder, PRODUCTION, "MP1", P105)
+        self.assertTrue(self.grant(holder, "MP1", P131))
+        seen = self.observe(holder, PRODUCTION, "MP1", P131)
         self.assertEqual((seen["engine"].allowed, seen["engine"].reason), (False, "EFFECTIVE_VERSION_OTHER_AREA"))
         self.assertFalse(seen["capture"] or seen["listed"])  # captura coherente con el motor: ambos cerrados
-        self.assertFalse(self.readiness_offers(PRODUCTION, "MP1", P105))
+        self.assertFalse(self.readiness_offers(PRODUCTION, "MP1", P131))
 
     def test_a_historical_same_area_link_is_inert_everywhere(self):
         holder = self.user()

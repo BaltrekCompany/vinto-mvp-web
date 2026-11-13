@@ -19,9 +19,13 @@ export const P1_25_CODE = "VINTO-P1-25";
 // se muestran con sus etiquetas de entonces (`renamedAt`). Se añaden dos promedios CALCULADOS por el backend (media aritmética simple de las tres posiciones, dos decimales, solo lectura): resistencia longitudinal (seca) y
 // resistencia longitudinal húmeda. Las elongaciones ya existentes se conservan; Caudal RH y # Cortes (MF-06) no cambian.
 const POSITION_LABEL = { centro: "Comando", medio: "Medio", extremo: "Transversal" } as const;
+// Versión 4: solo etiquetas visibles; conservamos claves, tipos, obligatoriedad y fórmulas.
 const longitudinal = (wetKind: "" | "humeda_", position: keyof typeof POSITION_LABEL): FieldSpec => ({
-    key: `resistencia_longitudinal_${wetKind}${position}_kgf`, label: `Resistencia longitudinal ${wetKind ? "húmeda " : ""}– ${POSITION_LABEL[position]} kgf`, kind: "decimal", required: true,
+    key: `resistencia_longitudinal_${wetKind}${position}_kgf`,
+    label: `Resistencia en Húmedo ${wetKind ? "Transversal" : "Longitudinal"} - ${POSITION_LABEL[position]}`,
+    kind: "decimal", required: true,
     renamedAt: { version: 3, previous: `Resistencia longitudinal ${wetKind ? "húmeda " : ""}${position} kgf` },
+    renamedAgainAt: { version: 4, previous: `Resistencia longitudinal ${wetKind ? "húmeda " : ""}– ${POSITION_LABEL[position]} kgf` },
 });
 export const P125_FIELDS: readonly FieldSpec[] = [
     { key: "caudal_rh_ml_min", label: "Caudal RH [ml/min]", kind: "decimal", required: false },
@@ -55,12 +59,5 @@ export const P125_LEGACY_FIELDS: readonly FieldSpec[] = [
 ];
 export const P125 = defineCandidateForm(P1_25_CODE, P125_FIELDS, { context: "bobbin", legacy: P125_LEGACY_FIELDS, calculated: P125_CALCULATED_FIELDS });
 export const P125_AUTOMATIC = ["Fecha (fecha operativa de la bobina)", "Hora (de registro, no del ensayo)", "Responsable (usuario autenticado, informativo)"] as const;
-export const P125_PENDING: readonly { label: string; pending: string }[] = [
-    { label: "Promedios", pending: "Los promedios de resistencia longitudinal y de resistencia longitudinal húmeda (media aritmética simple de Comando, Medio y Transversal, dos decimales) los calcula el sistema al guardar; no se digitan. El porcentaje de resistencia húmeda no se calcula (no fue aprobado). Las capturas anteriores no se recalculan." },
-    { label: "Alcance de máquinas", pending: "La definición legacy dice «MP1 / MP3» pero su alcance de máquinas es «por definir». MP1 / MP3 se usan solo como contexto técnico de prueba; la decisión de VINTO sigue pendiente y las rebobinadoras NO están cubiertas." },
-    { label: "Curado", pending: "«Curado min» es TEXTO en la definición legacy: se guarda tal como se digita, sin convertirlo a número ni aplicar una regla de curado." },
-    { label: "Número de bobina y producto", pending: "Ya no se digitan (MF-06): la bobina y su artículo vienen de la bobina seleccionada y se muestran solo como contexto informativo; las capturas de la versión 1 los conservan." },
-    { label: "Rangos y límites", pending: "Resistencias, elongaciones, gramaje y crepado son decimales sin rango ni límite de aceptación aprobados; las elongaciones no declaran unidad." },
-    { label: "Hora del ensayo", pending: "La hora que guarda el sistema es la de registro (servidor): no es la hora real del ensayo. Frecuencia de ensayo pendiente." },
-    { label: "Efecto sobre la bobina", pending: "Registrar este control no libera, rechaza ni aprueba la bobina." },
-];
+// Las notas técnicas permanecen en documentación, no en la captura definitiva.
+export const P125_PENDING: readonly { label: string; pending: string }[] = [];
