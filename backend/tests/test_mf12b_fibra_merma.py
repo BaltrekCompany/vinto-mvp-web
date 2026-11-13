@@ -599,7 +599,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
 
     def test_the_bundle_adds_only_the_two_new_versions_and_is_idempotent(self):
         codes = ", ".join(f"'{c}'" for c in NEW_VERSION)
-        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = {{P104: 1, P116: 2}[c]})" for c in NEW_VERSION)
+        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = { {P104: 1, P116: 2}[c] })" for c in NEW_VERSION)
         other_where = f"f.code NOT IN ({codes})"
         old, other = self.snapshot(old_where), self.snapshot(other_where)
         self.assertEqual(len(old[0]), 2)
