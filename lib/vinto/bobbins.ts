@@ -64,7 +64,7 @@ export type BobbinCapture = {
     values: BobbinCaptureValues;
 };
 
-export type BobbinCaptureValues = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; observaciones?: string };
+export type BobbinCaptureValues = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; metraje?: string; codigo_de_tubete?: string; observaciones?: string };
 
 export type BobbinSubmission = { created: boolean; already_submitted: boolean; bobbin: CentralBobbin; capture: BobbinCapture };
 
@@ -73,6 +73,13 @@ const isRec = (value: unknown): value is Rec => typeof value === "object" && val
 const isStr = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 const isInt = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
 const DECIMAL = /^-?\d+(\.\d+)?$/;
+const INTEGER = /^-?\d+$/;
+const INT_LIMIT = BigInt("9223372036854775807");
+function integerText(value: unknown): string | null {
+    const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : value;
+    if (typeof text !== "string" || !INTEGER.test(text) || text.length > 40) return null;
+    return BigInt(text) >= -INT_LIMIT && BigInt(text) <= INT_LIMIT ? String(BigInt(text)) : null;
+}
 const isNegative = (decimal: string) => decimal.startsWith("-") && !/^-0+(\.0+)?$/.test(decimal); // sin pasar por float; -0 no es negativo
 
 // El backend entrega decimales como texto; un número JSON finito también se acepta y se normaliza a texto.
@@ -107,13 +114,16 @@ export function parseBobbin(value: unknown): CentralBobbin | null {
     };
 }
 
-function parseCaptureValues(value: unknown): BobbinCaptureValues | null {
+function parseCaptureValues(value: unknown, version: number): BobbinCaptureValues | null {
     if (!isRec(value)) return null;
     const { hora_inicio: start, hora_fin: end, numero_de_cortes: cuts, observaciones: notes } = value;
     const diameter = decimalText(value.diametro), weight = decimalText(value.peso_kg);
     if (!isStr(start) || !isStr(end) || !isStr(cuts) || diameter === null || weight === null) return null;
     if (notes !== undefined && typeof notes !== "string") return null;
+    const metraje = integerText(value.metraje), tubete = integerText(value.codigo_de_tubete);
+    if (version >= 2 && (metraje === null || tubete === null)) return null;
     const clean: BobbinCaptureValues = { hora_inicio: start, hora_fin: end, diametro: diameter, peso_kg: weight, numero_de_cortes: cuts };
+    if (version >= 2) { clean.metraje = metraje as string; clean.codigo_de_tubete = tubete as string; }
     if (notes !== undefined) clean.observaciones = notes;
     return clean;
 }
@@ -126,7 +136,7 @@ export function parseBobbinCapture(value: unknown): BobbinCapture | null {
     if (!isRec(form) || form.code !== F3_FORM_CODE || typeof form.version_number !== "number" || typeof form.name !== "string" || !machine || !shift) return null;
     if (!isRec(assignment) || !isStr(assignment.id) || !isRec(order) || !isStr(order.id) || !isStr(order.number)) return null;
     if (!isRec(line) || !isStr(line.id) || !isStr(line.line_code) || !isStr(line.pv_reference) || !isRec(line.article) || !isStr(line.article.code) || typeof line.article.description !== "string") return null;
-    const values = parseCaptureValues(value.values);
+    const values = parseCaptureValues(value.values, form.version_number as number);
     if (!values) return null;
     return {
         id: value.id, status, revision: value.revision, captured_at: value.captured_at, submitted_at: value.submitted_at,
@@ -146,10 +156,10 @@ export function parseBobbinSubmission(value: unknown): BobbinSubmission | null {
 
 // ---- borrador, normalización y payload ------------------------------------------------------------------------------------
 
-export type BobbinDraft = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; observaciones: string };
-export const EMPTY_BOBBIN_DRAFT: BobbinDraft = { hora_inicio: "", hora_fin: "", diametro: "", peso_kg: "", numero_de_cortes: "", observaciones: "" };
+export type BobbinDraft = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; metraje: string; codigo_de_tubete: string; observaciones: string };
+export const EMPTY_BOBBIN_DRAFT: BobbinDraft = { hora_inicio: "", hora_fin: "", diametro: "", peso_kg: "", numero_de_cortes: "", metraje: "", codigo_de_tubete: "", observaciones: "" };
 
-export type BobbinValues = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; observaciones?: string };
+export type BobbinValues = { hora_inicio: string; hora_fin: string; diametro: string; peso_kg: string; numero_de_cortes: string; metraje: string; codigo_de_tubete: string; observaciones?: string };
 export type BobbinPayload = { capture_id: string; assignment_id: string; device_key: string; values: BobbinValues };
 
 export const MAX_DECIMAL_CHARS = 40; // límites técnicos equivalentes a los del backend, no funcionales
@@ -181,10 +191,14 @@ export function normalizeBobbinDraft(draft: BobbinDraft): BobbinDraftCheck {
     const cuts = draft.numero_de_cortes.trim();
     if (!cuts) errors.push("Número de cortes: obligatorio.");
     else if (cuts.length > MAX_TEXT_CHARS) errors.push("Número de cortes: demasiado largo.");
+    const metraje = integerText(draft.metraje.trim());
+    const tubete = integerText(draft.codigo_de_tubete.trim());
+    if (metraje === null) errors.push("Metraje: es obligatorio y debe ser entero.");
+    if (tubete === null) errors.push("Código de tubete: es obligatorio y debe ser entero.");
     const notes = draft.observaciones.trim();
     if (notes.length > MAX_TEXT_CHARS) errors.push("Observaciones: demasiado largas.");
     if (errors.length) return { ok: false, errors };
-    const values: BobbinValues = { hora_inicio: start, hora_fin: end, diametro: diameter as string, peso_kg: weight as string, numero_de_cortes: cuts };
+    const values: BobbinValues = { hora_inicio: start, hora_fin: end, diametro: diameter as string, peso_kg: weight as string, numero_de_cortes: cuts, metraje: metraje as string, codigo_de_tubete: tubete as string };
     if (notes) values.observaciones = notes; // vacío = se omite del payload
     return { ok: true, values };
 }

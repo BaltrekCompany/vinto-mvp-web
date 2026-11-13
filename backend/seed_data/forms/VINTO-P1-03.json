@@ -6,7 +6,7 @@
   "name": "Registro de producción de bobinas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 1,
+  "version_number": 2,
   "machines": [
     "MP1",
     "MP3"
@@ -50,13 +50,31 @@
       "display_order": 4
     },
     {
+      "key": "metraje",
+      "label": "Metraje",
+      "value_type": "integer",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 5
+    },
+    {
+      "key": "codigo_de_tubete",
+      "label": "Código de tubete",
+      "value_type": "integer",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 6
+    },
+    {
       "key": "numero_de_cortes",
       "label": "Número de cortes",
       "value_type": "text",
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 5
+      "display_order": 7
     },
     {
       "key": "observaciones",
@@ -65,8 +83,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 6
+      "display_order": 8
     }
   ],
-  "definition_checksum": "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13"
+  "definition_checksum": "afefc828daee160a4e616759cd484855a49dc8b5a5cc808453a96e1d590c946f"
 }

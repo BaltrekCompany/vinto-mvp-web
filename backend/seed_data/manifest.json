@@ -101,7 +101,7 @@
     },
     {
       "path": "lib/vinto/p1-24.ts",
-      "sha256": "5821ff8f4cb80096eec23ab97730d30051ab976b88d6455ea1d92f92caf767fd",
+      "sha256": "99e460bfc645bedb54e101ccc1b71590f36285472a8f7e408d2518f2cdb9ab19",
       "scope": "candidate-fields:VINTO-P1-24"
     },
     {
@@ -203,8 +203,8 @@
     },
     {
       "path": "forms/VINTO-P1-03.json",
-      "sha256": "9b756fd914d0d56529e09328eecb1c7e664e22b3c042fc50348b61456998eea4",
-      "bytes": 1605
+      "sha256": "7c92c6e23e9b7bce6ecf031d68d2e668ca2a700a868c7d57ccb363fb369aba67",
+      "bytes": 2002
     },
     {
       "path": "forms/VINTO-P1-04.json",
@@ -278,8 +278,8 @@
     },
     {
       "path": "forms/VINTO-P1-24.json",
-      "sha256": "af440a82a7fcb42eb7e855e2b4672efc701f9945a822a7916a2c4f8c357a3bf2",
-      "bytes": 3276
+      "sha256": "351c9e8ed788d1ac46696b5e1b950a3209a50930426c8eb0666fcce7995bc076",
+      "bytes": 3713
     },
     {
       "path": "forms/VINTO-P1-25.json",
@@ -367,7 +367,7 @@
     "shifts": 4,
     "shift_schedules": 7,
     "forms": 26,
-    "form_fields": 566,
+    "form_fields": 570,
     "form_options": 35,
     "form_groups": 3
   },
@@ -377,7 +377,7 @@
     "nominal_weight_kg": "product-weights.ts (null when absent)",
     "sector_and_machines": "GROUPS in app/page.tsx",
     "f6_labels_units_and_options": "app/page.tsx (effectiveForms override and BobbinBales)",
-    "f3_labels_units": "form-definitions.ts (F3 fields; the six manual fields are the canonical contract)",
+    "f3_labels_units": "VINTO-P1-03 v2: metraje y codigo_de_tubete enteros obligatorios; v1 historica preservada",
     "p1_19_labels_units": "app/page.tsx (effectiveForms override of form_19_control_de_humedad); only the 7 manual source fields, derived humidity is recomputed",
     "p1_20_labels_units": "form-definitions.ts (labels, types, requirement); visible relabelling centro -> comando and espesor unit (mm -> MM) from the app/page.tsx override, *_centro keys unchanged; provisional units, gramaje without catalog unit; only the 12 manual fields, averages are recomputed for display",
     "grammage_g_m2": "official article description (PRODUCTS_BY_MACHINE): G-<number>, '.' or ',' decimal; null when absent"

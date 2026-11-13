@@ -26,7 +26,7 @@ F6_VALUES = {
 }
 F3_VALUES = {
     "hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5",
-    "peso_kg": "845.25", "numero_de_cortes": "3",
+    "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": "1200", "codigo_de_tubete": "47",
 }
 
 

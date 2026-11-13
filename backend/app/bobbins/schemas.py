@@ -21,6 +21,8 @@ class BobbinValuesIn(BaseModel):
     diametro: Any
     peso_kg: Any
     numero_de_cortes: Any
+    metraje: Any = None  # v1 historical retry, v2 required by published field definition
+    codigo_de_tubete: Any = None
     observaciones: Any = None
 
 

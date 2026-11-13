@@ -25,9 +25,13 @@ export type FieldKind = "text" | "decimal" | "textarea" | "time" | "integer" | "
 // anteriores, que eran texto libre, se leen tal cual (cualquier texto no vacío).
 // `dependsOn` (MF-12B): un `select` cuyas opciones permitidas dependen del valor elegido en OTRO campo `select` (p. ej. Origen según Material): `allowed[valorDelPadre]` son las opciones válidas. `options` sigue siendo la lista completa;
 // la pantalla filtra y `normalizeDraft` rechaza una combinación inválida. El backend aplica la misma regla en las versiones nuevas (backend/app/dependent_options.py).
-export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string }; options?: readonly string[]; optionsSinceVersion?: number; dependsOn?: { field: string; allowed: Readonly<Record<string, readonly string[]>> } };
+export type FieldSpec = { key: string; label: string; kind: FieldKind; required: boolean; hint?: string; suffix?: string; sinceVersion?: number; renamedAt?: { version: number; previous: string }; renamedAgainAt?: { version: number; previous: string }; options?: readonly string[]; optionsSinceVersion?: number; dependsOn?: { field: string; allowed: Readonly<Record<string, readonly string[]>> } };
 const labelOfField = (fields: readonly FieldSpec[], key: string): string => fields.find((f) => f.key === key)?.label ?? key;
-export const labelFor = (field: FieldSpec, version?: number): string => field.renamedAt && version !== undefined && version < field.renamedAt.version ? field.renamedAt.previous : field.label;
+export const labelFor = (field: FieldSpec, version?: number): string => {
+    if (field.renamedAt && version !== undefined && version < field.renamedAt.version) return field.renamedAt.previous;
+    if (field.renamedAgainAt && version !== undefined && version < field.renamedAgainAt.version) return field.renamedAgainAt.previous;
+    return field.label;
+};
 export type CandidateContext = "assignment" | "machine" | "bobbin";
 export type CandidateValues = Record<string, string>; // los opcionales ausentes no figuran
 // Respuesta de una captura: la de Producción lleva asignación, OT y línea; la de Calidad por máquina no (lleva `recorded_by`); la de Calidad por bobina lleva `bobbin`, OT y línea, sin asignación. Los campos de

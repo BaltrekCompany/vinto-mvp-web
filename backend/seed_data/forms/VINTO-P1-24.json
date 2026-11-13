@@ -6,7 +6,7 @@
   "name": "Propiedades físicas en húmedo",
   "area": "quality",
   "workflow": "quality-release",
-  "version_number": 4,
+  "version_number": 5,
   "machines": [
     "MP1",
     "MP3"
@@ -33,7 +33,7 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_centro",
-      "label": "Resistencia longitudinal húmeda – Comando",
+      "label": "Resistencia Longitudinal - Comando",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -42,7 +42,7 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_medio",
-      "label": "Resistencia longitudinal húmeda – Medio",
+      "label": "Resistencia Longitudinal - Medio",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -51,12 +51,21 @@
     },
     {
       "key": "resistencia_longitudinal_humeda_extremo",
-      "label": "Resistencia longitudinal húmeda – Transversal",
+      "label": "Resistencia Longitudinal - Transversal",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 5
+    },
+    {
+      "key": "elongacion_media_longitudinal",
+      "label": "Elongación Media Longitudinal",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 6
     },
     {
       "key": "promedio_longitudinal_humedo",
@@ -65,20 +74,11 @@
       "source": "calculated",
       "required": false,
       "unit": null,
-      "display_order": 6
-    },
-    {
-      "key": "resistencia_transversal_humeda_centro",
-      "label": "Resistencia transversal húmeda – Comando",
-      "value_type": "decimal",
-      "source": "manual",
-      "required": true,
-      "unit": null,
       "display_order": 7
     },
     {
-      "key": "resistencia_transversal_humeda_medio",
-      "label": "Resistencia transversal húmeda – Medio",
+      "key": "resistencia_transversal_humeda_centro",
+      "label": "Resistencia Longitudinal Húmeda - Comando",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
@@ -86,13 +86,31 @@
       "display_order": 8
     },
     {
-      "key": "resistencia_transversal_humeda_extremo",
-      "label": "Resistencia transversal húmeda – Transversal",
+      "key": "resistencia_transversal_humeda_medio",
+      "label": "Resistencia Longitudinal Húmeda - Medio",
       "value_type": "decimal",
       "source": "manual",
       "required": true,
       "unit": null,
       "display_order": 9
+    },
+    {
+      "key": "resistencia_transversal_humeda_extremo",
+      "label": "Resistencia Longitudinal Húmeda - Transversal",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": true,
+      "unit": null,
+      "display_order": 10
+    },
+    {
+      "key": "elongacion_media_transversal",
+      "label": "Elongación Media Transversal",
+      "value_type": "decimal",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 11
     },
     {
       "key": "promedio_transversal_humedo",
@@ -101,7 +119,7 @@
       "source": "calculated",
       "required": false,
       "unit": null,
-      "display_order": 10
+      "display_order": 12
     },
     {
       "key": "tiempo_de_curado_condicion",
@@ -110,7 +128,7 @@
       "source": "manual",
       "required": true,
       "unit": null,
-      "display_order": 11
+      "display_order": 13
     },
     {
       "key": "observaciones",
@@ -119,8 +137,8 @@
       "source": "manual",
       "required": false,
       "unit": null,
-      "display_order": 12
+      "display_order": 14
     }
   ],
-  "definition_checksum": "f189115d1db674fa944cce5b07610e23c709ec06a20cddcfcc7bd815c101c4e5"
+  "definition_checksum": "15b9e1f16b441b03189501dd41ff7e930e01dce0f2a993aa38847ade4ed76191"
 }

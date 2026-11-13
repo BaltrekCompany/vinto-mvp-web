@@ -46,7 +46,7 @@ WITHOUT_GRAMMAGE_MACHINE = "MP1" if WITHOUT_GRAMMAGE in MP1_CODES else "MP3"
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)  # 12:00 La Paz, 2026-10-06 -> management 2026
 LAST_DAY_OF_MANAGEMENT = datetime(2027, 3, 31, 16, 0, tzinfo=timezone.utc)  # 2027-03-31 -> management 2026
 FIRST_DAY_OF_MANAGEMENT = datetime(2027, 4, 1, 16, 0, tzinfo=timezone.utc)  # 2027-04-01 -> management 2027
-VALID = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "sin novedades"}
+VALID = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": "1200", "codigo_de_tubete": "47", "observaciones": "sin novedades"}
 
 
 def setUpModule():
@@ -141,10 +141,16 @@ class CreationTests(BobbinCase):
         rows = {r[0]: r[1:] for r in self.connection.execute(
             """SELECT f.key,d.value_type,d.value_text,d.value_decimal,d.value_time FROM vinto_txn.capture_detail d
                JOIN vinto_config.field_definition f ON f.id=d.field_definition_id WHERE d.capture_id=%s""", (result.capture.id,)).fetchall()}
-        self.assertEqual(set(rows), {"hora_inicio", "hora_fin", "diametro", "peso_kg", "numero_de_cortes", "observaciones"})  # nothing derived is copied
+        self.assertEqual(set(rows), {"hora_inicio", "hora_fin", "diametro", "peso_kg", "numero_de_cortes", "metraje", "codigo_de_tubete", "observaciones"})  # F3 v2
         self.assertEqual(rows["hora_inicio"], ("time", None, None, time(7, 15)))
         self.assertEqual(rows["diametro"], ("decimal", None, Decimal("1200.5"), None))
         self.assertEqual(rows["numero_de_cortes"], ("text", "3", None, None))
+        typed_integers = self.connection.execute("""
+            SELECT f.key, d.value_integer FROM vinto_txn.capture_detail d
+            JOIN vinto_config.field_definition f ON f.id = d.field_definition_id
+            WHERE d.capture_id = %s AND f.key IN ('metraje', 'codigo_de_tubete')
+        """, (result.capture.id,)).fetchall()
+        self.assertEqual(dict(typed_integers), {"metraje": 1200, "codigo_de_tubete": 47})
         b = result.bobbin
         self.assertEqual((b.start_time, b.end_time, b.diameter_mm, b.weight_kg, b.number_of_cuts, b.notes),
                          (time(7, 15), time(8, 40), "1200.5", "845.25", "3", "sin novedades"))
@@ -193,7 +199,7 @@ class ValidationTests(BobbinCase):
     def test_missing_required_values_are_rejected(self):
         _, assignment = self.assignment("MP1")
         before = self.counts()
-        for key in ("hora_inicio", "hora_fin", "diametro", "peso_kg", "numero_de_cortes"):
+        for key in ("hora_inicio", "hora_fin", "diametro", "peso_kg", "numero_de_cortes", "metraje", "codigo_de_tubete"):
             with self.assertRaisesRegex(CaptureValidationError, key):
                 self.submit(assignment, values={k: v for k, v in VALID.items() if k != key})
         self.assertEqual(self.counts(), before)

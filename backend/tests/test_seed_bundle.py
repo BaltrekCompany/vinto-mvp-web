@@ -213,7 +213,7 @@ class GrammageAndF3Tests(unittest.TestCase):
         self.assertEqual((form["code"], form["area"], form["machines"], form["groups"]), ("VINTO-P1-03", "production", ["MP1", "MP3"], []))
         self.assertEqual([(f["key"], f["value_type"], f["required"], f["unit"]) for f in form["fields"]], [
             ("hora_inicio", "time", True, None), ("hora_fin", "time", True, None), ("diametro", "decimal", True, "MM"),
-            ("peso_kg", "decimal", True, "KG"), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
+            ("peso_kg", "decimal", True, "KG"), ("metraje", "integer", True, None), ("codigo_de_tubete", "integer", True, None), ("numero_de_cortes", "text", True, None), ("observaciones", "textarea", False, None)])
         self.assertEqual({f["source"] for f in form["fields"]}, {"manual"})
         self.assertNotIn("pending_forms", read("manifest.json"))
         self.assertIn("MM", {u["code"] for u in read("units.json")["items"]})
@@ -242,7 +242,7 @@ class QualityP119Tests(unittest.TestCase):
         # CLOUD-DEP G.12-C4-FINAL25: 25 formularios en total (17 candidatos previos + P1-11/12/13/16/29);
         # ninguno añade workflows nuevos (todos reutilizan production-standard/quality-release); P1-11
         # añade 2 opciones nuevas (posicion).
-        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (26, 566, 35, 2))
+        self.assertEqual((counts["forms"], counts["form_fields"], counts["form_options"], counts["workflows"]), (26, 570, 35, 2))
         self.assertIn("forms/VINTO-P1-19.json", [f["path"] for f in read("manifest.json")["files"]])
 
 
@@ -281,7 +281,7 @@ class QualityP120Tests(unittest.TestCase):
 
     def test_published_forms_are_unchanged_by_p1_20(self):
         self.assertEqual({code: read(f"forms/{code}.json")["definition_checksum"] for code in ("VINTO-P1-03", "VINTO-P1-06", "VINTO-P1-19")}, {
-            "VINTO-P1-03": "816b1d78081592a76d74dce87e4c83ca345246020806a064150f391ce87c0c13",
+            "VINTO-P1-03": "afefc828daee160a4e616759cd484855a49dc8b5a5cc808453a96e1d590c946f",
             "VINTO-P1-06": "b54aa84b8180a1c9687b310434257a614cc5e2379ca010dfa80e422326ea54ae",
             "VINTO-P1-19": "682908dee7878ce55313011a9a62ef9c0b82dbae404ed129bacaf2366c8a22ff"})
 
