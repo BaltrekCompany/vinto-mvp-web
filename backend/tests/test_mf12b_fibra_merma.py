@@ -599,14 +599,14 @@ class ProductionImportScenarioTests(unittest.TestCase):
 
     def test_the_bundle_adds_only_the_two_new_versions_and_is_idempotent(self):
         codes = ", ".join(f"'{c}'" for c in NEW_VERSION)
-        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = {NEW_VERSION[c] - 1})" for c in NEW_VERSION)
+        old_where = " OR ".join(f"(f.code = '{c}' AND v.version_number = {{P104: 1, P116: 2}[c]})" for c in NEW_VERSION)
         other_where = f"f.code NOT IN ({codes})"
         old, other = self.snapshot(old_where), self.snapshot(other_where)
         self.assertEqual(len(old[0]), 2)
         dry = reference.dry_run(self.connection, BUNDLE)
         self.assertEqual(dry.conflicts, [])
         self.assertEqual(dry.counts["form_version"]["create"], 2)
-        self.assertEqual(dry.counts["field"]["create"], 7 + 7)
+        self.assertEqual(dry.counts["field"]["create"], 7 + 5)  # P1-16 V4 elimina dos horas; V2 permanece intacta
         self.assertEqual(dry.counts["form_version_machine"]["create"], 2 + 11)
         self.assertEqual(dry.counts["field_group"]["create"], 0)
         self.assertEqual(dry.counts["option"]["create"], (3 + 6 + 2) + (6 + 3))
@@ -617,7 +617,7 @@ class ProductionImportScenarioTests(unittest.TestCase):
         self.assertEqual(self.snapshot(other_where), other, "los demás formularios no se tocan")
         for code, number in NEW_VERSION.items():
             rows = self.connection.execute("SELECT v.version_number, v.status FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s ORDER BY 1", (code,)).fetchall()
-            self.assertEqual([r for r in rows if r[0] >= number - 1], [(number - 1, "published"), (number, "published")], code)
+            self.assertEqual(rows, [({P104: 1, P116: 2}[code], "published"), (number, "published")], code)
         again = reference.apply(self.connection, dataclasses.replace(BUNDLE, source_checksum="3" * 64))
         self.assertTrue(all(n["create"] == 0 for n in again.counts.values()), "segunda importación idempotente: no crea duplicados")
 

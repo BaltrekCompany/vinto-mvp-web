@@ -43,7 +43,13 @@ FORMS = {f["code"]: f for f in BUNDLE.forms}
 
 def v2_fields(code):
     """Campos de la versión 2 (MF-06) de P1-24 / P1-25: los MANUALES de la versión vigente del bundle, renumerados."""
-    return [{**f, "display_order": n} for n, f in enumerate((f for f in FORMS[code]["fields"] if f["source"] == "manual" and f["key"] not in ("elongacion_media_longitudinal","elongacion_media_transversal")), start=1)]
+    # En MF-06 dos promedios eran manuales; MF-07 los hizo calculados.
+    # La fixture histórica V2 mantiene ambas claves sin modificar la V4.
+    return [{**f, "source": "manual", "display_order": n} for n, f in enumerate(
+        (f for f in FORMS[code]["fields"] if (f["source"] == "manual" or
+         (code == P125 and f["key"] in ("promedio_resistencia_longitudinal_kgf",
+                                       "promedio_resistencia_longitudinal_humeda_kgf")))
+         and f["key"] not in ("elongacion_media_longitudinal", "elongacion_media_transversal")), start=1)]
 STATE = {}
 
 
