@@ -89,6 +89,8 @@ export function F3BobbinCapture({ context, online, attempt, setAttempt, back, on
                     <div><Label>Hora fin *</Label><Input disabled={locked} className="mt-2 text-slate-950" type="time" value={draft.hora_fin} onChange={e => set("hora_fin")(e.target.value)}/></div>
                     <div><Label>Diámetro *</Label><div className="relative"><Input disabled={locked} className="mt-2 text-slate-950" type="text" inputMode="decimal" value={draft.diametro} onChange={e => set("diametro")(e.target.value)}/><Unit>mm</Unit></div></div>
                     <div><Label>Peso *</Label><div className="relative"><Input disabled={locked} className="mt-2 text-slate-950" type="text" inputMode="decimal" value={draft.peso_kg} onChange={e => set("peso_kg")(e.target.value)}/><Unit>kg</Unit></div></div>
+                    <div><Label>Metraje *</Label><Input disabled={locked} className="mt-2 text-slate-950" type="text" inputMode="numeric" value={draft.metraje} onChange={e => set("metraje")(e.target.value)}/></div>
+                    <div><Label>Código de tubete *</Label><Input disabled={locked} className="mt-2 text-slate-950" type="text" inputMode="numeric" value={draft.codigo_de_tubete} onChange={e => set("codigo_de_tubete")(e.target.value)}/></div>
                     <div className="md:col-span-2"><Label>Número de cortes *</Label><Input disabled={locked} className="mt-2 text-slate-950" type="text" value={draft.numero_de_cortes} onChange={e => set("numero_de_cortes")(e.target.value)}/></div>
                     <div className="md:col-span-2"><Label>Observaciones</Label><Textarea disabled={locked} className="mt-2 text-slate-950" value={draft.observaciones} onChange={e => set("observaciones")(e.target.value)}/></div>
                 </div></div>
