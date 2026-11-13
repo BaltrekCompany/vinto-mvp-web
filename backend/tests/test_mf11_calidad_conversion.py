@@ -48,6 +48,7 @@ QUALITY = (P124, P126, P127)
 NEW_VERSION = {P111: 3, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
+_P111_V2 = json.loads((Path(__file__).with_name("cv_p111_v2.json")).read_text(encoding="utf-8"))  # Copia autentica anterior a CV-P111 v3 (commit 83c3a257).
 _P112_V3 = json.loads((Path(__file__).with_name("cv_p112_v3.json")).read_text(encoding="utf-8"))  # Fixture auténtica MF-11: v3 P1-12, sin la lógica de pallets v4.
 _P113_V2 = json.loads((Path(__file__).with_name("cv_p113_v2.json")).read_text(encoding="utf-8"))  # Contrato historico aprobado antes de CV-P113 v3.
 _REAL = load_bundle()
@@ -58,7 +59,7 @@ _P124_V4["fields"] = [{**f, "display_order": n} for n, f in enumerate(
 _P124_V4["definition_checksum"] = compute_definition_checksum(_P124_V4)
 BUNDLE = dataclasses.replace(_REAL, forms=tuple(
     _P116_V2 if f["code"] == P116 else _P112_V3 if f["code"] == P112
-    else _P113_V2 if f["code"] == P113 else _P124_V4 if f["code"] == P124
+    else _P111_V2 if f["code"] == P111 else _P113_V2 if f["code"] == P113 else _P124_V4 if f["code"] == P124
     else f for f in _REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 MACHINE = {P111: "GAMBINI", P112: "GAMBINI", P113: "OMET_I", P116: "OMET_I"}
@@ -228,6 +229,13 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
                                   FROM vinto_config.form f
                                   WHERE v.form_id=f.id AND f.code=%s AND v.version_number=4""", (P112,))
+        # MF-11 requiere P1-11 V2 y P1-13 V2 para probar sus horas originales.
+        # Sus versiones V3/V4 solo se retiran en esta BD efimera: las definiciones
+        # y validaciones de los releases actuales permanecen intactas.
+        cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
+                                  FROM vinto_config.form f
+                                  WHERE v.form_id=f.id AND ((f.code=%s AND v.version_number>2)
+                                  OR (f.code=%s AND v.version_number>2))""", (P111, P113))
         # MF-11 se prueba con P1-24 V4, no la V5 contemporanea.
         cls.connection.execute("""UPDATE vinto_config.form_version v SET status='retired'
                                   FROM vinto_config.form f
