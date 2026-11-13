@@ -36,7 +36,10 @@ except ModuleNotFoundError:
 P110 = "VINTO-P1-10"
 FIVE = ["BELOIT", "OVER", "COPASA", "PERICHUN", "TUBETERA"]
 OTHER_FORMS = {"BELOIT": ["VINTO-P1-07"], "OVER": ["VINTO-P1-07"], "COPASA": ["VINTO-P1-07"], "PERICHUN": ["VINTO-P1-30"], "TUBETERA": ["VINTO-P1-29"]}  # lo que cada máquina ya ofrecía antes
-BUNDLE = load_bundle()
+BUNDLE_REAL = load_bundle()
+V3 = json.loads(Path(__file__).with_name("mf13_p110_v3.json").read_text(encoding="utf-8"))  # la versión 3 publicada antes de P181
+BUNDLE = dataclasses.replace(BUNDLE_REAL, source_checksum="8" * 64,
+    forms=tuple(V3 if f["code"] == P110 else f for f in BUNDLE_REAL.forms))
 FORMS = {f["code"]: f for f in BUNDLE.forms}
 V2 = json.loads(Path(__file__).with_name("mf13_p110_v2.json").read_text(encoding="utf-8"))  # P1-10 v2 tal como está publicada en producción (solo COPASA)
 V2_PRODUCTION_CHECKSUM = "e35676ab3f9c430ef46f040174330365516d23ecd167b38e7809bae10695ee89"
@@ -45,13 +48,18 @@ SECTORS = ("BOBINAS", "REBOBINADO", "CONVERSION")
 DAY = datetime(2026, 10, 6, 16, 0, tzinfo=timezone.utc)
 STATE = {}
 GOOD = {"hora_inicio": "06:30", "hora_fin": "14:45", "peso_fardo": "55,5 kg"}  # valores FICTICIOS: nada aquí es un límite ni una regla
-VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 4, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
-            "VINTO-P1-16": 4, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 5, "VINTO-P1-25": 3, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
+VERSIONS = {"VINTO-P1-01": 4, "VINTO-P1-02": 1, "VINTO-P1-03": 2, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-06": 2, "VINTO-P1-07": 5, "VINTO-P1-10": 3, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4,
+            "VINTO-P1-16": 4, "VINTO-P1-18": 2, "VINTO-P1-19": 1, "VINTO-P1-20": 1, "VINTO-P1-21": 2, "VINTO-P1-22": 2, "VINTO-P1-24": 5, "VINTO-P1-25": 4, "VINTO-P1-26": 3, "VINTO-P1-27": 2, "VINTO-P1-28": 1,
             "VINTO-P1-29": 2, "VINTO-P1-30": 2, "VINTO-P1-31": 2}
 
 
 def setUpModule():
-    STATE["template"] = build_reference_template("vinto_mf13_tpl")
+    STATE["template"] = f"vinto_mf13_tpl_{uuid4().hex[:10]}_test"
+    create_database(STATE["template"])
+    with connect(STATE["template"]) as connection:
+        with contextlib.redirect_stdout(io.StringIO()):
+            apply_migrations(connection, read_migrations())
+        reference.apply(connection, BUNDLE)  # QA historical V3: no se cambia la versión vigente V4
 
 
 def tearDownModule():
