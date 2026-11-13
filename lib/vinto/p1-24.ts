@@ -20,19 +20,27 @@ export const P1_24_CODE = "VINTO-P1-24";
 // o transversal— va en la etiqueta y es distinta de la POSICIÓN); las claves técnicas NO cambian y las capturas v1/v2 se muestran con sus etiquetas de entonces (`renamedAt`). Se añaden dos promedios CALCULADOS por el backend
 // (media aritmética simple de las tres posiciones, dos decimales, solo lectura; sin recalcular capturas anteriores).
 const POSITION_LABEL = { centro: "Comando", medio: "Medio", extremo: "Transversal" } as const;
-const wet = (direction: "longitudinal" | "transversal", position: keyof typeof POSITION_LABEL): FieldSpec => ({
-    key: `resistencia_${direction}_humeda_${position}`, label: `Resistencia ${direction} húmeda – ${POSITION_LABEL[position]}`, kind: "decimal", required: true,
-    renamedAt: { version: 3, previous: `Resistencia ${direction} húmeda ${position}` },
-});
+const wet = (direction: "longitudinal" | "transversal", position: keyof typeof POSITION_LABEL): FieldSpec => {
+    const previous = `Resistencia ${direction} húmeda – ${POSITION_LABEL[position]}`;
+    return {
+        key: `resistencia_${direction}_humeda_${position}`,
+        label: direction === "longitudinal" ? `Resistencia Longitudinal - ${POSITION_LABEL[position]}` : `Resistencia Longitudinal Húmeda - ${POSITION_LABEL[position]}`,
+        kind: "decimal", required: true,
+        renamedAt: { version: 3, previous: `Resistencia ${direction} húmeda ${position}` },
+        renamedAgainAt: { version: 5, previous },
+    };
+};
 export const P124_FIELDS: readonly FieldSpec[] = [
     { key: "crepado", label: "Crepado (%)", kind: "decimal", required: true, suffix: "%", renamedAt: { version: 4, previous: "Crepado" } }, // MF-11 (MD_Ejec 51): solo etiqueta y unidad visual; sin rango ni conversión de valores
     { key: "gramaje", label: "Gramaje", kind: "decimal", required: true, suffix: "g/m²" },
     wet("longitudinal", "centro"),
     wet("longitudinal", "medio"),
     wet("longitudinal", "extremo"),
+    { key: "elongacion_media_longitudinal", label: "Elongación Media Longitudinal", kind: "decimal", required: false, sinceVersion: 5 },
     wet("transversal", "centro"),
     wet("transversal", "medio"),
     wet("transversal", "extremo"),
+    { key: "elongacion_media_transversal", label: "Elongación Media Transversal", kind: "decimal", required: false, sinceVersion: 5 },
     { key: "tiempo_de_curado_condicion", label: "Tiempo de curado / condición", kind: "decimal", required: true, suffix: "min" },
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
 ];
