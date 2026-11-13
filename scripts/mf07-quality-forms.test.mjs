@@ -90,7 +90,9 @@ test("P1-21: los tres promedios y las posiciones utilizadas son de solo lectura 
 
 test("P1-24: posiciones Comando / Medio / Transversal, promedios de solo lectura y sin Número de bobina ni Producto", () => {
   const text = textOf(capture("p124"));
-  for (const label of ["Resistencia longitudinal húmeda – Comando *", "Resistencia longitudinal húmeda – Medio *", "Resistencia longitudinal húmeda – Transversal *", "Resistencia transversal húmeda – Comando *", "Resistencia transversal húmeda – Medio *", "Resistencia transversal húmeda – Transversal *"]) assert.ok(text.includes(label), label);
+  for (const label of ["Resistencia Longitudinal - Comando *", "Resistencia Longitudinal - Medio *", "Resistencia Longitudinal - Transversal *", "Resistencia Longitudinal Húmeda - Comando *", "Resistencia Longitudinal Húmeda - Medio *", "Resistencia Longitudinal Húmeda - Transversal *"]) assert.ok(text.includes(label), label);
+  assert.match(text, /Elongación Media Longitudinal/);
+  assert.match(text, /Elongación Media Transversal/);
   assert.match(text, /Promedio resistencia longitudinal húmeda/);
   assert.match(text, /Promedio resistencia transversal húmeda/);
   for (const gone of ["Número de bobina *", "Producto *", " centro", " extremo"]) assert.equal(text.includes(gone), false, gone);
