@@ -119,12 +119,16 @@ test("an existing order shows the machine of every line, its machines and the pr
   assert.ok(/data-line-machine="">MP3</.test(text));
   assert.ok(text.includes("máquina(s): MP1, MP3"));
   assert.ok(text.includes("Máquina principal de la OT: MP1"));
+  assert.ok(text.includes('<h3 class="font-black">OT-2026-0003</h3>'));
+  assert.ok(!text.includes("OT-2026-0003 · MP1"));
 });
 
 test("an OLD order (single machine) renders as before, with no multi-machine remark", () => {
   const text = html(props({ workOrders: ready([order("published", [line(1, MP1), line(2, MP1)])]) }));
   assert.ok(text.includes("máquina(s): MP1"));
   assert.ok(!text.includes("Máquina principal de la OT"));
+  assert.ok(text.includes('<h3 class="font-black">OT-2026-0003</h3>'));
+  assert.ok(!text.includes("OT-2026-0003 · MP1"));
 });
 
 test("a draft can be published (with confirmation) and receive another line; a published order cannot", () => {

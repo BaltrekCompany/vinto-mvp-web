@@ -80,10 +80,11 @@ export function createP111V3Attempt(draft: P111V3Draft, assignmentId: string, de
 export function calculatedConsumption(row: Readonly<Partial<Record<"saldo_inicial_kg" | "ingreso_kg" | "saldo_final_kg", string>>>): string {
     const get = (key: "saldo_inicial_kg" | "ingreso_kg" | "saldo_final_kg") => {
         const raw = (row[key] ?? "").trim().replace(",", ".");
+        if (raw === "") return 0; // Saldo no informado: cero solo para la vista calculada.
         return /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
     };
     const init = get("saldo_inicial_kg"), incoming = get("ingreso_kg"), end = get("saldo_final_kg");
-    if ([init, incoming, end].some(n => !Number.isFinite(n))) return "0.00 kg";
+    if ([init, incoming, end].some(n => !Number.isFinite(n))) return "—"; // No confundir un valor inválido con un saldo vacío.
     const value = init + incoming - end;
     return Number.isFinite(value) ? value.toFixed(2) + " kg" : "—";
 }

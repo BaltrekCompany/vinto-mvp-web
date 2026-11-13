@@ -85,6 +85,23 @@ test("el consumo visual es la fórmula, sin guardar el campo calculado",()=>{
   assert.equal("consumo_kg" in checked.values._groups.bobinas[0],false);
   assert.equal("consumo" in checked.values,false);
 });
+test("consumo en vivo: saldos vacíos cuentan como cero en cualquiera de las tres posiciones",()=>{
+  const scenarios = [
+    [{saldo_inicial_kg:"2",ingreso_kg:"3"},"5.00 kg"],
+    [{saldo_inicial_kg:"2"},"2.00 kg"],
+    [{ingreso_kg:"3"},"3.00 kg"],
+    [{saldo_final_kg:"5"},"-5.00 kg"],
+    [{saldo_inicial_kg:"1",ingreso_kg:"2",saldo_final_kg:"5"},"-2.00 kg"],
+    [{saldo_inicial_kg:"1,5",ingreso_kg:"2"},"3.50 kg"],
+    [{saldo_inicial_kg:"abc",ingreso_kg:"2"},"—"],
+  ];
+  for(const [cells,result] of scenarios) assert.equal(calculatedConsumption(cells),result,JSON.stringify(cells));
+  for (const position of [0,1,2]) {
+    const draft=emptyP111V3Draft();
+    draft.groups.bobinas[position].cells={saldo_inicial_kg:"2",ingreso_kg:"3"};
+    assert.equal(calculatedConsumption(draft.groups.bobinas[position].cells),"5.00 kg");
+  }
+});
 test("intentos son inmutables; payload contiene solo campos permitidos",()=>{
   const created=createP111V3Attempt(row(emptyP111V3Draft(),0),ASSIGNMENT,DEVICE,"10327",()=>CAPTURE);
   assert.equal(created.ok,true);
