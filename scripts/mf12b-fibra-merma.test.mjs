@@ -160,7 +160,7 @@ test("historial de P1-16: v1 y v2 conservan sus seis cantidades como «versión 
   assert.equal(ui.P116.parseCapture(row(ui.P1_16_CODE, 3, v2, "x")), null, "una v3 exige tipo, origen y peso");
   const html = server.renderToStaticMarkup(React.createElement(ui.CandidateHistory, { candidate: ui.CONVERSION_CANDIDATES.p116, resource: { status: "ready", data: parsed, refreshing: false }, refresh: noop }));
   const headers = headersOf(html);
-  for (const label of ["Hoja doble kg (versión anterior)", "Plástico kg (versión anterior)", "Tipo de merma", "Origen de la merma", "Peso real", "Hora inicio", "Número correlativo"]) assert.ok(headers.includes(label), label);
+  for (const label of ["Hoja doble kg (versión anterior)", "Plástico kg (versión anterior)", "Tipo de merma", "Origen de la merma", "Peso real", "Hora inicio (versión anterior)", "Número correlativo"]) assert.ok(headers.includes(label), label);
   const [c3, c2, c1] = ["c3", "c2", "c1"].map((id) => cells(html, id, headers));
   assert.deepEqual([c3("Tipo de merma"), c3("Origen de la merma"), c3("Peso real")], ["Hoja doble", "Logs", "12.5"]);
   assert.deepEqual([c3("Hoja doble kg (versión anterior)"), c3("Plástico kg (versión anterior)")], ["", ""], "la v3 no trae las cantidades antiguas");
@@ -168,8 +168,8 @@ test("historial de P1-16: v1 y v2 conservan sus seis cantidades como «versión 
     assert.deepEqual([old("Hoja doble kg (versión anterior)"), old("Servilleta kg (versión anterior)"), old("Plástico kg (versión anterior)")], ["1", "2", "6"], "valores originales intactos");
     assert.deepEqual([old("Tipo de merma"), old("Origen de la merma"), old("Peso real")], ["", "", ""], "no se convierten en pesadas ni se inventan datos");
   }
-  assert.equal(c2("Hora inicio"), "06:30:00");
-  assert.equal(c1("Hora inicio"), "", "la v1 no tiene horas");
+  assert.equal(c2("Hora inicio (versión anterior)"), "06:30:00");
+  assert.equal(c1("Hora inicio (versión anterior)"), "", "la v1 no tiene horas");
 });
 
 test("un correlativo repetido en la misma OT y máquina (409 CORRELATIVE_IN_USE) se informa con un mensaje claro y el resto de rechazos no cambia", () => {
