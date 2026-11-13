@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     from tests.test_assignments_api import PROFILES, call, order_body
 
 STATE = {}
-VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "observaciones": "ok"}
+VALUES = {"hora_inicio": "07:15", "hora_fin": "08:40", "diametro": "1200.5", "peso_kg": "845.25", "numero_de_cortes": "3", "metraje": "1200", "codigo_de_tubete": "47", "observaciones": "ok"}
 
 
 def setUpModule():
