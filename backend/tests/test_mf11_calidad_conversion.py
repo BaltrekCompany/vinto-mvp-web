@@ -45,7 +45,7 @@ P111, P112, P113, P116 = "VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-
 P124, P126, P127 = "VINTO-P1-24", "VINTO-P1-26", "VINTO-P1-27"
 CONVERSION = (P111, P112, P113, P116)
 QUALITY = (P124, P126, P127)
-NEW_VERSION = {P111: 3, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
+NEW_VERSION = {P111: 2, P112: 3, P113: 2, P116: 2, P124: 4, P126: 3, P127: 2}
 # MF-12B: el bundle vigente trae P1-16 v3 (una pesada por captura); estas pruebas son las de MF-11, así que reproducen el bundle de ENTONCES (P1-16 v2 con las horas, copia fiel de la definición de producción) con el resto vigente.
 _P116_V2 = json.loads((Path(__file__).with_name("mf12b_p116_v2.json")).read_text(encoding="utf-8"))
 _P111_V2 = json.loads((Path(__file__).with_name("cv_p111_v2.json")).read_text(encoding="utf-8"))  # Copia autentica anterior a CV-P111 v3 (commit 83c3a257).
