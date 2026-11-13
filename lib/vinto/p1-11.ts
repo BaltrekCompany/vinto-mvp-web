@@ -18,7 +18,7 @@ import {
     type CaptureOf, type PendingAttemptOf, type SubmissionOf, type SubmitDepsOf, type SubmitOutcomeOf,
 } from "./capture-core.ts";
 import { buildGroupedValues, buildGroups, groupedValuesParser, initialDrafts, type GroupDrafts, type GroupSpec, type RowError } from "./capture-groups.ts";
-import { P111_V3_GROUPS } from "./p1-11-v3.ts";
+import { P111_V3_GROUPS, P111_V4_GROUPS } from "./p1-11-v3.ts";
 
 export const P1_11_CODE = "VINTO-P1-11";
 export const MAX_TEXT_LENGTH = 10_000; // mismo límite técnico del backend, no una regla funcional
@@ -59,7 +59,7 @@ export const PENDING_NOTES: readonly { key: string; label: string; pending: stri
 
 // ---- valores y respuestas ----------------------------------------------------------------------------------------------------------------
 
-export type P111Row = { numero_bobina: string; posicion: string; saldo_inicial_kg: string; ingreso_kg: string; saldo_final_kg: string; tipo_material?: string };
+export type P111Row = { numero_bobina: string; posicion: string; saldo_inicial_kg?: string; ingreso_kg?: string; saldo_final_kg?: string; tipo_material?: string };
 export type P111Simple = { hora_inicio?: string; hora_fin?: string; observaciones?: string }; // las horas existen desde la v2
 export type P111Values = P111Simple & { _groups: { bobinas: P111Row[] } };
 export type P111Capture = CaptureOf<P111Values>;
@@ -80,7 +80,7 @@ const parseSimpleFor = (version?: number) => (value: unknown): P111Simple | null
 };
 
 const parseValues = (value: unknown, version?: number): P111Values | null =>
-    groupedValuesParser(parseSimpleFor(version), version !== undefined && version >= 3 ? P111_V3_GROUPS : P111_GROUPS)(value) as P111Values | null;
+    groupedValuesParser(parseSimpleFor(version), version !== undefined && version >= 4 ? P111_V4_GROUPS : version !== undefined && version >= 3 ? P111_V3_GROUPS : P111_GROUPS)(value) as P111Values | null;
 export const parseP111Capture = (value: unknown): P111Capture | null => parseCaptureOf(value, parseValues, P1_11_CODE);
 export const parseP111Submission = (value: unknown): P111Submission | null => parseSubmissionOf(value, parseP111Capture);
 export const parseP111List = (value: unknown): P111Capture[] | null => parseCaptureListOf(value, parseP111Capture);
