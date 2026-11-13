@@ -86,11 +86,22 @@ test("P113 v4: captura sin jabas no requiere pallet, con jabas sí; v3 conserva 
     assert.ok(P113_V3.parseCapture(capture(3,old,pallet)));
     assert.equal(P113_V3.parseCapture(capture(3,old)),null);
 });
+test("P113 v4: consumo automático con saldos parciales sin alterar los datos guardados",()=>{
+    const only={tipo_bobina:"9570",numero_bobina:"QA-PARCIAL"};
+    assert.equal(calculatedConsumption({...only,saldo_inicial_kg:"2",ingreso_kg:"3"}),"5.00 kg");
+    assert.equal(calculatedConsumption({...only,saldo_final_kg:"5"}),"-5.00 kg");
+    assert.equal(calculatedConsumption(only),"0.00 kg");
+    const made=P113_V4.createAttempt({...only,saldo_inicial_kg:"2"},assign,device,()=>id);
+    assert.equal(made.ok,true);
+    if(made.ok) assert.deepEqual(made.attempt.payload.values,{...only,saldo_inicial_kg:"2"});
+});
 test("P113 v4: asteriscos solo en dos campos, sin consumo ni peso falso",()=>{
     const source=readFileSync(new URL("../components/vinto/p1-13-v3-capture.tsx",import.meta.url),"utf8");
     assert.ok(source.includes('field.required ? " *" : ""'));
     assert.ok(source.includes('quantityProvided ? (previewTotalKg'));
-    assert.ok(source.includes('consumptionAvailable ? calculatedConsumption(draft) : "—"'));
+    assert.ok(source.includes('{calculatedConsumption(draft)}'));
+    assert.ok(!source.includes('consumptionAvailable'));
+    assert.ok(source.includes('Los saldos vacíos se consideran 0'));
     assert.ok(!source.includes('Cantidad de jabas *'));
     assert.ok(!source.includes('Hora inicio pallet *'));
     assert.ok(!source.includes('Hora fin pallet *'));
