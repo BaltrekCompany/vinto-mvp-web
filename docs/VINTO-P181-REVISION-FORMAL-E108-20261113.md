@@ -104,3 +104,12 @@ Se requieren nuevos resultados CI en el SHA final y PASS verificado de USR-02/03
 **Control de integridad:** no se han alterado `scripts/e1-backend-regression-baseline.json`, políticas de producción, migraciones, fórmulas, permisos ni versiones históricas de base productiva. No se ha deshabilitado ningún test. Las únicas retiradas de versiones ocurren en bases `*_test` desechables, dentro del ensayo histórico.
 
 **Estado:** correcciones disponibles para ejecutar CI sobre el SHA final; **NO-GO** hasta que E1-08 frontend/backend, el foco de 55 y el resto de workflows resulten PASS sobre ese mismo SHA. Sin merge y sin VPS.
+
+
+## 9. Segundo ciclo de QA E1-08 — dos checks bloqueados por un único contrato histórico
+
+**Evidencia:** [RG-MP3-01 E1-08 focus, run 43501669699](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/43501669699) y [USR-06 readiness, run 43501669798](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/43501669798). Ambos ejecutaron las **mismas 55 pruebas** del foco MP3/E1-08 sobre `15fdd6a938cb63a06af0eca4116723f0d1b278b5`; 54 PASS, **1 FAIL**, 0 ERROR y 0 SKIP. El fallo repetido se origina en `test_mf11_calidad_conversion.DefinitionTests.test_the_seven_new_versions_and_no_other_form_changes`: la fixture auténtica histórica `P1-11 V2` ya fue restaurada, pero la tabla `VERSIONS` del propio ensayo aún esperaba `P111: 3`.
+
+**Corrección acotada:** commit `ae84ce3d`. Se cambia solo la expectativa `VERSIONS[P111]` de 3 a 2 en el ensayo histórico MF-11, dejando `NEW_VERSION[P111] = 3` y la versión real publicada V3 **sin cambios**. No se desactivan pruebas, no se modifican reglas de negocio, esquemas, migraciones, permisos ni baselines de regresiones. Tampoco se modifica la VPS.
+
+**Gate:** la integración E1-08 amplia seguía ejecutándose cuando se revisó el fallo; este cambio requiere nueva ejecución de los 13 workflows sobre el SHA actualizado. Mantener **NO-GO** hasta que el foco de 55, USR-06, E1-08 amplio y restantes suites cierren todos en PASS.
