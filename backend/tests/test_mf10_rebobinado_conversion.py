@@ -75,18 +75,50 @@ def restore_previous(connection, code, number, drop_keys):
     new_id, form_id, workflow, area, name = c.execute("SELECT v.id, v.form_id, v.workflow_id, v.area, v.name FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.version_number = %s", (code, number)).fetchone()
     c.execute("UPDATE vinto_config.form_version SET status = 'retired' WHERE id = %s", (new_id,))
     # P1-07 v4 es el bundle actual; MF-10 prueba la histórica v2 directamente.
-    old_number = 2 if code == P107 and number == 4 else number - 1
+    old_number = 2 if code == P107 and number >= 4 else number - 1
     old_id = c.execute("INSERT INTO vinto_config.form_version (form_id, version_number, name, area, workflow_id, definition_checksum) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (form_id, old_number, name, area, workflow, "b" * 64)).fetchone()[0]
     for fid, key, label, value_type, source, required, order in c.execute("SELECT id, key, label, value_type, source, required, display_order FROM vinto_config.field_definition WHERE form_version_id = %s ORDER BY display_order", (new_id,)).fetchall():
         if key in drop_keys:
             continue
         if code == P107 and (key.startswith("peso_cria_") or key in ("producto_refilado", "auxiliar", "formato_2", "formato_3")):
-            required = True  # contrato histórico v2: 21 crías y los cuatro campos originales obligatorios
+            required = True
+        if code == P107 and key == "formato_3":
+            label = "Formato 3"  # MF-10 V2 historical; V5 only changes visible label to Cortes  # contrato histórico v2: 21 crías y los cuatro campos originales obligatorios
         copy = c.execute("INSERT INTO vinto_config.field_definition (form_version_id, key, label, value_type, source, required, display_order) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (old_id, key, label, value_type, source, required, order)).fetchone()[0]
         for option_key, option_label, option_order in c.execute("SELECT option_key, label, display_order FROM vinto_config.field_option WHERE field_definition_id = %s", (fid,)).fetchall():
             c.execute("INSERT INTO vinto_config.field_option (form_version_id, field_definition_id, option_key, label, display_order) VALUES (%s,%s,%s,%s,%s)", (old_id, copy, option_key, option_label, option_order))
     c.execute("INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id) SELECT %s, machine_id FROM vinto_config.form_version_machine WHERE form_version_id = %s", (old_id, new_id))
     c.execute("UPDATE vinto_config.form_version SET status = 'published', published_at = clock_timestamp() WHERE id = %s", (old_id,))
+
+
+def restore_historical_p110_v2(connection):
+    """Fixture auténtica V2 (solo COPASA), en base efímera; V4 no contiene horas."""
+    c = connection
+    current = c.execute("""SELECT fv.id, fv.form_id, fv.workflow_id, fv.area
+        FROM vinto_config.form_version fv JOIN vinto_config.form f ON f.id=fv.form_id
+        WHERE f.code=%s AND fv.version_number=4""", (P110,)).fetchone()
+    if current is None:
+        raise AssertionError("Fixture P1-10 v4 no encontrada")
+    v4_id, form_id, workflow_id, area = current
+    c.execute("UPDATE vinto_config.form_version SET status='retired' WHERE id=%s", (v4_id,))
+    v2 = c.execute("""INSERT INTO vinto_config.form_version
+        (form_id, version_number, name, area, workflow_id, definition_checksum)
+        VALUES (%s,2,%s,%s,%s,%s) RETURNING id""",
+        (form_id, V2_P110["name"], area, workflow_id, V2_P110["definition_checksum"])).fetchone()[0]
+    for field in V2_P110["fields"]:
+        copy = c.execute("""INSERT INTO vinto_config.field_definition
+            (form_version_id, key, label, value_type, source, required, display_order)
+            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (v2, field["key"], field["label"], field["value_type"],
+             field["source"], field["required"], field["display_order"])).fetchone()[0]
+        for option in field.get("options", []):
+            c.execute("""INSERT INTO vinto_config.field_option
+                (form_version_id, field_definition_id, option_key, label, display_order)
+                VALUES (%s,%s,%s,%s,%s)""",
+                (v2, copy, option["option_key"], option["label"], option["display_order"]))
+    c.execute("""INSERT INTO vinto_config.form_version_machine (form_version_id, machine_id)
+        SELECT %s, id FROM vinto_master.machine WHERE code = 'COPASA'""", (v2,))
+    c.execute("UPDATE vinto_config.form_version SET status='published', published_at=clock_timestamp() WHERE id=%s", (v2,))
 
 
 def restore_historical_p112_v2(connection):
@@ -210,8 +242,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         cls.db_patch.start()
         # MF-11 publicó P1-12 v3 (con horas generales): estas pruebas son las de MF-10, así que en la base EFÍMERA se vuelve a la v2 (ver restore_previous).
         restore_historical_p112_v2(cls.connection)
-        restore_previous(cls.connection, P107, 4, ())  # RB-CRIA-02: v4 actual -> contrato histórico v2 para MF-10
-        restore_previous(cls.connection, P110, 3, ())  # MF-13-01B.2: P1-10 v3 (cinco máquinas, mismos campos) -> la v2 de MF-10
+        restore_previous(cls.connection, P107, 5, ())  # P1-07 V5 -> contrato histórico V2 para MF-10
+        restore_historical_p110_v2(cls.connection)  # P1-10 V4 no trae horas; fixture histórica V2 solo COPASA
         cls.current = {code: cls.version(code, 2) for code in CODES}
         with contextlib.redirect_stdout(io.StringIO()):
             reference.apply(cls.connection, variant("7" * 64, v1_spec()))  # las versiones 1 históricas, publicadas como en producción (aditivo)
