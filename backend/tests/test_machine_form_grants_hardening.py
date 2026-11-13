@@ -113,9 +113,13 @@ class GrantablePairPolicyTests(Db):
 
     def test_a_link_that_only_an_older_published_version_has_does_not_count(self):
         self.assertEqual(self.scalar("SELECT count(*) FROM vinto_config.form_version v JOIN vinto_config.form f ON f.id = v.form_id WHERE f.code = %s AND v.status = 'published'", (P105,)), 2)
-        with self.assertRaises(FormNotLinkedToMachineError) as raised:
-            self.grant(self.other, "MP1", P105)  # la v1 (publicada) la vincula a MP1, pero la vigente (v2) solo a MP3
+        # Verifica el contrato histórico de versionamiento sin reabrir P1-05 hoy.
+        with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):
+            with self.assertRaises(FormNotLinkedToMachineError) as raised:
+                self.grant(self.other, "MP1", P105)
         self.assertIn("vigente", str(raised.exception))
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(self.other, "MP3", P105)  # el retiro actual prevalece
         self.assertEqual(machine_form_grants_for_user(self.c, self.other, include_revoked=True), (), "el rechazo no dejó filas")
         # Emula temporalmente la política histórica: a partir de P181 ya no puede crearse esta concesión.
         with patch("app.auth.machine_form_grants.allowed_for_machine", return_value=True):

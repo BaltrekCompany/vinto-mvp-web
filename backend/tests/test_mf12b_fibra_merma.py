@@ -432,7 +432,7 @@ class P116Tests(Base):
             """SELECT count(*) FROM vinto_txn.capture c JOIN vinto_txn.assignment a ON a.id = c.assignment_id JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id
                JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id JOIN vinto_master.machine m ON m.id = c.machine_id JOIN vinto_txn.capture_detail d ON d.capture_id = c.id
                JOIN vinto_config.field_definition fd ON fd.id = d.field_definition_id JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
-               WHERE v.work_order_id = %s AND m.code = %s AND fd.key = 'numero_correlativo' AND d.value_text = %s AND fv.version_number = 3""", (work_order_id, machine, value))
+               WHERE v.work_order_id = %s AND m.code = %s AND fd.key = 'numero_correlativo' AND d.value_text = %s AND fv.version_number >= 3""", (work_order_id, machine, value))
 
     def order_of(self, assignment):
         return self.scalar("SELECT v.work_order_id FROM vinto_txn.assignment a JOIN vinto_txn.work_order_line l ON l.id = a.work_order_line_id JOIN vinto_txn.work_order_version v ON v.id = l.work_order_version_id WHERE a.id = %s", (assignment["id"],))

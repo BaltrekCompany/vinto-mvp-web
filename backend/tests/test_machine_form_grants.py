@@ -315,8 +315,9 @@ class ServiceTests(DatabaseCase):
         user = self.new_user()
         with self.assertRaises(FormNotLinkedToMachineError):
             self.grant(user, "MP1", P105)  # P1-05 is published only for MP3 (MF-12A)
-        self.assertTrue(self.grant(user, "MP3", P105))
-        self.assertEqual(self.rows(user), 1)
+        with self.assertRaises(FormNotLinkedToMachineError):
+            self.grant(user, "MP3", P105)  # P181: retiro global, MP3 tampoco admite concesiones
+        self.assertEqual(self.rows(user), 0)
 
     def test_the_actor_is_mandatory(self):
         user = self.new_user()
