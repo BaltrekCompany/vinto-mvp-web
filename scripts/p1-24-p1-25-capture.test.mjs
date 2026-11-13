@@ -25,7 +25,7 @@ const KIND = (f) => (f.type === "decimal" ? "decimal" : f.type === "textarea" ? 
 const NEW_KINDS = { n_cortes: "integer" }; // MF-06: no existe en la definición legacy
 const fill = (fields, textValue = "texto") => Object.fromEntries(fields.map((f) => [f.key, f.kind === "decimal" ? "1,5" : f.kind === "integer" ? "3" : f.key === "numero_de_bobina" ? "12" : f.key === "observaciones" ? " nota " : textValue]));
 const CASES = [
-  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED_FIELDS, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: [], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
+  { name: "P1-24", id: "form_24_propiedades_fisicas_en_humedo", form: P124, formCode: P1_24_CODE, fields: P124_FIELDS, calculated: P124_CALCULATED_FIELDS, pending: P124_PENDING, counts: [12, 4, 2], removed: ["numero_de_bobina", "producto"], added: ["elongacion_media_longitudinal", "elongacion_media_transversal"], screen: "p124", machines: ["mp1", "mp3", "todas_las_rebobinadoras"] },
   { name: "P1-25", id: "form_25_resistencia_en_humedo_curado", form: P125, formCode: P1_25_CODE, fields: P125_FIELDS, calculated: P125_CALCULATED_FIELDS, pending: P125_PENDING, counts: [14, 3, 3], removed: ["numero_de_bobina", "producto", "gramaje_laboratorio_g_m2"], added: ["caudal_rh_ml_min", "n_cortes"], screen: "p125", machines: ["por_definir"] },
 ];
 
@@ -62,7 +62,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
   assert.deepEqual(P125_FIELDS.at(-2), { key: "n_cortes", label: "# Cortes", kind: "integer", required: true, sinceVersion: 2 });
   assert.equal(P125_FIELDS.at(-1).key, "observaciones");
   assert.equal(P125_FIELDS.length, 13);
-  assert.equal(P124_FIELDS.length, 10);
+  assert.equal(P124_FIELDS.length, 12);
   const u24 = defOf("form_24_propiedades_fisicas_en_humedo").fields;
   assert.deepEqual(P124_FIELDS.filter((f) => f.suffix).map((f) => [f.key, f.suffix]), [["crepado", "%"], ["gramaje", u24.find((f) => f.key === "gramaje").unit], ["tiempo_de_curado_condicion", u24.find((f) => f.key === "tiempo_de_curado_condicion").unit]]);
 });
@@ -75,15 +75,15 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
       const f = fields.find((x) => x.key === key);
       assert.ok(f, key);
       const position = names[key.match(/(centro|medio|extremo)/)[1]];
-      assert.ok(f.label.endsWith(kgf ? ` – ${position} kgf` : ` – ${position}`), `${key}: ${f.label}`);
+      assert.ok(f.label.endsWith(kgf ? ` – ${position} kgf` : ` - ${position}`), `${key}: ${f.label}`);
       assert.equal(f.label.includes("Transmisión"), false);
       assert.ok(f.renamedAt.version === 3 && !f.renamedAt.previous.includes("–"), `${key}: las versiones 1 y 2 conservan su etiqueta`);
       assert.equal(labelFor(f, 2), f.renamedAt.previous);
-      assert.equal(labelFor(f, 3), f.label);
+      assert.equal(labelFor(f, 3), f.renamedAgainAt?.previous ?? f.label);
       assert.equal(labelFor(f), f.label);
     }
   }
-  assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Crepado (%)", "Resistencia longitudinal húmeda – Comando", "Resistencia longitudinal húmeda – Medio", "Resistencia longitudinal húmeda – Transversal", "Resistencia transversal húmeda – Comando", "Resistencia transversal húmeda – Medio", "Resistencia transversal húmeda – Transversal"]);
+  assert.deepEqual(P124_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Crepado (%)", "Resistencia Longitudinal - Comando", "Resistencia Longitudinal - Medio", "Resistencia Longitudinal - Transversal", "Resistencia Longitudinal Húmeda - Comando", "Resistencia Longitudinal Húmeda - Medio", "Resistencia Longitudinal Húmeda - Transversal"]);
   assert.deepEqual(P125_FIELDS.filter((f) => f.renamedAt).map((f) => f.label), ["Resistencia longitudinal – Comando kgf", "Resistencia longitudinal – Medio kgf", "Resistencia longitudinal – Transversal kgf", "Resistencia longitudinal húmeda – Comando kgf", "Resistencia longitudinal húmeda – Medio kgf", "Resistencia longitudinal húmeda – Transversal kgf"]);
   assert.deepEqual(P124_CALCULATED_FIELDS.map((f) => f.key), ["promedio_longitudinal_humedo", "promedio_transversal_humedo"]);
   assert.deepEqual(P125_CALCULATED_FIELDS.map((f) => f.key), ["promedio_resistencia_longitudinal_kgf", "promedio_resistencia_longitudinal_humeda_kgf"]);
@@ -94,7 +94,7 @@ test("MF-07 · posiciones Comando / Medio / Transversal, claves técnicas sin ca
   // las elongaciones de P1-25 se conservan (una vez) y no entran en ningún promedio; ni campos nuevos digitables
   assert.equal(P125_FIELDS.filter((f) => /elongacion/.test(f.key)).length, 2);
   assert.equal(Object.values(P125_MEANS).flat().some((k) => /elongacion/.test(k)), false);
-  assert.equal(P124_FIELDS.length, 10);
+  assert.equal(P124_FIELDS.length, 12);
   assert.equal(P125_FIELDS.length, 13);
   // promedios mostrados: media exacta con dos decimales y solo con las tres posiciones digitadas
   const draft = Object.fromEntries(P124_MEANS.promedio_longitudinal_humedo.map((k, i) => [k, ["1,00", "2", "2"][i]]));
