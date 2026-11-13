@@ -39,7 +39,7 @@ export const P107_FIELDS: readonly FieldSpec[] = [
     { key: "diametro", label: "Diámetro", kind: "decimal", required: true, suffix: "mm" },
     { key: "formato_1", label: "Formato 1", kind: "decimal", required: true },
     { key: "formato_2", label: "Formato 2", kind: "decimal", required: false },
-    { key: "formato_3", label: "Formato 3", kind: "decimal", required: false },
+    { key: "formato_3", label: "Cortes", kind: "decimal", required: false, renamedAt: { version: 5, previous: "Formato 3" } },
     { key: "tubete", label: "Tubete", kind: "text", required: true },
     ...CRIAS,
     { key: "observaciones", label: "Observaciones", kind: "textarea", required: false },
