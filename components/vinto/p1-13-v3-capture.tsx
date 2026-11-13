@@ -45,9 +45,6 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
     const loading = palletSource?.assignmentId !== context.assignmentId;
     const nominal = preview?.nominal_weight_kg ?? null;
     const quantityProvided = (draft.cantidad_jabas ?? "").trim() !== "";
-    const consumptionAvailable = ["saldo_inicial_kg", "ingreso_kg", "saldo_final_kg"]
-        .every(key => /^-?\d+(?:[.,]\d+)?$/.test((draft[key] ?? "").trim()) &&
-            Number.isFinite(Number((draft[key] ?? "").trim().replace(",", "."))));
 
     useEffect(() => {
         const controller = new AbortController();
@@ -116,7 +113,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
 
         <section className="border-b px-5 py-6" data-p113-v3="consumo-bobina">
             <h2 className="text-lg font-black">1. Consumo de bobina</h2>
-            <p className="mt-1 text-sm text-slate-600">Solo Tipo de bobina y N.º bobina son obligatorios. El consumo se calcula cuando se informan los tres saldos.</p>
+            <p className="mt-1 text-sm text-slate-600">Solo Tipo de bobina y N.º bobina son obligatorios. Los saldos vacíos se consideran 0 para calcular el consumo en tiempo real.</p>
             {materials.length === 0 && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
                 El artículo {context.productCode} no tiene receta. Se bloquea el envío; no se utilizará una lista genérica.
             </p>}
@@ -139,7 +136,7 @@ export function P113V3CaptureForm({ context, online, attempt, setAttempt, back, 
                     </label>)}
                     <div className="text-xs font-semibold">Consumo calculado
                         <output data-p113-consumo className="mt-2 flex h-10 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-base font-black">
-                            {consumptionAvailable ? calculatedConsumption(draft) : "—"}
+                            {calculatedConsumption(draft)}
                         </output>
                     </div>
                 </div>
