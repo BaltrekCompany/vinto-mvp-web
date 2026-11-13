@@ -29,7 +29,7 @@ export const contextItems = (context: CaptureContext): ContextItem[] => [
 export function CaptureShell({ kicker, title, onBack, children, wide = false }: { kicker: string; title: string; onBack: () => void; children: ReactNode; wide?: boolean }) {
     return <main className="min-h-screen bg-[#f3f6f4] text-slate-950"><Toaster richColors/>
         <header className="border-b bg-white p-4"><Button variant="ghost" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4"/>Volver</Button></header>
-        <section className={`mx-auto ${wide ? "max-w-[1536px]" : "max-w-6xl"} p-4 md:p-8`}><div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <section className={`mx-auto ${wide ? "max-w-[var(--breakpoint-2xl)]" : "max-w-6xl"} p-4 md:p-8`}><div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="bg-[#123f32] p-6 text-white"><p className="text-emerald-200">{kicker}</p><h1 className="mt-2 text-2xl font-black">{title}</h1></div>
             {children}
         </div></section></main>;
