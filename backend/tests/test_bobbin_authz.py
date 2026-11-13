@@ -150,7 +150,7 @@ class OffAndObserveTests(GateCase):
         with mode("off"), patch.object(capture_gate, "authorize", side_effect=AssertionError("motor en off")), patch.object(capture_gate, "require", side_effect=AssertionError("motor en off")):
             _, reply = await self.submit(assignment)  # sin ninguna concesión
         self.assertEqual((reply.status, reply.json()["created"]), (201, True))
-        self.assertEqual(self.delta()[:4], [1, 6, 1, 1])  # captura, 6 detalles, bobina y liberación pendiente
+        self.assertEqual(self.delta()[:4], [1, 8, 1, 1])  # captura, 6 detalles, bobina y liberación pendiente
         self.assertEqual(self.scalar("SELECT status FROM vinto_txn.quality_release WHERE bobbin_id = %s", (reply.json()["bobbin"]["id"],)), "pending")
 
     async def test_observe_never_changes_data_or_the_response_and_logs_the_bobbin_operation(self):
@@ -158,7 +158,7 @@ class OffAndObserveTests(GateCase):
         with mode("observe"), self.assertLogs("vinto.authz", level="INFO") as logs:
             body, reply = await self.submit(assignment)  # sin concesión: en enforce sería 403
         self.assertEqual((reply.status, reply.json()["created"]), (201, True))
-        self.assertEqual(self.delta()[:4], [1, 6, 1, 1])
+        self.assertEqual(self.delta()[:4], [1, 8, 1, 1])
         self.assertTrue(any(re.search(r"mode=observe operation=bobbin_production outcome=would_forbidden reason=GRANT_MISSING request_id=[0-9a-f-]{36}", m) for m in logs.output))
 
     async def test_observe_with_a_grant_responds_exactly_as_off(self):
@@ -181,7 +181,7 @@ class OffAndObserveTests(GateCase):
 
         with mode("observe"), patch.object(capture_gate, "authorize", side_effect=broken), self.assertLogs("vinto.authz", level="ERROR") as logs:
             _, reply = await self.submit(assignment)
-        self.assertEqual((reply.status, self.delta()[:4]), (201, [1, 6, 1, 1]))
+        self.assertEqual((reply.status, self.delta()[:4]), (201, [1, 8, 1, 1]))
         self.assertTrue(any("operation=bobbin_production outcome=observe_error" in m for m in logs.output))
 
     async def test_logs_never_contain_cookies_users_or_form_values(self):
@@ -203,7 +203,7 @@ class EnforceDecisionTests(GateCase):
         with mode("enforce"):
             _, reply = await self.submit(assignment)
         self.assertEqual((reply.status, reply.json()["created"], reply.json()["bobbin"]["machine"]["code"]), (201, True, "MP1"))
-        self.assertEqual(self.delta()[:4], [1, 6, 1, 1])
+        self.assertEqual(self.delta()[:4], [1, 8, 1, 1])
         self.assertEqual(self.scalar("SELECT status FROM vinto_txn.quality_release WHERE bobbin_id = %s", (reply.json()["bobbin"]["id"],)), "pending")
 
     async def test_a_pair_that_was_not_granted_is_403_with_the_fixed_body_and_nothing_at_all_is_written(self):
@@ -375,7 +375,7 @@ class EnforceIdempotencyTests(GateCase):
             self.assertEqual(finish.status, 200)
             retry = await call("POST", "/api/bobbins", json_body=body, cookie=await self.cookie("OPERACION"))
         self.assertEqual((retry.status, retry.json()["created"], retry.json()["already_submitted"], retry.json()["bobbin"]), (200, False, True, first.json()["bobbin"]))
-        self.assertEqual((self.delta()[:4], self.scalar("SELECT coalesce(sum(last_value), 0) FROM vinto_txn.bobbin_sequence")), ([1, 6, 1, 1], sequence))  # ni captura, ni bobina, ni correlativo nuevos
+        self.assertEqual((self.delta()[:4], self.scalar("SELECT coalesce(sum(last_value), 0) FROM vinto_txn.bobbin_sequence")), ([1, 8, 1, 1], sequence))  # ni captura, ni bobina, ni correlativo nuevos
 
     async def test_idempotency_conflicts_are_kept_for_an_authorised_user(self):
         self.grant()
@@ -385,7 +385,7 @@ class EnforceIdempotencyTests(GateCase):
             changed = await call("POST", "/api/bobbins", json_body={**body, "values": {**f3.VALUES, "peso_kg": "1"}}, cookie=await self.cookie("OPERACION"))
             other_device = await call("POST", "/api/bobbins", json_body={**body, "device_key": str(uuid4())}, cookie=await self.cookie("OPERACION"))
         self.assertEqual((first.status, changed.status, other_device.status), (201, 409, 409))
-        self.assertEqual(self.delta()[:4], [1, 6, 1, 1])
+        self.assertEqual(self.delta()[:4], [1, 8, 1, 1])
 
     async def test_a_capture_id_that_belongs_to_another_operation_gains_no_access_and_is_not_reused(self):
         """Un capture_id de una captura central (P1-06) enviado a /api/bobbins: se autoriza el par PERSISTIDO (P1-06 no lo admite F3) → 403, sin reutilizarla ni crear bobina."""
@@ -586,7 +586,7 @@ class LockingTests(GateCase):
         self.revoke()
         with self.assertRaises(AuthorizationDenied):
             submit("rid3")
-        self.assertEqual(self.delta()[:4], [1, 6, 1, 1])
+        self.assertEqual(self.delta()[:4], [1, 8, 1, 1])
 
 
 # ---- 7. la captura central y los demás flujos no se alteran -----------------------------------------------------------------------------------------------
