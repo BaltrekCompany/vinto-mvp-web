@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { RECIPES_BY_PRODUCT } from "../lib/vinto/recipes.ts";
 import { parseP111Capture } from "../lib/vinto/p1-11.ts";
-import { P111_V3_GROUPS, emptyP111V3Draft, normalizeP111V3Draft, createP111V3Attempt, calculatedConsumption, materialOptionsFor } from "../lib/vinto/p1-11-v3.ts";
+import { P111_V3_GROUPS, P111_V4_GROUPS, emptyP111V3Draft, normalizeP111V3Draft, createP111V3Attempt, calculatedConsumption, materialOptionsFor } from "../lib/vinto/p1-11-v3.ts";
 import { setCell } from "../lib/vinto/capture-groups.ts";
 
 const ASSIGNMENT="44444444-4444-4444-8444-444444444444", DEVICE="99999999-9999-4999-8999-999999999999";
@@ -27,6 +27,8 @@ test("exactamente tres espacios, primera posición obligatoria y tres opciones",
   assert.deepEqual(P111_V3_GROUPS[0].fields[0].options.map(x=>x.value),["superior","inferior","no_aplica"]);
   assert.deepEqual([P111_V3_GROUPS[0].minRows,P111_V3_GROUPS[0].maxRows],[1,3]);
   assert.deepEqual(P111_V3_GROUPS[0].fields.map(x=>x.key),["posicion","tipo_material","numero_bobina","saldo_inicial_kg","ingreso_kg","saldo_final_kg"]);
+  assert.deepEqual(P111_V3_GROUPS[0].fields.map(x=>x.required),[true,true,true,true,true,true], "V3 permanece intacta");
+  assert.deepEqual(P111_V4_GROUPS[0].fields.map(x=>x.required),[true,true,true,false,false,false], "V4 opcionales");
   assert.equal(normalizeP111V3Draft(emptyP111V3Draft(),"10327").ok,false);
 });
 test("el artículo 10327 tiene las diez opciones exactas del Excel",()=>{
@@ -101,6 +103,36 @@ test("consumo en vivo: saldos vacíos cuentan como cero en cualquiera de las tre
     draft.groups.bobinas[position].cells={saldo_inicial_kg:"2",ingreso_kg:"3"};
     assert.equal(calculatedConsumption(draft.groups.bobinas[position].cells),"5.00 kg");
   }
+});
+test("V4: se pueden guardar tres saldos vacíos y parciales en las tres posiciones, sin ceros inventados",()=>{
+  const required={posicion:"no_aplica",tipo_material:"9483",numero_bobina:"M3-PARCIAL"};
+  const scenarios=[
+    [required,required],
+    [{...required,saldo_inicial_kg:"2",ingreso_kg:"3"},{...required,saldo_inicial_kg:"2",ingreso_kg:"3"}],
+    [{...required,saldo_final_kg:"5"},{...required,saldo_final_kg:"5"}],
+  ];
+  for(const [cells,expected] of scenarios){
+    let draft=emptyP111V3Draft();
+    draft=row(draft,0,cells);
+    const check=normalizeP111V3Draft(draft,"10327");
+    assert.equal(check.ok,true);
+    assert.deepEqual(check.values._groups.bobinas,[expected]);
+  }
+  let three=emptyP111V3Draft();
+  for(const i of [0,1,2]) three=row(three,i,{...required,numero_bobina:"M3-"+i,...(i===1?{ingreso_kg:"7"}:{})});
+  const checked=normalizeP111V3Draft(three,"10327");
+  assert.equal(checked.ok,true);
+  assert.equal(checked.values._groups.bobinas.length,3);
+  assert.equal(checked.values._groups.bobinas[2].saldo_inicial_kg,undefined);
+  assert.equal(calculatedConsumption(three.groups.bobinas[1].cells),"7.00 kg");
+  assert.equal(normalizeP111V3Draft(row(emptyP111V3Draft(),0,{...required,ingreso_kg:"abc"}),"10327").ok,false);
+  assert.equal(normalizeP111V3Draft(row(emptyP111V3Draft(),0,{posicion:"no_aplica",tipo_material:"9483"}),"10327").ok,false);
+});
+test("historial: V3 sigue exigiendo tres saldos, V4 acepta su ausencia",()=>{
+  const minimal={posicion:"no_aplica",tipo_material:"9483",numero_bobina:"M3-HIST"};
+  assert.equal(parseP111Capture(envelope(3,[minimal])),null);
+  assert.deepEqual(parseP111Capture(envelope(4,[minimal])).values._groups.bobinas,[minimal]);
+  assert.equal(parseP111Capture(envelope(4,[{...minimal,ingreso_kg:"2"}])).values._groups.bobinas[0].ingreso_kg,"2");
 });
 test("intentos son inmutables; payload contiene solo campos permitidos",()=>{
   const created=createP111V3Attempt(row(emptyP111V3Draft(),0),ASSIGNMENT,DEVICE,"10327",()=>CAPTURE);

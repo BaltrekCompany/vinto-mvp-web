@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "legacy_key": "form_11_consumo_de_bobinas",
+  "code": "VINTO-P1-11",
+  "legacy_number": 11,
+  "name": "Consumo de bobinas",
+  "area": "production",
+  "workflow": "production-standard",
+  "version_number": 3,
+  "machines": [
+    "GAMBINI",
+    "SINCRO_II",
+    "SINCRO_III"
+  ],
+  "groups": [
+    {
+      "code": "bobinas",
+      "label": "Bobinas e insumos consumidos",
+      "display_order": 1,
+      "repeatable": true,
+      "min_rows": 1,
+      "max_rows": 3,
+      "fields": [
+        {
+          "key": "posicion",
+          "label": "Posición",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 1,
+          "options": [
+            {
+              "option_key": "superior",
+              "label": "Superior",
+              "display_order": 1
+            },
+            {
+              "option_key": "inferior",
+              "label": "Inferior",
+              "display_order": 2
+            },
+            {
+              "option_key": "no_aplica",
+              "label": "No aplica",
+              "display_order": 3
+            }
+          ]
+        },
+        {
+          "key": "tipo_material",
+          "label": "Tipo según receta",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 2
+        },
+        {
+          "key": "numero_bobina",
+          "label": "N.º bobina",
+          "value_type": "text",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 3
+        },
+        {
+          "key": "saldo_inicial_kg",
+          "label": "Saldo inicial",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 4
+        },
+        {
+          "key": "ingreso_kg",
+          "label": "Ingreso",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 5
+        },
+        {
+          "key": "saldo_final_kg",
+          "label": "Saldo final",
+          "value_type": "decimal",
+          "source": "manual",
+          "required": true,
+          "unit": null,
+          "display_order": 6
+        }
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "observaciones",
+      "label": "Observaciones",
+      "value_type": "textarea",
+      "source": "manual",
+      "required": false,
+      "unit": null,
+      "display_order": 1
+    }
+  ],
+  "definition_checksum": "2fa92e66ca779d7d524b4fcc0f27678c5090aece94366466b7ff88e425a2d26b"
+}

@@ -441,27 +441,30 @@ class ApplyTests(DatabaseCase):
         self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
 
     def test_upgrade_from_deployed_v2_to_v3_and_gambini_is_strictly_additive(self):
-        """Reproduce el release base 83c3a257: P1-11 v2 y 339 asociaciones.
-        El nuevo bundle solo añade P1-11 v3 y 10327/GAMBINI, sin sobrescrituras.
-        """
+        """Historial real: V2 -> V3, luego V3 -> V4. No se reescribe ninguna versión."""
         connection = self.open(self.new_database())
         baseline = Path(__file__).parent / "fixtures" / "VINTO-P1-11-v2-baseline.json"
         old_p111 = json.loads(baseline.read_text(encoding="utf-8"))
-        self.assertEqual((old_p111["code"], old_p111["version_number"]),
-                         ("VINTO-P1-11", 2))
+        v3_p111 = json.loads((Path(__file__).parent / "cv_p111_v3.json").read_text(encoding="utf-8"))
+        self.assertEqual((old_p111["code"], old_p111["version_number"]), ("VINTO-P1-11", 2))
+        self.assertEqual((v3_p111["code"], v3_p111["version_number"]), ("VINTO-P1-11", 3))
+        self.assertEqual([f["required"] for f in v3_p111["groups"][0]["fields"]],
+                         [True, True, True, True, True, True])
+
         old_pairs = tuple(
             rel for rel in BUNDLE.article_machines
             if not (rel["article_code"] == "10327" and rel["machine_code"] == "GAMBINI")
         )
         self.assertEqual(len(old_pairs), 339)
-        old_forms = tuple(
-            old_p111 if form["code"] == "VINTO-P1-11" else form
-            for form in BUNDLE.forms
-        )
+        old_forms = tuple(old_p111 if form["code"] == "VINTO-P1-11" else form
+                          for form in BUNDLE.forms)
+        v3_forms = tuple(v3_p111 if form["code"] == "VINTO-P1-11" else form
+                         for form in BUNDLE.forms)
         previous = dataclasses.replace(
             BUNDLE, article_machines=old_pairs, forms=old_forms,
             source_checksum="4" * 64,
         )
+        v3_bundle = dataclasses.replace(BUNDLE, forms=v3_forms, source_checksum="3" * 64)
         imported = reference.apply(connection, previous)
         self.assertEqual(imported.mode, "applied")
         before = connection.execute(
@@ -473,40 +476,59 @@ class ApplyTests(DatabaseCase):
         self.assertEqual(sum(1 for row in before if row[0] == "VINTO-P1-11"), 1)
         self.assertEqual(self.count(connection, "vinto_master.article_machine"), 339)
 
-        # El plan se examina antes del apply y no produce escrituras.
-        plan = reference.dry_run(connection, BUNDLE)
+        plan = reference.dry_run(connection, v3_bundle)
         self.assertEqual(plan.state, "pending")
         self.assertEqual(plan.conflicts, [])
-        expected = {
+        v3_expected = {
             "article_machine": 1, "form_version": 1,
             "form_version_machine": 3, "field_group": 1, "field": 7,
             "option": 3,
         }
-        actual = {entity: counts["create"] for entity, counts in plan.counts.items()
-                  if counts["create"] > 0}
-        self.assertEqual(actual, expected)
+        self.assertEqual({entity: counts["create"] for entity, counts in plan.counts.items()
+                          if counts["create"] > 0}, v3_expected)
         self.assertEqual(plan.pending_creates, 16)
         self.assertEqual(self.count(connection, "vinto_master.article_machine"), 339)
-        self.assertEqual(connection.execute(
-            "SELECT count(*) FROM vinto_config.form_version v JOIN vinto_config.form f "
-            "ON v.form_id=f.id WHERE f.code='VINTO-P1-11'"
-        ).fetchone()[0], 1)
 
-        done = reference.apply(connection, BUNDLE)
-        self.assertEqual(done.mode, "applied")
-        self.assertEqual({entity: counts["create"] for entity, counts in done.counts.items()
-                          if counts["create"] > 0}, expected)
-        after = connection.execute(
+        applied_v3 = reference.apply(connection, v3_bundle)
+        self.assertEqual(applied_v3.mode, "applied")
+        self.assertEqual({entity: counts["create"] for entity, counts in applied_v3.counts.items()
+                          if counts["create"] > 0}, v3_expected)
+        after_v3 = connection.execute(
             """SELECT fm.code, fv.version_number, fv.id, fv.definition_checksum, fv.published_at
                FROM vinto_config.form_version fv
                JOIN vinto_config.form fm ON fm.id=fv.form_id
                ORDER BY fm.code, fv.version_number"""
         ).fetchall()
-        self.assertEqual([row for row in after if row in before], before)
-        new_versions = [row for row in after if row not in before]
-        self.assertEqual([(row[0], row[1]) for row in new_versions], [("VINTO-P1-11", 3)])
-        self.assertIsNotNone(new_versions[0][4])
+        self.assertEqual([row for row in after_v3 if row in before], before)
+        self.assertEqual([(row[0], row[1]) for row in after_v3 if row not in before],
+                         [("VINTO-P1-11", 3)])
         self.assertEqual(self.count(connection, "vinto_master.article_machine"), 340)
+        self.assertEqual(reference.dry_run(connection, v3_bundle).state, "consistent")
+        self.assertEqual(reference.apply(connection, v3_bundle).mode, "noop")
+
+        # V4 aditiva: la V3 ya publicada conserva id, checksum y timestamp.
+        plan_v4 = reference.dry_run(connection, BUNDLE)
+        self.assertEqual((plan_v4.state, plan_v4.conflicts), ("pending", []))
+        v4_expected = {
+            "form_version": 1, "form_version_machine": 3,
+            "field_group": 1, "field": 7, "option": 3,
+        }
+        self.assertEqual({entity: counts["create"] for entity, counts in plan_v4.counts.items()
+                          if counts["create"] > 0}, v4_expected)
+        self.assertEqual(plan_v4.pending_creates, 15)
+        applied_v4 = reference.apply(connection, BUNDLE)
+        self.assertEqual(applied_v4.mode, "applied")
+        self.assertEqual({entity: counts["create"] for entity, counts in applied_v4.counts.items()
+                          if counts["create"] > 0}, v4_expected)
+        after_v4 = connection.execute(
+            """SELECT fm.code, fv.version_number, fv.id, fv.definition_checksum, fv.published_at
+               FROM vinto_config.form_version fv
+               JOIN vinto_config.form fm ON fm.id=fv.form_id
+               ORDER BY fm.code, fv.version_number"""
+        ).fetchall()
+        self.assertEqual([row for row in after_v4 if row in after_v3], after_v3)
+        self.assertEqual([(row[0], row[1]) for row in after_v4 if row not in after_v3],
+                         [("VINTO-P1-11", 4)])
         self.assertEqual(reference.dry_run(connection, BUNDLE).state, "consistent")
         self.assertEqual(reference.apply(connection, BUNDLE).mode, "noop")
 

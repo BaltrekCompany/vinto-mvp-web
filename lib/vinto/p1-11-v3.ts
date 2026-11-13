@@ -1,5 +1,6 @@
 // CV-P111-v3: tres posiciones visibles, la primera obligatoria.
 // Valores del consumo se derivan solo en pantalla, sin movimientos de inventario.
+// V3 histórica: saldos requeridos. V4 operativa: saldos opcionales, sin inventar ceros en el payload.
 import { freezeAttempt, newCaptureId, type PendingAttemptOf } from "./capture-core.ts";
 import { buildGroupedValues, buildGroups, emptyRow, newRowKey, type GroupDrafts, type GroupSpec, type RowDraft, type RowError } from "./capture-groups.ts";
 import { RECIPES_BY_PRODUCT } from "./recipes.ts";
@@ -17,6 +18,12 @@ export const P111_V3_GROUPS: readonly GroupSpec[] = [{
         { key: "saldo_final_kg", label: "Saldo final", kind: "decimal", required: true, unit: "kg" },
     ],
 }];
+// Nunca modificar P111_V3_GROUPS: se usa para interpretar capturas históricas V3.
+// En V4 los tres saldos son opcionales tanto en frontend como en catálogo PostgreSQL.
+const OPTIONAL_BALANCES = new Set(["saldo_inicial_kg", "ingreso_kg", "saldo_final_kg"]);
+export const P111_V4_GROUPS: readonly GroupSpec[] = P111_V3_GROUPS.map(group => ({
+    ...group, fields: group.fields.map(field => OPTIONAL_BALANCES.has(field.key) ? { ...field, required: false } : field),
+}));
 export const P111_V3_SLOTS = 3;
 export type P111V3Draft = { observaciones: string; groups: GroupDrafts };
 export type P111V3Payload = { capture_id: string; form_code: "VINTO-P1-11"; assignment_id: string; device_key: string; values: Record<string, unknown> };
@@ -34,11 +41,11 @@ export function materialOptionsFor(productCode: string) {
 }
 
 export function emptyP111V3Draft(makeKey: () => string = newRowKey): P111V3Draft {
-    return { observaciones: "", groups: { bobinas: Array.from({ length: P111_V3_SLOTS }, () => emptyRow(P111_V3_GROUPS[0], makeKey)) } };
+    return { observaciones: "", groups: { bobinas: Array.from({ length: P111_V3_SLOTS }, () => emptyRow(P111_V4_GROUPS[0], makeKey)) } };
 }
 
 export function isBlankOptionalRow(row: RowDraft): boolean {
-    return P111_V3_GROUPS[0].fields.every(field => !(row.cells[field.key] ?? "").trim());
+    return P111_V4_GROUPS[0].fields.every(field => !(row.cells[field.key] ?? "").trim());
 }
 
 export function normalizeP111V3Draft(draft: P111V3Draft, productCode: string):
@@ -50,7 +57,7 @@ export function normalizeP111V3Draft(draft: P111V3Draft, productCode: string):
     const filled = filledIndices.map(i => all[i]);
     const allowed = new Set(materialOptionsFor(productCode).map(item => item.code));
     if (!allowed.size) errors.push({ group: "bobinas", row: null, message: "No hay receta registrada para el producto de la OT. No se puede enviar." });
-    const built = buildGroups(P111_V3_GROUPS, { bobinas: filled });
+    const built = buildGroups(P111_V4_GROUPS, { bobinas: filled });
     if (!built.ok) errors.push(...built.errors.map(error => ({ ...error,
         row: error.row === null ? null : filledIndices[error.row - 1] + 1,
     })));

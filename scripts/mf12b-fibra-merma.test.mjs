@@ -185,7 +185,7 @@ test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las de
   const manifest = JSON.parse(readFileSync(join(root, "backend/seed_data/manifest.json"), "utf8"));
   const forms = {};
   for (const entry of manifest.files.filter((f) => f.path.startsWith("forms/"))) forms[entry.path.slice(6, -5)] = JSON.parse(readFileSync(join(root, "backend/seed_data", entry.path), "utf8"));
-  const expected = { "VINTO-P1-01": 4, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-16": 4, "VINTO-P1-11": 3, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-02": 1 };
+  const expected = { "VINTO-P1-01": 4, "VINTO-P1-04": 2, "VINTO-P1-05": 2, "VINTO-P1-31": 2, "VINTO-P1-16": 4, "VINTO-P1-11": 4, "VINTO-P1-12": 4, "VINTO-P1-13": 4, "VINTO-P1-02": 1 };
   for (const [code, version] of Object.entries(expected)) assert.equal(forms[code].version_number, version, code);
   const p104 = forms["VINTO-P1-04"], p116 = forms["VINTO-P1-16"];
   assert.deepEqual(p104.fields.map((f) => f.key), ui.P104_FIELDS.map((f) => f.key));

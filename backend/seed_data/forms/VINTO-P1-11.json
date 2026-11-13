@@ -6,7 +6,7 @@
   "name": "Consumo de bobinas",
   "area": "production",
   "workflow": "production-standard",
-  "version_number": 3,
+  "version_number": 4,
   "machines": [
     "GAMBINI",
     "SINCRO_II",
@@ -70,7 +70,7 @@
           "label": "Saldo inicial",
           "value_type": "decimal",
           "source": "manual",
-          "required": true,
+          "required": false,
           "unit": null,
           "display_order": 4
         },
@@ -79,7 +79,7 @@
           "label": "Ingreso",
           "value_type": "decimal",
           "source": "manual",
-          "required": true,
+          "required": false,
           "unit": null,
           "display_order": 5
         },
@@ -88,7 +88,7 @@
           "label": "Saldo final",
           "value_type": "decimal",
           "source": "manual",
-          "required": true,
+          "required": false,
           "unit": null,
           "display_order": 6
         }
@@ -106,5 +106,5 @@
       "display_order": 1
     }
   ],
-  "definition_checksum": "2fa92e66ca779d7d524b4fcc0f27678c5090aece94366466b7ff88e425a2d26b"
+  "definition_checksum": "918886b3336d09d5bbc43eb2507b7bc032d3035bc9c958005c55dbda0b42b4e6"
 }

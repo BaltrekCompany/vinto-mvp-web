@@ -8,7 +8,7 @@ import { errorsFor, setCell, type RowError } from "@/lib/vinto/capture-groups";
 import { getDeviceKey } from "@/lib/vinto/device";
 import { getP111, submitP111 } from "@/lib/vinto/p1-11-api";
 import type { P111Capture, P111Submission } from "@/lib/vinto/p1-11";
-import { calculatedConsumption, createP111V3Attempt, emptyP111V3Draft, materialOptionsFor, P111_V3_GROUPS, type P111V3Attempt, type P111V3Draft, type P111V3Payload } from "@/lib/vinto/p1-11-v3";
+import { calculatedConsumption, createP111V3Attempt, emptyP111V3Draft, materialOptionsFor, P111_V4_GROUPS, type P111V3Attempt, type P111V3Draft, type P111V3Payload } from "@/lib/vinto/p1-11-v3";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
 
@@ -34,7 +34,7 @@ const ROW_FIELDS = [
     { key: "ingreso_kg", label: "Ingreso" },
     { key: "saldo_final_kg", label: "Saldo final" },
 ] as const;
-const positions = P111_V3_GROUPS[0].fields[0].options ?? [];
+const positions = P111_V4_GROUPS[0].fields[0].options ?? [];
 
 export function P111RecipeCaptureForm({ context, online, attempt, setAttempt, back, onSubmitted,
     onAssignmentChanged, onSessionLost, user, api = REAL_API }: Props) {
@@ -108,7 +108,7 @@ export function P111RecipeCaptureForm({ context, online, attempt, setAttempt, ba
             <h2 className="text-lg font-black">Bobinas e insumos consumidos</h2>
             <p className="mt-1 text-sm text-slate-700">El consumo físico se calcula: saldo inicial + ingreso − saldo final. La merma se registra por separado.</p>
             <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-950">
-                La posición 1 es obligatoria. Las posiciones 2 y 3 son opcionales.
+                La posición 1 es obligatoria. Las posiciones 2 y 3 son opcionales. Los tres saldos son opcionales en todas las posiciones; si están vacíos, cuentan como 0 solo para el consumo calculado.
             </p>
             {materials.length === 0 && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
                 El producto {context.productCode} no tiene materiales asociados en el catálogo. Se bloquea el registro; no se muestran materiales de otros productos.
@@ -139,7 +139,7 @@ export function P111RecipeCaptureForm({ context, online, attempt, setAttempt, ba
                             </select>
                         </label>
                         {ROW_FIELDS.map(field => <label key={field.key} className="block text-xs font-semibold text-slate-900">
-                            {field.label} {i === 0 ? "*" : ""}
+                            {field.label} {i === 0 && field.key === "numero_bobina" ? "*" : ""}
                             <span className="relative mt-2 block">
                                 <input data-field={field.key} type="text" inputMode={field.key === "numero_bobina" ? "text" : "decimal"}
                                     value={row.cells[field.key] ?? ""} disabled={locked}
