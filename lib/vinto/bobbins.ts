@@ -74,7 +74,7 @@ const isStr = (value: unknown): value is string => typeof value === "string" && 
 const isInt = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 const INTEGER = /^-?\d+$/;
-const INT_LIMIT = 9223372036854775807n;
+const INT_LIMIT = BigInt("9223372036854775807");
 function integerText(value: unknown): string | null {
     const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : value;
     if (typeof text !== "string" || !INTEGER.test(text) || text.length > 40) return null;
