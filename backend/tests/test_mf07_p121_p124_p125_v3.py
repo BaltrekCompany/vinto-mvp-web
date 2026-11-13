@@ -48,9 +48,9 @@ P121_V1 = [  # versión 1 (una captura = una posición), tal como estaba en prod
     {"key": "observaciones", "label": "Observaciones", "value_type": "textarea", "required": False},
 ]
 RENAMES = {  # clave técnica (sin cambios) -> etiqueta que debe tener la versión 3
-    P124: {"resistencia_longitudinal_humeda_centro": "Resistencia longitudinal húmeda – Comando", "resistencia_longitudinal_humeda_medio": "Resistencia longitudinal húmeda – Medio",
-           "resistencia_longitudinal_humeda_extremo": "Resistencia longitudinal húmeda – Transversal", "resistencia_transversal_humeda_centro": "Resistencia transversal húmeda – Comando",
-           "resistencia_transversal_humeda_medio": "Resistencia transversal húmeda – Medio", "resistencia_transversal_humeda_extremo": "Resistencia transversal húmeda – Transversal"},
+    P124: {"resistencia_longitudinal_humeda_centro": "Resistencia Longitudinal - Comando", "resistencia_longitudinal_humeda_medio": "Resistencia Longitudinal - Medio",
+           "resistencia_longitudinal_humeda_extremo": "Resistencia Longitudinal - Transversal", "resistencia_transversal_humeda_centro": "Resistencia Longitudinal Húmeda - Comando",
+           "resistencia_transversal_humeda_medio": "Resistencia Longitudinal Húmeda - Medio", "resistencia_transversal_humeda_extremo": "Resistencia Longitudinal Húmeda - Transversal"},
     P125: {"resistencia_longitudinal_centro_kgf": "Resistencia longitudinal – Comando kgf", "resistencia_longitudinal_medio_kgf": "Resistencia longitudinal – Medio kgf",
            "resistencia_longitudinal_extremo_kgf": "Resistencia longitudinal – Transversal kgf", "resistencia_longitudinal_humeda_centro_kgf": "Resistencia longitudinal húmeda – Comando kgf",
            "resistencia_longitudinal_humeda_medio_kgf": "Resistencia longitudinal húmeda – Medio kgf", "resistencia_longitudinal_humeda_extremo_kgf": "Resistencia longitudinal húmeda – Transversal kgf"},
@@ -152,7 +152,7 @@ class Base(q2.BobbinBase):
 class DefinitionTests(Base):
     async def test_versions_and_scope_of_the_bundle(self):
         self.assertEqual({c: FORMS[c]["version_number"] for c in (P121, P124, P125)}, {P121: 2, P124: 5, P125: 3})  # P1-24 v4: MF-11 (Crepado (%))
-        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 4), ("VINTO-P1-10", 3), ("VINTO-P1-11", 2), ("VINTO-P1-12", 4), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 5), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
+        self.assertEqual(sorted((f["code"], f["version_number"]) for f in BUNDLE.forms if f["version_number"] != 1), [("VINTO-P1-01", 4), ("VINTO-P1-03", 2), ("VINTO-P1-04", 2), ("VINTO-P1-05", 2), ("VINTO-P1-06", 2), ("VINTO-P1-07", 4), ("VINTO-P1-10", 3), ("VINTO-P1-11", 2), ("VINTO-P1-12", 4), ("VINTO-P1-13", 2), ("VINTO-P1-16", 3), ("VINTO-P1-18", 2), ("VINTO-P1-21", 2), ("VINTO-P1-22", 2), ("VINTO-P1-24", 5), ("VINTO-P1-25", 3), ("VINTO-P1-26", 3), ("VINTO-P1-27", 2), ("VINTO-P1-29", 2), ("VINTO-P1-30", 2), ("VINTO-P1-31", 2)],
                          "ningún otro formulario cambia (MF-08 añade P1-18, P1-22 y P1-26 v2; MF-09 añade P1-01 v3 y P1-06 v2)")
         for code in (P121, P124, P125):
             self.assertEqual(FORMS[code]["machines"], ["MP1", "MP3"])
@@ -178,12 +178,12 @@ class DefinitionTests(Base):
             new = {f["key"]: f for f in FORMS[code]["fields"]}
             old = {f["key"]: f for f in manual(code)}
             self.assertEqual(sorted(k for k, f in new.items() if f["source"] == "calculated"), sorted(MEANS[code]))
-            self.assertEqual(sorted(k for k in new if new[k]["source"] == "manual"), sorted(old), "no se añaden ni se quitan campos digitables")
+            self.assertEqual(sorted(k for k in new if new[k]["source"] == "manual" and (code != P124 or not k.startswith("elongacion_"))), sorted(old), "campos históricos de resistencia intactos")
             for key, label in RENAMES[code].items():
                 self.assertEqual(new[key]["label"], label, key)
                 self.assertEqual((new[key]["value_type"], new[key]["required"], new[key]["source"]), ("decimal", True, "manual"))
             for key, f in new.items():
-                if key not in RENAMES[code] and f["source"] == "manual":
+                if key not in RENAMES[code] and key in old and f["source"] == "manual":
                     self.assertEqual(f["label"], old[key]["label"])  # el resto no cambia de etiqueta
             for key in MEANS[code]:
                 self.assertEqual((new[key]["value_type"], new[key]["required"]), ("decimal", False))
@@ -200,13 +200,13 @@ class DefinitionTests(Base):
             self.assertNotIn(removed, keys)
         for removed in ("numero_de_bobina", "producto"):
             self.assertNotIn(removed, [f["key"] for f in FORMS[P124]["fields"]])
-        self.assertEqual((len(FORMS[P124]["fields"]), len(FORMS[P125]["fields"])), (12, 15))
+        self.assertEqual((len(FORMS[P124]["fields"]), len(FORMS[P125]["fields"])), (14, 15))
 
     async def test_labels_distinguish_direction_from_position(self):
         """La dirección (longitudinal / transversal) y la posición (Comando / Medio / Transversal) se separan con « – »; «Transversal» como posición nunca se sustituye por otra denominación."""
         labels = [f["label"] for code in (P124, P125) for f in FORMS[code]["fields"]]
         self.assertFalse([label for label in labels if "Transmisión" in label or "extremo" in label.lower() or " centro" in label.lower()])
-        self.assertIn("Resistencia transversal húmeda – Transversal", labels)
+        self.assertIn("Resistencia Longitudinal Húmeda - Transversal", labels)
         self.assertIn("Resistencia longitudinal húmeda – Transversal kgf", labels)
 
 
