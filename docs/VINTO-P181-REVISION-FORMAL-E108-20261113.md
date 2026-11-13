@@ -80,3 +80,27 @@ Las modificaciones de esta etapa están dirigidas al **QA**, sin cambios de regl
 Se requieren nuevos resultados CI en el SHA final y PASS verificado de USR-02/03/04, E1-08 amplio frontend/backend y foco 55 regresiones, además de las suites de formularios/PostgreSQL17. Si alguna falla, registrar diagnóstico exacto y mantener **NO-GO**. Los PASS de commits anteriores no certifican este cambio.
 
 **Estado en el momento de registrar este avance:** código y oráculos actualizados, certificación CI del nuevo HEAD todavía pendiente; PR sigue **Draft / NO-GO**.
+
+
+## 8. Gate E1-08 amplio: seis resultados nuevos (revisión 13/11/2026)
+
+**Evidencia de GitHub Actions:** [run 43497030950](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/43497030950) sobre `571b2b15f86a1b54d97bb008b74b2740ce1fccbd`. De 13 workflows, 12 PASS y uno FAIL: `E1-08 Sector execution integration QA`, **frontend PASS**, **backend FAIL**. El gate diferencial ejecutó **2463 tests**, 7 FAIL históricos, 103 ERROR históricos, 6 omitidos auditados y **6 FAIL/ERROR nuevos** contra la línea base pre-E1. Las excepciones históricas **no** se modificaron.
+
+### Causas exactas (seis resultados bloqueantes)
+
+1. `test_bobbin_authz.VersionTests.test_a_vigente_version_of_another_area_or_not_offered_denies_and_writes_nothing`: la prueba intentaba crear P1-03 V2, que ya existe por el PR #180; conflicto `form_version_form_id_version_number_key`.
+2. `test_mf11_calidad_conversion.DefinitionTests.test_hours_are_one_required_manual_time_pair_in_each_conversion_form`: fixture de P1-11 procedente de V3 (sin horas y con `tipo_material`), en lugar del contrato **V2** de MF-11.
+3. `test_mf11_calidad_conversion.HoursTests.test_p1_11_hours_and_the_bobbin_rows_keep_working`: se enviaba una fila de cinco campos a P1-11 V3, que exige `tipo_material`; HTTP 422.
+4. `test_mf11_calidad_conversion.HoursTests.test_p1_13_has_a_single_pair_of_general_hours`: se enviaban campos del P1-13 V2 histórico a la versión contemporánea V4 (Tipo y N.º bobina), con HTTP 422.
+5. `test_mf11_calidad_conversion.HoursTests.test_p1_13_is_available_in_all_its_machines`: misma incompatibilidad de fixture/versión de P1-13.
+6. `test_mf11_calidad_conversion.ProductionImportScenarioTests.test_the_bundle_adds_only_the_seven_new_versions_and_is_idempotent`: el fixture P1-11 V3 cambiaba el total de campos a 101, cuando MF-11 V2 históricamente crea 102.
+
+### Cambios correctivos implementados (solo rama PR #181)
+
+- `31a1a79b`: se preserva `backend/tests/cv_p111_v2.json`, **copia textual de** `backend/seed_data/forms/VINTO-P1-11.json` en el commit previo `83c3a257`, blob `fe47e6bfe46251cf83a6ad4c5931ebbc928cae87`. Conserva campos originales, horas, cinco columnas de bobinas y checksum auténtico.
+- `9feaced2`: la prueba MF-11 usa esa definición histórica de P1-11 V2; el caso P1-13 conserva la fixture auténtica `cv_p113_v2.json`. Solo dentro de la BD PostgreSQL17 efímera del ensayo se retiran de la vista publicada versiones posteriores de P1-11 y P1-13 para ejercitar V2, tal como ya se hacía con P1-12, P1-16 y P1-24. No cambia el catálogo productivo ni sus validaciones.
+- `5e55ac4c`: la prueba negativa F3 asigna versiones de prueba mayores que la máxima ya almacenada, evitando duplicar P1-03 V2; conserva verificaciones de autorización 403 y cero escrituras.
+
+**Control de integridad:** no se han alterado `scripts/e1-backend-regression-baseline.json`, políticas de producción, migraciones, fórmulas, permisos ni versiones históricas de base productiva. No se ha deshabilitado ningún test. Las únicas retiradas de versiones ocurren en bases `*_test` desechables, dentro del ensayo histórico.
+
+**Estado:** correcciones disponibles para ejecutar CI sobre el SHA final; **NO-GO** hasta que E1-08 frontend/backend, el foco de 55 y el resto de workflows resulten PASS sobre ese mismo SHA. Sin merge y sin VPS.
