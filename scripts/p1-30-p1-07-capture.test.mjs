@@ -43,7 +43,7 @@ test("los contratos son EXACTAMENTE los campos manuales de las definiciones lega
     const m = legacy.fields.filter(isManual).filter((f) => !c.retired.includes(f.key));
     const kept = c.fields.filter((f) => !c.added.includes(f.key));
     assert.deepEqual(kept.map((f) => f.key), m.map((f) => f.key), `${c.name}: claves y orden`);
-    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.label), `${c.name}: etiquetas`);
+    assert.deepEqual(kept.map((f) => f.label), m.map((f) => f.key === "formato_3" && c.formCode === P1_07_CODE ? "Cortes" : f.label), `${c.name}: etiquetas`);
     assert.deepEqual(kept.map((f) => f.required), m.map((f) => c.formCode === P1_07_CODE && f.key.startsWith("peso_cria_") ? f.key === "peso_cria_1" : c.formCode === P1_07_CODE && P107_V4_OPTIONAL.has(f.key) ? false : (f.required ?? f.requirement)), `${c.name}: obligatoriedad (P1-07 v3)`);
     assert.deepEqual(kept.map((f) => f.kind), m.map(KIND), `${c.name}: tipos`);
     for (const key of NEW_HOURS) assert.deepEqual({ ...c.fields.find((f) => f.key === key) }, { key, label: key === "hora_inicio" ? "Hora inicio" : "Hora fin", kind: "time", required: true, sinceVersion: 2 }, `${c.name}: ${key}`);
@@ -289,5 +289,5 @@ test("MF-10: P1-07 se muestra como «bobinas rebobinadas» (la definición legac
   assert.equal(defOf("form_7_registro_de_productos_rebobinados").name, "Registro de producción de bobinas refiladas", "la definición legacy (reporte) conserva «refiladas»");
   const seed = JSON.parse(read("backend/seed_data/forms/VINTO-P1-07.json"));
   assert.equal(seed.name, "Registro de producción de bobinas rebobinadas");
-  assert.equal(seed.version_number, 4, "P1-07 v4 conserva v1/v2/v3 en historial");
+  assert.equal(seed.version_number, 5, "P1-07 v5 conserva v1-v4 en historial");
 });

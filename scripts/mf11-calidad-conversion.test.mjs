@@ -289,7 +289,7 @@ test("el seed publica exactamente P1-26 v3, P1-27 v2, P1-24 v4, P1-11 v2, P1-12 
   for (const [code, version] of Object.entries(expected)) assert.equal(versions[code], version, code);
   assert.equal(versions["VINTO-P1-20"], 1);
   assert.equal(versions["VINTO-P1-25"], 4);
-  assert.equal(manifest.counts.form_fields, 568, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
+  assert.equal(manifest.counts.form_fields, 567, "P1-12 v4 retira 19 campos y conserva el resto de los formularios");
   assert.equal(versions["VINTO-MP3-01"], 1);
   assert.deepEqual(JSON.parse(readFileSync(join(root, "backend/seed_data/forms/VINTO-MP3-01.json"), "utf8")).machines, ["MP3"]);
 });

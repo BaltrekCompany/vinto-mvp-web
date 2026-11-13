@@ -202,7 +202,7 @@ test("seed: P1-04 v2 y P1-16 v3 con las opciones y campos de la pantalla; las de
   assert.deepEqual(p104.machines, ["MP1", "MP3"]);
   assert.equal(p116.machines.length, 11);
   assert.equal(p104.fields.some((f) => /subtotal|total/.test(f.key)), false, "el subtotal no se persiste");
-  assert.equal(manifest.counts.form_fields, 568, "P1-12 v4 retira 19 campos; RG-MP3-01 no cambia");
+  assert.equal(manifest.counts.form_fields, 567, "P1-12 v4 retira 19 campos; RG-MP3-01 no cambia");
   assert.deepEqual(forms["VINTO-MP3-01"].machines, ["MP3"]);
   assert.equal(forms["VINTO-MP3-01"].version_number, 1);
 });
