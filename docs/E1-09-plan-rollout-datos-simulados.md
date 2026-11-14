@@ -1,0 +1,125 @@
+# VINTO E1-09 — Plan de despliegue condicionado con datos simulados
+
+**Fecha:** 2026-11-06. **Estado:** PLAN DOCUMENTAL; no ejecutado.  
+**Estado actualizado (06/nov/2026):** P0 PASS; P1-A PASS; **P1-B PASS — respaldo nuevo verificado por restauración temporal de 47 tablas sin discrepancias**. [Evidencia P1-B](E1-09-P1B-respaldo-verificable-GO-condicionado.md). P2-A: **P2-A1 parcial (consulta H denegada), P2-A2 PASS y P2-A3 PASS**; inventario de dependencias funcionales cerrado. Próximos pasos: determinar OT visibles por sesión y planificar archivado/transición de legado sin modificaciones; auditoría/importaciones y migraciones continúan NO VERIFICADAS bajo vinto_app. **P2-B migración 0013, despliegue E1 y flag ON NO AUTORIZADOS**. 
+**Repositorio:** BaltrekCompany/vinto-mvp-web. **Código integrado actualmente:** `main@c64893e86a983a86d57f9a7406d0d736417f17e3` (PR #136 backup-flock incluido); VPS app sigue en release previo `86e4ec4` según P0, no desplegado E1.  
+**QA de código:** GitHub Actions [#42169307786](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/42169307786) PASS diferencial frontend/backend sobre candidato `5ebae3c`; solo diferencias documentales en main; 32 FAIL frontend y 3 FAIL+102 ERROR backend históricos identificados y pendientes (#134/#135).
+
+## Actualización P2-A2/P2-A3 — resultado PASS; no borrar OT masivamente
+
+P2-A2 y P2-A3 terminaron con `COMMIT` bajo `REPEATABLE READ READ ONLY` y guard=1 como `vinto_app`. Distribución por cabecera: BOBINAS MP1 (5 draft, 4 in_progress, 1 published), MP3 (1 draft, 1 in_progress); CONVERSION GAMBINI (1 in_progress), OMET_I (1 in_progress); REBOBINADO BELOIT (1 draft, 1 in_progress), COPASA/OVER/PERICHUN/TUBETERA (1 in_progress cada una). **Total inalterado: 20 OT**, 7 draft, 12 in_progress, 1 published.
+
+La cadena de 63 capturas submitted ligadas a esas OT tiene **1.151 detalles, 19 filas de grupo, 5 bobinas fuente y 5 decisiones de Calidad**. Las **21 capturas submitted sin asignación** (MP1 14, MP3 7) tienen **204 detalles**; no se han asociado a ninguna OT. Lectura efectiva auditoría/importaciones: **NO**; lectura historial `vinto_meta`: **NO** para `vinto_app`; no se solicitó escalamiento.
+
+**Recomendación formal de diseño:** [E1-09 P2-A4 — archivado/ocultamiento con legado separado](E1-09-P2A4-decision-archivo-legado.md). Dos objetivos independientes: sacar las OT ficticias de vistas operativas **conservando historial** y sanear legítimamente los estados `in_progress`/asignaciones `active` para despejar el preflight E1-08; **ocultar NO despeja el preflight**. Historial migrador, conteo audit y visibilidad por usuario **NO VERIFICADOS**. NO autoriza desarrollar/desplegar ni borrar directamente.
+
+## Nuevo corte P2-A: dependencias de escenarios ficticios (06/nov/2026)
+
+Codex ejecutó P2-A en el contenedor MVP como `vinto_app` y `REPEATABLE READ READ ONLY`: **20 OT totales** (7 draft, 12 in_progress, 1 published), **32 versiones, 45 líneas, 29 baseline y 72 asignaciones** (11 active/61 finished). **63 capturas submitted** están enlazadas por FK a asignaciones de OT en progreso; **21 capturas sin assignment_id** no pueden atribuirse con ese conteo. Conjunto visible por usuario/sector **NO VERIFICADO**, igual que bobinas, Calidad, auditoría JSON e historial de migraciones. Referencia: [informe P2-A actualizado](E1-09-P2A-diseno-pre-migracion-readonly.md).
+
+El bloque H terminó `permission denied for schema vinto_meta`, sin escritura ni elevación de privilegios. Se corrigió la consulta H y se preparó [continuación P2-A2](E1-09-P2A2-continuacion-readonly.sql) y [P2-A3 opcional según permisos](E1-09-P2A3-dependientes-opcional-readonly.sql).
+
+**Decisión:** no interpretar autorización para retirar OT ficticias como permiso de borrado masivo. **Ocultar OT no resuelve el bloqueo E1-08** si 12 OT siguen `in_progress` y sin ejecución 0013. Se requieren política separada de preservación de capturas y auditoría, selección exacta de OT visibles y estrategia de corte de datos históricos **sin desactivar triggers**.
+
+## Actualización de alcance de saneamiento de datos (06/nov/2026)
+
+El usuario autorizó realizar el **diagnóstico P2-A** y declaró que se pueden retirar las OT ficticias visibles. La inspección **estática** de `main@c64893e` confirmó que la eliminación física está protegida por FKs `ON DELETE RESTRICT`, inmutabilidad de versiones/líneas publicadas, rechazo de borrado de capturas y auditoría inmutable. **No se ha borrado ninguna OT ni realizado consultas remotas desde ChatGPT.**
+
+Se preparó [consulta SQL P2-A de solo lectura para la VPS](E1-09-P2A-ot-ficticias-diagnostico.sql) y [runbook P2-A actualizado](E1-09-P2A-diseno-pre-migracion-readonly.md). Antes de diseñar cualquier saneamiento se necesitan: distribución actual de OT por estado; dependencias de líneas/asignaciones/capturas/bobinas/Calidad/auditoría; y correspondencia exacta entre el conjunto visible bajo el rol del usuario y las filas de la base. **No confundir "datos ficticios" con permiso para desactivar triggers o truncar tablas.**
+
+**GO solo para diagnóstico READ ONLY autorizado por el usuario. NO-GO para SQL de eliminación física, cambios de modelo de visibilidad, migración 0013, deploy y flag ON hasta comprobar los dependientes reales y definir procedimiento de integridad.**
+
+## 1. Decisión funcional: qué cambia por los datos simulados
+
+El usuario confirmó que **los registros actuales del MVP VINTO son simulados**. En consecuencia, para la liberación **no es necesario acreditar una producción física industrial real** de las 16 líneas del snapshot; la validación se convierte en **QA de estados y transiciones simuladas**. Sin embargo:
+
+- La instancia VPS sigue siendo productiva y compartida; puede tener usuarios, integraciones y datos de prueba útiles. No se debe borrar ni modificar nada sin inventario de impacto y autorización explícita.
+- `assignment.active` es habilitación de turno, no ejecución física; `assignment.finished` es fin de asignación, no línea lógica finalizada.
+- La migración 0013 es **aditiva y no hace backfill**. Las 12 OT `in_progress` del corte SQL-E tienen 16 líneas baseline; todas carecen de ejecución lógica 0013 pre-migración. El preflight `backend/app/work_orders/rollout_preflight.py` bloquea `IN_PROGRESS_ORDERS_WITHOUT_EXECUTION` y `ACTIVE_ASSIGNMENTS_WITHOUT_EXECUTION` después de instalar 0013 si continúan tales filas. **Que sean simuladas no desactiva los candados.**
+- Dos snapshots con totales idénticos no prueban que las filas individuales sean las mismas; repetir corte antes de cualquier operación.
+
+## 2. Estado técnico disponible y datos pendientes
+
+| Control | Evidencia | Estado |
+|---|---|---|
+| E1-02 a E1-08 integrados GitHub | 7/7 PR merged en main fijo | PASS |
+| QA diferencial | Run #42169307786 | PASS, deuda histórica explícita |
+| SQL-A/B/C/D/E | `vinto_piloto`, `vinto_app`, PostgreSQL 17 | PASS para snapshots, sin escritura |
+| Mapeo baseline | 11/11 activas, 0 ambigüedades | PASS para SQL-E |
+| Historial de 5 líneas sin activa | MP1:4, MP3:1, todas con assignment.finished | PASS como historial, NO como cierre lógico |
+| Release actualmente activo VPS | P0 confirmó `86e4ec4fa6f6bf95c0e099279d8c51a016c7a6a4` | PASS en P0; código anterior a E1 |
+| Historial real de migraciones | P0 confirmó que el archivo 0013 y su tabla no están instalados; historial `vinto_meta` sigue restringido | NO VERIFICADO en historial |
+| Flag efectivo del servicio | Release anterior sin referencia ni variable de proceso `WORK_ORDER_LINE_EXECUTION_ENABLED` en P0 | PASS para esquema antiguo; valor del nuevo release NO VERIFICADO |
+| Grants reales MF13 | P0 observó grants básicos sector/máquina y usuarios/sectores activos | PASS parcial; permisos efectivos por perfil/formulario NO VERIFICADO |
+| Backups verificados + restauración | P1-B: respaldo nuevo .verified, 47 tablas restauradas y conciliadas, 0 diferencias; 18 backups anteriores intactos | PASS bajo protocolo P1-B |
+| Estrategia de conservación de registros simulados | Usuario debe conocer impacto y confirmar | PENDIENTE |
+| Migración 0013 / activación | No autorizadas | NO-GO |
+
+## 3. Estrategia para la base simulada (elegir antes de flag ON)
+
+**S1 — Conservar historial simulado:** no se modifican las 12 OT/16 líneas y se despliega eventualmente con flag OFF. Permite validar que el sistema anterior sigue funcionando. **No permite asumir GO para flag ON:** es necesario diseñar y probar conciliación funcional sin fabricar `in_production`, ni cerrar órdenes ficticiamente. Una política explícita de tratamiento de datos legados debe ser aprobada.
+
+**S2 — Reinicio controlado del conjunto de datos de prueba:** solo si existe constancia de que TODOS los registros implicados son desechables, no hay integraciones/usuarios dependientes, y se cuenta con respaldo **creado y restaurado/verificado**. Requiere plan SQL específico auditable y autorización **separada para cualquier DELETE/TRUNCATE/recreación**. Este documento no contiene SQL destructivo y **no autoriza reset**. Con una base de prueba limpia, los nuevos casos E1 pueden crearse desde la interfaz, bajo grants y flag ON después de GO.
+
+**S3 — Datos de prueba en una base aislada (opcional):** evita manipular el dataset actual; requiere recursos, credenciales y despliegue separados. No forma parte del despliegue actual.
+
+**Criterio:** no resolver el bloqueo técnico falseando estados, fabricando historiales ni desactivando preflight. No confundir que los datos sean ficticios con permiso para alterarlos.
+
+## 4. Etapas de autorización separadas
+
+### P0 — Auditoría READ ONLY del VPS (siguiente ejecución recomendada)
+
+Por Codex Desktop en SSH previamente autorizado, **sin cambiar archivos ni servicios**:
+
+1. Confirmar SHA real de `/opt/vinto-mvp-web/current` como usuario de servicio autorizado (el árbol `/opt/vinto-mvp-web` tiene permisos privados); unidades `vinto-mvp-backend.service`/`vinto-mvp-frontend.service` y contenedor exacto `vinto-mvp-postgres` saludables.
+2. Confirmar identidad del contenedor por nombre + imagen + etiqueta de Compose, sin imprimir `Config.Env` ni secretos.
+3. Confirmar base `vinto_piloto`, presencia/ausencia de tabla `work_order_line_execution` mediante catálogos; historial `vinto_meta.schema_migration` queda NO VERIFICADO si el rol no tiene privilegios. **No conceder derechos adicionales a `vinto_app`.**
+4. Con consulta segura `REPEATABLE READ READ ONLY`, contar OT, líneas, asignaciones, grants efectivos por sector/máquina y detectar nuevas capturas/actividad posterior sin imprimir registros personales o números OT. Los SQL-E anteriores son evidencia histórica, no sustituyen el corte nuevo.
+5. **No invocar `deploy.sh preflight` a ciegas:** `preflight.sh infra` incluye controles de puertos 3100/8100/6544 **libres** pensados para primera instalación; un MVP ya activo utiliza esos puertos. Evaluar primero su idoneidad para actualización y registrar cualquier falso bloqueo en vez de ignorarlo.
+6. No ejecutar `deploy.sh check-release` bajo una orden de cero escritura de archivos sin revisar antes el uso de helpers/archivos temporales. No inspeccionar `.env`.
+
+**Salida P0:** SHA activo, servicios, contenedor, nombre de BD y rol, 0013 presente/ausente, resumen del corte nuevo, permisos MF13, estado efectivo del flag solo si puede comprobarse sin secretos, `PASS/NO VERIFICADO/FAIL`. Si un dato es inaccesible, no escalar privilegios; detener.
+
+### P1 — Respaldo y recuperabilidad (acción futura)
+
+Comprobar espacio y mecanismo del backup **antes de ejecutarlo**. `deploy/mvp/scripts/backup.sh create-and-verify` genera backup y restaura en contenedor efímero aislado; solo tras autorización específica para escribir archivos y usar Docker. No confundir `backup.sh list` con restaurabilidad comprobada.
+
+### P2 — Preparación release / migración 0013 (acciones futuras)
+
+SHA exacto `a8a8beaf611e8d892658eeabb5a5e1b972a32316`; artifact frontend y manifiesto deben corresponder a ese SHA. Preflight de actualización y `deploy.sh check-release` si ya está autorizado. `migrate-release <sha>` aplica migración pendiente y **cambia PostgreSQL**, aunque `current` no cambie; requiere autorización expresa tras respaldo. Validar que `WORK_ORDER_LINE_EXECUTION_ENABLED` sea efectivamente OFF antes y después del despliegue, no inferirlo solo del default en config.py.
+
+### P3 — Despliegue con flag OFF y smoke de legado (acción futura)
+
+Activación de nueva release **solo** con migración/esquema compatibles, backup verificado, rollback de código identificado y autorización explícita. Smoke de captura F3/F6, formularios centrales, Rebobinado/Conversión, Calidad y permisos. Prestar especial atención al componente UI nuevo: puede consultar `/api/assignments/execution-status` incluso con flag OFF, y falla cerrado ante respuesta inválida; validar que no bloquee captura legítima.
+
+### P4 — Activación de E1 y QA funcional simulado (acción futura)
+
+Solo después de resolver S1/S2/S3 y obtener preflight 0013 sin bloqueantes, revisar grants MF13 y habilitar flag con procedimiento revertible aprobado. La activación NO es consecuencia automática de P3.
+
+| QA | Escenario de prueba | Resultado esperado |
+|---|---|---|
+| Q01 | Dos líneas habilitadas, una máquina | Solo una puede quedar `in_production` |
+| Q02 | Captura sin iniciar línea | Rechazo, sin nueva captura |
+| Q03 | Inicio válido por Supervisión con alcance | Estado `in_production`, captura permitida con turno/grant |
+| Q04 | Inicio simultáneo de otra línea en la máquina | Conflicto, sin doble ejecución |
+| Q05 | Finalización parcial vs cantidad planificada | Fin admitido sin justificación obligatoria; déficit visible, no anulación |
+| Q06 | Intento de cerrar OT con línea no finalizada | Rechazo sin cierre parcial |
+| Q07 | Cierre manual con todas las líneas terminadas | Éxito por Supervisión, conservando historial |
+| Q08 | Cambio de turno durante ejecución lógica | No inferir pausa/finalización; nueva OT bloqueada hasta terminar línea anterior |
+| Q09 | Usuario sin grant / fuera de sector | Acceso o acción denegada |
+| Q10 | Calidad y reintento idempotente de captura | Calidad independiente; no duplicar captura ya confirmada |
+
+Cada prueba debe registrar hora, acción, rol/sector (no datos personales públicos), resultado observado, PASS/FAIL, evidencia privada y cambios finales en registros simulados.
+
+## 5. Contingencia, diferencias entre rollbacks
+
+- `rollback.sh version <sha-anterior>` conmuta versión de aplicación y reinicia servicios. **No revierte el esquema 0013** ni restaura registros alterados por pruebas.
+- La 0013 tiene `backend/rollbacks/0013_work_order_line_execution_rollback.sql` con condiciones; no aplicarla automáticamente ni asumir que sigue siendo segura después de crear datos nuevos.
+- Restaurar una base implica operación separada y potencial pérdida de cambios posteriores al backup. Debe tener su propio GO.
+- En un incidente de flag ON, antes de asumir un rollback de app/DB, aplicar el procedimiento de contención aprobado y evaluar compatibilidad de esquema. Evitar borrar información por tratarse de un piloto.
+
+## 6. Decisión actual
+
+**GO para P0, lectura no mutadora. NO-GO para reset, migración 0013, despliegue y flag ON.** Datos simulados permiten sustituir validación industrial física por QA de escenarios controlados, **no** eliminar respaldos, autorización y conciliación de modelo.
+
+**Fuentes internas:** SQL-A/E en [PR #132](https://github.com/BaltrekCompany/vinto-mvp-web/pull/132), [Issue #131](https://github.com/BaltrekCompany/vinto-mvp-web/issues/131), `deploy/mvp/scripts/{deploy,rollback,backup,preflight}.sh`, `backend/app/work_orders/rollout_preflight.py`.
