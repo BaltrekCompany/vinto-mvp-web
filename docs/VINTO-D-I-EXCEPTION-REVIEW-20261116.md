@@ -155,7 +155,7 @@ Las 16 ejecuciones finalizadas no superan 72 horas. El dato sigue midiendo tiemp
 
 ## 8. Pendientes exactos para cierre
 
-1. **Reproducir las 21 capturas** con `bobbin_id IS NULL` además de `assignment_id IS NULL`; conservar solo conteos por formulario/máquina.
+1. **Capturas independientes: CERRADO en la tercera revisión.** Total 21 reproducido con `bobbin_id IS NULL` y `assignment_id IS NULL`, por formulario/máquina; conservar los resultados como evidencia agregada.
 2. **Madres:** comprobar formularios activos y última versión publicada de área Calidad para las seis combinaciones de máquina/formulario pertinentes, sin exigir `form_version_machine` para la excepción de madre.
 3. **Concesiones:** verificar conteos agregados mediante fuente autorizada. El error de permisos sobre `user_machine_form_grant` se registra como límite de acceso; no se elude ni se corrige elevando privilegios.
 4. **Continuidad:** calcular huecos/solapamientos entre asignaciones adyacentes OT–máquina–línea para las 16 ejecuciones largas. Informar agregados, sin IDs ni actores.
@@ -165,3 +165,55 @@ Las 16 ejecuciones finalizadas no superan 72 horas. El dato sigue midiendo tiemp
 **Dictamen actualizado:** se pueden dar por conciliados los controles de capturas independientes de OT (sujeto a reproducir el filtro completo), política efectiva y conciliación de asignaciones. Las tres ejecuciones abiertas son consistentes con el snapshot de OTs/asignaciones activas. La auditoría global permanece **OPEN / PARTIAL — NO PASS** por elegibilidad/concesiones de madres y continuidad temporal de las ejecuciones prolongadas.
 
 **Estado operativo:** sin cambios en PostgreSQL, permisos, VPS, servicios o release.
+
+
+## 9. Tercera revisión D–I — evidencia recibida de Codex (16/11/2026)
+
+**Resultado informado:** `VINTO_D_I_THIRD_REVIEW=PARTIAL`. Codex indica que todas las consultas realmente ejecutadas fueron `READ ONLY` con `statement_timeout=15s`, y no expusieron IDs, usuarios, actores ni valores individuales. Las consultas de los bloques B/C/D incompletos no se presentan como evidencia de aprobación.
+
+| Bloque | Evidencia de la tercera revisión | Clasificación | Decisión |
+| --- | --- | --- | --- |
+| A. Calidad sin asignación ni bobina | **21 capturas** con `assignment_id IS NULL` y `bobbin_id IS NULL` en los cuatro formularios P1-18, P1-22, P1-26 y P1-27 sobre MP1/MP3. Conteos MP1/MP3: P1-18 4/2, P1-22 2/2, P1-26 5/2 y P1-27 3/1. | COMPORTAMIENTO_ESPERADO | **CERRADO** como flujo de Calidad independiente de OT. No se requiere corrección de datos. |
+| B. Madres técnicas | La sesión de Codex no disponía de un principal ya autorizado para `GET /api/quality/bobbin-forms`. No se llamó al endpoint ni se consultó directamente la tabla de grants. | NO_VERIFICABLE | Mantener abierto. El estado de versiones, concesiones y `eligible` no está demostrado. No solicitar credenciales ni elevar privilegios para forzar el cierre. |
+| C. Cobertura temporal de ejecuciones largas | El SQL de agregación falló por una referencia **ambigua** a `finished_at`. No hay resultados válidos de huecos, solapamientos ni cobertura. | NO_VERIFICABLE | Reintentar con nombres de columnas calificados. Se preparó un SQL independiente que calcula la unión de intervalos y solo publica agregados; **no se ha ejecutado**. |
+| D. Tres ejecuciones abiertas | En el snapshot recibido las tres están `in_production`, OTs `in_progress`, con asignación `active` relacionada por OT–máquina–línea y fecha operativa 2026-11-16. | COMPORTAMIENTO_ESPERADO **solo para consistencia del snapshot** | No extrapolar a turno vigente o actividad real: la comprobación del `shift_schedule_id`, fecha operativa resuelta y antigüedad todavía está pendiente. |
+| D. Turno vigente y antigüedad | No se calcularon. `backend/app/shifts.py` determina el turno con zona horaria individual, intervalos semiabiertos, vigencia por fecha operativa y unicidad del turno resuelto. | NO_VERIFICABLE | Reproducir exactamente `resolve_shift` en sesión autorizada de lectura con un único instante PostgreSQL de referencia. |
+
+### 9.1 SQL de cobertura preparado y no ejecutado
+
+Archivo de solo lectura: [`docs/VINTO-D-I-COVERAGE-READONLY-20261116.sql`](./VINTO-D-I-COVERAGE-READONLY-20261116.sql).
+
+Características:
+
+- Limita las ejecuciones a `finished`, baseline v1 y duración transcurrida superior a 24 horas.
+- Relaciona asignaciones `operational` por OT–máquina–línea, no por igualdad entre IDs de línea baseline y operativa.
+- Recorta los intervalos administrativos `[assignment.created_at, assignment.finished_at)` contra `[execution.started_at, execution.finished_at)`; usa `execution.finished_at` como límite de una asignación aún activa.
+- Calcula `MAX(interval_end)` anterior por ejecución, agrupa intervalos contiguos y solapados en islas y devuelve huecos, solapamientos, cobertura, faltantes de inicio/fin y horas calendario descubiertas, agregados por máquina.
+- Mantiene todas las consultas en una transacción `READ ONLY`, con timeout 15s; no contiene DDL, escritura ni elevación de privilegios.
+
+**Advertencia:** el SQL es un candidato de auditoría revisable, no una consulta certificada por ejecución. Antes de interpretar resultados, Codex debe comprobar la firma del esquema y el conteo de 16 filas. Los períodos de asignación administrativa **no** miden actividad productiva efectiva. Una brecha temporal no es por sí sola una incidencia.
+
+### 9.2 Turno vigente: reproducir función de backend
+
+La validación definitiva de las tres ejecuciones abiertas no debe basarse únicamente en `assignment.status='active'` ni `operating_date=2026-11-16`. En una conexión con acceso legítimo a las tablas de lectura:
+
+1. Iniciar transacción `READ ONLY` y fijar `statement_timeout=15s`.
+2. Obtener una sola vez `SELECT clock_timestamp()`; usar ese instante para todas las comprobaciones de esa ronda.
+3. Consultar internamente las tres ejecuciones `in_production`, su sector y sus asignaciones operativas activas relacionadas por OT–máquina–línea. No imprimir los identificadores.
+4. Para cada sector, llamar a `app.shifts.resolve_shift(connection, now, sector_id=...)` del código auditado, que selecciona exactamente un turno válido, con `timezone`, `starts_at/ends_at` semiabiertos y vigencia por fecha operativa.
+5. Clasificar como `CONSISTENTE` solo cuando exista **una** asignación vigente con `shift_schedule_id` y `operating_date` iguales a los valores resueltos, OT `in_progress` y ejecución `in_production`. Si falta/múltiple/schedule discordante: `REQUIERE_REVISION`. Si faltan permisos o el resolvedor produce error: `NO_VERIFICABLE`.
+6. Agregar por máquina y clasificación, indicando rangos de antigüedad de inicio/asignación (sin timestamps individuales, actores, IDs ni valores de captura).
+
+No invocar funciones que finalicen ejecución ni escribir en PostgreSQL. Registrar de manera explícita que la comparación es **válida solo para el instante observado**, ya que los turnos cambian con el tiempo.
+
+## 10. Dictamen vigente de D–I después de la tercera revisión
+
+- **CERRADOS como hallazgo de integridad:** las 21 capturas de Calidad independientes de bobina y asignación; política ejecutable de cuatro formularios (con corrección documental en este PR); reconciliación de 173 asignaciones, 76 ejecuciones y 99 pares lógicos, con posible relación 1:N.
+- **Consistencia preliminar:** tres ejecuciones abiertas asociadas a una OT `in_progress` y al menos una asignación `active`; la vigencia del turno sigue **NO_VERIFICABLE**.
+- **Pendiente de fuente autorizada:** disponibilidad y `eligible` de los seis formularios de madre sobre BELOIT/COPASA. Cero capturas sobre seis madres no implica defecto.
+- **Pendiente técnico:** cobertura/gaps/solapamientos de las 16 ejecuciones largas; aún sin evidencia por fallo de SQL previo.
+- **Pendiente funcional:** política de continuidad de ejecución lógica entre turnos y umbrales de revisión, sin inferir cierres automáticos.
+
+**Gate global:** `VINTO_D_I_EXCEPTION_REVIEW=PARTIAL` (**NO PASS**).
+
+**Operación y despliegue:** este PR sigue en borrador; no se modifica la VPS, servicios, permisos, datos ni el release activo. El SQL incorporado al repositorio NO equivale a haberlo ejecutado.
