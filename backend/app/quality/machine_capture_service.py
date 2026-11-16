@@ -5,8 +5,7 @@ Reutiliza vinto_txn.capture SIN migración: `assignment_id` y `bobbin_id` son nu
   - los controles por Bobina P1-19 / P1-20 (`quality/capture_service.py`): no se modifican y sus consultas siguen filtrando `bobbin_id IS NOT NULL`, así que estos controles no aparecen en ellas.
 Nunca crea bobinas, relaciones con OT / asignación ni toca quality_release: capturar un control no libera ni rechaza nada.
 
-POLÍTICA EXPLÍCITA (`MACHINE_QUALITY_FORM_CODES`): VACÍA en la configuración real. Un formulario publicado NO se acepta por el solo hecho de existir; habilitar uno es un cambio de código revisado (hoy solo
-los entornos de prueba lo hacen con patch.object). Cada captura exige además versión publicada de área `quality`, formulario activo y vínculo formulario-máquina.
+POLÍTICA EXPLÍCITA (`MACHINE_QUALITY_FORM_CODES`): incluye P1-18, P1-22, P1-26 y P1-27 para QA interno sobre MP1/MP3. No están homologados por VINTO y no ejecutan quality_release. Un formulario publicado fuera de esta lista no se acepta por el solo hecho de existir. Cada captura exige además versión publicada de área `quality`, formulario activo y vínculo formulario-máquina.
 
 `captured_at` es la HORA DE REGISTRO (reloj de PostgreSQL al crear la captura), NO la hora real del ensayo: el contrato candidato no tiene un campo de hora de muestreo y no se inventa uno. Turno y fecha operativa
 se resuelven con el backend (resolve_shift) a esa hora de registro. El responsable es el usuario autenticado (`created_by`), solo informativo: no es una firma.
