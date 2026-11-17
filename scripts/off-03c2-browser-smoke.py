@@ -18,10 +18,10 @@ def report(name):
     print(json.dumps({"case":name,"result":"PASS"}),flush=True)
 
 with tempfile.TemporaryDirectory(prefix="vinto-off03c2-") as tmp:
-  data=Path(tmp)/"browser"
+  profile_path=Path(tmp)/"browser"
   with sync_playwright() as pw:
     def chrome():
-      return pw.chromium.launch_persistent_context(user_data_dir=str(data),headless=True,channel="chrome",
+      return pw.chromium.launch_persistent_context(user_data_dir=str(profile_path),headless=True,channel="chrome",
          args=["--no-sandbox","--disable-dev-shm-usage"],service_workers="allow")
     ctx=chrome()
     page=ctx.new_page()
