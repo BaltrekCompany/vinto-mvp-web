@@ -119,6 +119,7 @@ test('ephemeral PostgreSQL CI also proves reference dry-run before D3B1',()=>{
   assert.match(ci,/REFERENCE_DATABASE_URL=/);
   assert.match(ci,/PGPASSWORD="\$\(cat "\$TMP\/reference"\)"/);
   assert.match(ci,/import_reference\.py --target dev/);
+  assert.match(ci,/Base de destino: vinto_qa_offline \(target=dev, modo=dry-run\)/);
   const three=ci.indexOf('run_acl 03_table_grants.sql');
   const dry=ci.indexOf('import_reference.py --target dev');
   const tighten=ci.indexOf('run_acl 03b_d3b1_restrict_catalog_writes.sql');
