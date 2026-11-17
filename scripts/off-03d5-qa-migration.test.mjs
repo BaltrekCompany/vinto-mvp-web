@@ -52,3 +52,18 @@ test('real VPS preflight checks QA-only metadata and cannot execute writes',()=>
   assert.doesNotMatch(src,/docker (?:run|stop|restart|rm|volume rm|network create)/);
   assert.doesNotMatch(src,/(?:migrate\.py|--apply|psql.*-f)/);
 });
+
+test('QA migrator auth keeps SQL shell quoting intact and uses protected stdin',()=>{
+  // Bash -n for the whole file misses malformed strings inside sh -c.
+  // Parse that nested shell separately and assert it cannot regress to SQL '|' quoting.
+  const section = src.slice(src.indexOf('actual="$(docker exec -i'),src.indexOf("echo 'QA_MIGRATOR_AUTH=PASS'"));
+  assert.ok(section.startsWith('actual="$(docker exec -i'));
+  assert.match(section,/chr\(124\)/);
+  assert.match(section,/sh -ceu '[\s\S]*?' < "\$SEC"/);
+  assert.doesNotMatch(section,/cat "\$SEC" \| docker exec/);
+  const nested = section.match(/sh -ceu '([\s\S]*?)' < "\$SEC"/);
+  assert.ok(nested);
+  const parse = spawnSync('sh',['-n','-c',nested[1]],{encoding:'utf8'});
+  assert.equal(parse.status,0,parse.stderr);
+  assert.match(nested[1],/IFS= read -r PGPASSWORD \|\| \[ -n "\$PGPASSWORD" \]/);
+});
