@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/vinto/auth-api";
 import { DEVICE_KEY_STORAGE, getDeviceKey } from "@/lib/vinto/device";
 import { createLocalVault, VaultError } from "@/lib/vinto/offline-vault";
@@ -99,7 +100,7 @@ export default function OfflinePreparationPage() {
                 </form>
             )}
             {state === "enrolled" && <p className="text-sm">Puede comprobar la verificación local desde la pantalla de contingencia cuando no tenga Internet. No se han descargado OT ni formularios.</p>}
-            <a className="underline text-emerald-800" href="/">Volver a VINTO</a>
+            <Link className="underline text-emerald-800" href="/">Volver a VINTO</Link>
         </main>
     );
 }
