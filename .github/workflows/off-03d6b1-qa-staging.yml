@@ -1,0 +1,29 @@
+name: OFF-03D6B1 QA Checkout and Venv Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d6b1-qa-checkout-venv.sh'
+      - 'scripts/off-03d6b1-qa-checkout-venv.test.mjs'
+      - 'docs/OFF-03D6B1-qa-checkout-venv.md'
+      - '.github/workflows/off-03d6b1-qa-staging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-staging-guard-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Bash parsing and rejection of unauthorized modes
+        run: |
+          bash -n scripts/off-03d6b1-qa-checkout-venv.sh
+          node --test scripts/off-03d6b1-qa-checkout-venv.test.mjs
