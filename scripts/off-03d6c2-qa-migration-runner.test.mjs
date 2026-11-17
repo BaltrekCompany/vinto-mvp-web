@@ -102,6 +102,7 @@ test('D3B1 catalog tightening requires dedicated reference role and read-only bu
   assert.match(src,/--target", "dev"/);
   assert.match(src,/OFF03D6C2_REFERENCE_IMPORT_DRY_RUN=PASS_READ_ONLY/);
   assert.match(src,/Plan \(dry-run, 0 filas escritas\):/);
+  assert.match(src,/Base de destino: vinto_qa_offline/);
   const three=src.indexOf('run_acl("03_table_grants.sql")');
   const dry=src.indexOf('reference_dry_run = subprocess.run');
   const tighten=src.indexOf('run_acl("03b_d3b1_restrict_catalog_writes.sql")');
@@ -110,4 +111,17 @@ test('D3B1 catalog tightening requires dedicated reference role and read-only bu
   assert.match(src,/has_table_privilege\('vinto_reference','vinto_audit\.audit_event','INSERT'\)/);
   assert.match(src,/vinto_config\.field_group/);
   assert.doesNotMatch(src,/postgresql:\/\/vinto_reference:[^@\s]+@/);
+});
+
+test('ephemeral PostgreSQL CI also proves reference dry-run before D3B1',()=>{
+  const ciPath=new URL('../off-03d5-migrations-ci-e2e.sh',import.meta.url).pathname;
+  const ci=readFileSync(ciPath,'utf8');
+  assert.match(ci,/REFERENCE_DATABASE_URL=/);
+  assert.match(ci,/PGPASSWORD="\$\(cat "\$TMP\/reference"\)"/);
+  assert.match(ci,/import_reference\.py --target dev/);
+  const three=ci.indexOf('run_acl 03_table_grants.sql');
+  const dry=ci.indexOf('import_reference.py --target dev');
+  const tighten=ci.indexOf('run_acl 03b_d3b1_restrict_catalog_writes.sql');
+  assert.ok(three>=0 && dry>three && tighten>dry);
+  assert.match(ci,/OFF03D5_CI_REFERENCE_IMPORT_DRY_RUN=PASS/);
 });
