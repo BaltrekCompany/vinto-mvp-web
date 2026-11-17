@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # OFF-03B.2: read-only signed scope snapshot, strictly opt-in server gate.
     # Signing seed is a secret injected via environment; never in Git or API.
     offline_scope_issue_enabled: bool = False
+    # OFF-03C.1 separate gate: signed read-only quality-machine definition export.
+    offline_quality_package_issue_enabled: bool = False
     offline_scope_signing_seed_b64url: SecretStr | None = None
     # MF-13-01D.2A: modo de la autorización efectiva (app/authz) SOLO para POST /api/captures. Configuración exclusiva del servidor (variable de entorno
     # AUTHZ_CENTRAL_CAPTURES_MODE); el cliente HTTP no puede cambiarla y no existe un interruptor global: cada operación tendrá el suyo.
