@@ -14,6 +14,8 @@ on:
       - '.github/workflows/off-02-foundation.yml'
       - 'scripts/off-02-browser-smoke.py'
       - 'scripts/off-02-browser-fixture.py'
+      - 'scripts/build-offline-boot.mjs'
+      - 'lib/vinto/offline-boot.ts'
   workflow_dispatch:
 
 permissions:
@@ -57,6 +59,16 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Generate offline runtime from TypeScript source (no duplicated crypto)
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          node scripts/build-offline-boot.mjs
+          node --check public/offline-boot.js
       - name: Install Playwright Python for actual Chrome
         run: |
           python3 -m pip install --break-system-packages playwright==1.57.0

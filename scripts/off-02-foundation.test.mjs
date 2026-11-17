@@ -65,7 +65,7 @@ test("manifest is a scoped stand-alone PWA with existing public icon", () => {
 test("service worker precaches only public shell and no private API/admin responses", async () => {
   const w = worker();
   await new Promise((resolve) => w.handlers.install({ waitUntil: (promise) => Promise.resolve(promise).then(resolve) }));
-  assert.deepEqual(w.added.sort(), ["/offline.html", "/offline-probe.js", "/manifest.webmanifest", "/favicon.svg"].sort());
+  assert.deepEqual(w.added.sort(), ["/offline.html", "/offline-probe.js", "/offline-boot.js", "/manifest.webmanifest", "/favicon.svg"].sort());
   assert.ok(w.added.every((path) => !path.startsWith("/api") && !path.startsWith("/admin")));
   for (const path of ["/api/auth/me", "/api/captures", "/admin", "/admin/users"]) {
     assert.equal(await w.request(path), null, path);
