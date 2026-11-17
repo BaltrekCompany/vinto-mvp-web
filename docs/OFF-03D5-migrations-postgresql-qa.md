@@ -56,3 +56,9 @@ Sin una tercera revisión, no ejecutar migraciones contra la VPS. La siguiente a
 Cualquier conexión a `vinto_piloto`, clúster `vinto-mvp-postgres`/port 6544 o TVC port 6543; código checkout diferente de SHA aprobado; env o secretos del piloto; falta de backup verificable; migraciones existentes y no alineadas; `migrate.py --check` falla; deriva de ACL o cualquier dato real en QA.
 
 **Estado:** OFF-03D.4 PASS. OFF-03D.5 CI y VPS preflight pendientes de resultado; DDL VPS NO autorizado. El móvil real continúa NOT_RUN.
+
+## Incidencia de preflight en VPS — 17-nov-2026
+
+La primera ejecución del candidato SHA `3c0ba58c1d11b3f955f8d4940ebf4b619dbd80c9` (blob `2e85d16f365ddad5552e614dc188acad77965181`) pasó integridad, HTTPS QA, aislamiento Docker, salud del piloto/TVC, roles y ausencia de esquemas/historial. Se bloqueó al validar el login migrador: el sub-shell `sh -ceu '...'` contenía un literal SQL con comillas simples (`'|'`), quebrando el argumento; `bash -n` no descubrió el defecto por tratarse de código anidado. **No equivale a credencial fallida**. No hubo DDL.
+
+Corregido en la rama de PR #198 con `chr(124)` en el SQL para no anidar las comillas; autenticación por stdin redirigido desde el archivo QA root 0600, manejo de contraseña sin salto de línea; prueba de regresión de parsing del shell interno. **No volver a usar SHA 3c0ba58c para inspect.** Ejecutar preflight solo con commit y blob nuevos tras CI satisfactoria, confirmando `QA_MIGRATOR_AUTH=PASS` y `OFF03D5_PREFLIGHT=PASS_READ_ONLY`. El bloqueo a migraciones VPS sigue intacto: no usar `migrate.py` ni hacer DDL hasta preparar checkout/venv, respaldo/restauración y wrapper con protección de destino y autorización específica.
