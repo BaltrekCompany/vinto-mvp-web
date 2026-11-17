@@ -30,3 +30,11 @@ El script no crea archivos, no ejecuta `migrate.py`, y no restaura ni migrará n
 - El backup B2 es **PRE-DDL**. Después de migraciones válidas `B2 verify` sobre el origen deja de pasar deliberadamente porque el esquema cambió; se requiere un control post-migración distinto, no actualizar retroactivamente el fingerprint anterior.
 
 El PR debe permanecer Draft y encadenado a #201, sin merge a main.
+
+## Incidente real del primer preflight D6C1 (17-nov-2026)
+
+El operador ejecutó el script del SHA `d467387d1ff369e9144d3c8342916c03f093a96b` (blob `0e4f73da04736cc415dd16544d688d44b6246874`) y obtuvo `OFF03D6C1_BACKUP_RESTORE_GATE=PASS`, seguido de **`OFF03D6C1_BLOCKED: venv QA ausente`**. En la misma salida, B1 verify confirmó `OFF03D6B1_PYTHON_IMPORTS=PASS`, `OFF03D6B1_VENV=PASS_ISOLATED`, `OFF03D6B1_CHECKOUT=PASS_DETACHED_CLEAN`; B2 verify repitió integridad, restauración y origen inalterado en PASS. No se ejecutó SQL DDL ni migraciones.
+
+**Causa de código:** el primer D6C1 exigía `[ ! -L "$PYTHON" ]` sobre `/srv/vinto-qa-offline/venv/bin/python`, aunque `python3 -m venv` crea habitualmente un symlink del ejecutable al intérprete base en Linux. Es una diferencia respecto de B1, que correctamente admite ese enlace; no prueba que falte el venv. **No reinstalar, borrar, reconstruir checkout/venv ni repetir backup** para resolver esta condición.
+
+**Corrección:** reemplazar ese veto por una validación del **directorio** de venv (no symlink), ejecutable Python presente, `sys.prefix` igual al venv fijo, `sys.base_prefix` diferente y módulos QA importables. Test de regresión reproduce symlink normal de ejecutable, rechazo de raíz de venv enlazada y Python faltante; parser Python independiente. Un nuevo script requiere su **propio SHA completo, blob Git y CI PASS** antes de reintentar `inspect` en VPS. Hasta nueva evidencia `OFF03D6C1_PREFLIGHT=NOT_PASSED`; no autorización de DDL ni inicio D6C2.
