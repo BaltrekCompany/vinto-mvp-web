@@ -77,7 +77,7 @@ verify(){
   echo 'OFF03D2_VERIFY=PASS_BOOTSTRAP_ONLY'
 }
 install_qa(){
-  [ "\${CONFIRM_QA_DB_CREATE:-}" = YES ] || die 'requiere CONFIRM_QA_DB_CREATE=YES'
+  [ "${CONFIRM_QA_DB_CREATE:-}" = YES ] || die 'requiere CONFIRM_QA_DB_CREATE=YES'
   preflight
   install -d -m 0700 "$SECRET_DIR"
   openssl rand -hex 32 > "$SECRET"
@@ -104,7 +104,7 @@ install_qa(){
   echo 'OFF03D2_INSTALL=PASS_BOOTSTRAP_ONLY'
   echo 'PILOT_TVC_MODIFICATIONS=NONE_BY_THIS_SCRIPT'
 }
-case "\${1:-help}" in
+case "${1:-help}" in
   -h|--help|help) usage ;;
   preflight) preflight ;;
   verify) verify ;;
