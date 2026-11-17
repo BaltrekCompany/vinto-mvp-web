@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03b-browser-") as tmp:
     page.get_by_text("Perfil preparado",exact=False).wait_for(timeout=60000)
     report("01_online_enrollment_mocked_authenticated_user")
     profile_count=page.evaluate("""async()=>await new Promise((resolve,reject)=>{
-        const r=indexedDB.open('vinto-off03a-profiles-v1',2);
+        const r=indexedDB.open('vinto-off03a-profiles-v1',3);
         r.onerror=()=>reject(new Error("idb open"));
         r.onsuccess=()=>{
           const db=r.result, tx=db.transaction("profiles","readonly");

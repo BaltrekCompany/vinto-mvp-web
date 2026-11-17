@@ -8,9 +8,10 @@
 import { isOfflineVaultRecord, type OfflineVaultRecord, VaultError } from "./offline-vault.ts";
 
 export const PROFILE_DB_NAME = "vinto-off03a-profiles-v1";
-const PROFILE_DB_VERSION = 2;
+const PROFILE_DB_VERSION = 3;
 const STORE_NAME = "profiles";
 export const SCOPE_STORE_NAME = "scopes";
+export const PACKAGE_STORE_NAME = "quality_packages";
 
 export function openProfileDb(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") return Promise.reject(new VaultError("unavailable"));
@@ -23,6 +24,8 @@ export function openProfileDb(): Promise<IDBDatabase> {
             if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "profileId" });
             // OFF-03B.3: migrate old v1 profiles in place; never remove vault keys.
             if (!db.objectStoreNames.contains(SCOPE_STORE_NAME)) db.createObjectStore(SCOPE_STORE_NAME, { keyPath: "profileId" });
+            // OFF-03C.2: additive schema; preserves both encrypted profile and scope.
+            if (!db.objectStoreNames.contains(PACKAGE_STORE_NAME)) db.createObjectStore(PACKAGE_STORE_NAME, { keyPath: "packageKey" });
         };
         request.onerror = () => reject(new VaultError("unavailable"));
         request.onblocked = () => reject(new VaultError("unavailable"));

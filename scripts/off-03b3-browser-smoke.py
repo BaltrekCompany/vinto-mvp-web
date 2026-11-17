@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03b3-") as tmp:
     emit("02_signed_python_scope_sealed_browser")
 
     stored=page.evaluate("""async()=>await new Promise((resolve,reject)=>{
-      const r=indexedDB.open('vinto-off03a-profiles-v1',2);
+      const r=indexedDB.open('vinto-off03a-profiles-v1',3);
       r.onerror=()=>reject(new Error('IDB open'));
       r.onsuccess=()=>{const db=r.result;const tx=db.transaction('scopes','readonly');
         const request=tx.objectStore('scopes').getAll();
@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03b3-") as tmp:
     # Corrupt encrypted ciphertext while offline: on next unlock it must NOT
     # show a verified grant or stale read-only forms.
     page.evaluate("""async()=>await new Promise((resolve,reject)=>{
-      const r=indexedDB.open('vinto-off03a-profiles-v1',2);
+      const r=indexedDB.open('vinto-off03a-profiles-v1',3);
       r.onerror=()=>reject(new Error('db'));
       r.onsuccess=()=>{const db=r.result,tx=db.transaction('scopes','readwrite'),
         s=tx.objectStore('scopes'),g=s.getAll();
