@@ -19,7 +19,7 @@
 </head>
 <body>
 <main>
-  <div class="mark">VINTO · OFF-02</div>
+  <div class="mark">VINTO · OFF-03B (prueba)</div>
   <h1>Dispositivo sin conexión</h1>
   <p>La interfaz pública de contingencia se ha abierto desde el almacenamiento local del navegador.</p>
   <div class="notice" role="status" aria-live="polite">
@@ -27,9 +27,20 @@
     <p id="offline-probe-status">Comprobando si el navegador puede conservar datos entre reinicios…</p>
   </div>
   <p class="warn"><strong>Importante:</strong> la captura de datos reales, el acceso a borradores del operario y su sincronización aún no están habilitados. Requieren OFF-03 y OFF-04.</p>
+  <div class="notice" style="margin-top:16px">
+    <strong>Verificación local de identidad — desarrollo</strong>
+    <p id="offline-profile-status" role="status" aria-live="polite">Buscando perfil local...</p>
+    <form id="offline-unlock-form" hidden>
+      <label for="offline-unlock-secret">Frase de acceso offline</label>
+      <input id="offline-unlock-secret" type="password" autocomplete="off" required
+        style="display:block;width:100%;padding:12px;border:1px solid #aaa;border-radius:8px;margin-top:8px" />
+      <button id="offline-unlock-submit" type="submit">Verificar perfil local</button>
+    </form>
+  </div>
   <button type="button" id="retry">Reintentar conexión</button>
   <small>Este diagnóstico únicamente guarda una marca técnica de prueba, sin información del operario, del equipo ni de producción. No solicita credenciales.</small>
 </main>
 <script src="/offline-probe.js" defer></script>
+<script src="/offline-boot.js" defer></script>
 </body>
 </html>
