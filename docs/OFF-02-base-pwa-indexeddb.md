@@ -44,6 +44,12 @@
 8. Probar modo incógnito, cuota agotada y almacenamiento bloqueado: la prueba debe mostrar error, nunca éxito simulado.
 9. Inspeccionar en Chrome, Edge y Firefox el funcionamiento y tamaño de caché en hardware objetivo.
 
+### Evidencia y alcance de QA automatizado
+
+- GitHub Actions #44123414242: contrato OFF-02 7/7 PASS y TypeScript PASS; el intento de Chrome con frontend completo se bloqueó en el **preflight HTTP del frontend de desarrollo**. `vinext dev` anunció el puerto 5173, pero `curl --fail /` no recibió HTTP exitoso. La prueba de cierre/reapertura no llegó a ejecutarse en esa corrida. El preflight no demuestra por sí mismo un fallo del código offline.
+- Para separar causas, `scripts/off-02-browser-fixture.py` sirve los archivos reales de `public/` con un root HTTP sintético mínimo que **no es VINTO autenticado**. `scripts/off-02-browser-smoke.py` usa Google Chrome real y un perfil persistente: carga online, registra el Service Worker del repo, verifica cache público, escribe la marca sintética en IndexedDB, cierra Chrome, reabre el MISMO perfil offline, comprueba pantalla pública y lee la misma marca.
+- **Un PASS en ese navegador prueba los archivos públicos OFF-02 y IndexedDB, no el flujo de login de VINTO ni el arranque del frontend integrado.** El build completo, la prueba en Chrome/Edge/Firefox en hardware real y reinicio físico de tablet siguen pendientes de aprobación.
+
 **No reivindicar PASS de build completo ni validación en navegador hasta ejecutar esas pruebas.** Este PR debe permanecer DRAFT hasta QA y autorización explícita. No hay migraciones ni cambios de backend.
 
 ## Gate para OFF-03
