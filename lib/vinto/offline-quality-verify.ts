@@ -154,5 +154,5 @@ export async function verifyQualityPackage(input:unknown,scope:VerifiedLocalScop
     if(!await crypto.subtle.verify({name:"Ed25519"},publicKey,sig as BufferSource,content as BufferSource))
         throw new QualityPackageError("signature");
   }catch(e){if(e instanceof QualityPackageError)throw e;throw new QualityPackageError("unavailable");}
-  return input as unknown as VerifiedQualityDefinition;
+  return { envelope: input as VerifiedQualityDefinition["envelope"] };
 }
