@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync,mkdirSync,symlinkSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
 const file=new URL('./off-03d6c1-qa-migrator-preflight.sh',import.meta.url).pathname;
@@ -46,4 +48,38 @@ test('embedded Python body is syntactically valid',()=>{
     input:match[1],encoding:'utf8'
   });
   assert.equal(py.status,0,py.stderr);
+});
+
+test('venv executable symlink is valid; linked directory and absent interpreter fail',()=>{
+  const guard = src.match(/\[ -d "\$VENV" \] && \[ ! -L "\$VENV" \] && \[ -x "\$PYTHON" \]/)?.[0];
+  assert.ok(guard,'required venv guard missing');
+  assert.doesNotMatch(src,/\[ ! -L "\$PYTHON" \]/);
+  const temp=mkdtempSync(join(tmpdir(),'off03d6c1-'));
+  try {
+    const venv=join(temp,'venv');
+    mkdirSync(join(venv,'bin'),{recursive:true});
+    const python=join(venv,'bin','python');
+    symlinkSync(process.execPath,python);
+    const check=(v,p)=>spawnSync('bash',['-c',guard],{
+      env:{PATH:process.env.PATH,HOME:process.env.HOME,VENV:v,PYTHON:p},encoding:'utf8'
+    }).status;
+    assert.equal(check(venv,python),0,'normal venv Python symlink must pass');
+    const linked=join(temp,'venv-link');
+    symlinkSync(venv,linked);
+    assert.notEqual(check(linked,python),0,'linked venv root must fail');
+    assert.notEqual(check(venv,join(venv,'bin','missing')),0,'missing Python must fail');
+  } finally {
+    rmSync(temp,{recursive:true,force:true});
+  }
+});
+test('embedded venv identity Python parses and enforces sys.prefix isolation',()=>{
+  const venv=src.match(/<<'PY_VENV'\n([\s\S]*?)\nPY_VENV\n/);
+  assert.ok(venv);
+  const p=spawnSync('python3',['-c','import ast,sys; ast.parse(sys.stdin.read())'],{
+    input:venv[1],encoding:'utf8'
+  });
+  assert.equal(p.status,0,p.stderr);
+  assert.match(venv[1],/sys\.prefix != sys\.base_prefix/);
+  assert.match(venv[1],/Path\(sys\.prefix\)\.resolve/);
+  assert.match(venv[1],/import psycopg/);
 });
