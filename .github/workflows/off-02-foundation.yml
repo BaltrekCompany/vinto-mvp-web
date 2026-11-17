@@ -13,6 +13,7 @@ on:
       - 'scripts/off-02-foundation.test.mjs'
       - '.github/workflows/off-02-foundation.yml'
       - 'scripts/off-02-browser-smoke.py'
+      - 'scripts/off-02-browser-fixture.py'
   workflow_dispatch:
 
 permissions:
@@ -51,39 +52,39 @@ jobs:
       - name: TypeScript
         run: pnpm exec tsc --noEmit
 
-  browser-smoke:
+  browser-public-assets:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.18.0'
-      - name: Install frozen VINTO dependencies
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.25.0 --activate
-          pnpm install --frozen-lockfile
-      - name: Install Playwright Python (Chrome channel on runner)
+      - name: Install Playwright Python for actual Chrome
         run: |
           python3 -m pip install --break-system-packages playwright==1.57.0
           google-chrome --version
-      - name: Boot actual VINTO frontend (isolated dev)
+      - name: Serve repository public assets with test-only root
         run: |
           set -eu
-          nohup pnpm dev > "$RUNNER_TEMP/off02-vinto-dev.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/off02-vinto-dev.pid"
-          for i in $(seq 1 120); do
-            if curl --fail --silent --output /dev/null http://127.0.0.1:5173/; then exit 0; fi
-            sleep 2
+          nohup python3 scripts/off-02-browser-fixture.py > "$RUNNER_TEMP/off02-fixture.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:8765/; then exit 0; fi
+            sleep 1
           done
-          tail -n 150 "$RUNNER_TEMP/off02-vinto-dev.log"
+          cat "$RUNNER_TEMP/off02-fixture.log"
           exit 1
-      - name: Browser offline close/reopen IndexedDB smoke
+      - name: Chrome persistent-profile offline restart QA
         env:
-          OFF02_BASE_URL: http://127.0.0.1:5173
+          OFF02_BASE_URL: http://127.0.0.1:8765
           OFF02_CHROME_CHANNEL: chrome
+          OFF02_SCREENSHOT_PATH: ${{ runner.temp }}/off02-after-reopen.png
         run: python3 scripts/off-02-browser-smoke.py
-      - name: Show dev logs after failed QA
+      - name: Upload Chrome offline evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: off02-chrome-public-shell-evidence
+          path: ${{ runner.temp }}/off02-after-reopen.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Show fixture logs on failure
         if: failure()
-        run: tail -n 160 "$RUNNER_TEMP/off02-vinto-dev.log" || true
+        run: cat "$RUNNER_TEMP/off02-fixture.log" || true
