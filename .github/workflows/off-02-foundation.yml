@@ -12,6 +12,7 @@ on:
       - 'app/layout.tsx'
       - 'scripts/off-02-foundation.test.mjs'
       - '.github/workflows/off-02-foundation.yml'
+      - 'scripts/off-02-browser-smoke.py'
   workflow_dispatch:
 
 permissions:
@@ -49,3 +50,40 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: TypeScript
         run: pnpm exec tsc --noEmit
+
+  browser-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frozen VINTO dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Install Playwright Python (Chrome channel on runner)
+        run: |
+          python3 -m pip install --break-system-packages playwright==1.57.0
+          google-chrome --version
+      - name: Boot actual VINTO frontend (isolated dev)
+        run: |
+          set -eu
+          nohup pnpm dev > "$RUNNER_TEMP/off02-vinto-dev.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/off02-vinto-dev.pid"
+          for i in $(seq 1 120); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:5173/; then exit 0; fi
+            sleep 2
+          done
+          tail -n 150 "$RUNNER_TEMP/off02-vinto-dev.log"
+          exit 1
+      - name: Browser offline close/reopen IndexedDB smoke
+        env:
+          OFF02_BASE_URL: http://127.0.0.1:5173
+          OFF02_CHROME_CHANNEL: chrome
+        run: python3 scripts/off-02-browser-smoke.py
+      - name: Show dev logs after failed QA
+        if: failure()
+        run: tail -n 160 "$RUNNER_TEMP/off02-vinto-dev.log" || true
