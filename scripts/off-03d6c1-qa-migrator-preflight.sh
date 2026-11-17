@@ -19,6 +19,7 @@ B2=/tmp/vinto-off03d6b2-qa-backup-restore.sh
 B2_BLOB=8d7193acfe59acc243bff47c65048705f2847c1d
 ROOT=/srv/vinto-qa-offline
 SOURCE=/srv/vinto-qa-offline/source
+VENV=/srv/vinto-qa-offline/venv
 PYTHON=/srv/vinto-qa-offline/venv/bin/python
 SECRET=/etc/vinto-qa/role-migrator.password
 PIN=7b9eb8c82a290d06e719ee4990c2020076bbd11b
@@ -31,7 +32,20 @@ bash "$B2" verify || die 'backup B2 no restaurable o QA cambio'
 echo 'OFF03D6C1_BACKUP_RESTORE_GATE=PASS'
 [ -d "$ROOT" ] && [ ! -L "$ROOT" ] &&
   [ "$(stat -c '%U:%a' "$ROOT")" = root:700 ] || die 'raiz QA insegura'
-[ -x "$PYTHON" ] && [ ! -L "$PYTHON" ] || die 'venv QA ausente'
+# Python venv commonly symlinks bin/python to its base interpreter.
+# Reject a symlinked VENV directory, not its valid executable.
+[ -d "$VENV" ] && [ ! -L "$VENV" ] && [ -x "$PYTHON" ] ||
+  die 'venv QA ausente o no ejecutable'
+"$PYTHON" - <<'PY_VENV'
+import sys
+from pathlib import Path
+venv = Path('/srv/vinto-qa-offline/venv').resolve(strict=True)
+assert Path(sys.prefix).resolve(strict=True) == venv, 'wrong_venv_prefix'
+assert sys.prefix != sys.base_prefix, 'not_isolated_venv'
+import psycopg
+import pydantic_settings
+print('OFF03D6C1_VENV_IDENTITY=PASS')
+PY_VENV
 [ "$(git -C "$SOURCE" rev-parse HEAD)" = "$PIN" ] ||
   die 'checkout QA en SHA inesperado'
 [ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=all)" ] ||
