@@ -1,0 +1,41 @@
+name: OFF-03D5 QA 31 Migrations + ACL in Ephemeral PostgreSQL 17
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d5-qa-migration-preflight.sh'
+      - 'scripts/off-03d5-migrations-ci-e2e.sh'
+      - 'scripts/off-03d5-qa-migration.test.mjs'
+      - 'docs/OFF-03D5-migrations-postgresql-qa.md'
+      - '.github/workflows/off-03d5-qa-migrations.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-qa-migration-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Bash parsing and negative no-write test
+        run: |
+          bash -n scripts/off-03d5-qa-migration-preflight.sh
+          bash -n scripts/off-03d5-migrations-ci-e2e.sh
+          node --test scripts/off-03d5-qa-migration.test.mjs
+
+  postgres17-31-migrations-and-acl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Migrate 0001-0031 with non-superuser and verify ACL
+        run: bash scripts/off-03d5-migrations-ci-e2e.sh
