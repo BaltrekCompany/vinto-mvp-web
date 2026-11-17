@@ -35,12 +35,12 @@ done
 : > "$headers"
 case "$url" in
   */api/*)
-    if [[ "${FAKE_AUTH_OPEN:-}" = 1 ]]; then printf 200; else printf 401; fi
+    if [[ "$FAKE_AUTH_OPEN" = 1 ]]; then printf 200; else printf 401; fi
     ;;
   */offline.html) printf '/offline-device-qa.js' > "$body"; printf 200 ;;
   */sw.js) printf 'vinto-off03c3-static-v1' > "$body"; printf 200 ;;
   */offline-device-qa.js)
-    if [[ "${FAKE_STALE:-}" != 1 ]]; then printf 'vinto-off03c3-static-v1' > "$body"; fi
+    if [[ "$FAKE_STALE" != 1 ]]; then printf 'vinto-off03c3-static-v1' > "$body"; fi
     printf 200 ;;
   *) printf 200 ;;
 esac
@@ -53,7 +53,7 @@ function exercise(extra={},origin="https://qa.vinto.example"){
     writeFileSync(curl,stub,{mode:0o755});
     return spawnSync("bash",[path.join(root,"scripts/off-03d1-https-preflight.sh"),origin],{
       cwd:root,encoding:"utf8",timeout:10000,
-      env:{...process.env,PATH:bin+":"+process.env.PATH,...extra}});
+      env:{...process.env,FAKE_AUTH_OPEN:"0",FAKE_STALE:"0",PATH:bin+":"+process.env.PATH,...extra}});
   }finally{rmSync(base,{recursive:true,force:true});}
 }
 test("synthetic protected QA serves public shell and returns only NETWORK PASS",()=>{
