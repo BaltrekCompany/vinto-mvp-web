@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""OFF-02 isolated browser QA against the actual VINTO dev frontend.
+"""OFF-02 Chrome QA for exact repo public files served from isolated QA root.
 
-This test uses a persistent real Chromium/Chrome profile, forces network offline,
-closes/reopens the browser, and checks SW fallback + a synthetic IndexedDB canary.
-No real production capture, credentials, or backend mutation is performed.
+The root is a synthetic PUBLIC fixture, NOT VINTO authenticated application.
+This test uses persistent real Chrome profile, forces network offline,
+closes/reopens the browser, and verifies SW fallback + IndexedDB canary.
 """
 import json
 import os
@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("OFF02_BASE_URL", "http://127.0.0.1:5173")
+BASE = os.environ.get("OFF02_BASE_URL", "http://127.0.0.1:8765")
 TIMEOUT_MS = 30000
 
 def report(case: str, result: str, **details):
@@ -45,8 +45,6 @@ def main():
             context = open_profile(p.chromium, data_dir)
             page = context.new_page()
             page.set_default_timeout(TIMEOUT_MS)
-            errors = []
-            page.on("pageerror", lambda error: errors.append(str(error)))
             response = page.goto(BASE + "/", wait_until="domcontentloaded", timeout=90000)
             assert response and response.status == 200, f"online initial HTTP={response.status if response else None}"
             page.wait_for_function("() => 'serviceWorker' in navigator && navigator.serviceWorker.controller !== null || ('serviceWorker' in navigator && !!navigator.serviceWorker.ready)", timeout=TIMEOUT_MS)
@@ -57,7 +55,8 @@ def main():
             }""")
             registrations = page.evaluate("""async () => (await navigator.serviceWorker.getRegistrations()).map(reg => ({scope: reg.scope, active: !!reg.active}))""")
             assert registrations and any(item["active"] for item in registrations), registrations
-            report("01_online_vinto_and_sw", "PASS", status=response.status, workers=registrations)
+            assert page.locator("h1").inner_text() == "VINTO OFF-02 shell QA"
+            report("01_online_public_shell_and_sw", "PASS", status=response.status, workers=registrations)
             page.goto(BASE + "/offline.html", wait_until="load", timeout=TIMEOUT_MS)
             first = await_probe(page, "marca técnica almacenada")
             report("02_online_persistence_canary", "PASS", status=first)
@@ -101,6 +100,10 @@ def main():
             })""")
             assert canary == "OFF02", canary
             report("07_indexeddb_canary_value", "PASS", value=canary)
+            screenshot = os.getenv("OFF02_SCREENSHOT_PATH")
+            if screenshot:
+                page.screenshot(path=screenshot, full_page=True)
+                report("07b_evidence_screenshot", "PASS", file=Path(screenshot).name)
             # Restricted routes must not expose cached private data.
             try:
                 page.goto(BASE + "/admin", wait_until="domcontentloaded", timeout=10000)
