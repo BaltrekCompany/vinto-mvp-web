@@ -167,7 +167,7 @@ export async function unlockLocalVault(record: OfflineVaultRecord, localPassphra
     try {
         const wrapKey = await deriveWrapKey(localPassphrase, salt, record.iterations);
         const decrypted = new Uint8Array(await subtle.decrypt({
-            name: "AES-GCM", iv, additionalData: aad(record) as BufferSource
+            name: "AES-GCM", iv: iv as BufferSource, additionalData: aad(record) as BufferSource
         }, wrapKey, wrapped));
         try {
             if (decrypted.length !== 32) throw new VaultError("corrupt");
@@ -210,7 +210,7 @@ export async function openLocalDraft(key: CryptoKey, binding: DraftBinding, seal
     let clear: Uint8Array;
     try {
         clear = new Uint8Array(await subtle.decrypt(
-            { name: "AES-GCM", iv, additionalData: extra as BufferSource }, key, raw));
+            { name: "AES-GCM", iv: iv as BufferSource, additionalData: extra as BufferSource }, key, raw));
     } catch { throw new VaultError("unlock_failed"); }
     try {
         const obj: unknown = JSON.parse(decoder.decode(clear));

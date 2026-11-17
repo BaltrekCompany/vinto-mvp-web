@@ -5,7 +5,7 @@
  * Never stores an auth cookie, password, plaintext draft, or server grant.
  * First registration must be explicitly authorized ONLINE by OFF-03B.
  */
-import { isOfflineVaultRecord, type OfflineVaultRecord, VaultError } from "./offline-vault";
+import { isOfflineVaultRecord, type OfflineVaultRecord, VaultError } from "./offline-vault.ts";
 
 export const PROFILE_DB_NAME = "vinto-off03a-profiles-v1";
 const PROFILE_DB_VERSION = 1;
