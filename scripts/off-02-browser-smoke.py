@@ -47,11 +47,14 @@ def main():
             page.set_default_timeout(TIMEOUT_MS)
             response = page.goto(BASE + "/", wait_until="domcontentloaded", timeout=90000)
             assert response and response.status == 200, f"online initial HTTP={response.status if response else None}"
-            page.wait_for_function("() => 'serviceWorker' in navigator && navigator.serviceWorker.controller !== null || ('serviceWorker' in navigator && !!navigator.serviceWorker.ready)", timeout=TIMEOUT_MS)
-            # navigator.serviceWorker.ready returns a Promise, not readiness state; explicitly wait for the active worker.
+            # A Promise object is always truthy; wait for a REAL active registration with a hard timeout.
+            page.wait_for_function(
+                "() => ('serviceWorker' in navigator) && navigator.serviceWorker.getRegistration().then(reg => !!(reg && reg.active))",
+                timeout=TIMEOUT_MS,
+            )
             page.evaluate("""async () => {
-              const sw = await navigator.serviceWorker.ready;
-              if (!sw.active) throw new Error('worker not active');
+              const sw = await navigator.serviceWorker.getRegistration();
+              if (!sw || !sw.active) throw new Error('worker not active');
             }""")
             registrations = page.evaluate("""async () => (await navigator.serviceWorker.getRegistrations()).map(reg => ({scope: reg.scope, active: !!reg.active}))""")
             assert registrations and any(item["active"] for item in registrations), registrations
