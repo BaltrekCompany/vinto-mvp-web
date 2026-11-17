@@ -24,6 +24,12 @@ Archivo scripts/off-03d6c2-qa-migration-runner.sh, siempre descargado del commit
 3. Ejecuta en orden SQL de roles: 02_schema_grants, 03_table_grants, 03b_d3b1_restrict_catalog_writes, 04_function_grants, 05_no_default_privileges, 06_public_and_meta_protection; finalmente los controles read-only 07_verification_queries y 08_release_preflight. Contraseña y SQL se envían por stdin, nunca en la línea de comandos.
 4. Verifica historial 31, seis esquemas, vinto_app sin USAGE en vinto_meta, INSERT no autorizado sobre catálogos e inexistencia de CONNECT de PUBLIC. Sólo entonces OFF03D6C2_APPLY=PASS_QA_ONLY.
 
+## Requisito adicional D3B1: rol de referencias
+
+El repositorio backend/roles/README.md declara una dependencia crítica antes de adoptar 03b_d3b1_restrict_catalog_writes.sql: import_reference.py debe conectarse con el rol dedicado vinto_reference; en modo hardened exige REFERENCE_DATABASE_URL y no puede caer a DATABASE_URL/vinto_app. El runner comprueba el secreto QA /etc/vinto-qa/role-reference.password (root:0600), prueba la autenticación efectiva de ese rol contra el mismo postmaster QA en modo read-only, y tras aplicar 02 + 03 ejecuta import_reference.py --target dev como dry-run con URL fija 127.0.0.1:6554/vinto_qa_offline, PG_PRIVILEGE_MODE=hardened y password del rol de referencia. Exige plan dry-run sin escrituras ni conflictos antes de ejecutar 03b; así detecta ausencia de configuración o privilegios de lectura antes de endurecer los permisos de catálogo. Después del conjunto ACL, una consulta read-only valida SELECT/INSERT/UPDATE de vinto_reference sobre todas las tablas de importación, además de import_record/audit_event y ausencia de USAGE en txn/auth/meta.
+
+La CI D5 invocada por este PR ejecuta el mismo dry-run de referencia en PG17 efímero entre 03 y 03b. La importación real de datos de catálogo no forma parte de D6C2; solo se valida el dry-run. La escritura del bundle oficial se evaluará en una fase posterior y autorización propia.
+
 ## Recuperación y riesgos
 
 Ante cualquier error detener; no repetir apply, ni borrar respaldo, ni manipular historial a mano. Las migraciones son transaccionales por archivo, pero una falla tardía puede dejar un estado parcial en QA. El respaldo B2 es PRE-DDL: su comparación contra QA activa fallará legítimamente después de cambios de esquema y NO debe ejecutarse como post-check de una migración exitosa.
