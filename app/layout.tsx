@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { OfflineRegistration } from "@/components/vinto/offline-registration";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "VINTO | Captura Digital",
+  manifest: "/manifest.webmanifest",
   description: "MVP autónomo para registros digitales de Producción y Calidad.",
   other: {
     "codex-preview": "development",
@@ -20,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><OfflineRegistration />{children}</body>
     </html>
   );
 }
