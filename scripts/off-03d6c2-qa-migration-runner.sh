@@ -46,7 +46,7 @@ bash "$C1" inspect || die 'OFF-03D.6C1 no cumple'
 
 # Both modes use the isolated QA venv, fixed host/port/database/user, and
 # a fresh environment. Password never appears in CLI args, SQL, or log output.
-MODE="$MODE" "$PYTHON" -B - <<'PY'
+MODE="$MODE" "$PYTHON" -I -B - <<'PY'
 import os
 import re
 import subprocess
@@ -149,7 +149,7 @@ try:
     }
     # --status is read-only by design. C1 has already confirmed empty history.
     status = subprocess.run(
-        [str(python), "-B", str(script), "--target", "dev", "--status"],
+        [str(python), "-E", "-s", "-B", str(script), "--target", "dev", "--status"],
         cwd=str(backend), env=clean_env, capture_output=True, text=True, timeout=60,
     )
     if status.returncode != 0 or status.stdout.count(": pendiente") != 31:
@@ -168,7 +168,7 @@ try:
         die("apply_not_authorized")
     # All remaining actions are real DDL on QA ONLY. No retries or partial cleanup.
     applied = subprocess.run(
-        [str(python), "-B", str(script), "--target", "dev"],
+        [str(python), "-E", "-s", "-B", str(script), "--target", "dev"],
         cwd=str(backend), env=clean_env, capture_output=True, text=True, timeout=900,
     )
     if applied.returncode != 0:
@@ -176,7 +176,7 @@ try:
     print("OFF03D6C2_MIGRATIONS_APPLIED=31")
 
     checked = subprocess.run(
-        [str(python), "-B", str(script), "--target", "dev", "--check"],
+        [str(python), "-E", "-s", "-B", str(script), "--target", "dev", "--check"],
         cwd=str(backend), env=clean_env, capture_output=True, text=True, timeout=90,
     )
     if checked.returncode != 0 or checked.stdout.count(": aplicada") != 31:
