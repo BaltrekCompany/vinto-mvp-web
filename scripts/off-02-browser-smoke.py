@@ -47,15 +47,11 @@ def main():
             page.set_default_timeout(TIMEOUT_MS)
             response = page.goto(BASE + "/", wait_until="domcontentloaded", timeout=90000)
             assert response and response.status == 200, f"online initial HTTP={response.status if response else None}"
-            # A Promise object is always truthy; wait for a REAL active registration with a hard timeout.
+            # The controller is a synchronous, genuine signal: activate+clients.claim() completed.
             page.wait_for_function(
-                "() => ('serviceWorker' in navigator) && navigator.serviceWorker.getRegistration().then(reg => !!(reg && reg.active))",
+                "() => ('serviceWorker' in navigator) && !!navigator.serviceWorker.controller",
                 timeout=TIMEOUT_MS,
             )
-            page.evaluate("""async () => {
-              const sw = await navigator.serviceWorker.getRegistration();
-              if (!sw || !sw.active) throw new Error('worker not active');
-            }""")
             registrations = page.evaluate("""async () => (await navigator.serviceWorker.getRegistrations()).map(reg => ({scope: reg.scope, active: !!reg.active}))""")
             assert registrations and any(item["active"] for item in registrations), registrations
             expected_fixture = os.getenv("OFF02_EXPECT_FIXTURE", "1") == "1"
