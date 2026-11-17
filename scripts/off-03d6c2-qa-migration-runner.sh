@@ -69,6 +69,10 @@ try:
     python = Path("/srv/vinto-qa-offline/venv/bin/python")
     secret_path = Path("/etc/vinto-qa/role-migrator.password")
     reference_secret_path = Path("/etc/vinto-qa/role-reference.password")
+    migrator_stat = secret_path.lstat()
+    if (not secret_path.is_file() or secret_path.is_symlink()
+        or migrator_stat.st_uid != 0 or (migrator_stat.st_mode & 0o777) != 0o600):
+        die("migrator_QA_secret_permissions")
     password = secret_path.read_text(encoding="ascii").strip()
     reference_stat = reference_secret_path.lstat()
     if (not reference_secret_path.is_file() or reference_secret_path.is_symlink()
@@ -220,7 +224,7 @@ try:
         sql = (sql_dir / name).read_text(encoding="utf-8")
         result = subprocess.run(
             ["docker", "exec", "-i", qa, "sh", "-ceu", command],
-            input=password + "\\n" + sql,
+            input=password + "\n" + sql,
             text=True, capture_output=True, timeout=90,
         )
         if result.returncode != 0:
@@ -250,6 +254,7 @@ try:
         text=True, timeout=180,
     )
     if (reference_dry_run.returncode != 0
+        or "Base de destino: vinto_qa_offline (target=dev, modo=dry-run)" not in reference_dry_run.stdout
         or "Plan (dry-run, 0 filas escritas):" not in reference_dry_run.stdout
         or "CONFLICT / DRIFT" in reference_dry_run.stdout
         or not any(marker in reference_dry_run.stdout for marker in
