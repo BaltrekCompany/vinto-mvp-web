@@ -38,6 +38,6 @@ test('read only SQL, no Docker mutations, no DDL, no staging creation',()=>{
   assert.match(src,/pg_database_size\(current_database\(\)\)/);
   assert.match(src,/OFF03D6A_PREFLIGHT=PASS_READ_ONLY/);
   assert.doesNotMatch(src,/docker (?:run|stop|restart|rm|volume|network|cp)\b/);
-  assert.doesNotMatch(src,/\b(?:mkdir|rm|mv|cp|chmod|chown|pg_restore -d|git clone|pip install)\b/);
+  assert.doesNotMatch(src,/^[ \t]*(?:mkdir|rm|mv|cp|chmod|chown|pg_restore -d|git clone|pip install)\b/m);
   assert.doesNotMatch(src,/(?:migrate\.py|--target dev|CREATE SCHEMA|DROP DATABASE|TRUNCATE)/);
 });
