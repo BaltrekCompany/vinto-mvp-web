@@ -1,0 +1,29 @@
+name: OFF-03D6C1 QA Migrator Target Read Only Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d6c1-qa-migrator-preflight.sh'
+      - 'scripts/off-03d6c1-qa-migrator-preflight.test.mjs'
+      - 'docs/OFF-03D6C1-qa-migrator-preflight.md'
+      - '.github/workflows/off-03d6c1-qa-migrator-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-migrator-target-inspect-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Syntax check and fail-closed tests
+        run: |
+          bash -n scripts/off-03d6c1-qa-migrator-preflight.sh
+          node --test scripts/off-03d6c1-qa-migrator-preflight.test.mjs
