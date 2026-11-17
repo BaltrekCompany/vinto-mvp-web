@@ -91,3 +91,23 @@ test('Python wrapper ignores caller site/path; migrator gets a scrubbed environm
   assert.match(src,/"PYTHONNOUSERSITE": "1"/);
   assert.match(src,/"PYTHONDONTWRITEBYTECODE": "1"/);
 });
+
+test('D3B1 catalog tightening requires dedicated reference role and read-only bundle dry-run first',()=>{
+  assert.match(src,/role-reference\.password/);
+  assert.match(src,/reference_QA_secret_permissions/);
+  assert.match(src,/OFF03D6C2_REFERENCE_ROLE_AUTH=PASS/);
+  assert.match(src,/REFERENCE_DATABASE_URL/);
+  assert.match(src,/postgresql:\/\/vinto_reference@127\.0\.0\.1:6554\/vinto_qa_offline/);
+  assert.match(src,/import_reference\.py/);
+  assert.match(src,/--target", "dev"/);
+  assert.match(src,/OFF03D6C2_REFERENCE_IMPORT_DRY_RUN=PASS_READ_ONLY/);
+  assert.match(src,/Plan \(dry-run, 0 filas escritas\):/);
+  const three=src.indexOf('run_acl("03_table_grants.sql")');
+  const dry=src.indexOf('reference_dry_run = subprocess.run');
+  const tighten=src.indexOf('run_acl("03b_d3b1_restrict_catalog_writes.sql")');
+  assert.ok(three>=0 && dry>three && tighten>dry,'reference dry-run must occur between 03 and 03b');
+  assert.match(src,/has_table_privilege\('vinto_reference','vinto_audit\.import_record','INSERT'\)/);
+  assert.match(src,/has_table_privilege\('vinto_reference','vinto_audit\.audit_event','INSERT'\)/);
+  assert.match(src,/vinto_config\.field_group/);
+  assert.doesNotMatch(src,/postgresql:\/\/vinto_reference:[^@\s]+@/);
+});
