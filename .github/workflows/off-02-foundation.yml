@@ -218,11 +218,11 @@ jobs:
           def summary(path):
               data = pathlib.Path(path).read_text()
               def count(field):
-                  match = re.search(rf"^# {field} (\\d+)$", data, flags=re.M)
+                  match = re.search(rf"^# {field} (\d+)$", data, flags=re.M)
                   if match is None:
                       raise RuntimeError(f"Missing TAP count {field} in {path}")
                   return int(match.group(1))
-              failures = sorted(re.findall(r"^not ok \\d+ - (.+)$", data, flags=re.M))
+              failures = sorted(re.findall(r"^not ok \d+ - (.+)$", data, flags=re.M))
               return {"tests": count("tests"), "pass": count("pass"), "fail": count("fail"), "failing_names": failures}
 
           candidate, baseline = summary(sys.argv[1]), summary(sys.argv[2])
@@ -230,11 +230,11 @@ jobs:
           print("INT02A_BASELINE:", baseline)
           same = candidate == baseline
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
-              out.write("### INT-02A differential regression (OFF-02 vs pinned main)\\n")
-              out.write(f"Candidate: {candidate['pass']}/{candidate['tests']} pass, {candidate['fail']} fail.\\n\\n")
-              out.write(f"Baseline: {baseline['pass']}/{baseline['tests']} pass, {baseline['fail']} fail.\\n\\n")
-              out.write("**The original INT-02A regression is not green.** This control passes only when candidate and pinned main produce identical failure counts and test names.\\n\\n")
-              out.write(f"Differential result: {'PASS (no additional failures)' if same else 'FAIL (regression changed)'}.\\n")
+              out.write("### INT-02A differential regression (OFF-02 vs pinned main)\n")
+              out.write(f"Candidate: {candidate['pass']}/{candidate['tests']} pass, {candidate['fail']} fail.\n\n")
+              out.write(f"Baseline: {baseline['pass']}/{baseline['tests']} pass, {baseline['fail']} fail.\n\n")
+              out.write("**The original INT-02A regression is not green.** This control passes only when candidate and pinned main produce identical failure counts and test names.\n\n")
+              out.write(f"Differential result: {'PASS (no additional failures)' if same else 'FAIL (regression changed)'}.\n")
           if baseline["fail"]:
               print(f"::warning::INT-02A baseline already fails {baseline['fail']} tests on pinned main; repair in separately reviewed work.")
           if not same:
