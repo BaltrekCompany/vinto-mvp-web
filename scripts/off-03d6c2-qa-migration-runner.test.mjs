@@ -114,7 +114,7 @@ test('D3B1 catalog tightening requires dedicated reference role and read-only bu
 });
 
 test('ephemeral PostgreSQL CI also proves reference dry-run before D3B1',()=>{
-  const ciPath=new URL('../off-03d5-migrations-ci-e2e.sh',import.meta.url).pathname;
+  const ciPath=new URL('./off-03d5-migrations-ci-e2e.sh',import.meta.url).pathname;
   const ci=readFileSync(ciPath,'utf8');
   assert.match(ci,/REFERENCE_DATABASE_URL=/);
   assert.match(ci,/PGPASSWORD="\$\(cat "\$TMP\/reference"\)"/);
