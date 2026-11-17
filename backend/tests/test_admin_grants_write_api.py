@@ -499,8 +499,20 @@ class UnavailabilityAndBoundaryTests(Base):
         app_dir = Path(__file__).resolve().parent.parent / "app"
         consumers = sorted(str(p.relative_to(app_dir)).replace("\\", "/") for p in app_dir.rglob("*.py")
                            if "__pycache__" not in p.parts and ("machine_form_grant" in p.read_text(encoding="utf-8") or "user_machine_form_grant" in p.read_text(encoding="utf-8")))
-        self.assertEqual(consumers, ["admin/grants_read.py", "admin/grants_write.py", "admin/router.py", "auth/machine_form_grants.py", "authz/engine.py", "authz/readiness.py", "authz/visibility.py"],
-                         "solo la administración (lectura, escritura y su router), el propio módulo y el motor de solo lectura app/authz (MF-13-01D.1, sin conectar) conocen las concesiones: ni capturas, ni órdenes, ni bobinas, ni Calidad las consultan todavía")
+        self.assertEqual(consumers, ["admin/grants_read.py", "admin/grants_write.py", "admin/router.py", "auth/machine_form_grants.py", "authz/engine.py", "authz/readiness.py", "authz/visibility.py", "offline_scope/service.py"],
+                         "solo administración, el módulo propio, authz y OFF-03B.2 (emisor de snapshot SOLO LECTURA) consultan concesiones: capturas, OT, bobinas y Calidad no lo hacen")
+
+    def test_offline_scope_issuer_is_read_only_and_does_not_revoke_or_grant(self):
+        """OFF-03B.2 may inspect effective grants, never mutate the grant table."""
+        from pathlib import Path
+        module = (Path(__file__).resolve().parent.parent / "app/offline_scope/service.py").read_text(encoding="utf-8")
+        self.assertIn("user_machine_form_grant", module)
+        self.assertIn("revoked_at IS NULL", module)
+        self.assertIn("authorize(connection, principal, operation, machine_code, form_code, lock=True)", module)
+        import re
+        self.assertIsNone(re.search(r"\\b(?:INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE)\\s+vinto_master\\.user_machine_form_grant\\b", module, re.I))
+        self.assertNotIn("grant_machine_form(", module)
+        self.assertNotIn("revoke_machine_form(", module)
 
     async def test_only_the_admin_write_module_imports_the_write_functions(self):
         from pathlib import Path

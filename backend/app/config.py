@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     auth_lockout_minutes: int = Field(default=15, ge=1, le=1440)
     auth_session_hours: int = Field(default=12, ge=1, le=72)
     auth_cookie_name: str = Field(default="vinto_session", pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    # OFF-03B.2: read-only signed scope snapshot, strictly opt-in server gate.
+    # Signing seed is a secret injected via environment; never in Git or API.
+    offline_scope_issue_enabled: bool = False
+    offline_scope_signing_seed_b64url: SecretStr | None = None
     # MF-13-01D.2A: modo de la autorización efectiva (app/authz) SOLO para POST /api/captures. Configuración exclusiva del servidor (variable de entorno
     # AUTHZ_CENTRAL_CAPTURES_MODE); el cliente HTTP no puede cambiarla y no existe un interruptor global: cada operación tendrá el suyo.
     #   off      comportamiento anterior, sin tocar el motor (valor inicial)

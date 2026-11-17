@@ -9,6 +9,7 @@ from app.admin.errors import AdminError
 from app.authz.errors import AuthorizationError, public_response
 from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
+from app.offline_scope.router import router as offline_scope_router
 from app.config import settings
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
 from app.assignments.router import router as assignments_router
@@ -35,6 +36,7 @@ app.include_router(bobbins_router)
 app.include_router(quality_router)
 app.include_router(quality_machine_router)
 app.include_router(auth_router)
+app.include_router(offline_scope_router)
 app.include_router(work_orders_router)
 app.include_router(assignments_router)
 app.include_router(admin_router)
