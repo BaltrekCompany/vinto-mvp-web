@@ -18,17 +18,17 @@ Archivo scripts/off-03d6c2-qa-migration-runner.sh, siempre descargado del commit
 4. Ejecuta el estado genérico del migrador con ambiente de subproceso sanitizado: APP_ENV=qa, PG_PRIVILEGE_MODE=hardened, MIGRATOR_DATABASE_URL fija sin password en URL y PGPASSWORD suministrada al proceso solo desde secreto local QA; sin heredar DATABASE_URL ni variables del piloto/TVC. Exige 31 pendientes.
 5. Salida: OFF03D6C2_PINNED_MIGRATOR_ACL=PASS, OFF03D6C2_EFFECTIVE_TARGET=PASS, OFF03D6C2_HISTORY_BEFORE=EMPTY, OFF03D6C2_MIGRATOR_STATUS=31_PENDING, OFF03D6C2_PREFLIGHT=PASS_READ_ONLY, OFF03D6C2_MIGRATIONS=NOT_STARTED, NO_DATABASE_WRITES=PASS.
 
-### apply (NO AUTORIZADO EN ESTE PASO)
+### apply (requiere autorización explícita; recibida para QA en esta conversación, pendiente de revalidación del artefacto final)
 1. Requiere simultáneamente CONFIRM_QA_MIGRATIONS=YES y CONFIRM_QA_TARGET=vinto_qa_offline_6554 antes de cualquier acceso; repite C1 y todas las verificaciones pre-DDL.
 2. Usa exclusivamente el entorno de Python QA aislado y el destino fijo; ejecuta 0001-0031 con rol vinto_migrator y luego exige migrador --check con 31 checksums.
-3. Ejecuta en orden SQL de roles: 02_schema_grants, 03_table_grants, 03b_d3b1_restrict_catalog_writes, 04_function_grants, 05_no_default_privileges, 06_public_and_meta_protection; finalmente los controles read-only 07_verification_queries y 08_release_preflight. Contraseña y SQL se envían por stdin, nunca en la línea de comandos.
+3. Ejecuta 02_schema_grants y 03_table_grants; antes de 03b valida login dedicado vinto_reference y corre import_reference.py --target dev como dry-run READ ONLY con REFERENCE_DATABASE_URL fija en QA y PG_PRIVILEGE_MODE=hardened. Exige plan sin conflictos. Después ejecuta 03b_d3b1_restrict_catalog_writes, 04_function_grants, 05_no_default_privileges, 06_public_and_meta_protection y los controles read-only 07_verification_queries / 08_release_preflight. Contraseña y SQL se envían por stdin o entorno aislado, nunca en argumentos de proceso.
 4. Verifica historial 31, seis esquemas, vinto_app sin USAGE en vinto_meta, INSERT no autorizado sobre catálogos e inexistencia de CONNECT de PUBLIC. Sólo entonces OFF03D6C2_APPLY=PASS_QA_ONLY.
 
 ## Requisito adicional D3B1: rol de referencias
 
 El repositorio backend/roles/README.md declara una dependencia crítica antes de adoptar 03b_d3b1_restrict_catalog_writes.sql: import_reference.py debe conectarse con el rol dedicado vinto_reference; en modo hardened exige REFERENCE_DATABASE_URL y no puede caer a DATABASE_URL/vinto_app. El runner comprueba el secreto QA /etc/vinto-qa/role-reference.password (root:0600), prueba la autenticación efectiva de ese rol contra el mismo postmaster QA en modo read-only, y tras aplicar 02 + 03 ejecuta import_reference.py --target dev como dry-run con URL fija 127.0.0.1:6554/vinto_qa_offline, PG_PRIVILEGE_MODE=hardened y password del rol de referencia. Exige plan dry-run sin escrituras ni conflictos antes de ejecutar 03b; así detecta ausencia de configuración o privilegios de lectura antes de endurecer los permisos de catálogo. Después del conjunto ACL, una consulta read-only valida SELECT/INSERT/UPDATE de vinto_reference sobre todas las tablas de importación, además de import_record/audit_event y ausencia de USAGE en txn/auth/meta.
 
-La CI D5 invocada por este PR ejecuta el mismo dry-run de referencia en PG17 efímero entre 03 y 03b. La importación real de datos de catálogo no forma parte de D6C2; solo se valida el dry-run. La escritura del bundle oficial se evaluará en una fase posterior y autorización propia.
+La CI D5 invocada por este PR ejecuta el mismo dry-run de referencia en PG17 efímero entre 03 y 03b. El dry-run de QA no importa datos y no crea ni modifica filas. La importación real de datos de catálogo no forma parte de D6C2; solo se valida el dry-run. La escritura del bundle oficial se evaluará en una fase posterior y autorización propia.
 
 ## Recuperación y riesgos
 
