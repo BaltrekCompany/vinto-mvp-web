@@ -113,6 +113,7 @@ run_acl 03_table_grants.sql
     "$TMP/venv/bin/python" -B import_reference.py --target dev \
       > "$TMP/reference-dry-run.txt"
 )
+grep -q 'Base de destino: vinto_qa_offline (target=dev, modo=dry-run)' "$TMP/reference-dry-run.txt"
 grep -q 'Plan (dry-run, 0 filas escritas):' "$TMP/reference-dry-run.txt"
 grep -Eq 'Pendiente:|CONSISTENT / NO CHANGES:|NO-OP:' "$TMP/reference-dry-run.txt"
 ! grep -q 'CONFLICT / DRIFT' "$TMP/reference-dry-run.txt"
