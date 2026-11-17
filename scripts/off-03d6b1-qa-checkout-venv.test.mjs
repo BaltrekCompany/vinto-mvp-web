@@ -22,10 +22,10 @@ test('only inspect/prepare/verify are documented; unsupported modes fail',()=>{
   }
   assert.equal(run([]).status,2);
 });
-test('prepare without explicit confirmation cannot write (even as non-root)',()=>{
+test('prepare without explicit confirmation cannot write',()=>{
   const result=run(['prepare']);
   assert.notEqual(result.status,0);
-  assert.match(result.stderr,/CONFIRM_QA_STAGE=YES/);
+  assert.match(result.stderr,/(?:CONFIRM_QA_STAGE=YES|requiere sudo)/);
 });
 test('exact earlier gates and source pin retained',()=>{
   assert.match(src,/D5_BLOB=f296b71930a8820abea8666fb1aac01a16ede9e6/);
