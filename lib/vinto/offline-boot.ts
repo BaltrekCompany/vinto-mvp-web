@@ -6,6 +6,7 @@
 import { readLocalProfile } from "./offline-profile-store.ts";
 import { unlockLocalVault } from "./offline-vault.ts";
 import { readOfflineScope } from "./offline-scope-store.ts";
+import { readQualityPackage } from "./offline-quality-store.ts";
 import { DEVICE_KEY_STORAGE } from "./device";
 
 const status = document.getElementById("offline-profile-status");
@@ -13,6 +14,7 @@ const form = document.getElementById("offline-unlock-form") as HTMLFormElement |
 const input = document.getElementById("offline-unlock-secret") as HTMLInputElement | null;
 const submit = document.getElementById("offline-unlock-submit") as HTMLButtonElement | null;
 const scopeList = document.getElementById("offline-scope-list") as HTMLUListElement | null;
+const packagePanel = document.getElementById("offline-package-details") as HTMLDivElement | null;
 
 function show(message: string): void {
     if (status) status.textContent = message;
@@ -50,7 +52,48 @@ async function start(): Promise<void> {
                 // granted, encrypted form snapshots and a bounded unlock session.
                 const key = await unlockLocalVault(record, password);
                 const scope = await readOfflineScope(key, { ownerId: record.ownerId, deviceKey: record.deviceKey });
-                // No key is retained. The signed scope is READ-ONLY metadata.
+                // Never use a signed read-only scope as a write permission.
+                // Inspect full versioned definitions only after AES decryption,
+                // pinned Ed25519 package signature and content SHA256 verification.
+                const packageCards: HTMLDetailsElement[] = [];
+                if (scope && packagePanel) {
+                    const candidates = scope.envelope.payload.form_scopes.filter(item =>
+                        item.operation === "quality_machine_capture" &&
+                        /^VINTO-P1-(18|22|26|27)$/.test(item.form_code)).slice(0,12);
+                    for (const item of candidates) {
+                        const stored = await readQualityPackage(key,
+                            { ownerId: record.ownerId, deviceKey: record.deviceKey },
+                            scope, item.machine_code, item.form_code);
+                        if (!stored) continue;
+                        const definition = stored.envelope.payload.definition;
+                        const card = document.createElement("details");
+                        const title = document.createElement("summary");
+                        title.textContent = item.machine_code + " · " + definition.form_name +
+                            " · " + definition.form_code + " (v" + definition.form_version + ")";
+                        card.appendChild(title);
+                        const list = document.createElement("ul");
+                        for (const field of definition.fields) {
+                            const li = document.createElement("li");
+                            li.textContent = field.label + " [" + field.value_type + "]" +
+                                (field.required ? " · obligatorio" : "") +
+                                (field.source === "calculated" ? " · calculado por backend" : "") +
+                                (field.unit ? " · " + field.unit : "");
+                            if (field.options.length) {
+                                const choices = document.createElement("ul");
+                                for (const option of field.options) {
+                                    const choice = document.createElement("li");
+                                    choice.textContent = option.label;
+                                    choices.appendChild(choice);
+                                }
+                                li.appendChild(choices);
+                            }
+                            list.appendChild(li);
+                        }
+                        card.appendChild(list);
+                        packageCards.push(card);
+                    }
+                }
+                // No CryptoKey is stored in state or passed to a capture form.
                 form.hidden = true;
                 if (!scope) {
                     show("Perfil local verificado sin Internet. Las capturas y los permisos industriales siguen deshabilitados.");
@@ -65,11 +108,16 @@ async function start(): Promise<void> {
                     }
                     scopeList.hidden = false;
                 }
+                if (packagePanel) {
+                    packagePanel.replaceChildren(...packageCards);
+                    packagePanel.hidden = packageCards.length === 0;
+                }
                 show("Firma y perfil verificados sin Internet. Índice de " +
                     scope.envelope.payload.form_scopes.length + " formularios disponibles solo para consulta. " +
                     "Las capturas y los permisos industriales siguen deshabilitados.");
             } catch {
                 if (scopeList) { scopeList.hidden = true; scopeList.replaceChildren(); }
+                if (packagePanel) { packagePanel.hidden = true; packagePanel.replaceChildren(); }
                 show("No fue posible desbloquear o validar el alcance firmado. Las capturas siguen deshabilitadas.");
             } finally {
                 submit.disabled = false;

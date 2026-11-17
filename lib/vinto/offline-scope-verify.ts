@@ -75,12 +75,12 @@ function b64encode(raw: Uint8Array): string {
     for (const x of raw) binary += String.fromCharCode(x);
     return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function canonical(value: unknown): string {
+export function canonicalOfflineJson(value: unknown): string {
     if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
     if (typeof value === "number" && Number.isSafeInteger(value)) return JSON.stringify(value);
-    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    if (Array.isArray(value)) return "[" + value.map(canonicalOfflineJson).join(",") + "]";
     if (!record(value)) throw new ScopeError("invalid");
-    return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
+    return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonicalOfflineJson(value[k])).join(",") + "}";
 }
 function validate(value: unknown, identity: OfflineScopeIdentity): asserts value is SignedOfflineScope {
     if (!exact(value, ENVELOPE_KEYS) || value.algorithm !== "Ed25519" ||
@@ -123,7 +123,7 @@ export async function verifyOfflineScope(input: unknown, trustedPublicKey: strin
     if (input.key_id !== computedKeyId) throw new ScopeError("pin_mismatch");
     try {
         const key = await crypto.subtle.importKey("raw", pub as BufferSource, { name: "Ed25519" }, false, ["verify"]);
-        const bytes = encoder.encode(DOMAIN + canonical(input.payload));
+        const bytes = encoder.encode(DOMAIN + canonicalOfflineJson(input.payload));
         const ok = await crypto.subtle.verify({ name: "Ed25519" }, key, sig as BufferSource, bytes as BufferSource);
         if (!ok) throw new ScopeError("signature");
     } catch (err) {

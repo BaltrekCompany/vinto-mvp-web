@@ -7,11 +7,13 @@ import { DEVICE_KEY_STORAGE, getDeviceKey } from "@/lib/vinto/device";
 import { createLocalVault, unlockLocalVault, VaultError } from "@/lib/vinto/offline-vault";
 import { readLocalProfile, storeLocalProfile } from "@/lib/vinto/offline-profile-store";
 import { issueOnlineReadinessScope } from "@/lib/vinto/offline-scope-api";
-import { storeOfflineScope } from "@/lib/vinto/offline-scope-store";
+import { storeOfflineScope, readOfflineScope } from "@/lib/vinto/offline-scope-store";
+import { fetchOnlineQualityPackage } from "@/lib/vinto/offline-quality-api";
+import { storeQualityPackage } from "@/lib/vinto/offline-quality-store";
 import { offlineStorageStatus, requestOfflinePersistence } from "@/lib/vinto/offline-store";
 import type { AuthUser } from "@/lib/vinto/auth";
 
-type PageState = "checking" | "blocked" | "create" | "scope" | "enrolled" | "working";
+type PageState = "checking" | "blocked" | "create" | "scope" | "package" | "working";
 const eligible = (u: AuthUser) => !u.must_change &&
     (u.permissions.includes("quality.capture") || u.permissions.includes("production.capture"));
 const MACHINE = /^[A-Za-z0-9_.-]{1,48}$/;
@@ -28,6 +30,8 @@ export default function OfflinePreparationPage() {
     const [secret, setSecret] = useState("");
     const [confirm, setConfirm] = useState("");
     const [machines, setMachines] = useState("");
+    const [packageMachine, setPackageMachine] = useState("");
+    const [packageForm, setPackageForm] = useState("");
     const [message, setMessage] = useState("Validando sesión online...");
     useEffect(() => {
         let active = true;
@@ -113,11 +117,39 @@ export default function OfflinePreparationPage() {
             await storeOfflineScope(contentKey, { ownerId: active.id, deviceKey },
                 envelope, envelope.public_key_b64url);
             setMessage("Alcance firmado verificado y guardado cifrado. Consulte los formularios disponibles al desconectarse. Capturas y sincronización siguen deshabilitadas.");
-            setState("enrolled");
+            setState("package");
         } catch {
             setMessage("No se guardó un alcance nuevo. Verifique permisos efectivos, conexión segura, frase y máquinas.");
             setState("scope");
         } finally { setSecret(""); setConfirm(""); }
+    }
+
+    async function preparePackage() {
+        if (state !== "package" || !user) return;
+        setState("working");
+        try {
+            const active = await verifySession();
+            const deviceKey = getDeviceKey();
+            const existing = await readLocalProfile();
+            if (!existing || existing.ownerId !== active.id.toLowerCase() ||
+                existing.deviceKey !== deviceKey.toLowerCase() ||
+                localStorage.getItem(DEVICE_KEY_STORAGE) !== deviceKey) throw new Error("identity");
+            const machine = packageMachine.trim();
+            const form = packageForm.trim().toUpperCase();
+            if (!MACHINE.test(machine) || !/^VINTO-P1-(18|22|26|27)$/.test(form)) throw new Error("unsupported");
+            const contentKey = await unlockLocalVault(existing, secret);
+            const identity = {ownerId: active.id, deviceKey};
+            const scope = await readOfflineScope(contentKey, identity);
+            if (!scope || !scope.envelope.payload.form_scopes.some(item =>
+                item.machine_code === machine && item.form_code === form &&
+                item.operation === "quality_machine_capture")) throw new Error("scope");
+            const definition = await fetchOnlineQualityPackage(
+                deviceKey, machine, form, scope.envelope);
+            await storeQualityPackage(contentKey, identity, definition);
+            setMessage("Definición completa de Calidad firmada y guardada cifrada. Puede consultarla sin Internet en modo lectura. Capturas deshabilitadas.");
+        } catch {
+            setMessage("No se guardó el formulario. Compruebe sesión, alcance firmado, máquina, versión vigente, contraseña local y conexión segura.");
+        } finally { setSecret(""); setState("package"); }
     }
 
     return (
@@ -149,9 +181,32 @@ export default function OfflinePreparationPage() {
                             onChange={e => setSecret(e.target.value)} className="block w-full border rounded p-2 mt-2"/>
                     </label>
                     <button type="submit" className="px-4 py-2 rounded bg-emerald-800 text-white">Guardar alcance firmado cifrado</button>
+                    <button type="button" className="block text-sm underline text-emerald-800"
+                        onClick={() => {setSecret("");setState("package");setMessage("Continuando con alcance firmado existente. La frase local será necesaria para verificarlo.");}}>
+                        Ya tengo un alcance firmado: preparar formulario de Calidad
+                    </button>
                 </form>
             )}
-            {state === "enrolled" && <p className="text-sm">Solo índice de formularios y versiones verificados. La definición completa, recetas y campos todavía requieren una descarga controlada posterior.</p>}
+            {state === "package" && (
+                <form className="space-y-4" onSubmit={e=>{e.preventDefault();void preparePackage();}}>
+                    <p className="text-sm">Solo formularios de Calidad por máquina P1-18/22/26/27. No habilita captura.</p>
+                    <label className="block">Máquina vinculada al alcance firmado
+                        <input value={packageMachine} onChange={e=>setPackageMachine(e.target.value)}
+                            placeholder="MP1" required className="block w-full border rounded p-2 mt-2"/>
+                    </label>
+                    <label className="block">Código del formulario de Calidad
+                        <input value={packageForm} onChange={e=>setPackageForm(e.target.value)}
+                            placeholder="VINTO-P1-22" required className="block w-full border rounded p-2 mt-2"/>
+                    </label>
+                    <label className="block">Frase del perfil local
+                        <input type="password" autoComplete="off" required value={secret}
+                            onChange={e=>setSecret(e.target.value)} className="block w-full border rounded p-2 mt-2"/>
+                    </label>
+                    <button type="submit" className="px-4 py-2 rounded bg-emerald-800 text-white">
+                        Guardar formulario firmado cifrado
+                    </button>
+                </form>
+            )}
             <Link className="underline text-emerald-800" href="/">Volver a VINTO</Link>
         </main>
     );
