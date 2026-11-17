@@ -1,0 +1,43 @@
+name: OFF-03A Offline Vault QA
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/offline-vault.ts'
+      - 'lib/vinto/offline-profile-store.ts'
+      - 'scripts/off-03a-vault.test.mjs'
+      - '.github/workflows/off-03a-vault.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-vault-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Security tests for synthetic vault only
+        run: node --experimental-strip-types --test scripts/off-03a-vault.test.mjs
+
+  typescript-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frozen dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: Lint
+        run: pnpm lint
