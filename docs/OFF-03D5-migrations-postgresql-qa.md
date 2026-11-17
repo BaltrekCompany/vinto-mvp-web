@@ -1,6 +1,6 @@
 # VINTO OFF-03D.5 — Ensayo de 31 migraciones y gate de VPS QA
 
-**Fecha:** 17-nov-2026. **Estado:** candidato Draft, **sin DDL en VPS**.
+**Fecha:** 17-nov-2026. **Estado:** OFF-03D.5 gate de lectura cerrado PASS; PR Draft, **sin DDL en VPS**.
 
 ## Entrada verificada
 
@@ -55,10 +55,35 @@ Sin una tercera revisión, no ejecutar migraciones contra la VPS. La siguiente a
 
 Cualquier conexión a `vinto_piloto`, clúster `vinto-mvp-postgres`/port 6544 o TVC port 6543; código checkout diferente de SHA aprobado; env o secretos del piloto; falta de backup verificable; migraciones existentes y no alineadas; `migrate.py --check` falla; deriva de ACL o cualquier dato real en QA.
 
-**Estado:** OFF-03D.4 PASS. OFF-03D.5 CI y VPS preflight pendientes de resultado; DDL VPS NO autorizado. El móvil real continúa NOT_RUN.
+**Estado:** OFF-03D.4 PASS. OFF-03D.5 CI y VPS preflight PASS (detalles abajo); DDL VPS NO autorizado. El móvil real continúa NOT_RUN.
 
 ## Incidencia de preflight en VPS — 17-nov-2026
 
 La primera ejecución del candidato SHA `3c0ba58c1d11b3f955f8d4940ebf4b619dbd80c9` (blob `2e85d16f365ddad5552e614dc188acad77965181`) pasó integridad, HTTPS QA, aislamiento Docker, salud del piloto/TVC, roles y ausencia de esquemas/historial. Se bloqueó al validar el login migrador: el sub-shell `sh -ceu '...'` contenía un literal SQL con comillas simples (`'|'`), quebrando el argumento; `bash -n` no descubrió el defecto por tratarse de código anidado. **No equivale a credencial fallida**. No hubo DDL.
 
 Corregido en la rama de PR #198 con `chr(124)` en el SQL para no anidar las comillas; autenticación por stdin redirigido desde el archivo QA root 0600, manejo de contraseña sin salto de línea; prueba de regresión de parsing del shell interno. **No volver a usar SHA 3c0ba58c para inspect.** Ejecutar preflight solo con commit y blob nuevos tras CI satisfactoria, confirmando `QA_MIGRATOR_AUTH=PASS` y `OFF03D5_PREFLIGHT=PASS_READ_ONLY`. El bloqueo a migraciones VPS sigue intacto: no usar `migrate.py` ni hacer DDL hasta preparar checkout/venv, respaldo/restauración y wrapper con protección de destino y autorización específica.
+
+## Cierre auditado OFF-03D.5 — 17-nov-2026
+
+Evidencia entregada por el operador tras descargar y verificar el script de `78ad58d8941f3263f3386a1acdff9eebdf66507b`, blob `f296b71930a8820abea8666fb1aac01a16ede9e6`:
+
+```text
+SCRIPT_INTEGRITY=PASS
+QA_HTTPS=PASS
+QA_DB_ISOLATION=PASS
+PILOT_TVC_RUNNING=PASS
+QA_ROLES_READY=PASS
+QA_SCHEMA_EMPTY=PASS
+QA_MIGRATION_HISTORY=EMPTY
+QA_MIGRATOR_AUTH=PASS
+PYTHON_VERSION=3.12.3
+PYTHON_VENV_INSTALLATION=NOT_VERIFIED
+QA_CHECKOUT_SHA=NOT_VERIFIED
+QA_MIGRATION_DDL=NOT_STARTED
+OFF03D5_PREFLIGHT=PASS_READ_ONLY
+NO_DATABASE_WRITES=PASS
+```
+
+GitHub Actions `44176282847` (commit `78ad58d8941f3263f3386a1acdff9eebdf66507b`) concluyó `success`. Ambos jobs `read-only-qa-migration-preflight` y `postgres17-31-migrations-and-acl` concluyeron `success`. Corresponde al ensayo en runner PG17 efímero, **no** a DDL en VPS.
+
+**Dictamen:** `OFF03D5_CLOSE=PASS_NO_DDL`. El preflight sigue siendo válido para la versión exacta probada; modificaciones posteriores de documentación no autorizan ejecutar un script diferente. El estado de checkout QA y venv es NOT_VERIFIED, no una falta de instalación confirmada. Mantener PR #198 Draft; no hacer merge, no crear datos, no ejecutar migraciones en VPS. Continuar con OFF-03D.6 solo mediante propuesta separada, respaldos restaurables y permisos explícitos.
