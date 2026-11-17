@@ -1,0 +1,108 @@
+name: OFF-03B3 Verified Encrypted Scope QA
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/offline-scope-*.ts'
+      - 'lib/vinto/offline-profile-store.ts'
+      - 'lib/vinto/offline-boot.ts'
+      - 'app/offline-preparacion/page.tsx'
+      - 'public/sw.js'
+      - 'public/offline.html'
+      - 'scripts/off-03b3-*'
+      - 'scripts/off03b3_fixture.py'
+      - '.github/workflows/off-03b3-verified-scope.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-scope-contract-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install signed-scope test and frozen frontend dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Generate Python-backed Ed25519 signature fixture and verify with JavaScript
+        env:
+          OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/signed-scope-fixture.json
+        run: |
+          python scripts/off03b3_fixture.py
+          node --experimental-strip-types --test scripts/off-03b3-signature.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Portable bundle with offline verifier
+        run: |
+          pnpm build
+          test -s dist/standalone/server.js
+          test -s public/offline-boot.js
+          cmp -s public/offline-boot.js dist/standalone/public/offline-boot.js
+          node --check public/offline-boot.js
+          echo OFF03B3_PORTABLE_SIGNATURE_SCOPE=PASS
+
+  chrome-offline-signed-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies and real Chrome driver
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt playwright==1.57.0
+          google-chrome --version
+      - name: Start isolated VINTO frontend
+        run: |
+          set -eu
+          nohup pnpm dev > "$RUNNER_TEMP/off03b3-dev.log" 2>&1 &
+          for i in $(seq 1 40); do
+            for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/' 'http://[::1]:5173/'; do
+              if curl --fail --silent --noproxy '*' --connect-timeout 1 --max-time 3 --output /dev/null "$endpoint"; then
+                echo "OFF03B3_BASE_URL=${endpoint%/}" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            done
+            sleep 2
+          done
+          tail -n 150 "$RUNNER_TEMP/off03b3-dev.log"
+          exit 1
+      - name: Chrome online scope signed by Python, offline decrypt and tamper guard
+        env:
+          OFF03B3_BASE_URL: ${{ env.OFF03B3_BASE_URL }}
+          OFF03B3_SCREENSHOT: ${{ runner.temp }}/off03b3-verified-scope.png
+        run: python scripts/off-03b3-browser-smoke.py
+      - name: Persist Chrome browser evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: off03b3-chrome-signed-scope-evidence
+          path: ${{ runner.temp }}/off03b3-verified-scope.png
+          retention-days: 14
+      - name: Show dev logs on failure
+        if: failure()
+        run: tail -n 150 "$RUNNER_TEMP/off03b3-dev.log" || true
