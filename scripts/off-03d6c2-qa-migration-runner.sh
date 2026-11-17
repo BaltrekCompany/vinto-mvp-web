@@ -68,9 +68,16 @@ try:
     script = backend / "migrate.py"
     python = Path("/srv/vinto-qa-offline/venv/bin/python")
     secret_path = Path("/etc/vinto-qa/role-migrator.password")
+    reference_secret_path = Path("/etc/vinto-qa/role-reference.password")
     password = secret_path.read_text(encoding="ascii").strip()
-    if not re.fullmatch(r"[a-f0-9]{64}", password):
-        die("invalid_QA_secret")
+    reference_stat = reference_secret_path.lstat()
+    if (not reference_secret_path.is_file() or reference_secret_path.is_symlink()
+        or reference_stat.st_uid != 0 or (reference_stat.st_mode & 0o777) != 0o600):
+        die("reference_QA_secret_permissions")
+    reference_password = reference_secret_path.read_text(encoding="ascii").strip()
+    if (not re.fullmatch(r"[a-f0-9]{64}", password)
+        or not re.fullmatch(r"[a-f0-9]{64}", reference_password)):
+        die("invalid_QA_role_secret")
 
     # All SQL/DDL file contents must be exactly those of the pinned checkout.
     role_files = (
@@ -117,6 +124,25 @@ try:
         autocommit=True,
         options="-c default_transaction_read_only=on -c statement_timeout=5000",
     )
+    # Validate the dedicated reference login before any DDL; never fall back to vinto_app.
+    fixed_reference = dict(
+        host="127.0.0.1", port=6554, dbname="vinto_qa_offline",
+        user="vinto_reference", password=reference_password, connect_timeout=5,
+        autocommit=True,
+        options="-c default_transaction_read_only=on -c statement_timeout=5000",
+    )
+    with psycopg.connect(**fixed_reference) as conn:
+        reference_row = conn.execute("""
+            SELECT current_database(),current_user,inet_server_port(),
+                   extract(epoch FROM pg_postmaster_start_time())::bigint,
+                   current_setting('default_transaction_read_only')
+        """).fetchone()
+        if reference_row != (
+            "vinto_qa_offline", "vinto_reference", 5432, start, "on"
+        ):
+            die("reference_QA_identity_or_readonly_failed")
+    print("OFF03D6C2_REFERENCE_ROLE_AUTH=PASS")
+
     with psycopg.connect(**fixed) as conn:
         row = conn.execute("""
             SELECT current_database(),current_user,inet_server_port(),
@@ -190,16 +216,57 @@ try:
         "exec psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 "
         "-U vinto_migrator -d vinto_qa_offline -f -"
     )
-    for name in role_files:
+    def run_acl(name):
         sql = (sql_dir / name).read_text(encoding="utf-8")
         result = subprocess.run(
             ["docker", "exec", "-i", qa, "sh", "-ceu", command],
-            input=password + "\n" + sql,
+            input=password + "\\n" + sql,
             text=True, capture_output=True, timeout=90,
         )
         if result.returncode != 0:
             die("ACL_step_failed_no_retry_" + name)
         print("OFF03D6C2_ACL_STEP_PASS=" + name)
+
+    # Keep 03 + 03b adjacent. Prove the dedicated reference login works in
+    # hardened mode and the official bundle is readable with a READ ONLY dry-run
+    # before D3B1 removes vinto_app catalog writes.
+    run_acl("02_schema_grants.sql")
+    run_acl("03_table_grants.sql")
+    reference_env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/srv/vinto-qa-offline",
+        "APP_ENV": "qa",
+        "PG_PRIVILEGE_MODE": "hardened",
+        "REFERENCE_DATABASE_URL":
+            "postgresql://vinto_reference@127.0.0.1:6554/vinto_qa_offline",
+        "PGPASSWORD": reference_password,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+    }
+    reference_dry_run = subprocess.run(
+        [str(python), "-E", "-s", "-B", str(backend / "import_reference.py"),
+         "--target", "dev"],
+        cwd=str(backend), env=reference_env, capture_output=True,
+        text=True, timeout=180,
+    )
+    if (reference_dry_run.returncode != 0
+        or "Plan (dry-run, 0 filas escritas):" not in reference_dry_run.stdout
+        or "CONFLICT / DRIFT" in reference_dry_run.stdout
+        or not any(marker in reference_dry_run.stdout for marker in
+                   ("Pendiente:", "CONSISTENT / NO CHANGES:", "NO-OP:"))):
+        die("reference_role_hardened_dry_run_failed_before_03b")
+    print("OFF03D6C2_REFERENCE_IMPORT_DRY_RUN=PASS_READ_ONLY")
+
+    # 03b is adjacent to 03; remaining ACL files follow in documented order.
+    for name in (
+        "03b_d3b1_restrict_catalog_writes.sql",
+        "04_function_grants.sql",
+        "05_no_default_privileges.sql",
+        "06_public_and_meta_protection.sql",
+        "07_verification_queries.sql",
+        "08_release_preflight.sql",
+    ):
+        run_acl(name)
 
     with psycopg.connect(**fixed) as conn:
         ok = conn.execute("""
@@ -214,6 +281,31 @@ try:
           AND NOT has_table_privilege('vinto_app','vinto_master.profile','INSERT')
           AND NOT has_table_privilege('vinto_app','vinto_master.machine','INSERT')
           AND NOT has_table_privilege('vinto_app','vinto_master.sector','INSERT')
+          AND has_table_privilege('vinto_app','vinto_master.user','INSERT')
+          AND has_database_privilege('vinto_reference',current_database(),'CONNECT')
+          AND has_schema_privilege('vinto_reference','vinto_master','USAGE')
+          AND has_schema_privilege('vinto_reference','vinto_config','USAGE')
+          AND has_schema_privilege('vinto_reference','vinto_audit','USAGE')
+          AND NOT has_schema_privilege('vinto_reference','vinto_txn','USAGE')
+          AND NOT has_schema_privilege('vinto_reference','vinto_auth','USAGE')
+          AND NOT has_schema_privilege('vinto_reference','vinto_meta','USAGE')
+          AND (SELECT bool_and(
+                has_table_privilege('vinto_reference', tbl, 'SELECT')
+                AND has_table_privilege('vinto_reference', tbl, 'INSERT')
+                AND has_table_privilege('vinto_reference', tbl, 'UPDATE')
+              ) FROM unnest(ARRAY[
+                'vinto_master.unit','vinto_master.material_class','vinto_master.sector',
+                'vinto_master.machine','vinto_master.profile','vinto_master.article',
+                'vinto_master.article_version','vinto_master.article_version_spec',
+                'vinto_master.article_machine','vinto_config.shift',
+                'vinto_config.shift_schedule','vinto_config.workflow_definition',
+                'vinto_config.form','vinto_config.form_version',
+                'vinto_config.form_version_machine','vinto_config.field_group',
+                'vinto_config.field_definition','vinto_config.field_option',
+                'vinto_audit.import_batch'
+              ]) AS refs(tbl))
+          AND has_table_privilege('vinto_reference','vinto_audit.import_record','INSERT')
+          AND has_table_privilege('vinto_reference','vinto_audit.audit_event','INSERT')
           AND NOT has_database_privilege('public',current_database(),'CONNECT')
         """).fetchone()[0]
         if not ok:
