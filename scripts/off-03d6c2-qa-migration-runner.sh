@@ -6,6 +6,8 @@ set -Eeuo pipefail
 set +x
 umask 077
 export LC_ALL=C
+# Never execute a caller-supplied binary via an untrusted PATH in root context.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 die() { echo "OFF03D6C2_BLOCKED: $*" >&2; exit 1; }
 usage() {
