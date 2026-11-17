@@ -1,0 +1,39 @@
+name: OFF-03D6C3 Independent QA Postmigration Audit
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d6c3-qa-postmigration-audit.sh'
+      - 'scripts/off-03d6c3-qa-postmigration-audit.test.mjs'
+      - 'docs/OFF-03D6C3-qa-postmigration-audit.md'
+      - '.github/workflows/off-03d6c3-qa-postmigration-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-fail-closed-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Read-only audit controls and syntax
+        run: |
+          bash -n scripts/off-03d6c3-qa-postmigration-audit.sh
+          node --test scripts/off-03d6c3-qa-postmigration-audit.test.mjs
+
+  postgres17-migrations-acl-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run 31 migrations and ACL only in ephemeral runner
+        run: bash scripts/off-03d5-migrations-ci-e2e.sh
