@@ -1,0 +1,41 @@
+name: OFF-03D6B2 QA Backup and Networkless Restore Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d6b2-qa-backup-restore.sh'
+      - 'scripts/off-03d6b2-qa-backup-restore.test.mjs'
+      - 'scripts/off-03d6b2-restore-ci-e2e.sh'
+      - 'docs/OFF-03D6B2-qa-backup-restore.md'
+      - '.github/workflows/off-03d6b2-qa-backup-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard-no-write-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Bash syntax and negative tests
+        run: |
+          bash -n scripts/off-03d6b2-qa-backup-restore.sh
+          bash -n scripts/off-03d6b2-restore-ci-e2e.sh
+          node --test scripts/off-03d6b2-qa-backup-restore.test.mjs
+
+  ephemeral-postgres17-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Restore roles and QA database on isolated PG17
+        run: bash scripts/off-03d6b2-restore-ci-e2e.sh
