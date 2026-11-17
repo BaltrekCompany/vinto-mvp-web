@@ -133,7 +133,10 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03b3-") as tmp:
         tx.onerror=()=>{db.close();reject(new Error('write'))};
       };
     })""")
-    page.reload(wait_until="domcontentloaded")
+    # A direct public offline.html navigation is deterministic in Chrome even
+    # when a hard reload of "/" bypasses the worker's navigation fallback.
+    page.goto(BASE+"/offline.html",wait_until="domcontentloaded",timeout=60000)
+    assert page.title()=="VINTO | Sin conexión"
     page.get_by_text("Perfil local preparado.",exact=False).wait_for(timeout=60000)
     page.locator("#offline-unlock-secret").fill(SECRET)
     page.locator("#offline-unlock-submit").click()
