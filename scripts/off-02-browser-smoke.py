@@ -55,8 +55,12 @@ def main():
             }""")
             registrations = page.evaluate("""async () => (await navigator.serviceWorker.getRegistrations()).map(reg => ({scope: reg.scope, active: !!reg.active}))""")
             assert registrations and any(item["active"] for item in registrations), registrations
-            assert page.locator("h1").inner_text() == "VINTO OFF-02 shell QA"
-            report("01_online_public_shell_and_sw", "PASS", status=response.status, workers=registrations)
+            expected_fixture = os.getenv("OFF02_EXPECT_FIXTURE", "1") == "1"
+            if expected_fixture:
+                assert page.locator("h1").inner_text() == "VINTO OFF-02 shell QA"
+            else:
+                assert "VINTO" in page.title(), f"unexpected VINTO document: {page.title()}"
+            report("01_online_public_shell_and_sw" if expected_fixture else "01_online_vinto_frontend_and_sw", "PASS", status=response.status, workers=registrations)
             page.goto(BASE + "/offline.html", wait_until="load", timeout=TIMEOUT_MS)
             first = await_probe(page, "marca técnica almacenada")
             report("02_online_persistence_canary", "PASS", status=first)
