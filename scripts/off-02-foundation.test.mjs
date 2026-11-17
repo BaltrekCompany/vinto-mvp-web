@@ -123,9 +123,9 @@ test("offline fallback contains clear safety boundary and technical persistence 
 
 test("PWA registration uses the browser secure-context policy instead of an IPv4 host allowlist", () => {
   const registration = source("components/vinto/offline-registration.tsx");
-  assert.match(registration, /window\\.isSecureContext/);
-  assert.doesNotMatch(registration, /location\\.hostname|location\\.protocol/);
-  assert.match(registration, /navigator\\.serviceWorker\\.register\\("\/sw\\.js"/);
+  assert.ok(registration.includes("window.isSecureContext"));
+  assert.ok(!registration.includes("location.hostname") && !registration.includes("location.protocol"));
+  assert.ok(registration.includes('navigator.serviceWorker.register("/sw.js"'));
 });
 
 test("online auth remains authoritative; no production form imported the offline store", () => {
