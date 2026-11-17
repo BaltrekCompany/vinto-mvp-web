@@ -93,6 +93,31 @@ class Pg17DefinitionTests(unittest.TestCase):
         self.assertGreaterEqual(len(point["options"]),5)
         self.assertFalse(definition["capture_eligible"])
 
+    def test_all_four_independent_quality_machine_definitions_are_exportable(self):
+        """Only the 4 existing QA candidates; all use current published DB metadata."""
+        codes=("VINTO-P1-18","VINTO-P1-22","VINTO-P1-26","VINTO-P1-27")
+        for code in codes:
+            self.grant(code)
+        signed=self.scope()
+        matched={r["form_code"] for r in signed["payload"]["form_scopes"]
+                 if r["operation"]=="quality_machine_capture"}
+        self.assertTrue(set(codes).issubset(matched))
+        for code in codes:
+            with self.subTest(form=code):
+                package=self.package(code,signed)
+                p=package["payload"]
+                definition=p["definition"]
+                self.assertTrue(verify_quality_package(
+                    package,trusted_public_key_b64url=self.signer.public_b64url))
+                self.assertEqual(p["form_code"],code)
+                self.assertEqual(definition["form_code"],code)
+                self.assertEqual(definition["area"],"quality")
+                self.assertGreater(len(definition["fields"]),0)
+                self.assertTrue(all(x["source"] in ("manual","calculated")
+                                    for x in definition["fields"]))
+                self.assertFalse(p["captures_enabled"])
+                self.assertFalse(definition["capture_eligible"])
+
     def test_revocation_wrong_grant_or_machine_rejects_historical_scope(self):
         self.grant("VINTO-P1-22")
         scope=self.scope()
