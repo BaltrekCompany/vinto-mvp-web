@@ -1,0 +1,29 @@
+name: OFF-03D6A QA Staging Read-only Gate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d6a-qa-staging-preflight.sh'
+      - 'scripts/off-03d6a-qa-staging.test.mjs'
+      - 'docs/OFF-03D6A-qa-staging-preflight.md'
+      - '.github/workflows/off-03d6a-qa-staging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-staging-inspect-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Bash syntax and negative write-mode tests
+        run: |
+          bash -n scripts/off-03d6a-qa-staging-preflight.sh
+          node --test scripts/off-03d6a-qa-staging.test.mjs
