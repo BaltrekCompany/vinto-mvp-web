@@ -1,0 +1,62 @@
+/* VINTO OFF-02: public, versioned app-shell assets only. NEVER cache auth/API/user data. */
+const STATIC_CACHE = "vinto-off02-static-v1";
+const PUBLIC_ASSETS = ["/offline.html", "/offline-probe.js", "/manifest.webmanifest", "/favicon.svg"];
+const PUBLIC_PATHS = new Set(PUBLIC_ASSETS);
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(PUBLIC_ASSETS)));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names.filter((name) => name.startsWith("vinto-off02-") && name !== STATIC_CACHE).map((name) => caches.delete(name)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Authentication, operational endpoints, RSC requests and admin always use network.
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
+      url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return;
+
+  if (request.mode === "navigate") {
+    // A direct navigation to the public fallback must also work offline.
+    if (url.pathname === "/offline.html") {
+      event.respondWith(caches.match("/offline.html").then((page) => page || fetch(request)));
+      return;
+    }
+    // Do not cache the authenticated app's root HTML or its server components.
+    // An offline navigation to the root gets a separate PUBLIC, non-operational shell.
+    if (url.pathname !== "/") return;
+    event.respondWith(fetch(request).catch(async () => {
+      const page = await caches.match("/offline.html");
+      return page || Response.error();
+    }));
+    return;
+  }
+
+  if (PUBLIC_PATHS.has(url.pathname)) {
+    event.respondWith(caches.match(url.pathname).then((cached) => cached || fetch(request)));
+    return;
+  }
+
+  // Next.js immutable static chunks only; never cache application JSON or server payloads.
+  if (url.pathname.startsWith("/_next/static/") && !url.search) {
+    event.respondWith((async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      const response = await fetch(request);
+      if (response.ok && response.type === "basic") {
+        event.waitUntil(cache.put(request, response.clone()).catch(() => {}));
+      }
+      return response;
+    })());
+  }
+});
