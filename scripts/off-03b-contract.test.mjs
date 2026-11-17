@@ -35,7 +35,7 @@ test("same TypeScript crypto is compiled into a public JS runtime", () => {
   assert.match(runner, /await buildOfflineBoot\(\)/);
   const sw = file("public/sw.js");
   assert.match(sw, /"\/offline-boot\.js"/);
-  assert.match(sw, /vinto-off03c2-static-v1/);
+  assert.match(sw, /vinto-off03c3-static-v1/);
 });
 
 test("offline shell exposes only local verification and not industrial forms", () => {
