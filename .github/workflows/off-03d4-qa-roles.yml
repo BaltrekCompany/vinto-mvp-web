@@ -1,0 +1,41 @@
+name: OFF-03D4 Isolated QA PostgreSQL Roles Contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d4-qa-roles.sh'
+      - 'scripts/off-03d4-qa-roles.test.mjs'
+      - 'scripts/off-03d4-qa-roles.e2e.sh'
+      - 'docs/OFF-03D4-roles-tecnicos-qa.md'
+      - '.github/workflows/off-03d4-qa-roles.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-roles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Validate bash syntax and negative gates (no external VPS)
+        run: |
+          bash -n scripts/off-03d4-qa-roles.sh
+          bash -n scripts/off-03d4-qa-roles.e2e.sh
+          node --test scripts/off-03d4-qa-roles.test.mjs
+
+  postgres17-ephemeral:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run SQL00/SQL01 on an ephemeral Docker PostgreSQL 17 (CI only)
+        run: bash scripts/off-03d4-qa-roles.e2e.sh
