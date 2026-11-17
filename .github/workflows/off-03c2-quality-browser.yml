@@ -9,6 +9,9 @@ on:
       - 'lib/vinto/offline-boot.ts'
       - 'app/offline-preparacion/page.tsx'
       - 'public/offline.html'
+      - 'public/offline-device-qa.js'
+      - 'scripts/off-03c3-*.mjs'
+      - 'docs/OFF-03C3-qa-movil-calidad.md'
       - 'public/sw.js'
       - 'scripts/off-03b3-signature.test.mjs'
       - 'scripts/off-03b-contract.test.mjs'
@@ -47,6 +50,7 @@ jobs:
         run: |
           python scripts/off03b3_fixture.py
           node --experimental-strip-types --test scripts/off-03c2-package.test.mjs
+          node --test scripts/off-03c3-device-qa.test.mjs
       - name: TypeScript and ESLint
         run: |
           pnpm exec tsc --noEmit
@@ -57,6 +61,7 @@ jobs:
           test -s dist/standalone/server.js
           cmp -s public/offline-boot.js dist/standalone/public/offline-boot.js
           node --check public/offline-boot.js
+          node --check public/offline-device-qa.js
           echo OFF03C2_PORTABLE_BUNDLE=PASS
 
   chrome-restart-quality-package:

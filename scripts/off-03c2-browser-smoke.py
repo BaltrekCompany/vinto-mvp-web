@@ -111,11 +111,24 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c2-") as tmp:
     assert page.locator("#offline-package-details input").count()==0
     assert page.get_by_text("Las capturas y los permisos industriales siguen deshabilitados.",exact=False).count()>=1
     report("06_read_only_complete_fields_after_offline_reopen")
+    # OFF-03C.3: local-only QA on the same persistent Chrome profile, fully offline.
+    page.get_by_role("button",name="Comprobar preparación técnica").click()
+    page.locator("#offline-qa-checks li").first.wait_for(timeout=60000)
+    checks=page.locator("#offline-qa-checks").inner_text()
+    for name in ("Origen seguro", "Service Worker", "Recursos de apertura",
+                 "Perfil único por navegador", "Alcance firmado almacenado",
+                 "Paquete de Calidad almacenado"):
+      assert "OK · "+name in checks,checks
+    assert page.locator("#offline-qa-result").get_attribute("data-status") in ("warn","pass")
+    assert USER_ID not in page.locator("#offline-qa-checks").inner_text()
+    assert page.title()=="VINTO | Sin conexión"
+    report("07_offline_device_preparation_diagnostic_read_only")
+
 
     screenshot=os.environ.get("OFF03C2_SCREENSHOT")
     if screenshot:
       page.screenshot(path=screenshot,full_page=True)
-      report("07_screenshot_saved")
+      report("08_screenshot_saved")
 
     page.evaluate("""async()=>await new Promise((resolve,reject)=>{
       const r=indexedDB.open('vinto-off03a-profiles-v1',3);
@@ -138,6 +151,6 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c2-") as tmp:
     page.get_by_text("No fue posible desbloquear o validar",exact=False).wait_for(timeout=60000)
     assert page.locator("#offline-package-details").is_hidden()
     assert page.locator("#offline-scope-list").is_hidden()
-    report("08_tamper_package_ciphertext_fails_closed")
+    report("09_tamper_package_ciphertext_fails_closed")
     ctx.close()
 print("OFF03C2_BROWSER_QUALITY_PACKAGE=PASS",flush=True)

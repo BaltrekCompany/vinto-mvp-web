@@ -69,6 +69,6 @@ test("frontend remains read-only and signed scope stored only as vault sealed da
     assert.match(store,/trustedPublicKey/);
     assert.match(page,/issueOnlineReadinessScope\(/);
     assert.match(page,/storeOfflineScope\(/);
-    assert.match(sw,/vinto-off03c2-static-v1/);
+    assert.match(sw,/vinto-off03c3-static-v1/);
     assert.doesNotMatch(sw,/\/api\/offline\/scope/);
 });

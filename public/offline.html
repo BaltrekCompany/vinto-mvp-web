@@ -19,7 +19,7 @@
 </head>
 <body>
 <main>
-  <div class="mark">VINTO · OFF-03B (prueba)</div>
+  <div class="mark">VINTO · OFF-03C.3 (ensayo)</div>
   <h1>Dispositivo sin conexión</h1>
   <p>La interfaz pública de contingencia se ha abierto desde el almacenamiento local del navegador.</p>
   <div class="notice" role="status" aria-live="polite">
@@ -40,10 +40,19 @@
     <p>Índice firmado y, cuando exista un paquete completo verificado, vista de campos de solo lectura. Sin formularios editables ni permiso para aprobar.</p>
     <div id="offline-package-details" hidden aria-label="Definiciones cifradas y verificadas de Calidad"></div>
   </div>
+  <section class="notice" style="margin-top:16px" aria-label="Diagnóstico técnico del dispositivo">
+    <strong>Preparación de este navegador — solo lectura</strong>
+    <p>Comprueba caché, perfil local y persistencia. No accede a datos de capturas ni verifica permisos actuales.</p>
+    <button id="offline-qa-run" type="button">Comprobar preparación técnica</button>
+    <p id="offline-qa-result" role="status" aria-live="polite">Todavía no se realizó el diagnóstico.</p>
+    <ul id="offline-qa-checks" hidden aria-label="Resultado técnico local"></ul>
+  </section>
+  <p class="warn">Para aprobar un móvil se exige una prueba física: cerrar el navegador, reiniciar el equipo, mantener el modo sin red y repetir desbloqueo y lectura del formulario.</p>
   <button type="button" id="retry">Reintentar conexión</button>
   <small>Este diagnóstico únicamente guarda una marca técnica de prueba, sin información del operario, del equipo ni de producción. No solicita credenciales.</small>
 </main>
 <script src="/offline-probe.js" defer></script>
 <script src="/offline-boot.js" defer></script>
+<script src="/offline-device-qa.js" defer></script>
 </body>
 </html>
