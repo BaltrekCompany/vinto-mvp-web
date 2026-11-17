@@ -7,7 +7,9 @@ import { useEffect } from "react";
 export function OfflineRegistration() {
     useEffect(() => {
         if (!("serviceWorker" in navigator)) return;
-        if (location.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(location.hostname)) return;
+        // Secure contexts include HTTPS and browser-trusted loopback origins (IPv4/IPv6).
+        // Avoid hard-coded hostnames: VINTO dev may bind to http://[::1] in CI.
+        if (!window.isSecureContext) return;
         const schedule = () => {
             void navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {
                 // Online VINTO continues unchanged if a browser or policy blocks service workers.
