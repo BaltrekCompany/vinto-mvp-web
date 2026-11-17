@@ -106,23 +106,31 @@ jobs:
         run: |
           python3 -m pip install --break-system-packages playwright==1.57.0
           google-chrome --version
-      - name: Start actual VINTO dev frontend with explicit IPv4 bind
+      - name: Start actual VINTO dev frontend and diagnose IPv4 vs IPv6
         run: |
           set -eu
-          nohup pnpm dev --host 127.0.0.1 > "$RUNNER_TEMP/off02-vinto-dev.log" 2>&1 &
+          nohup pnpm dev > "$RUNNER_TEMP/off02-vinto-dev.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/off02-vinto-dev.pid"
-          for i in $(seq 1 45); do
-            if curl --fail --silent --connect-timeout 1 --max-time 3 --output /dev/null http://127.0.0.1:5173/; then exit 0; fi
+          for i in $(seq 1 35); do
+            for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/' 'http://[::1]:5173/'; do
+              if curl --fail --silent --noproxy '*' --connect-timeout 1 --max-time 2 --output /dev/null "$endpoint"; then
+                echo "OFF02_LIVE_BASE=${endpoint%/}" >> "$GITHUB_ENV"
+                echo "OFF02_INTEGRATED_PREFLIGHT=PASS $endpoint"
+                exit 0
+              fi
+            done
             sleep 2
           done
           echo "OFF02_INTEGRATED_PREFLIGHT=FAILED"
-          curl --verbose --connect-timeout 2 --max-time 5 http://127.0.0.1:5173/ -o "$RUNNER_TEMP/off02-response.html" || true
-          head -c 1000 "$RUNNER_TEMP/off02-response.html" || true
+          ss -ltnp | grep 5173 || true
+          for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/' 'http://[::1]:5173/'; do
+            curl --verbose --noproxy '*' --connect-timeout 2 --max-time 5 "$endpoint" -o /dev/null || true
+          done
           tail -n 180 "$RUNNER_TEMP/off02-vinto-dev.log"
           exit 1
       - name: Chrome actual VINTO root then offline restart test
         env:
-          OFF02_BASE_URL: http://127.0.0.1:5173
+          OFF02_BASE_URL: ${{ env.OFF02_LIVE_BASE }}
           OFF02_EXPECT_FIXTURE: '0'
           OFF02_CHROME_CHANNEL: chrome
           OFF02_SCREENSHOT_PATH: ${{ runner.temp }}/off02-integrated-reopen.png
