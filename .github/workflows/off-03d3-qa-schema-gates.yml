@@ -1,0 +1,29 @@
+name: OFF-03D3 QA Schema Guard Contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d3-qa-schema-preflight.sh'
+      - 'scripts/off-03d3-qa-schema-preflight.test.mjs'
+      - 'docs/OFF-03D3-roles-migraciones-qa.md'
+      - '.github/workflows/off-03d3-qa-schema-gates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-qa-guard-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Validate read-only Bash and fail-closed boundaries (no VPS)
+        run: |
+          bash -n scripts/off-03d3-qa-schema-preflight.sh
+          node --test scripts/off-03d3-qa-schema-preflight.test.mjs
