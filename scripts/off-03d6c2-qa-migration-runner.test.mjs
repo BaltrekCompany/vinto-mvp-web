@@ -84,3 +84,10 @@ test('embedded Python syntax and absence of filesystem changes during inspect',(
   assert.match(m[1],/OFF03D6C2_MIGRATIONS=NOT_STARTED/);
   assert.match(src,/export PATH=\/usr\/sbin:\/usr\/bin:\/sbin:\/bin/);
 });
+
+test('Python wrapper ignores caller site/path; migrator gets a scrubbed environment',()=>{
+  assert.match(src,/MODE="\$MODE" "\$PYTHON" -I -B - <<'PY'/);
+  assert.match(src,/\[str\(python\), "-E", "-s", "-B", str\(script\)/);
+  assert.match(src,/"PYTHONNOUSERSITE": "1"/);
+  assert.match(src,/"PYTHONDONTWRITEBYTECODE": "1"/);
+});
