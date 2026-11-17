@@ -1,0 +1,51 @@
+name: OFF-02 PWA and IndexedDB foundation
+
+on:
+  pull_request:
+    paths:
+      - 'public/sw.js'
+      - 'public/offline.html'
+      - 'public/offline-probe.js'
+      - 'public/manifest.webmanifest'
+      - 'lib/vinto/offline-store.ts'
+      - 'components/vinto/offline-registration.tsx'
+      - 'app/layout.tsx'
+      - 'scripts/off-02-foundation.test.mjs'
+      - '.github/workflows/off-02-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Syntax checks (public worker and offline probe)
+        run: |
+          node --check public/sw.js
+          node --check public/offline-probe.js
+      - name: OFF-02 security and storage contract
+        run: node --experimental-strip-types --test scripts/off-02-foundation.test.mjs
+
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Enable pinned package manager
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit

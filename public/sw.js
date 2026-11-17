@@ -26,6 +26,11 @@ self.addEventListener("fetch", (event) => {
       url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return;
 
   if (request.mode === "navigate") {
+    // A direct navigation to the public fallback must also work offline.
+    if (url.pathname === "/offline.html") {
+      event.respondWith(caches.match("/offline.html").then((page) => page || fetch(request)));
+      return;
+    }
     // Do not cache the authenticated app's root HTML or its server components.
     // An offline navigation to the root gets a separate PUBLIC, non-operational shell.
     if (url.pathname !== "/") return;

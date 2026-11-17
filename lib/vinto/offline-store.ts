@@ -34,8 +34,10 @@ const B64URL = /^[A-Za-z0-9_-]+$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
 export class OfflineStoreError extends Error {
-    constructor(public readonly reason: "unavailable" | "invalid" | "owner_mismatch" | "not_found" | "already_queued" | "storage_failed") {
+    readonly reason: "unavailable" | "invalid" | "owner_mismatch" | "not_found" | "already_queued" | "storage_failed";
+    constructor(reason: OfflineStoreError["reason"]) {
         super(`OFFLINE_STORE_${reason.toUpperCase()}`);
+        this.reason = reason;
         this.name = "OfflineStoreError";
     }
 }

@@ -3,7 +3,7 @@
 **Estado:** candidato de desarrollo aislado, NO aprobado para capturas reales.  
 **Base:** `main` en `2ca165af615ad5405a526e40d73e96ff8f83b4a6`.  
 **Rama:** `feat/off-02-pwa-indexeddb-foundation`.  
-**Dependencia contractual:** [OFF-01 V2](./OFF-01-arquitectura-operacion-offline.md), todavía PR #184 en Draft (no fusionado).
+**Dependencia contractual:** [OFF-01 V2](https://github.com/BaltrekCompany/vinto-mvp-web/pull/184), todavía PR #184 en Draft (no fusionado).
 
 ## Alcance
 
