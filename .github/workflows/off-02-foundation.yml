@@ -146,3 +146,63 @@ jobs:
       - name: Show VINTO dev failure logs
         if: failure()
         run: tail -n 150 "$RUNNER_TEMP/off02-vinto-dev.log" || true
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frozen dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: ESLint full repository
+        run: pnpm lint
+
+  central-only-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frozen dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Existing central-only behavior regression
+        run: node --test scripts/int-02a-central-only.test.mjs
+
+  portable-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_API_URL: https://vinto-ci.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install frozen dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Build portable VINTO frontend without production access
+        run: pnpm build
+      - name: Verify standalone and inspect OFF-02 PWA assets
+        run: |
+          set -eu
+          test -s dist/standalone/server.js
+          echo "OFF02_STANDALONE_SERVER=PASS"
+          for asset in sw.js offline.html offline-probe.js manifest.webmanifest favicon.svg; do
+            echo "Asset $asset in portable build:"
+            find dist -type f -name "$asset" -print | head -n 20
+          done
+          echo "OFF02_PORTABLE_BUILD=PASS"
