@@ -1,0 +1,29 @@
+name: OFF-03D2 Isolated QA PostgreSQL Contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d2-qa-postgres.sh'
+      - 'scripts/off-03d2-qa-postgres.test.mjs'
+      - 'docs/OFF-03D2-despliegue-postgresql-qa.md'
+      - '.github/workflows/off-03d2-qa-postgres.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-postgres-contract-no-deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Syntax + fail-closed tests (NO Docker install)
+        run: |
+          bash -n scripts/off-03d2-qa-postgres.sh
+          node --test scripts/off-03d2-qa-postgres.test.mjs
