@@ -71,15 +71,17 @@ echo 'QA_ROLES_READY=PASS'
 echo 'QA_SCHEMA_EMPTY=PASS'
 echo 'QA_MIGRATION_HISTORY=EMPTY'
 
-actual="$(cat "$SEC" | docker exec -i \
+# Feed only the protected QA credential to docker stdin (never via CLI arguments).
+# chr(124) avoids nested single quotes breaking the shell -c payload.
+actual="$(docker exec -i \
   -e PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=5000' \
   "$QA" sh -ceu '
-    IFS= read -r PGPASSWORD
+    IFS= read -r PGPASSWORD || [ -n "$PGPASSWORD" ]
     export PGPASSWORD
     exec psql -X -qAt -v ON_ERROR_STOP=1 -h 127.0.0.1 \
       -U vinto_migrator -d vinto_qa_offline \
-      -c "SELECT current_database() || '|' || current_user"
-  ')" || die 'login de migrador QA fallido'
+      -c "SELECT current_database() || chr(124) || current_user"
+  ' < "$SEC")" || die 'login de migrador QA fallido'
 [ "$actual" = vinto_qa_offline\|vinto_migrator ] || die 'identidad migrador incorrecta'
 echo 'QA_MIGRATOR_AUTH=PASS'
 
