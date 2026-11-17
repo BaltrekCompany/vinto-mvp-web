@@ -127,7 +127,7 @@ export async function getSealedDraft(ownerId: string, deviceKey: string, id: str
         const request = tx.objectStore("drafts").get(id);
         request.onsuccess = () => {
             const item = request.result as OfflineDraft | undefined;
-            resolve(item?.ownerId === ownerId && item.deviceKey === deviceKey ? item : null);
+            resolve(item && isDraft(item) && item.ownerId === ownerId && item.deviceKey === deviceKey ? item : null);
         };
         request.onerror = () => reject(failed());
         tx.onabort = () => reject(failed());
@@ -139,7 +139,13 @@ export async function listSealedDrafts(ownerId: string, deviceKey: string): Prom
     return withDb((db) => new Promise((resolve, reject) => {
         const tx = db.transaction("drafts", "readonly");
         const request = tx.objectStore("drafts").index(OFFLINE_OWNER_INDEX).getAll([ownerId, deviceKey]);
-        request.onsuccess = () => resolve(request.result as OfflineDraft[]);
+        request.onsuccess = () => {
+            const values = request.result as unknown[];
+            if (!values.every((item) => isDraft(item) && item.ownerId === ownerId && item.deviceKey === deviceKey)) {
+                reject(new OfflineStoreError("invalid")); return;
+            }
+            resolve(values as OfflineDraft[]);
+        };
         request.onerror = () => reject(failed());
         tx.onabort = () => reject(failed());
     }));
@@ -155,6 +161,7 @@ export async function queueSealedDraft(ownerId: string, deviceKey: string, id: s
         read.onsuccess = () => {
             const item = read.result as OfflineDraft | undefined;
             if (!item) { reason = new OfflineStoreError("not_found"); tx.abort(); return; }
+            if (!isDraft(item)) { reason = new OfflineStoreError("invalid"); tx.abort(); return; }
             if (item.ownerId !== ownerId || item.deviceKey !== deviceKey) { reason = new OfflineStoreError("owner_mismatch"); tx.abort(); return; }
             outbox.add({ ...item, status: "queued", queuedAt } satisfies OfflineOutbox);
             drafts.delete(id);
@@ -170,7 +177,14 @@ export async function listQueuedForOwner(ownerId: string, deviceKey: string): Pr
     return withDb((db) => new Promise((resolve, reject) => {
         const tx = db.transaction("outbox", "readonly");
         const request = tx.objectStore("outbox").index(OFFLINE_OWNER_INDEX).getAll([ownerId, deviceKey]);
-        request.onsuccess = () => resolve(request.result as OfflineOutbox[]);
+        request.onsuccess = () => {
+            const values = request.result as unknown[];
+            if (!values.every((item) => isDraft(item) && (item as OfflineOutbox).status === "queued"
+                && (item as OfflineOutbox).ownerId === ownerId && (item as OfflineOutbox).deviceKey === deviceKey)) {
+                reject(new OfflineStoreError("invalid")); return;
+            }
+            resolve(values as OfflineOutbox[]);
+        };
         request.onerror = () => reject(failed());
         tx.onabort = () => reject(failed());
     }));

@@ -78,6 +78,7 @@ test("network root navigation falls back to PUBLIC offline shell; other private 
   assert.equal((await w.request("/", { mode: "navigate" })).from, "network");
   w.setOnline(false);
   assert.equal((await w.request("/", { mode: "navigate" })).from, "offline-static");
+  assert.equal((await w.request("/offline.html", { mode: "navigate" })).from, "offline-static");
   assert.equal(await w.request("/admin", { mode: "navigate" }), null);
   assert.equal(await w.request("/api/auth/me", { mode: "navigate" }), null);
   assert.ok(w.matched.includes("/offline.html"));
