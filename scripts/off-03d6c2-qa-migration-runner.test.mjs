@@ -105,8 +105,10 @@ test('D3B1 catalog tightening requires dedicated reference role and read-only bu
   assert.match(src,/Base de destino: vinto_qa_offline/);
   const three=src.indexOf('run_acl("03_table_grants.sql")');
   const dry=src.indexOf('reference_dry_run = subprocess.run');
-  const tighten=src.indexOf('run_acl("03b_d3b1_restrict_catalog_writes.sql")');
-  assert.ok(three>=0 && dry>three && tighten>dry,'reference dry-run must occur between 03 and 03b');
+  const remainingAcl=src.indexOf('for name in (',dry);
+  const tighten=src.indexOf('"03b_d3b1_restrict_catalog_writes.sql"',remainingAcl);
+  assert.ok(three>=0 && dry>three && remainingAcl>dry && tighten>remainingAcl,
+    'reference dry-run must occur between 03 and 03b');
   assert.match(src,/has_table_privilege\('vinto_reference','vinto_audit\.import_record','INSERT'\)/);
   assert.match(src,/has_table_privilege\('vinto_reference','vinto_audit\.audit_event','INSERT'\)/);
   assert.match(src,/vinto_config\.field_group/);
