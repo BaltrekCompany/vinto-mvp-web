@@ -103,6 +103,21 @@ run_acl() {
 }
 run_acl 02_schema_grants.sql
 run_acl 03_table_grants.sql
+
+# D3B1 removes vinto_app catalog writes. Before that tightening, prove the
+# dedicated vinto_reference role can run the official bundle dry-run in hardened mode.
+(
+  cd "$ROOT/backend"
+  REFERENCE_DATABASE_URL="postgresql://vinto_reference@127.0.0.1:$PORT/vinto_qa_offline" \
+  PGPASSWORD="$(cat "$TMP/reference")" \
+    "$TMP/venv/bin/python" -B import_reference.py --target dev \
+      > "$TMP/reference-dry-run.txt"
+)
+grep -q 'Plan (dry-run, 0 filas escritas):' "$TMP/reference-dry-run.txt"
+grep -Eq 'Pendiente:|CONSISTENT / NO CHANGES:|NO-OP:' "$TMP/reference-dry-run.txt"
+! grep -q 'CONFLICT / DRIFT' "$TMP/reference-dry-run.txt"
+echo 'OFF03D5_CI_REFERENCE_IMPORT_DRY_RUN=PASS'
+
 run_acl 03b_d3b1_restrict_catalog_writes.sql
 run_acl 04_function_grants.sql
 run_acl 05_no_default_privileges.sql
