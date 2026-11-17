@@ -14,6 +14,7 @@ from app.auth.service import AuthenticatedUser
 from app.config import settings
 from app.database import get_connection
 from app.offline_scope.service import OfflineScopeDenied, OfflineScopeTooLarge, issue_scope
+from app.offline_scope.quality_package import PackageDenied, PackageUnavailable, build_quality_package
 from app.offline_scope.signing import OfflineSigningUnavailable, load_signer
 
 logger = logging.getLogger("vinto.offline.scope")
@@ -58,3 +59,40 @@ def issue_offline_scope(body: IssueScopeRequest, request: Request, response: Res
     logger.info("offline scope issued snapshot=%s pairs=%d", signed["payload"]["snapshot_id"],
                 len(signed["payload"]["form_scopes"]))
     return signed
+
+class QualityPackageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    device_key: UUID
+    machine_code: MachineCode
+    form_code: Annotated[str, StringConstraints(pattern=r"^VINTO-P1-[0-9]{2}$")]
+    signed_scope: dict
+
+
+@router.post("/quality-package", responses={
+    401: {"description": "Sesión necesaria"},
+    403: {"description": "No autorizado o no vinculado al alcance firmado"},
+    404: {"description": "Exportación no habilitada"},
+    503: {"description": "Paquete no disponible"},
+})
+def issue_quality_package(body: QualityPackageRequest, request: Request, response: Response,
+                          principal: AuthenticatedUser = Depends(current_user),
+                          connection=Depends(get_connection)):
+    response.headers.update(NO_STORE)
+    if not settings.offline_quality_package_issue_enabled or not settings.offline_scope_issue_enabled:
+        raise HTTPException(status_code=404, detail="Recurso no disponible", headers=NO_STORE)
+    if request.url.scheme != "https" and settings.app_env not in {"ci", "test", "local", "qa"}:
+        raise HTTPException(status_code=503, detail="Se requiere HTTPS", headers=NO_STORE)
+    try:
+        signer = load_signer()
+    except OfflineSigningUnavailable:
+        raise HTTPException(status_code=503, detail="Módulo offline no disponible", headers=NO_STORE) from None
+    try:
+        package = build_quality_package(connection, principal,
+            device_key=body.device_key, machine_code=body.machine_code,
+            form_code=body.form_code, signed_scope=body.signed_scope, signer=signer)
+    except PackageDenied:
+        raise HTTPException(status_code=403, detail="Acceso no autorizado", headers=NO_STORE) from None
+    except PackageUnavailable:
+        raise HTTPException(status_code=503, detail="Paquete no disponible", headers=NO_STORE) from None
+    logger.info("offline quality package issued package=%s", package["payload"]["package_id"])
+    return package

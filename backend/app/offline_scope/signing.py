@@ -107,3 +107,39 @@ def verify_scope(envelope: dict[str, Any], *, trusted_public_key_b64url: str) ->
         return True
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False
+
+# OFF-03C.1: separate domain and schema. A scope signature can NEVER validate
+# as a form-definition package signature, even when signed with the same key.
+PACKAGE_SCHEMA = "vinto.offline.quality-package.v1"
+PACKAGE_AUDIENCE = "vinto-offline-quality-definition"
+PACKAGE_DOMAIN = b"VINTO-OFFLINE-QUALITY-PACKAGE-V1\x00"
+
+
+def sign_quality_package(payload: dict[str, Any], *, signer: SigningKey | None = None) -> dict[str, Any]:
+    signer = signer if signer is not None else load_signer()
+    if payload.get("schema") != PACKAGE_SCHEMA or payload.get("audience") != PACKAGE_AUDIENCE:
+        raise ValueError("invalid package schema/audience")
+    return {
+        "algorithm": "Ed25519", "key_id": signer.key_id,
+        "public_key_b64url": signer.public_b64url, "payload": payload,
+        "signature_b64url": encode_b64(signer.private.sign(PACKAGE_DOMAIN + canonical_payload(payload)))
+    }
+
+
+def verify_quality_package(envelope: dict[str, Any], *, trusted_public_key_b64url: str) -> bool:
+    try:
+        if not isinstance(envelope, dict) or set(envelope) != {
+            "algorithm", "key_id", "public_key_b64url", "payload", "signature_b64url"
+        } or envelope["algorithm"] != "Ed25519":
+            return False
+        payload = envelope["payload"]
+        if not isinstance(payload, dict) or payload.get("schema") != PACKAGE_SCHEMA or payload.get("audience") != PACKAGE_AUDIENCE or payload.get("issuer") != ISSUER:
+            return False
+        pub = decode_b64(trusted_public_key_b64url, 32)
+        if envelope["public_key_b64url"] != trusted_public_key_b64url or envelope["key_id"] != "ed25519-" + hashlib.sha256(pub).hexdigest()[:20]:
+            return False
+        signature = decode_b64(envelope["signature_b64url"], 64)
+        Ed25519PublicKey.from_public_bytes(pub).verify(signature, PACKAGE_DOMAIN + canonical_payload(payload))
+        return True
+    except (KeyError, TypeError, ValueError, InvalidSignature):
+        return False

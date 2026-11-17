@@ -1,0 +1,75 @@
+name: OFF-03C1 Quality Form Definition Package
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/offline_scope/**'
+      - 'backend/app/config.py'
+      - 'backend/tests/test_off03c1_*.py'
+      - '.github/workflows/off-03c1-quality-definition.yml'
+      - 'docs/OFF-03C1-paquetes-calidad.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-signature-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      APP_ENV: ci
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: Integrity, domain separation, effective scope and default-off gates
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_off03c1_unit.py' -v
+      - name: Python import and compilation
+        working-directory: backend
+        run: python -B -m compileall -q app/offline_scope app/config.py
+
+  postgres17-published-quality-forms:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      PYTHONDONTWRITEBYTECODE: '1'
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_unused
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: Published P1-22/P1-26, calculated rules, revoked grants
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_off03c1_pg17.py' -v
