@@ -24,16 +24,22 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03b3-") as tmp:
     ctx=open_ctx(pw.chromium,path)
     page=ctx.new_page()
     page.set_default_timeout(60000)
+    origin=BASE.rstrip("/")
+    cors={"Access-Control-Allow-Origin":origin,"Access-Control-Allow-Credentials":"true",
+          "Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type"}
     def auth(route):
-      route.fulfill(status=200,headers={"Content-Type":"application/json","Cache-Control":"no-store"},
+      route.fulfill(status=200,headers={"Content-Type":"application/json","Cache-Control":"no-store",**cors},
          body=json.dumps({"user":{"id":USER_ID,"username":"qa.synthetic","display_name":"QA Synthetic",
              "profiles":["CALIDAD"],"permissions":["quality.capture"],"must_change":False}}))
     state={"rotated":False}
     def scope(route):
+      if route.request.method == "OPTIONS":
+        route.fulfill(status=204,headers=cors)
+        return
       req=json.loads(route.request.post_data)
       assert req["machine_codes"]==["MP1"],req
       body=sign_for_device(req["device_key"],rotated=state["rotated"])
-      route.fulfill(status=200,headers={"Content-Type":"application/json","Cache-Control":"no-store"},
+      route.fulfill(status=200,headers={"Content-Type":"application/json","Cache-Control":"no-store",**cors},
                     body=json.dumps(body,ensure_ascii=False))
     page.route("**/api/auth/me",auth)
     page.route("**/api/offline/scope",scope)
