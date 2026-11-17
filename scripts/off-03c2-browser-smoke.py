@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c2-") as tmp:
       assert "OK · "+name in checks,checks
     assert page.locator("#offline-qa-result").get_attribute("data-status") in ("warn","pass")
     assert USER_ID not in page.locator("#offline-qa-checks").inner_text()
-    assert "offline" in page.title().lower()
+    assert page.title()=="VINTO | Sin conexión"
     report("07_offline_device_preparation_diagnostic_read_only")
 
 
