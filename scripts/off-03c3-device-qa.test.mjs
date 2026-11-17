@@ -69,7 +69,7 @@ test("real executable diagnostics report prepared local browser without exposing
   const env=testRuntime();
   await env.button.listener();
   // handler returns void and starts an async task; await all microtasks.
-  for(let i=0;i<15;i++)await Promise.resolve();
+
   assert.ok(env.list.children.some(x=>x.textContent.startsWith("OK · Perfil único")));
   assert.ok(env.list.children.some(x=>x.textContent.startsWith("OK · Paquete")));
   assert.equal(env.state.openCount,1);
@@ -79,7 +79,7 @@ test("real executable diagnostics report prepared local browser without exposing
 test("unprepared browser blocks and DOES NOT create a database",async()=>{
   const env=testRuntime({ready:false});
   await env.button.listener();
-  for(let i=0;i<10;i++)await Promise.resolve();
+
   assert.equal(env.state.openCount,0);
   assert.equal(env.result.dataset.status,"block");
   assert.match(env.list.children.map(x=>x.textContent).join("\n"),/No existe preparación local/);
@@ -87,7 +87,7 @@ test("unprepared browser blocks and DOES NOT create a database",async()=>{
 test("missing enumeration API is explicitly inconclusive and never creates data",async()=>{
   const env=testRuntime({noEnumeration:true});
   await env.button.listener();
-  for(let i=0;i<10;i++)await Promise.resolve();
+
   assert.equal(env.state.openCount,0);
   assert.equal(env.result.dataset.status,"warn");
   assert.match(env.list.children.map(x=>x.textContent).join("\n"),/no permite inventariar bases/);

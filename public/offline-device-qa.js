@@ -139,5 +139,5 @@
       button.disabled = false;
     }
   }
-  button.addEventListener("click", () => { void run(); });
+  button.addEventListener("click", run);
 })();
