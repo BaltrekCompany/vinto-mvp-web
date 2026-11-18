@@ -32,6 +32,20 @@ No se deben modificar ni desplegar servicios, contenedores, firewall, configurac
 - **A0 — investigación previa, SOLO lectura:** determinar si la conexión externa realmente está en uso, cómo se configura y cuál es su rango autorizado. La ausencia de conexiones activas o de logs históricos no demuestra ausencia de uso. Si A0 no puede confirmarse en host, exigir evidencia del responsable del cliente externo o de su administrador de red antes de fijar un allowlist.
 - **A1/A2 — no autorizados:** no cambiar publicación, firewall, contenedores, conexiones o servicios hasta contar con orígenes autorizados corroborados, pruebas positivas/negativas y plan de reversión. La salida privada de la investigación no debe copiarse a este repositorio público.
 
+## Actualización A0 — procedencia externa no determinada (18-nov-2026)
+
+**Dictamen:** `SEC_HOST_01_A0=INDETERMINATE`. No hay evidencia suficiente para fijar un allowlist completo de consumidores externos. El inventario confirmó que el servicio de datos recibe intentos no autorizados, pero no atribuye una intrusión; las conexiones legítimas identificadas en la VPS no resuelven la posible dependencia de un consumidor remoto. La presencia de un rol/configuración de lectura externa no demuestra uso activo, y la falta de conexiones en un instante tampoco demuestra desuso. Ninguna modificación fue ejecutada.
+
+**Impacto de decisión:** `HOST-NET-01=OPEN`; A1 (filtrado por origen) y A2 (reconfiguración/rebinding) continúan `NOT_AUTHORIZED`. No inventar direcciones ni excluir un posible consumidor externo. La protección privada de QA (`QA-NET-03`) sigue siendo un gate independiente para cualquier proxy nuevo.
+
+**Alternativas para resolver A0, en orden de preferencia:**
+
+1. **Confirmación del responsable del consumidor externo:** determinar si el recurso se usa, el mecanismo de conexión (cliente local, gateway, servicio), las salidas de red autorizadas, la periodicidad de refresco y posibles usuarios adicionales. Registrar evidencia sensible en canal privado, no aquí. La ausencia de registro de un consumidor en la VPS no reemplaza esta confirmación.
+2. **A0.1, observación temporal restringida y con autorización nueva:** si la confirmación no llega, preparar un cambio de configuración mínimo para observar exclusivamente **eventos de conexión**, sin consultas ni credenciales, por una ventana que abarque una ejecución de refresco representativa. Definir hora de fin, límites de volumen, controles de acceso y retención de logs, validación de no regresión, reversión exacta de la configuración y prueba de desactivación. Este cambio tiene efecto en un servicio existente y **NO está autorizado** por A0. No interpretar falta de conexiones observadas como prueba suficiente de ausencia de consumidores.
+3. **Contención de urgencia:** si se identifica amenaza activa, abrir evaluación de incidente y plan de restricción inmediata con aceptación explícita del impacto de consumidores desconocidos. No usar automatismos sin ventana ni autorización.
+
+**Próximo gate:** `A0_EXTERNAL_ORIGIN_CONFIRMED` o informe A0.1 autorizado y completado; después diseñar A1 con excepciones fundadas, pruebas desde cliente autorizado/no autorizado y reversión. No desplegar el proxy QA antes de sus propios controles de red.
+
 ## Reglas de seguridad
 
 - Ningún valor de variables, contenido de archivos sensibles, cadena de conexión, secreto, IP operativa, puerto específico expuesto, token o instrucción de acceso debe incluirse en este documento o el PR.
