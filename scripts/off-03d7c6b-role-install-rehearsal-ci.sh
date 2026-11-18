@@ -320,6 +320,24 @@ THEN 'PASS' ELSE 'BLOCKED' END;
  { echo 'OFF03D7C6B_CI_ROLE_SHAPE=BLOCKED' >&2; exit 1; }
 echo 'OFF03D7C6B_CI_CREATE_ROLE=PASS_UNPRIVILEGED_LOGIN'
 
+# Database CONNECT is owned by QA bootstrap, NOT vinto_migrator.
+# The official 03c GRANT CONNECT clause may report "no privileges granted"
+# when executed by migrator. Explicitly grant CONNECT as DB owner beforehand.
+docker exec "$NAME" psql -X -q -v ON_ERROR_STOP=1 \
+  -U vinto_qa_bootstrap -d vinto_qa_offline \
+  -c 'GRANT CONNECT ON DATABASE vinto_qa_offline TO vinto_identity;' >/dev/null ||
+  { echo 'OFF03D7C6B_CI_DB_OWNER_CONNECT=BLOCKED' >&2; exit 1; }
+connect="$(docker exec -e PGOPTIONS='-c default_transaction_read_only=on' "$NAME" \
+  psql -X -qAt -v ON_ERROR_STOP=1 \
+  -U vinto_qa_bootstrap -d vinto_qa_offline -c "
+SELECT CASE WHEN has_database_privilege('vinto_identity',current_database(),'CONNECT')
+ AND NOT has_database_privilege('public',current_database(),'CONNECT')
+ THEN 'PASS' ELSE 'BLOCKED' END;" 2>/dev/null)" ||
+  { echo 'OFF03D7C6B_CI_DB_OWNER_CONNECT=BLOCKED' >&2; exit 1; }
+[ "$connect" = PASS ] ||
+  { echo 'OFF03D7C6B_CI_DB_OWNER_CONNECT=BLOCKED' >&2; exit 1; }
+echo 'OFF03D7C6B_CI_DB_OWNER_CONNECT=PASS_SEPARATE_ADMIN_GRANT'
+
 # 03c runs as vinto_migrator, the documented table owner, NOT bootstrap.
 docker exec -i "$NAME" psql -X -q -v ON_ERROR_STOP=1 \
   -U vinto_migrator -d vinto_qa_offline \
@@ -356,6 +374,15 @@ docker exec -i "$NAME" psql -X -q -v ON_ERROR_STOP=1 \
  -U vinto_migrator -d vinto_qa_offline \
  < "$role_root/rollback/ROLLBACK_D3B2.sql" >/dev/null ||
  { echo 'OFF03D7C6B_CI_ROLLBACK_D3B2=BLOCKED' >&2; exit 1; }
+
+# ROLLBACK_D3B2 is run as migrator. It cannot revoke a CONNECT grant
+# owned by bootstrap. Before owner cleanup, schema/table grants are gone but
+# the role may still have CONNECT. Explicit admin REVOKE is therefore required.
+docker exec "$NAME" psql -X -q -v ON_ERROR_STOP=1 \
+  -U vinto_qa_bootstrap -d vinto_qa_offline \
+  -c 'REVOKE CONNECT ON DATABASE vinto_qa_offline FROM vinto_identity;' >/dev/null ||
+  { echo 'OFF03D7C6B_CI_DB_OWNER_REVOKE=BLOCKED' >&2; exit 1; }
+echo 'OFF03D7C6B_CI_DB_OWNER_REVOKE=PASS_SEPARATE_ADMIN_REVOKE'
 
 revoked="$(docker exec -e PGOPTIONS='-c default_transaction_read_only=on' "$NAME" \
  psql -X -qAt -v ON_ERROR_STOP=1 -U vinto_qa_bootstrap -d vinto_qa_offline -c "
