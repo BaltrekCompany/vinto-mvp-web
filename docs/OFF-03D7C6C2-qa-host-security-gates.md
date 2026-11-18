@@ -11,7 +11,7 @@ No se deben modificar ni desplegar servicios, contenedores, firewall, configurac
 | Control | Verificación solicitada | Criterio de cierre |
 |---|---|---|
 | HOST-NET-01 | Inventario de acceso externo a servicios de datos y sus consumidores legítimos, sin publicar direcciones ni detalles de explotación | Superficie de red no necesaria restringida, sin romper conexiones autorizadas; prueba negativa desde origen externo |
-| HOST-SEC-02 | Auditoría de propietario, modo y ACL de archivos de configuración de servicios actuales, sin leer valores | Modificación y lectura limitadas al usuario de servicio o custodio autorizado; pruebas de continuidad |
+| HOST-SEC-02 | **CERRADO SIN CAMBIOS**. La alarma inicial se debió a interpretar permisos de un enlace simbólico como permisos efectivos del archivo de destino. El archivo de configuración real ya tiene propietario y modo restrictivos; verificación de ACL extendida no concluyente, sin evidencia adicional de exposición | No corregir permisos ni atribuir vulnerabilidad basándose en el enlace; conservar la configuración actual |
 | QA-NET-03 | Política de acceso privado a hostname QA antes de añadir rutas a la API | Denegación por defecto verificada desde cliente NO autorizado y acceso positivo desde cliente autorizado |
 | QA-APP-04 | Servicio de API QA bajo identidad propia, puerto de loopback y conexiones de DB aisladas | Instancia real verifica rol de negocio, rol de identidad dedicado, modo endurecido y bloqueo de escrituras operativas |
 | QA-FUNC-05 | Prueba funcional de los dos roles y rutas de autenticación/administración en QA | D3B3 PASS con evidencia QA sin secretos antes de solicitar corte D3B4 |
@@ -23,6 +23,14 @@ No se deben modificar ni desplegar servicios, contenedores, firewall, configurac
 3. **Aprobaciones independientes:** a) cambio de alcance de red y b) ajuste de permisos de configuración. No ejecutar acciones mutantes ni rotaciones de credenciales por defecto.
 4. **Validación de cambios:** disponibilidad de servicios existentes, acceso desde orígenes autorizados, rechazo desde orígenes no autorizados, revisión de registros de errores sin secretos y procedimiento explícito de reversión.
 5. **Preparación de QA:** mantener el hostname en estado sin proxy hasta que QA-NET-03 esté aprobado. Después diseñar y solicitar aprobación independiente para instalar una API exclusiva QA y comprobar QA-APP-04 / QA-FUNC-05.
+
+
+## Actualización tras preflight adicional (18-nov-2026)
+
+- **HOST-SEC-02 — cerrado, falso positivo:** se verificó la resolución del enlace y los permisos restrictivos del archivo real. La clasificación inicial de permisos inseguros fue incorrecta; no hay ajuste de permisos autorizado ni necesario. La verificación exhaustiva de ACL extendida no fue posible, y esta limitación debe conservarse como NOT_VERIFIED sin convertirla en incidencia confirmada.
+- **HOST-NET-01 — riesgo confirmado; contención pendiente:** el inventario identificó consumidores locales legítimos que podrían perder conectividad si se aplica una regla de bloqueo sin excepciones. También se identificó un posible consumidor externo cuyo origen aún no se ha atribuido; no inferirlo por la sola existencia de permisos o cuentas técnicas.
+- **A0 — investigación previa, SOLO lectura:** determinar si la conexión externa realmente está en uso, cómo se configura y cuál es su rango autorizado. La ausencia de conexiones activas o de logs históricos no demuestra ausencia de uso. Si A0 no puede confirmarse en host, exigir evidencia del responsable del cliente externo o de su administrador de red antes de fijar un allowlist.
+- **A1/A2 — no autorizados:** no cambiar publicación, firewall, contenedores, conexiones o servicios hasta contar con orígenes autorizados corroborados, pruebas positivas/negativas y plan de reversión. La salida privada de la investigación no debe copiarse a este repositorio público.
 
 ## Reglas de seguridad
 
