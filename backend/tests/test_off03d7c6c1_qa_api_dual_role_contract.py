@@ -95,7 +95,7 @@ class QaApiCodeReadinessTests(unittest.TestCase):
                     and route.path == path
                     and method in route.methods
                 ]
-                self.assertEqual(len(matches), 1)
+                self.assertEqual(len(matches), 1, f"available routes: {[(type(r).__name__, getattr(r, 'path', None), getattr(r, 'methods', None)) for r in app.routes][:40]}")
                 deps = matches[0].dependant.dependencies
                 self.assertTrue(
                     any(d.call is database.get_identity_connection for d in deps),
