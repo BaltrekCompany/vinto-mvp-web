@@ -28,16 +28,17 @@ test("reference source and independent QA connection are fixed",()=>{
  assert.match(source,/OFF03D7C2_CI_REFERENCE_IMPORT=PASS_EPHEMERAL/);
  assert.match(source,/OFF03D7C2_IDEMPOTENT_RERUN=PASS_READ_ONLY/);
 });
-test("QA versions remain drafts and no synthetic user or grants created",()=>{
+test("QA versions are published atomically, but no test user or grants created",()=>{
  assert.match(source,/VINTO-P1-18.*2/);
  assert.match(source,/VINTO-P1-22.*2/);
  assert.match(source,/VINTO-P1-26.*3/);
  assert.match(source,/VINTO-P1-27.*2/);
- assert.match(source,/status='draft'/);
- assert.match(source,/OFF03D7C2_CI_FOUR_QUALITY_VERSIONS=DRAFT_NOT_PUBLISHED/);
+ assert.match(source,/status='published'/);
+ assert.match(source,/OFF03D7C2_CI_FOUR_QUALITY_VERSIONS=PUBLISHED_BY_IMPORT/);
  assert.match(source,/count\(\*\) FROM vinto_master/);
  assert.match(source,/count\(\*\) FROM vinto_master\.user_machine_form_grant/);
  assert.match(source,/OFF03D7C2_CI_TEST_USER_AND_GRANTS=NOT_CREATED/);
+ assert.match(source,/OFF03D7C2_CI_NO_ADDITIONAL_PUBLICATION_STEP=PASS/);
 });
 test("ephemeral resources are removed and scripts lack real target shortcuts",()=>{
  assert.match(source,/trap cleanup EXIT/);
