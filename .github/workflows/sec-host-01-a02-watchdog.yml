@@ -32,10 +32,14 @@ jobs:
       - name: Validate systemd watchdog templates only (not installed)
         run: |
           command -v systemd-analyze
-          systemd-analyze verify ops/sec-host-01-a02/sec-a01-watchdog.service ops/sec-host-01-a02/sec-a01-watchdog.timer
+          systemd-analyze verify ops/sec-host-01-a02/sec-a01-watchdog.service ops/sec-host-01-a02/sec-a01-watchdog.timer ops/sec-host-01-a02/sec-a01-watchdog-failed.service
           systemd-analyze calendar --iterations=2 '*-*-* *:*:00 UTC'
           ! grep -E 'ALTER SYSTEM SET log_connections\s*=\s*(on|true)' scripts/sec-host-01-a02-stop-watchdog.py
           ! grep -E 'ExecStart=.*(start|enable)' ops/sec-host-01-a02/sec-a01-watchdog.service
+          grep -F 'ExecStart=/usr/bin/python3 -I' ops/sec-host-01-a02/sec-a01-watchdog.service
+          grep -F 'TimeoutStartSec=180s' ops/sec-host-01-a02/sec-a01-watchdog.service
+          grep -F 'OnFailure=sec-a01-watchdog-failed.service' ops/sec-host-01-a02/sec-a01-watchdog.service
+          ! grep -F 'Wants=docker.service' ops/sec-host-01-a02/sec-a01-watchdog.service
 
   disposable-postgres17-stop-only:
     runs-on: ubuntu-24.04
