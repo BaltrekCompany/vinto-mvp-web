@@ -3,7 +3,13 @@ import { apiBaseUrl } from "./api";
 import type { SignedOfflineScope } from "./offline-scope-verify";
 
 export class ScopeFetchError extends Error {
-    constructor() { super("No se pudo obtener un alcance firmado en una sesión online segura."); }
+    /** HTTP status when the server answered; undefined for network/transport failures. */
+    readonly status: number | undefined;
+    constructor(status?: number) {
+        super("No se pudo obtener un alcance firmado en una sesión online segura.");
+        this.name = "ScopeFetchError";
+        this.status = status;
+    }
 }
 /** Dev loopback is allowed for CI; deployed browsers require real HTTPS. */
 function secureEndpoint(url: URL): boolean {
@@ -22,7 +28,8 @@ export async function issueOnlineReadinessScope(deviceKey: string, machineCodes:
             body: JSON.stringify({ device_key: deviceKey, machine_codes: machineCodes })
         });
     } catch { throw new ScopeFetchError(); }
-    if (!response.ok || response.headers.get("Cache-Control")?.toLowerCase().includes("no-store") !== true)
+    if (!response.ok) throw new ScopeFetchError(response.status);
+    if (response.headers.get("Cache-Control")?.toLowerCase().includes("no-store") !== true)
         throw new ScopeFetchError();
     let payload: unknown;
     try { payload = await response.json(); } catch { throw new ScopeFetchError(); }

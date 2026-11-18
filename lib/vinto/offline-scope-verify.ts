@@ -46,7 +46,7 @@ export type SignedOfflineScope = Readonly<{
     };
 }>;
 export class ScopeError extends Error {
-    readonly reason: "invalid" | "identity_mismatch" | "pin_mismatch" | "signature" | "unavailable";
+    readonly reason: "invalid" | "identity_mismatch" | "pin_mismatch" | "signature" | "unavailable" | "renewal_required" | "rollback";
     constructor(reason: ScopeError["reason"]) {
         super("OFFLINE_SCOPE_" + reason.toUpperCase());
         this.name = "ScopeError";
@@ -131,4 +131,22 @@ export async function verifyOfflineScope(input: unknown, trustedPublicKey: strin
         throw new ScopeError("unavailable");
     }
     return input;
+}
+
+/**
+ * Anti-rollback ordering between two ALREADY VERIFIED scopes of the same owner/browser.
+ * `issued_at` is the only server-signed ordering (second precision). Equal time with a
+ * different snapshot is ambiguous and is never accepted as newer. A valid signature
+ * proves integrity of that historical snapshot, NOT that it is the latest one.
+ */
+export type ScopeFreshness = "newer" | "identical" | "older" | "ambiguous";
+export function compareScopeFreshness(candidate: SignedOfflineScope, current: SignedOfflineScope): ScopeFreshness {
+    const a = Date.parse(candidate.payload.issued_at), b = Date.parse(current.payload.issued_at);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return "ambiguous";
+    if (candidate.payload.snapshot_id === current.payload.snapshot_id) {
+        return canonicalOfflineJson(candidate.payload) === canonicalOfflineJson(current.payload) &&
+            candidate.signature_b64url === current.signature_b64url ? "identical" : "ambiguous";
+    }
+    if (a > b) return "newer";
+    return a < b ? "older" : "ambiguous";
 }

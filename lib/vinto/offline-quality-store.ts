@@ -7,17 +7,23 @@ import { openProfileDb, PACKAGE_STORE_NAME } from "./offline-profile-store.ts";
 import { readOfflineScope, type VerifiedLocalScope } from "./offline-scope-store.ts";
 import { openLocalDraft, sealLocalDraft, type OfflineVaultIdentity } from "./offline-vault.ts";
 import type { SealedValues } from "./offline-store";
-import { verifyQualityPackage, type VerifiedQualityDefinition, QualityPackageError } from "./offline-quality-verify.ts";
+import {
+  verifyQualityPackage, type VerifiedQualityDefinition, type QualityPayload, QualityPackageError
+} from "./offline-quality-verify.ts";
 
 const VAULT_FORM="VINTO-QUALITY-PACKAGE";
 const VAULT_VERSION=1;
 const encoder=new TextEncoder();
-type Stored={
+export type StoredPackage={
   packageKey:string;ownerId:string;deviceKey:string;packageId:string;
   scopeSnapshotId:string;sealed:SealedValues
 };
+type Stored=StoredPackage;
 function profileKey(identity:OfflineVaultIdentity):string{
     return identity.ownerId.toLowerCase()+":"+identity.deviceKey.toLowerCase();
+}
+export async function packageIndexKey(identity:OfflineVaultIdentity,machine:string,form:string):Promise<string>{
+    return indexKey(identity,machine,form);
 }
 async function indexKey(identity:OfflineVaultIdentity,machine:string,form:string):Promise<string>{
     const bytes=encoder.encode("VINTO:OFF03C2:PKG:v1:"+profileKey(identity)+":"+machine+":"+form);
@@ -28,12 +34,18 @@ function binding(identity:OfflineVaultIdentity,stored:Pick<Stored,"packageId"|"s
   return {...identity,id:stored.packageId,contextId:stored.scopeSnapshotId,
           formCode:VAULT_FORM,formVersion:VAULT_VERSION};
 }
+export function validPackageRecord(input:unknown,identity:OfflineVaultIdentity,index:string):input is StoredPackage{
+  return validRecord(input,identity,index);
+}
 function validRecord(input:unknown,identity:OfflineVaultIdentity,index:string):input is Stored{
   if(!input||typeof input!=="object"||Array.isArray(input))return false;
   const r=input as Record<string,unknown>;
   return r.packageKey===index&&r.ownerId===identity.ownerId.toLowerCase()&&
     r.deviceKey===identity.deviceKey.toLowerCase()&&typeof r.packageId==="string"&&
     typeof r.scopeSnapshotId==="string"&&!!r.sealed&&typeof r.sealed==="object";
+}
+export function readRawPackage(identity:OfflineVaultIdentity,machine:string,form:string):Promise<StoredPackage|null>{
+  return getStored(identity,machine,form);
 }
 async function getStored(identity:OfflineVaultIdentity,machine:string,form:string):Promise<Stored|null>{
   const idx=await indexKey(identity,machine,form);
@@ -68,6 +80,24 @@ export async function readQualityPackage(
      verified.envelope.payload.form_code!==form) throw new QualityPackageError("invalid");
   return verified;
 }
+/** A package may only move forward: never a lower form version, never a different body at the same version. */
+export function assertPackageProgression(old:QualityPayload,next:QualityPayload):void{
+  if(old.form_version>next.form_version ||
+     (old.form_version===next.form_version&&old.content_sha256!==next.content_sha256))
+     throw new QualityPackageError("invalid");
+}
+/** Encrypt an ALREADY VERIFIED package into its storage record without touching IndexedDB. */
+export async function sealPackageRecord(key:CryptoKey,identity:OfflineVaultIdentity,
+                                        verified:VerifiedQualityDefinition):Promise<StoredPackage>{
+  const p=verified.envelope.payload;
+  return {
+    packageKey:await indexKey(identity,p.machine_code,p.form_code),
+    ownerId:identity.ownerId.toLowerCase(),deviceKey:identity.deviceKey.toLowerCase(),
+    packageId:p.package_id,scopeSnapshotId:p.scope_snapshot_id,
+    sealed:await sealLocalDraft(key,binding(identity,{packageId:p.package_id,scopeSnapshotId:p.scope_snapshot_id}),
+                            {envelope:verified.envelope})
+  };
+}
 /**
  * Online only: caller has reauthenticated and retrieved the package from HTTPS.
  * No plaintext of the signed package is written to IndexedDB.
@@ -86,18 +116,8 @@ export async function storeQualityPackage(key:CryptoKey,identity:OfflineVaultIde
     // metadata without a controlled recovery flow / approved rotation.
     throw new QualityPackageError("scope");
   }
-  if(previous){
-    const old=previous.envelope.payload;
-    if(old.form_version>p.form_version ||
-       (old.form_version===p.form_version&&old.content_sha256!==p.content_sha256))
-       throw new QualityPackageError("invalid");
-  }
-  const record:Stored={
-    packageKey:idx,ownerId:identity.ownerId.toLowerCase(),deviceKey:identity.deviceKey.toLowerCase(),
-    packageId:p.package_id,scopeSnapshotId:p.scope_snapshot_id,
-    sealed:await sealLocalDraft(key,binding(identity,{packageId:p.package_id,scopeSnapshotId:p.scope_snapshot_id}),
-                            {envelope:verified.envelope})
-  };
+  if(previous)assertPackageProgression(previous.envelope.payload,p);
+  const record:Stored=await sealPackageRecord(key,identity,verified);
   const db=await openProfileDb();
   try{
     await new Promise<void>((resolve,reject)=>{
