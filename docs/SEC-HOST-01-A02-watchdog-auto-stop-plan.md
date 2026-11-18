@@ -29,6 +29,16 @@ A0.1-PRE en VPS confirmó que log_connections está deshabilitado y admite recar
 
 ALTER SYSTEM RESET log_connections quita solo la entrada temporal de postgresql.auto.conf. Si antes había una entrada en ese archivo, RESET perdería ese estado previo, por lo que el watchdog actual lo rechaza. Si el valor estaba en default o archivo regular, RESET permite regresar al origen original. ALTER SYSTEM no se puede revertir mediante ROLLBACK SQL; una recarga aplica la modificación a nuevas sesiones. Referencias: https://www.postgresql.org/docs/17/sql-altersystem.html y https://www.postgresql.org/docs/17/view-pg-settings.html.
 
+## Resultado del preflight posterior y endurecimiento del candidato
+
+Codex verificó **solo lectura** que la fuente original de la configuración es DEFAULT, con valor deshabilitado, sin anulación preexistente ni reinicio pendiente. Las configuraciones de control de acceso tampoco presentaban cambios nuevos por recargar. La compatibilidad sintáctica de systemd se confirmó; no se probaron unidades instaladas ni la ejecución real con aislamiento. **No se autoriza instalar, armar o activar por este resultado.**
+
+Se aplicaron mejoras al candidato después del preflight: `ExecStart` con Python aislado (`-I`), `TimeoutStartSec=180s`, verificación de archivo de watchdog regular, propiedad root y ausencia de escritura de grupo/otros, comprobación de directorio protegido, y eliminación de condiciones que omitirían silenciosamente un tick si desapareciera el estado. El servicio usa `OnFailure` para dejar una marca local root-only en un archivo fijo y un fallo visible en journal. **No existe un receptor de alerta externa:** esa marca no equivale a notificar a un operador. La activación sigue condicionada a probar quién y cómo recibirá el aviso.
+
+Límites tentativos de control: crecimiento de log **10 MiB**, espacio libre mínimo **20 GiB**, revisión cada minuto y ventana máxima admitida de siete días. Son parámetros propuestos, no desplegados ni autorizados. Incluso siete días podrían no cubrir dos actualizaciones semanales completas; se requiere conocer el ciclo del consumidor o reconocer explícitamente que el resultado puede ser INDETERMINATE.
+
+No se debe usar el temporizador si el archivo de estado falta: ahora esa condición produce un error y activa la marca local. La instalación futura puede colocar archivos root-only y validar las unidades sin habilitar el timer, pero el ensayo sobre PostgreSQL de producción sigue prohibido hasta autorización específica.
+
 ## Gates abiertos
 
 - Fuente real y ausencia de override anterior en auto.conf, sin divulgar rutas ni valores.
