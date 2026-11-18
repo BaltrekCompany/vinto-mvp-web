@@ -6,7 +6,7 @@
 
 ## Entregable OFF-03C.3
 
-La interfaz pública `/offline.html` incluye un control **Comprobar preparación técnica** y `/offline-device-qa.js` precacheado por Service Worker versión `vinto-off03c3-static-v1`.
+La interfaz pública `/offline.html` incluye un control **Comprobar preparación técnica** y `/offline-device-qa.js` precacheado por Service Worker versión `vinto-off03c4-static-v1`.
 
 El diagnóstico funciona **sin red ni backend**, no requiere desbloquear la frase local, no usa cookies/fetch, no almacena ni modifica registros y no revela IDs, contraseñas, concesiones, etiquetas de formularios, capturas ni claves. Comprueba:
 
@@ -43,7 +43,7 @@ En navegadores donde `indexedDB.databases()` no esté disponible, el sistema **n
 | M02 | Preparar perfil local y frase **distinta** a la corporativa | Perfil único y bóveda cifrada, sin datos sensibles en claro |
 | M03 | Solicitar alcance firmado para MP1 o MP3 | Par máquina–formulario–versión concedido; permiso efectivo del backend |
 | M04 | Seleccionar un P1-18/22/26/27 autorizado y preparar definición | Firma y hash verificados, paquete cifrado; no hay captura |
-| M05 | Abrir una vez la aplicación online y comprobar control SW / caché | Versión `vinto-off03c3-static-v1` instalada |
+| M05 | Abrir una vez la aplicación online y comprobar control SW / caché | Versión `vinto-off03c4-static-v1` instalada |
 | M06 | Desactivar **Wi-Fi y datos móviles** (no confiar solo en `navigator.onLine`) | API realmente inaccesible; no usar modo de prueba solo de DevTools |
 | M07 | Cerrar completamente navegador/PWA, **reiniciar físicamente el móvil** y mantener ambas radios apagadas | No se restablece Internet durante el reinicio |
 | M08 | Abrir VINTO desde acceso guardado o PWA en **el mismo navegador/origen** | Aparece shell público de contingencia sin conexión |
@@ -80,3 +80,5 @@ En el registro de QA escribir **solo**: ID de caso, fecha/hora del ensayo, equip
 - Diseñar registro offline y reconciliación de OT/asignación sin atribuciones silenciosas, idempotencia y outbox en OFF-04. El presente hito **es de lectura y diagnóstico**.
 
 **Gate de liberación:** PR Draft; NO merge, NO despliegue, NO migración, NO cambios en la VPS ni datos industriales.
+
+> **Nota OFF-03C.4:** el runtime público `offline-boot.js` cambió (estado de renovación). Por eso la caché pública rotó a `vinto-off03c4-static-v1`; el Service Worker elimina las versiones anteriores al activarse. El protocolo M01–M11 / N01–N06 no cambia.
