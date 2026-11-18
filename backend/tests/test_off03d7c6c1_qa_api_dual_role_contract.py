@@ -4,6 +4,7 @@ Uses mocks, no database or network, and does NOT stand in for a deployed QA API.
 """
 import asyncio
 import unittest
+from pathlib import Path
 from unittest.mock import patch, sentinel
 
 import psycopg
@@ -13,6 +14,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app import database
+from app.auth.router import router as auth_router
+from app.admin.router import router as admin_router
 from app.config import settings
 from app.main import app, qa_offline_write_guard
 
@@ -81,6 +84,12 @@ class QaApiCodeReadinessTests(unittest.TestCase):
         self.assertEqual(response.status_code, 204)
 
     def test_http_routes_are_wired_to_dedicated_identity_dependency(self):
+        # FastAPI currently stores included routers as deferred _IncludedRouter
+        # objects in app.routes. Inspect route definitions on their source routers,
+        # then prove main.py actually includes those routers in the ASGI app.
+        main = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+        self.assertIn("app.include_router(auth_router)", main)
+        self.assertIn("app.include_router(admin_router)", main)
         urls = [
             ("/api/auth/login", "POST"),
             ("/api/admin/users", "GET"),
@@ -90,12 +99,13 @@ class QaApiCodeReadinessTests(unittest.TestCase):
         for path, method in urls:
             with self.subTest(path=path, method=method):
                 matches = [
-                    route for route in app.routes
+                    route for router in (auth_router, admin_router)
+                    for route in router.routes
                     if isinstance(route, APIRoute)
                     and route.path == path
                     and method in route.methods
                 ]
-                self.assertEqual(len(matches), 1, f"available routes: {[(type(r).__name__, getattr(r, 'path', None), getattr(r, 'methods', None)) for r in app.routes][:40]}")
+                self.assertEqual(len(matches), 1)
                 deps = matches[0].dependant.dependencies
                 self.assertTrue(
                     any(d.call is database.get_identity_connection for d in deps),
