@@ -33,3 +33,12 @@ La prueba demuestra comportamiento de SQL en CI, **no** que sea seguro ejecutar 
 D7C6C: separación DML de vinto_app (corte D3B4) solo tras ambas conexiones verificadas y aprobación independiente. D7C6D: cuenta QA sintética CALIDAD y ocho concesiones, también con autorización independiente. Perfil CALIDAD posee quality.capture y quality.release, por lo cual es indispensable verificar el middleware QA real deny-write bajo VPN/allowlist que impida acceso público antes de permitir la cuenta.
 
 OFF-04 captura/sync permanece apagada. No hay API QA desplegada, ni merge a main.
+
+
+## Hallazgo de regresion: propietario DB distinto del migrador
+
+En el primer ensayo del PR #216, el script oficial 00c creo vinto_identity en PG17 efimero, pero la verificacion de CONNECT tras 03c no paso. El log emitio un warning de PostgreSQL: "no privileges were granted for vinto_qa_offline". La causa es que la base QA pertenece al administrador vinto_qa_bootstrap; vinto_migrator es propietario de los esquemas/tablas, pero NO dispone de grant option sobre la propia base. El SQL oficial 03c intenta conceder CONNECT como vinto_migrator y PostgreSQL no concede ese permiso.
+
+**Decision de implementacion:** no alterar el SQL oficial 00c/03c. El procedimiento de roles requiere una subfase adicional exclusiva del ADMINISTRADOR de la base QA: GRANT CONNECT ON DATABASE vinto_qa_offline TO vinto_identity antes de aplicar 03c, y un REVOKE CONNECT por ese mismo administrador al revertir. El rollback oficial ROLLBACK_D3B2 ejecutado por vinto_migrator revoca privilegios de tablas/esquemas, pero NO puede revocar un CONNECT otorgado por el administrador. El rol global tampoco desaparece. Esta diferencia debe ser parte explicita de la autorizacion y de la prueba de rollback.
+
+La CI corregida comprueba separadamente ambos lados en un contenedor PG17 efimero. Hasta que esa CI termine PASS, la instalacion en VPS se mantiene BLOQUEADA. La aprobacion futura debera mencionar CREATE ROLE, GRANT CONNECT del administrador, los GRANT de 03c del migrador y el REVOKE CONNECT de administrador dentro del plan de recuperacion. No hacer cambios en pilot/TVC ni usar una base PG compartida.
