@@ -44,7 +44,7 @@ def validate_qa_bundle(bundle: Bundle) -> QaFixtureContract:
         raise QaFixtureBlocked("reference_scope_invalid")
     if not isinstance(bundle.source_checksum, str) or len(bundle.source_checksum) != 64:
         raise QaFixtureBlocked("source_checksum_invalid")
-    if {p["code"] for p in bundle.profiles} < {QA_PROFILE}:
+    if QA_PROFILE not in {p["code"] for p in bundle.profiles}:
         raise QaFixtureBlocked("qa_profile_missing")
     if QA_PROFILE != CALIDAD or QUALITY_CAPTURE not in permissions_for_profiles([QA_PROFILE]):
         raise QaFixtureBlocked("qa_profile_without_quality_capture")
