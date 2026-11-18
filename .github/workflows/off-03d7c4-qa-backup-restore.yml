@@ -1,0 +1,44 @@
+name: OFF-03D7C4 PostgreSQL QA Post-DDL Backup and Restore Gates
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c4-qa-postddl-backup-restore.sh'
+      - 'scripts/off-03d7c4-qa-postddl-backup-restore.test.mjs'
+      - 'scripts/off-03d7c4-postddl-backup-ci-e2e.sh'
+      - 'docs/OFF-03D7C4-qa-postddl-backup-restore.md'
+      - '.github/workflows/off-03d7c4-qa-backup-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guarded-backup-safety-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify scripts and no-write modes
+        run: |
+          bash -n scripts/off-03d7c4-qa-postddl-backup-restore.sh
+          bash -n scripts/off-03d7c4-postddl-backup-ci-e2e.sh
+          node --test scripts/off-03d7c4-qa-postddl-backup-restore.test.mjs
+
+  ephemeral-pg17-postddl-backup-restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 31 migrations, ACL and networkless snapshot-restore in disposable PG17
+        run: bash scripts/off-03d7c4-postddl-backup-ci-e2e.sh
