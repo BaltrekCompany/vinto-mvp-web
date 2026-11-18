@@ -3,7 +3,13 @@ import { apiBaseUrl } from "./api";
 import type { SignedOfflineScope } from "./offline-scope-verify.ts";
 
 export class OfflineQualityFetchError extends Error {
-    constructor(){super("Paquete offline de Calidad no disponible o no autorizado.");}
+    /** HTTP status when the server answered; undefined for network/transport failures. */
+    readonly status:number|undefined;
+    constructor(status?:number){
+        super("Paquete offline de Calidad no disponible o no autorizado.");
+        this.name="OfflineQualityFetchError";
+        this.status=status;
+    }
 }
 export async function fetchOnlineQualityPackage(
     deviceKey:string,machineCode:string,formCode:string,signedScope:SignedOfflineScope):Promise<unknown>{
@@ -21,7 +27,8 @@ export async function fetchOnlineQualityPackage(
                              form_code:formCode,signed_scope:signedScope})
       });
     }catch{throw new OfflineQualityFetchError();}
-    if(!response.ok||response.headers.get("Cache-Control")?.toLowerCase().includes("no-store")!==true)
+    if(!response.ok)throw new OfflineQualityFetchError(response.status);
+    if(response.headers.get("Cache-Control")?.toLowerCase().includes("no-store")!==true)
         throw new OfflineQualityFetchError();
     try{return await response.json();}catch{throw new OfflineQualityFetchError();}
 }

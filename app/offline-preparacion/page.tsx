@@ -10,6 +10,7 @@ import { issueOnlineReadinessScope } from "@/lib/vinto/offline-scope-api";
 import { storeOfflineScope, readOfflineScope } from "@/lib/vinto/offline-scope-store";
 import { fetchOnlineQualityPackage } from "@/lib/vinto/offline-quality-api";
 import { storeQualityPackage } from "@/lib/vinto/offline-quality-store";
+import { renewOfflineBundle, RenewalError, type RenewalReason } from "@/lib/vinto/offline-renewal";
 import { offlineStorageStatus, requestOfflinePersistence } from "@/lib/vinto/offline-store";
 import type { AuthUser } from "@/lib/vinto/auth";
 
@@ -24,6 +25,24 @@ function parseMachines(raw: string): string[] {
     return codes;
 }
 
+const RENEWAL_MESSAGES: Record<RenewalReason, string> = {
+    network: "Sin conexión segura: no se reemplazó nada. El conjunto anterior se conserva cifrado.",
+    auth: "Su sesión online expiró: ingrese de nuevo. No se reemplazó nada.",
+    revoked: "El servidor ya no concede este alcance. Se registró la revocación: el conjunto anterior se conserva cifrado pero no se mostrará como vigente.",
+    revoked_unrecorded: "El servidor ya no concede este alcance, pero NO se pudo guardar el registro de la revocación en este navegador. Esta sesión mantiene el conjunto cerrado y no se borró nada; si el almacenamiento rechaza escrituras, tras reiniciar podría volver a mostrarse el conjunto anterior. Libere espacio y repita la renovación.",
+    server_unavailable: "El servicio offline no está disponible ahora. No se reemplazó nada.",
+    invalid: "La respuesta del servidor no superó la verificación de firma o estructura. No se reemplazó nada.",
+    rollback: "El servidor devolvió un alcance o paquete anterior al que ya está guardado. Se rechazó; no se reemplazó nada.",
+    identity_mismatch: "La identidad o el navegador no corresponden al perfil local. No se reemplazó nada.",
+    pin_mismatch: "La clave de firma no coincide con la ya anclada en este navegador. No se reemplazó nada.",
+    incompatible: "Un paquete no corresponde a la versión concedida en el nuevo alcance. No se reemplazó nada.",
+    needs_recovery: "Hay datos locales ilegibles. Para reemplazarlos active la recuperación explícita y repita la renovación.",
+    conflict: "Otro proceso modificó los datos locales (por ejemplo, registró una revocación) durante la renovación. No se reemplazó nada; vuelva a consultar y reintente.",
+    storage: "No se pudo preparar o guardar el nuevo conjunto cifrado. No se reemplazó nada.",
+    commit_failed: "El almacenamiento local rechazó la confirmación. No se reemplazó nada.",
+    no_local_scope: "Todavía no hay un alcance firmado local. Guárdelo primero.",
+};
+
 export default function OfflinePreparationPage() {
     const [state, setState] = useState<PageState>("checking");
     const [user, setUser] = useState<AuthUser | null>(null);
@@ -32,6 +51,7 @@ export default function OfflinePreparationPage() {
     const [machines, setMachines] = useState("");
     const [packageMachine, setPackageMachine] = useState("");
     const [packageForm, setPackageForm] = useState("");
+    const [recover, setRecover] = useState(false);
     const [message, setMessage] = useState("Validando sesión online...");
     useEffect(() => {
         let active = true;
@@ -152,6 +172,31 @@ export default function OfflinePreparationPage() {
         } finally { setSecret(""); setState("package"); }
     }
 
+    async function renewBundle() {
+        if (state !== "package" || !user) return;
+        setState("working");
+        try {
+            const active = await verifySession();
+            const deviceKey = getDeviceKey();
+            const existing = await readLocalProfile();
+            if (!existing || existing.ownerId !== active.id.toLowerCase() ||
+                existing.deviceKey !== deviceKey.toLowerCase() ||
+                localStorage.getItem(DEVICE_KEY_STORAGE) !== deviceKey) throw new RenewalError("identity_mismatch");
+            const contentKey = await unlockLocalVault(existing, secret);
+            const result = await renewOfflineBundle(contentKey, { ownerId: active.id, deviceKey }, {
+                fetchScope: (codes) => issueOnlineReadinessScope(deviceKey, codes),
+                fetchPackage: (machine, form, scope) => fetchOnlineQualityPackage(deviceKey, machine, form, scope),
+            }, { allowReplaceUnreadable: recover });
+            setMessage("Renovación completa: alcance y " + result.renewedPackages.length +
+                " formulario(s) se reemplazaron juntos." +
+                (result.reduced ? " El alcance se redujo: los formularios retirados ya no aparecerán." : "") +
+                " Solo consulta; capturas y sincronización siguen deshabilitadas.");
+        } catch (error) {
+            setMessage(error instanceof RenewalError ? RENEWAL_MESSAGES[error.reason]
+                : "No se pudo renovar: compruebe sesión, frase local y conexión segura. No se reemplazó nada.");
+        } finally { setSecret(""); setRecover(false); setState("package"); }
+    }
+
     return (
         <main className="mx-auto max-w-xl p-6 space-y-5">
             <h1 className="text-2xl font-semibold">VINTO · Preparación offline (ensayo)</h1>
@@ -204,6 +249,16 @@ export default function OfflinePreparationPage() {
                     </label>
                     <button type="submit" className="px-4 py-2 rounded bg-emerald-800 text-white">
                         Guardar formulario firmado cifrado
+                    </button>
+                    <hr className="my-2" />
+                    <p className="text-sm">Renovación: reemplaza el alcance y TODOS los formularios guardados como un solo conjunto, o no cambia nada.</p>
+                    <label className="block text-sm">
+                        <input type="checkbox" checked={recover} onChange={e=>setRecover(e.target.checked)} className="mr-2"/>
+                        Recuperación explícita: permitir reemplazar datos locales ilegibles (no borra nada más)
+                    </label>
+                    <button type="button" onClick={()=>{void renewBundle();}}
+                        className="px-4 py-2 rounded bg-emerald-900 text-white">
+                        Renovar alcance y paquetes
                     </button>
                 </form>
             )}

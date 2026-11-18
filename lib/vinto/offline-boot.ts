@@ -7,6 +7,7 @@ import { readLocalProfile } from "./offline-profile-store.ts";
 import { unlockLocalVault } from "./offline-vault.ts";
 import { readOfflineScope } from "./offline-scope-store.ts";
 import { readQualityPackage } from "./offline-quality-store.ts";
+import { readRenewalStatus } from "./offline-renewal.ts";
 import { DEVICE_KEY_STORAGE } from "./device";
 
 const status = document.getElementById("offline-profile-status");
@@ -55,8 +56,12 @@ async function start(): Promise<void> {
                 // Never use a signed read-only scope as a write permission.
                 // Inspect full versioned definitions only after AES decryption,
                 // pinned Ed25519 package signature and content SHA256 verification.
+                // OFF-03C.4: a revocation learned online (or an unverifiable marker) means the
+                // historical set must NOT be presented as available, even though its signature is intact.
+                const renewal = scope ? await readRenewalStatus(key, { ownerId: record.ownerId, deviceKey: record.deviceKey }) : null;
+                const withheld = renewal?.status === "revocation_known" || renewal?.status === "unreadable";
                 const packageCards: HTMLDetailsElement[] = [];
-                if (scope && packagePanel) {
+                if (scope && packagePanel && !withheld) {
                     const candidates = scope.envelope.payload.form_scopes.filter(item =>
                         item.operation === "quality_machine_capture" &&
                         /^VINTO-P1-(18|22|26|27)$/.test(item.form_code)).slice(0,12);
@@ -99,6 +104,14 @@ async function start(): Promise<void> {
                     show("Perfil local verificado sin Internet. Las capturas y los permisos industriales siguen deshabilitados.");
                     return;
                 }
+                if (withheld) {
+                    if (scopeList) { scopeList.hidden = true; scopeList.replaceChildren(); }
+                    if (packagePanel) { packagePanel.hidden = true; packagePanel.replaceChildren(); }
+                    show(renewal?.status === "revocation_known"
+                        ? "Se detectó con Internet que este alcance ya no está vigente (revocado o reducido). No se muestran formularios. Renueve el alcance con Internet. Las capturas y los permisos industriales siguen deshabilitados."
+                        : "No se puede confirmar el estado de renovación del alcance local. Por seguridad no se muestran formularios. Renueve con Internet. Las capturas y los permisos industriales siguen deshabilitados.");
+                    return;
+                }
                 if (scopeList) {
                     scopeList.replaceChildren();
                     for (const item of scope.envelope.payload.form_scopes) {
@@ -112,9 +125,13 @@ async function start(): Promise<void> {
                     packagePanel.replaceChildren(...packageCards);
                     packagePanel.hidden = packageCards.length === 0;
                 }
+                const freshness = renewal?.status === "renewed_online" && renewal.recordedAt
+                    ? " Última renovación con Internet: " + new Date(renewal.recordedAt).toLocaleString("es") +
+                      ". Sin Internet no se puede confirmar que los permisos sigan vigentes."
+                    : " Este alcance no tiene marca de renovación; renuévelo con Internet.";
                 show("Firma y perfil verificados sin Internet. Índice de " +
                     scope.envelope.payload.form_scopes.length + " formularios disponibles solo para consulta. " +
-                    "Las capturas y los permisos industriales siguen deshabilitados.");
+                    "Las capturas y los permisos industriales siguen deshabilitados." + freshness);
             } catch {
                 if (scopeList) { scopeList.hidden = true; scopeList.replaceChildren(); }
                 if (packagePanel) { packagePanel.hidden = true; packagePanel.replaceChildren(); }

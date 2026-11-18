@@ -1,5 +1,5 @@
 /* VINTO OFF-02: public, versioned app-shell assets only. NEVER cache auth/API/user data. */
-const STATIC_CACHE = "vinto-off03c3-static-v1";
+const STATIC_CACHE = "vinto-off03c4-static-v1";
 const PUBLIC_ASSETS = ["/offline.html", "/offline-probe.js", "/offline-boot.js", "/offline-device-qa.js", "/manifest.webmanifest", "/favicon.svg"];
 const PUBLIC_PATHS = new Set(PUBLIC_ASSETS);
 
@@ -10,7 +10,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    await Promise.all(names.filter((name) => (name.startsWith("vinto-off02-") || name.startsWith("vinto-off03b-") || name.startsWith("vinto-off03b3-") || name.startsWith("vinto-off03c2-") || name.startsWith("vinto-off03c3-")) && name !== STATIC_CACHE).map((name) => caches.delete(name)));
+    await Promise.all(names.filter((name) => (name.startsWith("vinto-off02-") || name.startsWith("vinto-off03b-") || name.startsWith("vinto-off03b3-") || name.startsWith("vinto-off03c2-") || name.startsWith("vinto-off03c3-") || name.startsWith("vinto-off03c4-")) && name !== STATIC_CACHE).map((name) => caches.delete(name)));
     await self.clients.claim();
   })());
 });
