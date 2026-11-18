@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const path = new URL("./off-03d7c5a-qa-postimport-audit.sh", import.meta.url).pathname;
@@ -84,4 +86,38 @@ test("postimport dry-run enforces readonly at libpq and never calls apply",()=>{
   assert.match(source,/OFF03D7C5A_AUDIT=PASS_READ_ONLY/);
   assert.match(source,/NO_DATABASE_WRITES=PASS/);
   assert.doesNotMatch(source,/["']--apply["']|import_reference\.py.*--apply|INSERT INTO|DELETE FROM|UPDATE .* SET|CREATE TABLE|pg_restore --|pg_dump --/);
+});
+
+test("valid executable venv Python symlink is accepted, broken Python or linked venv root rejected",()=>{
+  // D6C3 validates sys.prefix, interpreter and protected checkout before this predicate.
+  const indexC3 = source.indexOf('c3_result="$(bash "$C3" audit)"');
+  const indexGate = source.indexOf('VENV=/srv/vinto-qa-offline/venv');
+  assert.ok(indexC3 >= 0 && indexC3 < indexGate);
+  assert.doesNotMatch(source,/! -L "\$PYTHON"/);
+  const gate = source.match(/\[ -d "\$VENV" \] && \[ ! -L "\$VENV" \] &&\s*\[ -x "\$PYTHON" \]/);
+  assert.ok(gate, "expected QA venv gate must be present");
+  const tmp = mkdtempSync(join(tmpdir(),"off03d7c5a-symlink-"));
+  try {
+    const venv = join(tmp, "venv");
+    mkdirSync(join(venv,"bin"),{recursive:true});
+    const executable=join(tmp,"python-executable");
+    writeFileSync(executable,"#!/bin/sh\nexit 0\n",{mode:0o700});
+    const python=join(venv,"bin","python");
+    symlinkSync(executable, python);
+    const check=(root,bin)=>spawnSync("bash",["-c",gate[0]],{
+      env:{PATH:process.env.PATH,VENV:root,PYTHON:bin},encoding:"utf8",timeout:5000
+    });
+    assert.equal(check(venv,python).status,0,"venv Python symlink should work");
+    rmSync(python);
+    symlinkSync(join(tmp,"missing-python"),python);
+    assert.notEqual(check(venv,python).status,0,"broken executable symlink must fail");
+    rmSync(python);
+    symlinkSync(executable,python);
+    const linkedVenv=join(tmp,"linked-venv");
+    symlinkSync(venv,linkedVenv);
+    assert.notEqual(check(linkedVenv,join(linkedVenv,"bin","python")).status,0,
+      "linked venv directory must fail");
+  } finally {
+    rmSync(tmp,{recursive:true,force:true});
+  }
 });
