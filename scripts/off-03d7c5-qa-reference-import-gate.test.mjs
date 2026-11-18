@@ -58,6 +58,9 @@ test("QA-only fixed role and no credential disclosure; no env fallback",()=>{
   ])assert.ok(s.includes(marker),marker);
   assert.match(s,/subprocess\.run\(cmd, cwd=cwd, env=env, text=True/);
   assert.match(s,/capture_output=True/);
+  const identityQuery=s.slice(s.indexOf('with psycopg.connect('),s.indexOf('print("OFF03D7C5_REFERENCE_ROLE_TARGET=PASS")'));
+  assert.match(identityQuery,/NOT has_schema_privilege\('vinto_reference','vinto_meta','USAGE'\)/);
+  assert.doesNotMatch(identityQuery,/FROM vinto_meta\.schema_migration/);
   assert.doesNotMatch(s,/print\(password\)|print\(clean_env\)|echo .*password|curl |git pull|git checkout|systemctl (?:restart|stop|start)|docker (?:run|rm|restart)/);
 });
 test("inspect only dry-runs; apply one transaction then metadata and read-only idempotence",()=>{
