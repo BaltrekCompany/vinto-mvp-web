@@ -12,10 +12,10 @@ const run = (path,args, env={}) => spawnSync("bash",[path,...args],{
 });
 
 test("guard rejects unsupported operations before filesystem or Docker work",()=>{
-  assert.equal(run(live,[]).status,2);
-  assert.equal(run(live,["--help"]).status,0);
+  assert.equal(run(livePath,[]).status,2);
+  assert.equal(run(livePath,["--help"]).status,0);
   for (const mode of ["restore","dump","backup","migrate","apply","seed","install","deploy","cleanup","reset"]) {
-    const x=run(live,[mode]);
+    const x=run(livePath,[mode]);
     assert.equal(x.status,1,mode);
     assert.match(x.stderr,/unsupported_operation/);
   }
