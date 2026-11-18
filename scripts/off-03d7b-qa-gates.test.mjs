@@ -12,10 +12,10 @@ const run=(file,arg)=>spawnSync("bash",[file,...arg],{
 });
 
 test("QA app audit only accepts audit mode; never operates on VPS in CI",()=>{
-  assert.equal(run(role,["help"]).status,0);
-  assert.equal(run(role,[]).status,2);
+  assert.equal(run(rolePath,["help"]).status,0);
+  assert.equal(run(rolePath,[]).status,2);
   for(const mode of ["inspect","apply","install","prepare","restore","migrate","deploy","rollback"]){
-    const got=run(role,[mode]);
+    const got=run(rolePath,[mode]);
     assert.equal(got.status,1,mode);
     assert.match(got.stderr,/only audit mode/);
   }
@@ -46,11 +46,11 @@ test("QA secret is used only through stdin, never password argv or output",()=>{
 });
 
 test("standalone smoke cannot execute outside ephemeral Github Actions runner",()=>{
-  assert.equal(run(smoke,[]).status,2);
+  assert.equal(run(smokePath,[]).status,2);
   for(const mode of ["apply","deploy","start","install"]){
-    assert.equal(run(smoke,[mode]).status,2,mode);
+    assert.equal(run(smokePath,[mode]).status,2,mode);
   }
-  const out=run(smoke,["smoke"]);
+  const out=run(smokePath,["smoke"]);
   assert.equal(out.status,1);
   assert.match(out.stderr,/ephemeral GitHub Actions runner required/);
   assert.match(smoke,/HOSTNAME=127\.0\.0\.1/);
