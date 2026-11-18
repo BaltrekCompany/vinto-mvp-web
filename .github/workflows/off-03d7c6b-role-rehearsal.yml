@@ -1,0 +1,42 @@
+name: OFF-03D7C6B Identity Role/Grant/Rollback Rehearsal (CI Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c6b-role-install-rehearsal-ci.sh'
+      - 'scripts/off-03d7c6b-role-install-rehearsal-ci.test.mjs'
+      - 'docs/OFF-03D7C6B-qa-role-installation-plan.md'
+      - '.github/workflows/off-03d7c6b-role-rehearsal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-vps-and-secret-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Syntax and negative CI-only restrictions
+        run: |
+          bash -n scripts/off-03d7c6b-role-install-rehearsal-ci.sh
+          node --test scripts/off-03d7c6b-role-install-rehearsal-ci.test.mjs
+
+  disposable-pg17-role-and-rollback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Rehearse exact official 00c, 03c and ROLLBACK_D3B2 in ephemeral PostgreSQL 17
+        run: bash scripts/off-03d7c6b-role-install-rehearsal-ci.sh
