@@ -54,7 +54,7 @@ docker exec -i -e DBNAME=vinto_qa_offline "$NAME" \
 echo 'OFF03D5_CI_BASE_ROLES=PASS'
 
 python3 -m venv "$TMP/venv"
-"$TMP/venv/bin/pip" -q install 'psycopg[binary]==3.3.6' 'pydantic-settings==2.15.0'
+"$TMP/venv/bin/pip" -q install -r "$ROOT/backend/requirements.txt"
 
 export CI_QA_PORT="$PORT"
 export APP_ENV=qa
