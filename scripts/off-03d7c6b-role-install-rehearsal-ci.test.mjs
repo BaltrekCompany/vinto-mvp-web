@@ -42,3 +42,15 @@ test("no source-controlled secrets, no SSH to QA or production, and no D3B4 cut"
  assert.doesNotMatch(s,/51\.79\.65\.225|:6554|\/etc\/vinto-qa|ssh |kubectl |git pull|off03d7c6b-qa-identity-role-preflight\.sh apply/);
  assert.doesNotMatch(s,/03d_d3b4_cut_identity_dml\.sql|DROP ROLE vinto_identity|REVOKE .* FROM vinto_app/);
 });
+
+test("cluster owner controls DB CONNECT; migrator only controls schema/table grants",()=>{
+  assert.match(s,/GRANT CONNECT ON DATABASE vinto_qa_offline TO vinto_identity/);
+  assert.match(s,/REVOKE CONNECT ON DATABASE vinto_qa_offline FROM vinto_identity/);
+  assert.match(s,/OFF03D7C6B_CI_DB_OWNER_CONNECT=PASS_SEPARATE_ADMIN_GRANT/);
+  assert.match(s,/OFF03D7C6B_CI_DB_OWNER_REVOKE=PASS_SEPARATE_ADMIN_REVOKE/);
+  const grantAt=s.indexOf("GRANT CONNECT ON DATABASE vinto_qa_offline TO vinto_identity");
+  const migratorAt=s.indexOf("# 03c runs as vinto_migrator");
+  const revokeAt=s.indexOf("REVOKE CONNECT ON DATABASE vinto_qa_offline FROM vinto_identity");
+  assert.ok(grantAt>0 && migratorAt>grantAt && revokeAt>migratorAt);
+  assert.match(s,/docker exec "\$NAME" psql -X -q -v ON_ERROR_STOP=1 \\\n  -U vinto_qa_bootstrap/);
+});
