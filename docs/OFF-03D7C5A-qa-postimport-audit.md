@@ -36,3 +36,12 @@ El script original D7C5 imprime `OFF03D7C5_IMPORT=PASS_QA_ONLY` **después** del
 Una vez recibidos y registrados los marcadores de auditoría independiente PASS, preparar revisión D7C6: rol de identidad QA y ACL efectivos, bloqueo total de operaciones de escritura en API QA, usuario sintético `qa.offline.calidad`, sector `BOBINAS`, cuatro formularios para MP1/MP3, ocho grants, firma Ed25519 exclusiva QA. El perfil CALIDAD también concede `quality.capture` y `quality.release`: **no es solo lectura por sí mismo**. La creación de usuarios, grants, claves y cualquier despliegue requieren autorizaciones nuevas.
 
 **Acceso web QA pendiente:** TLS válido pero aún sin control de acceso externo probado. Mantener `/` y `/api` sin publicar hasta VPN/allowlist autenticada con pruebas negativas desde cliente no autorizado. No fusionar PR Draft a main, ni modificar Nginx/piloto/TVC/servicios.
+
+
+## Incidencia de ejecución y corrección D7C5A-R1
+
+El primer audit en VPS llegó a OFF03D7C5A_MIGRATIONS_31_CHECKSUMS_ACL=PASS, OFF03D7C5A_PILOT_TVC_STATUS=PASS_AT_AUDIT y OFF03D7C5A_POST_DDL_BACKUP=PASS_FILE_INTEGRITY, pero se detuvo con OFF03D7C5A_BLOCKED: QA_python_missing. No evaluó el catálogo ni la idempotencia. No se modificó PostgreSQL ni se repitió la importación.
+
+**Análisis de código:** el primer ejecutor impuso un control adicional que rechazaba el ejecutable venv/bin/python si era enlace simbólico, una disposición habitual de entornos virtuales Python. El auditor D6C3 **ya ejecutado antes de ese punto** comprobó el mismo intérprete, su identidad sys.prefix, el directorio /srv/vinto-qa-offline/venv y el checkout fijo. La regla adicional era redundante e incompatible. No se conoce por inspección directa si el ejecutable es un symlink en la VPS: no hay evidencia de ausencia real de Python.
+
+**Corrección R1:** exigir que el directorio venv exista y NO sea symlink, que venv/bin/python sea ejecutable (sí puede ser symlink), y conservar la comprobación de identidad del entorno mediante D6C3. CI prueba venv con ejecutable enlazado válido, ejecutable roto y raíz venv enlazada. La corrección solo cambia GitHub; **no instala ni repara Python en la VPS**. Codex deberá descargar el nuevo commit y verificar nuevo blob, bash -n y ejecutar **solo audit** después de que CI final sea PASS. Ante un error distinto: detener sin ensayar reparaciones.
