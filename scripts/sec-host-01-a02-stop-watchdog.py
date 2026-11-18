@@ -105,6 +105,24 @@ def decide(obs: Observation, now: int, log_bytes: int, free_bytes: int) -> str:
     return "WAIT"
 
 
+def validate_executable() -> None:
+    # Host install must be a regular root-owned file, not a symlink, and
+    # neither file nor its install directory can be group/world-writable.
+    # Python -I prevents importing modules from untrusted cwd/user site.
+    script = Path(__file__)
+    try:
+        info = script.lstat()
+        parent_info = script.parent.stat()
+    except OSError as exc:
+        raise Blocked("EXECUTABLE_METADATA_UNAVAILABLE") from exc
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
+            stat.S_IMODE(info.st_mode) & 0o022):
+        raise Blocked("EXECUTABLE_INTEGRITY_OR_PERMISSIONS")
+    if (not stat.S_ISDIR(parent_info.st_mode) or parent_info.st_uid != 0 or
+            stat.S_IMODE(parent_info.st_mode) & 0o022):
+        raise Blocked("EXECUTABLE_DIRECTORY_PERMISSIONS")
+
+
 def validate_dir() -> None:
     if STATE_DIR.is_symlink() or not STATE_DIR.is_dir():
         raise Blocked("PRIVATE_STATE_DIR_MISSING")
@@ -296,6 +314,7 @@ def main() -> int:
         print("SEC_HOST_A02_BLOCKED_ROOT_REQUIRED", file=sys.stderr)
         return 1
     try:
+        validate_executable()
         validate_dir()
         fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         try:
