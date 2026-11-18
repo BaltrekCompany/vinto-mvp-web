@@ -7,6 +7,8 @@ on:
       - 'backend/app/main.py'
       - 'backend/tests/test_off03d7a_qa_guard.py'
       - 'scripts/off-03d7a-qa-code-contract.test.mjs'
+      - 'scripts/off-03d7a-qa-web-inventory.sh'
+      - 'scripts/off-03d7a-qa-web-inventory.test.mjs'
       - 'docs/OFF-03D7A-qa-web-release-gates.md'
       - '.github/workflows/off-03d7a-qa-web-release-gate.yml'
   workflow_dispatch:
@@ -36,6 +38,8 @@ jobs:
         run: |
           python -m unittest discover -s backend/tests -p test_off03d7a_qa_guard.py -v
           node --test scripts/off-03d7a-qa-code-contract.test.mjs
+          bash -n scripts/off-03d7a-qa-web-inventory.sh
+          node --test scripts/off-03d7a-qa-web-inventory.test.mjs
       - name: Python syntax
         run: |
           python -m py_compile backend/app/qa_offline_guard.py
