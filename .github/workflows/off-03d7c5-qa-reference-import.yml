@@ -1,0 +1,42 @@
+name: OFF-03D7C5 Guarded QA Reference Import and Read-only Preflight
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c5-qa-reference-import-gate.sh'
+      - 'scripts/off-03d7c5-qa-reference-import-gate.test.mjs'
+      - 'docs/OFF-03D7C5-qa-reference-import-gates.md'
+      - '.github/workflows/off-03d7c5-qa-reference-import.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-guard-negative-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Syntax, no-write and fail-closed mode tests
+        run: |
+          bash -n scripts/off-03d7c5-qa-reference-import-gate.sh
+          node --test scripts/off-03d7c5-qa-reference-import-gate.test.mjs
+
+  ephemeral-reference-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reuse canonical PG17 reference import test (CI only)
+        run: bash scripts/off-03d7c2-reference-import-ci-e2e.sh
