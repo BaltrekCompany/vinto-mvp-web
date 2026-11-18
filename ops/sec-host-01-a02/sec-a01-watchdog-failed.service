@@ -2,7 +2,6 @@
 # The operator must configure and test an actual receiving alert separately.
 [Unit]
 Description=Flag unsuccessful automatic stop of temporary PG observation
-ConditionPathIsDirectory=/var/lib/sec-a01-watchdog
 
 [Service]
 Type=oneshot
