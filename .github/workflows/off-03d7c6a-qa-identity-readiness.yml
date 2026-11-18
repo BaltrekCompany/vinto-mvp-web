@@ -1,0 +1,56 @@
+name: OFF-03D7C6A QA Identity ACL Readiness (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c6a-qa-identity-readiness.sh'
+      - 'scripts/off-03d7c6a-qa-identity-readiness.test.mjs'
+      - 'scripts/off-03d7c6a-qa-identity-ci-e2e.sh'
+      - 'backend/tests/test_off03d7c6a_qa_http_write_guard_contract.py'
+      - 'docs/OFF-03D7C6A-qa-identity-acl-readiness.md'
+      - '.github/workflows/off-03d7c6a-qa-identity-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-identity-and-http-write-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Bash and negative operations
+        run: |
+          bash -n scripts/off-03d7c6a-qa-identity-readiness.sh
+          bash -n scripts/off-03d7c6a-qa-identity-ci-e2e.sh
+          node --test scripts/off-03d7c6a-qa-identity-readiness.test.mjs
+      - name: Install backend packages in runner only
+        run: python -m pip install -r backend/requirements.txt
+      - name: Verify QA HTTP deny-write code and identity contract
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m unittest discover -s backend/tests -p test_off03d7c6a_qa_http_write_guard_contract.py -v
+          python -m unittest discover -s backend/tests -p test_off03d7c6_qa_synthetic_identity_readiness.py -v
+
+  disposable-pg17-identity-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import canonical reference in disposable PG17, inspect identity roles/ACL only
+        run: bash scripts/off-03d7c6a-qa-identity-ci-e2e.sh
