@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/sec-host-01-a02-stop-watchdog.py'
       - 'scripts/test_sec_host_01_a02_stop_watchdog.py'
+      - 'scripts/sec-host-01-a02-pg17-ci-e2e.sh'
       - 'ops/sec-host-01-a02/**'
       - 'docs/SEC-HOST-01-A02-watchdog-auto-stop-plan.md'
       - '.github/workflows/sec-host-01-a02-watchdog.yml'
@@ -35,3 +36,18 @@ jobs:
           systemd-analyze calendar --iterations=2 '*-*-* *:*:00 UTC'
           ! grep -E 'ALTER SYSTEM SET log_connections\s*=\s*(on|true)' scripts/sec-host-01-a02-stop-watchdog.py
           ! grep -E 'ExecStart=.*(start|enable)' ops/sec-host-01-a02/sec-a01-watchdog.service
+
+  disposable-postgres17-stop-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove stop-only SQL against unnetworked disposable PostgreSQL 17
+        run: |
+          bash -n scripts/sec-host-01-a02-pg17-ci-e2e.sh
+          bash scripts/sec-host-01-a02-pg17-ci-e2e.sh
