@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VINTO OFF-03D.7C6B-PRE -- QA identity-role candidate inspection.
-# READ ONLY: no CREATE ROLE, GRANT, REVOKE, role passwords or file writes.
+# READ ONLY: no provisioning, role privilege changes, credentials or file writes.
 set -Eeuo pipefail
 set +x
 umask 077
