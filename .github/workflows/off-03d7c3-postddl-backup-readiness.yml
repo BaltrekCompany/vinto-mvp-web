@@ -1,0 +1,29 @@
+name: OFF-03D7C3 Post-DDL Backup Readiness (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c3-qa-postddl-backup-preflight.sh'
+      - 'scripts/off-03d7c3-qa-postddl-backup-preflight.test.mjs'
+      - 'docs/OFF-03D7C3-postddl-backup-readiness.md'
+      - '.github/workflows/off-03d7c3-postddl-backup-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-postddl-backup-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Test fail-closed backup readiness checks without VPS access
+        run: |
+          bash -n scripts/off-03d7c3-qa-postddl-backup-preflight.sh
+          node --test scripts/off-03d7c3-qa-postddl-backup-preflight.test.mjs
