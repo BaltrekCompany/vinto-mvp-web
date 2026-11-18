@@ -1,0 +1,42 @@
+name: OFF-03D7C QA Fixture and Signing Preflight (No Database Writes)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/qa_offline_fixture_contract.py'
+      - 'backend/tests/test_off03d7c_qa_fixture_contract.py'
+      - 'scripts/off-03d7c-qa-fixture-preflight.sh'
+      - 'scripts/off-03d7c-qa-fixture-preflight.test.mjs'
+      - 'docs/OFF-03D7C-qa-fixture-and-signer.md'
+      - '.github/workflows/off-03d7c-qa-fixture.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-bundle-and-ephemeral-signing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install Python dependencies in disposable runner
+        run: python -m pip install -r backend/requirements.txt
+      - name: Validate canonical reference source and temporary Ed25519
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m unittest discover -s backend/tests -p test_off03d7c_qa_fixture_contract.py -v
+          python -m app.qa_offline_fixture_contract
+      - name: Verify read-only VPS preflight cannot write
+        run: |
+          bash -n scripts/off-03d7c-qa-fixture-preflight.sh
+          node --test scripts/off-03d7c-qa-fixture-preflight.test.mjs
