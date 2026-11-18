@@ -153,12 +153,12 @@ try:
     ) as c:
         identity=c.execute("""
           SELECT current_database(),current_user,inet_server_port(),
-            (SELECT count(*) FROM vinto_meta.schema_migration),
             NOT has_database_privilege('public',current_database(),'CONNECT'),
             NOT has_database_privilege('vinto_reference',current_database(),'CREATE'),
+            NOT has_schema_privilege('vinto_reference','vinto_meta','USAGE'),
             has_table_privilege('vinto_reference','vinto_master.profile','INSERT')
         """).fetchone()
-        if identity != ("vinto_qa_offline","vinto_reference",5432,31,True,True,True):
+        if identity != ("vinto_qa_offline","vinto_reference",5432,True,True,True,True):
             block("effective_QA_role_or_target_changed")
     print("OFF03D7C5_REFERENCE_ROLE_TARGET=PASS")
 
