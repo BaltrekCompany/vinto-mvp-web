@@ -1,0 +1,21 @@
+# SEC-HOST-01 A0.2: local failure marker only, NOT an external notification.
+# The operator must configure and test an actual receiving alert separately.
+[Unit]
+Description=Flag unsuccessful automatic stop of temporary PG observation
+ConditionPathIsDirectory=/var/lib/sec-a01-watchdog
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+StateDirectory=sec-a01-watchdog
+StateDirectoryMode=0700
+ExecStart=/usr/bin/touch /var/lib/sec-a01-watchdog/STOP_FAILURE
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/sec-a01-watchdog
+StandardOutput=journal
+StandardError=journal
