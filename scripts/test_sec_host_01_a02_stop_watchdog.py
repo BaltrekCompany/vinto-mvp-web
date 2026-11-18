@@ -1,6 +1,8 @@
 """SEC-HOST-01 A0.2: unit tests without Docker, PostgreSQL or host changes."""
 import importlib.util
 import json
+import stat
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 import tempfile
@@ -55,6 +57,23 @@ class StateTests(unittest.TestCase):
                     watchdog.Observation.from_mapping(baseline(**change))
         with self.assertRaises(watchdog.Blocked):
             watchdog.Observation.from_mapping({**baseline(), "unknown": "x"})
+
+    def test_file_owner_and_mode_verified_before_host_execution(self):
+        bad_file = SimpleNamespace(st_mode=stat.S_IFREG | 0o666, st_uid=0)
+        good_dir = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        with mock.patch.object(watchdog.Path, "lstat", return_value=bad_file), \
+             mock.patch.object(watchdog.Path, "stat", return_value=good_dir):
+            with self.assertRaisesRegex(watchdog.Blocked, "EXECUTABLE_INTEGRITY"):
+                watchdog.validate_executable()
+        good_file = SimpleNamespace(st_mode=stat.S_IFREG | 0o755, st_uid=0)
+        with mock.patch.object(watchdog.Path, "lstat", return_value=good_file), \
+             mock.patch.object(watchdog.Path, "stat", return_value=good_dir):
+            watchdog.validate_executable()
+        nonroot_file = SimpleNamespace(st_mode=stat.S_IFREG | 0o755, st_uid=1001)
+        with mock.patch.object(watchdog.Path, "lstat", return_value=nonroot_file), \
+             mock.patch.object(watchdog.Path, "stat", return_value=good_dir):
+            with self.assertRaisesRegex(watchdog.Blocked, "EXECUTABLE_INTEGRITY"):
+                watchdog.validate_executable()
 
     def test_deadline_oversize_or_low_disk_always_triggers_stop(self):
         obs = watchdog.Observation.from_mapping(baseline())
