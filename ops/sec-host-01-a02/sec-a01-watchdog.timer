@@ -1,0 +1,17 @@
+# SEC-HOST-01 A0.2 - template only; NOT enabled by this PR.
+# The absolute deadline resides in private state. Repeating timer ensures
+# retries after a blocked STOP or a host restart. It never starts logging.
+[Unit]
+Description=Check expiry of temporary PostgreSQL connection logging
+Documentation=man:systemd.timer(5)
+
+[Timer]
+Unit=sec-a01-watchdog.service
+OnCalendar=*-*-* *:*:00 UTC
+OnBootSec=60s
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+
+[Install]
+WantedBy=timers.target
