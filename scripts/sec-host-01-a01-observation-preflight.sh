@@ -37,7 +37,7 @@ running="$(docker inspect -f '{{.State.Running}}' "$OBS_CONTAINER" 2>/dev/null)"
   fail 'RUNNING_STATUS_UNAVAILABLE'
 [ "$running" = true ] || fail 'TARGET_NOT_RUNNING'
 
-# Only pg_settings/current_setting; no pg_stat_activity addresses or raw logs.
+# Only pg_settings/current_setting; no session-address or raw-log retrieval.
 # Current GUC values/source filenames are intentionally not exposed.
 sql="$(cat <<'SQL'
 WITH
