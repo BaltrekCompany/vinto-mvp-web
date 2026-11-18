@@ -11,6 +11,7 @@ from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.offline_scope.router import router as offline_scope_router
 from app.config import settings
+from app.qa_offline_guard import qa_offline_request_permitted
 from app.database import UNAVAILABLE_BODY, DatabaseUnavailable, check_database, logger
 from app.assignments.router import router as assignments_router
 from app.bobbins.router import router as bobbins_router
@@ -23,6 +24,25 @@ from app.work_orders.errors import WorkOrderError
 from app.work_orders.router import router as work_orders_router
 
 app = FastAPI(title=settings.app_name)
+
+# OFF-03D.7A: QA offline demonstration is strictly non-operational.
+# Only authentication and signed read-only package issuance may use POST.
+# All central capture, approvals, administration and OT writes fail closed
+# before reaching their handlers. QA is still isolated by hostname, DB and ACL.
+@app.middleware("http")
+async def qa_offline_write_guard(request: Request, call_next):
+    if not qa_offline_request_permitted(
+        app_env=settings.app_env,
+        method=request.method,
+        path=request.url.path,
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Operación no disponible en QA offline"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
