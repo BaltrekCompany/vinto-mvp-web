@@ -167,6 +167,31 @@ PY
   echo 'OFF03D7C2_IDEMPOTENT_RERUN=PASS_READ_ONLY'
 )
 
+# Diagnostic is aggregate metadata from the disposable CI database only.
+# It is safe to print if a contract assertion fails; never include row values.
+metadata="$(docker exec -e PGOPTIONS='-c default_transaction_read_only=on' "$NAME" \
+ psql -X -qAt -v ON_ERROR_STOP=1 -U vinto_qa_bootstrap -d vinto_qa_offline -c "
+WITH expected(code, version) AS (
+ VALUES ('VINTO-P1-18',2), ('VINTO-P1-22',2),('VINTO-P1-26',3),('VINTO-P1-27',2)
+), selected AS (
+ SELECT fv.id, fv.status, fv.area FROM expected e
+ JOIN vinto_config.form f ON f.code=e.code
+ JOIN vinto_config.form_version fv ON fv.form_id=f.id AND fv.version_number=e.version
+)
+SELECT concat(
+  'migration_count:', (SELECT count(*) FROM vinto_meta.schema_migration),
+  ',versions:', (SELECT count(*) FROM selected),
+  ',draft_quality:', (SELECT count(*) FROM selected WHERE status='draft' AND area='quality'),
+  ',published_quality:', (SELECT count(*) FROM selected WHERE status='published' AND area='quality'),
+  ',machine_links:', (SELECT count(*) FROM vinto_config.form_version_machine m JOIN selected s ON s.id=m.form_version_id),
+  ',users:', (SELECT count(*) FROM vinto_master.\"user\"),
+  ',grants:', (SELECT count(*) FROM vinto_master.user_machine_form_grant),
+  ',completed_batches:', (SELECT count(*) FROM vinto_audit.import_batch WHERE status='completed'),
+  ',all_batches:', (SELECT count(*) FROM vinto_audit.import_batch)
+);
+" 2>/dev/null)" || { echo 'OFF03D7C2_CI_METADATA_DIAGNOSTIC=BLOCKED' >&2; exit 1; }
+echo "OFF03D7C2_CI_METADATA_DIAGNOSTIC=$metadata"
+
 result="$(docker exec -e PGOPTIONS='-c default_transaction_read_only=on' "$NAME" \
  psql -X -qAt -v ON_ERROR_STOP=1 -U vinto_qa_bootstrap -d vinto_qa_offline -c "
 WITH expected(code, version) AS (
