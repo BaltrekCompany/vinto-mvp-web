@@ -1,0 +1,60 @@
+name: OFF-03D7B QA Standalone Runtime and App Role Gates
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7b-qa-app-role-audit.sh'
+      - 'scripts/off-03d7b-vinext-standalone-smoke.sh'
+      - 'scripts/off-03d7b-qa-gates.test.mjs'
+      - 'docs/OFF-03D7B-qa-runtime-and-role-gates.md'
+      - '.github/workflows/off-03d7b-qa-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-role-audit-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Static and negative tests (NO QA PostgreSQL access)
+        run: |
+          bash -n scripts/off-03d7b-qa-app-role-audit.sh
+          bash -n scripts/off-03d7b-vinext-standalone-smoke.sh
+          node --test scripts/off-03d7b-qa-gates.test.mjs
+
+  portable-standalone-loopback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Toolchain and dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Compile isolated QA candidate
+        env:
+          NEXT_PUBLIC_API_URL: https://qa-vinto-mvp.baltrekservices.com
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+          pnpm build
+          test -s dist/standalone/server.js
+          test -s dist/standalone/public/sw.js
+      - name: Run actual Node standalone server on CI loopback
+        env:
+          NEXT_PUBLIC_API_URL: https://qa-vinto-mvp.baltrekservices.com
+        run: bash scripts/off-03d7b-vinext-standalone-smoke.sh smoke
