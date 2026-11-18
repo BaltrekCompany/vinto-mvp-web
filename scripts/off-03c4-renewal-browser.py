@@ -333,5 +333,90 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c4-") as tmp, sync_playwrigh
     report("12_browser_killed_during_open_transaction_leaves_previous_set_intact")
     s.close()
 
+    # ======================= OFF-03C.4-R1 / R2 (security review of PR #225) =======================
+    # ---- 13 R1: HTTP 403 whose revocation cannot be persisted must never be reported as recorded ----
+    s = baseline(pw, tmp, "r1ok")
+    r = s.call("renew", full_plan("new", scope={"status": 403}))
+    assert r["ok"] is False and r["reason"] == "revoked", r
+    v = view(s)
+    assert v["status"] == "revocation_known" and v["durable"] is True and s.call("localFlags") == [], v
+    report("13a_403_with_successful_write_is_recorded_durably")
+    s.close()
+
+    for n, (label, arm) in enumerate((("sealing fails", lambda x: x.call("failEncryptOn", 1)),
+                                      ("transaction aborts", lambda x: x.call("failPutOn", 1)),
+                                      ("quota exceeded", lambda x: x.call("failPutOn", 1, "QuotaExceededError")))):
+        s = baseline(pw, tmp, f"r1fail{n}")
+        raw = s.call("rawSnapshot")
+        arm(s)
+        r = s.call("renew", full_plan("new", scope={"status": 403}))
+        s.call("clearFaults")
+        assert r["ok"] is False and r["reason"] == "revoked_unrecorded", (label, r)
+        assert s.call("rawSnapshot") == raw, "nothing may be deleted or rewritten"
+        v = view(s)
+        assert v["status"] == "revocation_known" and v["durable"] is False, (label, v)   # fail-closed NOW
+        assert len(v["packages"]) == 2 and v["scope"]["snapshotId"] == OLD_SNAP          # data kept
+        assert len(s.call("localFlags")) == 1
+        s.kill()
+        s.open()
+        v = view(s)
+        assert v["status"] == "revocation_known" and v["durable"] is False, (label, "restart", v)
+        r = s.call("renew", full_plan("new"))        # a genuine online renewal lifts it
+        assert r["ok"] is True, r
+        v = view(s)
+        assert v["status"] == "renewed_online" and v["durable"] is True and s.call("localFlags") == [], v
+        s.close()
+    report("13b_403_with_storage_failure_is_unrecorded_failclosed_and_survives_restart")
+
+    s = baseline(pw, tmp, "r1noflag")
+    raw = s.call("rawSnapshot")
+    s.call("failPutOn", 1, "QuotaExceededError")
+    s.call("blockLocalStorage")
+    r = s.call("renew", full_plan("new", scope={"status": 403}))
+    assert r["ok"] is False and r["reason"] == "revoked_unrecorded", r
+    v = view(s)
+    assert v["status"] == "revocation_known" and v["durable"] is False, v                 # this context stays closed
+    s.call("clearFaults")
+    assert s.call("rawSnapshot") == raw
+    s.kill()
+    s.open()
+    v = view(s)
+    # DOCUMENTED LIMIT: if the browser accepts no writes at all, nothing can survive a restart.
+    assert v["status"] == "legacy_unverified" and len(v["packages"]) == 2, v
+    report("13c_documented_limit_when_no_storage_accepts_writes")
+    s.close()
+
+    # ---- 14 R2: a revocation recorded by another tab must not be overwritten by an older renewal ----
+    s = baseline(pw, tmp, "r2a")
+    raw = s.call("rawSnapshot")
+    before = json.loads(raw)
+    stale = full_plan("new", **{Q22: {"envelope": PK["new|" + Q22], "interleave": {"scope": {"status": 403}, "packages": {}}}})
+    r = s.call("renew", stale)                       # tab A prepared; tab B recorded the 403 meanwhile
+    assert r["ok"] is False and r["reason"] == "conflict" and r["stage"] == "commit", r
+    after = json.loads(s.call("rawSnapshot"))
+    assert after["packages"] == before["packages"] and after["scopes"][0]["sealed"] == before["scopes"][0]["sealed"]
+    v = view(s)
+    assert v["status"] == "revocation_known" and v["durable"] is True and v["scope"]["snapshotId"] == OLD_SNAP, v
+    s.kill()
+    s.open()
+    assert view(s)["status"] == "revocation_known"
+    r = s.call("renew", full_plan("new"))            # genuinely authorized, started AFTER the revocation
+    assert r["ok"] is True and view(s)["status"] == "renewed_online"
+    report("14a_stale_renewal_cannot_overwrite_concurrent_revocation_but_fresh_one_can")
+    s.close()
+
+    # ---- 14b the opposite order: a renewal commits while a 403 is being persisted ----
+    s = baseline(pw, tmp, "r2b")
+    r = s.call("renew", {"scope": {"status": 403, "interleave": full_plan("new")}, "packages": {}})
+    assert r["ok"] is False and r["reason"] == "revoked", r
+    v = view(s)
+    assert v["status"] == "revocation_known" and v["durable"] is True and v["scope"]["snapshotId"] == NEW_SNAP, v
+    assert len(v["packages"]) == 2 and all(p["snapshot"] == NEW_SNAP for p in v["packages"]), v   # nothing deleted
+    s.kill()
+    s.open()
+    assert view(s)["status"] == "revocation_known"
+    report("14b_revocation_follows_concurrent_renewal_to_the_current_snapshot")
+    s.close()
+
     shutil.rmtree(tmp, ignore_errors=True)
 print("OFF03C4_RENEWAL_INDEXEDDB_CHROME=PASS", flush=True)

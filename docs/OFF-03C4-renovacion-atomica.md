@@ -56,6 +56,24 @@ Todo o nada: ningún fallo de red, firma, versión, identidad, cifrado o almacen
 | Limpieza de paquetes obsoletos | `discardSupersededPackages(identity, "DISCARD_SUPERSEDED_PACKAGES")`: solo con el token exacto, nunca desde renovación ni arranque, y **no está conectada a la interfaz**. |
 | Revocación conocida | Datos preservados y no mostrados como vigentes hasta una renovación verificada. |
 
+## 2 bis. Cierre de riesgos R1 y R2 (revisión de seguridad del PR #225, OFF-03C.4-R1)
+
+**R1 — un HTTP 403 cuya revocación no se pudo guardar.** Antes, el error al sellar o escribir la marca se ignoraba y la interfaz afirmaba que la revocación estaba registrada; tras reabrir, el arranque offline podía seguir mostrando las definiciones históricas. Ahora:
+- La persistencia se **confirma o se informa su fallo**: si el sellado falla, la transacción aborta o hay `QuotaExceededError`, el error es `revoked_unrecorded` («NO se pudo guardar el registro…»), nunca `revoked`.
+- **Fail-closed en el contexto actual:** `readRenewalStatus` devuelve `revocation_known` con `durable: false` y el arranque offline no lista formularios. Se apoya en una memoria mínima (`offline-revocation-fallback.ts`) con memoria del proceso y, si el navegador lo permite, `localStorage`. Solo guarda un número (instante de la negativa) por clave de perfil: ningún cifrado, permiso, formulario ni token.
+- Esa memoria solo puede **fallar hacia la vista histórica** previa a OFF-03C.4, nunca conceder nada; se limpia cuando la marca sellada se escribe o cuando una renovación online verificada que **empezó después** de la negativa se confirma.
+- **No se borra ni reescribe ningún dato cifrado** (verificado byte a byte en las pruebas).
+- **Límite documentado:** si el navegador no acepta **ninguna** escritura (IndexedDB y `localStorage`), solo el contexto de página actual queda cerrado; tras un reinicio el conjunto anterior volvería a mostrarse hasta renovar. No puede garantizarse persistencia sin almacenamiento escribible. La prueba 13c fija este límite.
+- La hora registrada en la marca es el instante en que empezó la consulta online (no el del commit), para ordenar correctamente revocación y renovación.
+
+**R2 — compare-and-swap incompleto frente a una revocación concurrente.** Antes el commit comparaba `snapshotId` y `packageId`, pero no la marca de renovación. Ahora:
+- Al preparar (antes de cualquier I/O de red) se observa la **huella de la marca sellada** (`iv` + texto cifrado; nunca el contenido en claro) y la **misma transacción única** la compara con la almacenada. Cualquier cambio (por ejemplo una revocación escrita por otra pestaña) ⇒ `conflict`: se aborta sin sobrescribir.
+- Una renovación **posterior** y genuinamente autorizada, que parte de la marca ya vigente, sí restablece `renewed_online`.
+- Orden inverso: si una renovación se confirma mientras otra pestaña persiste un 403, la revocación se **reaplica al snapshot actual** (hasta 3 intentos): ante un orden indemostrable gana el estado cerrado, sin perder los paquetes nuevos.
+- El commit sigue siendo **una sola transacción** sobre `profiles`, `scopes` y `quality_packages`.
+
+Pruebas: Chrome IndexedDB 13a–13c y 14a–14b (determinísticas, con interferencia entre pestañas dentro del `fetchPackage`/`fetchScope`), más contratos Node. Se comprobó con mutaciones que las pruebas **fallan** si se vuelve a tragar el error de persistencia o si se quita la huella del CAS.
+
 ## 3. Cobertura de los casos obligatorios
 
 | # | Caso | Prueba |
@@ -82,6 +100,7 @@ Regresiones ejecutadas: pruebas Node OFF-02/03A/03B/03B.3/03C.2/03C.3 y humos de
 - **Reversión local total:** quien pueda escribir IndexedDB puede restaurar blobs cifrados antiguos (AES-GCM no impide reponer un estado anterior completo). El anti-rollback protege frente a respuestas del servidor y flujos de la app, no frente a manipulación local del almacenamiento; requeriría un ancla externa (Gate C).
 - **Reloj y precisión:** el orden se basa en `issued_at` firmado con precisión de segundo; dos instantáneas del mismo segundo con distinto id se rechazan por ambigüedad (el reintento a los pocos segundos funciona).
 - **La revocación solo se aprende al renovar online.** No hay sondeo en segundo plano; mientras tanto el estado offline sigue siendo «histórico, no verificable».
+- **Revocación no persistible (R1):** véase 2 bis; sin ninguna escritura posible no hay garantía tras un reinicio.
 - **Marca ilegible = fail-closed:** si la marca sellada se corrompe, la consulta offline se bloquea hasta renovar con Internet.
 - **Paquetes retirados** permanecen cifrados hasta una limpieza explícita (política «no borrar automáticamente»); la limpieza aún no tiene interfaz.
 - **Concurrencia:** el CAS cubre pestañas distintas del mismo navegador; no hay coordinación entre navegadores (cada uno es un compartimento independiente).

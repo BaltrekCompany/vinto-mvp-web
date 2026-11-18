@@ -123,3 +123,61 @@ test("IndexedDB schema version and store names are unchanged (no destructive mig
     assert.match(read("public/offline-device-qa.js"), /const VERSION = 3;/);
     assert.doesNotMatch(profile, /deleteObjectStore|\.clear\(\)/);
 });
+
+// ---------------- OFF-03C.4-R1 / R2 (security review of PR #225) ----------------
+test("R1: a refused (HTTP 403) renewal never claims persistence that was not confirmed", () => {
+    const src = read("lib/vinto/offline-renewal.ts");
+    assert.doesNotMatch(src, /recordRevocationKnown\([^)]*\)\s*\.catch\(/, "persistence errors must not be swallowed");
+    assert.equal((src.match(/await refuse\(/g) ?? []).length, 2, "scope and package 403 share one fail-closed path");
+    assert.match(src, /new RenewalError\("revoked_unrecorded"\)/);
+    assert.match(src, /noteUnrecordedRevocation\(profileId, observedAt\.getTime\(\)\)/);
+    // the status reader must consult the fallback, so the boot screen stays closed
+    assert.match(src, /unrecordedRevocationAt\(raw\.profileId\)/);
+    assert.match(src, /durable: false/);
+});
+
+test("R2: commit compare-and-swap includes the sealed renewal marker and stays one transaction", () => {
+    const src = read("lib/vinto/offline-renewal.ts");
+    assert.match(src, /markerFingerprint\(s\.renewal\) !== plan\.expectedRenewalFingerprint/);
+    assert.match(src, /const observedFingerprint = markerFingerprint\(rawScope\.renewal\)/);
+    // observed BEFORE any network I/O, so a marker written by another tab during preparation is detected
+    assert.ok(src.indexOf("const observedFingerprint") < src.indexOf("await deps.fetchScope("));
+    assert.equal((src.match(/db\.transaction\(\[[^\]]*\], "readwrite"\)/g) ?? []).length, 1);
+    // the fingerprint only ever uses iv + ciphertext, never decrypted content
+    assert.match(src, /sealed\.format \+ "\." \+ sealed\.iv \+ "\." \+ sealed\.ciphertext/);
+});
+
+test("fallback memory stores only a numeric time per profile key and fails open to history, never to a grant", async () => {
+    const data = new Map();
+    globalThis.localStorage = {
+        getItem: k => (data.has(k) ? data.get(k) : null), setItem: (k, v) => { data.set(k, String(v)); },
+        removeItem: k => { data.delete(k); },
+    };
+    const { noteUnrecordedRevocation, unrecordedRevocationAt, clearUnrecordedRevocation } =
+        await import("../lib/vinto/offline-revocation-fallback.ts?case=1");
+    const profile = "11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222";
+    assert.equal(unrecordedRevocationAt(profile), null);
+    noteUnrecordedRevocation(profile, 1_800_000_000_000);
+    noteUnrecordedRevocation(profile, 1_700_000_000_000);                    // older observation never lowers it
+    assert.equal(unrecordedRevocationAt(profile), 1_800_000_000_000);
+    assert.deepEqual([...data.entries()], [["vinto:off03c4:revoked:" + profile, "1800000000000"]]);
+    clearUnrecordedRevocation(profile, 1_799_999_999_999);                   // renewal that began BEFORE the refusal
+    assert.equal(unrecordedRevocationAt(profile), 1_800_000_000_000);
+    clearUnrecordedRevocation(profile, 1_800_000_000_000);                   // renewal that began at/after it
+    assert.equal(unrecordedRevocationAt(profile), null);
+    assert.equal(data.size, 0);
+    data.set("vinto:off03c4:revoked:" + profile, "not-a-number");           // tampered value is ignored
+    assert.equal(unrecordedRevocationAt(profile), null);
+    // storage that refuses writes: the in-memory layer still closes this context
+    globalThis.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("quota"); }, removeItem: () => { throw new Error("blocked"); } };
+    noteUnrecordedRevocation(profile, 1_900_000_000_000);
+    assert.equal(unrecordedRevocationAt(profile), 1_900_000_000_000);
+    delete globalThis.localStorage;
+});
+
+test("fallback module holds no permissions, ciphertext, tokens or network access", () => {
+    const src = read("lib/vinto/offline-revocation-fallback.ts");
+    for (const word of ["form_scopes", "Authorization", "cookie", "sessionStorage", "indexedDB"]) assert.ok(!src.includes(word), word);
+    assert.doesNotMatch(src, /\bfetch\s*\(|document\.|innerHTML/);
+    assert.match(src, /\^\\d\{10,16\}\$/);
+});
