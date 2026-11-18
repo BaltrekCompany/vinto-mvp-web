@@ -1,0 +1,73 @@
+name: OFF-03D7A Offline QA Web Contract and Read-only Gate
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/qa_offline_guard.py'
+      - 'backend/app/main.py'
+      - 'backend/tests/test_off03d7a_qa_guard.py'
+      - 'scripts/off-03d7a-qa-code-contract.test.mjs'
+      - 'docs/OFF-03D7A-qa-web-release-gates.md'
+      - '.github/workflows/off-03d7a-qa-web-release-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-write-guard-and-code-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend requirements (CI runner only)
+        run: python -m pip install -r backend/requirements.txt
+      - name: QA middleware and static contract
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m unittest discover -s backend/tests -p test_off03d7a_qa_guard.py -v
+          node --test scripts/off-03d7a-qa-code-contract.test.mjs
+      - name: Python syntax
+        run: |
+          python -m py_compile backend/app/qa_offline_guard.py
+          python -m py_compile backend/app/main.py
+
+  offline-frontend-portable-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install exact package manager and frozen dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: TypeScript and lint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Build isolated QA candidate (no VPS or deployment)
+        env:
+          NEXT_PUBLIC_API_URL: https://qa-vinto-mvp.baltrekservices.com
+        run: |
+          pnpm build
+          test -s dist/standalone/server.js
+          cmp -s public/offline-boot.js dist/standalone/public/offline-boot.js
+          node --check dist/standalone/public/offline-boot.js
+          node --check public/offline-device-qa.js
+          grep -q 'vinto-off03c3-static-v1' dist/standalone/public/sw.js
+          echo OFF03D7A_PORTABLE_BUILD=PASS
