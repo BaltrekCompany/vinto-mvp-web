@@ -1,0 +1,44 @@
+name: OFF-03D7C5A Independent Postimport QA Audit
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c5a-qa-postimport-audit.sh'
+      - 'scripts/off-03d7c5a-qa-postimport-audit.test.mjs'
+      - 'scripts/off-03d7c5a-postimport-ci-e2e.sh'
+      - 'docs/OFF-03D7C5A-qa-postimport-audit.md'
+      - '.github/workflows/off-03d7c5a-qa-postimport.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-postimport-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify read-only script and negative modes (NO VPS access)
+        run: |
+          bash -n scripts/off-03d7c5a-qa-postimport-audit.sh
+          bash -n scripts/off-03d7c5a-postimport-ci-e2e.sh
+          node --test scripts/off-03d7c5a-qa-postimport-audit.test.mjs
+
+  ephemeral-pg17-full-reference-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Full official bundle import then independent SQL postimport check in disposable PG17
+        run: bash scripts/off-03d7c5a-postimport-ci-e2e.sh
