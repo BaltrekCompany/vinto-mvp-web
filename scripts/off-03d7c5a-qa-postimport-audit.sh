@@ -67,7 +67,11 @@ echo 'OFF03D7C5A_POST_DDL_BACKUP=PASS_FILE_INTEGRITY'
 [ "$(git -C "$SOURCE" rev-parse HEAD)" = "$PIN" ] &&
 [ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=all)" ] ||
   deny 'QA_checkout_dirty_or_changed'
-[ -x "$PYTHON" ] && [ ! -L "$PYTHON" ] || deny 'QA_python_missing'
+# D6C3 has already executed this interpreter and verified sys.prefix == QA venv.
+# Python venv/bin/python is often a valid symlink; rejecting it is incorrect.
+VENV=/srv/vinto-qa-offline/venv
+[ -d "$VENV" ] && [ ! -L "$VENV" ] && [ -x "$PYTHON" ] ||
+  deny 'QA_python_venv_invalid'
 for row in \
   'backend/import_reference.py:26ef9a3b3ce74f9a1df9a47b411758d8ceb1dc24' \
   'backend/app/seed/reference.py:622dadfe7dbd0b77cde36654733cb4eeda97f415' \
