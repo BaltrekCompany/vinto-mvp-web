@@ -1,0 +1,44 @@
+name: OFF-03D7C6B QA Identity Role Preflight (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c6b-qa-identity-role-preflight.sh'
+      - 'scripts/off-03d7c6b-qa-identity-role-preflight.test.mjs'
+      - 'scripts/off-03d7c6b-identity-role-ci-e2e.sh'
+      - 'docs/OFF-03D7C6B-qa-identity-role-preflight.md'
+      - '.github/workflows/off-03d7c6b-identity-role-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-only-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Reject role creation and unsafe modes
+        run: |
+          bash -n scripts/off-03d7c6b-qa-identity-role-preflight.sh
+          bash -n scripts/off-03d7c6b-identity-role-ci-e2e.sh
+          node --test scripts/off-03d7c6b-qa-identity-role-preflight.test.mjs
+
+  disposable-pg17-role-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run same role metadata preflight after reference import in disposable PG17
+        run: bash scripts/off-03d7c6b-identity-role-ci-e2e.sh
