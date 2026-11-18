@@ -1,0 +1,44 @@
+name: OFF-03D7C6B Guarded QA Identity Role Installer
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c6b-qa-identity-role-install.sh'
+      - 'scripts/off-03d7c6b-qa-identity-role-install.test.mjs'
+      - 'scripts/off-03d7c6b-role-installer-ci-e2e.sh'
+      - 'docs/OFF-03D7C6B-qa-identity-install-controlled.md'
+      - '.github/workflows/off-03d7c6b-identity-role-installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-gate-and-no-backup-waiver-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Bash syntax and negative static checks (no real DB)
+        run: |
+          bash -n scripts/off-03d7c6b-qa-identity-role-install.sh
+          bash -n scripts/off-03d7c6b-role-installer-ci-e2e.sh
+          node --test scripts/off-03d7c6b-qa-identity-role-install.test.mjs
+
+  ephemeral-postrole-and-reversal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run official 00c and 03c, exact installer poststate, auth and rollback in disposable PG17
+        run: bash scripts/off-03d7c6b-role-installer-ci-e2e.sh
