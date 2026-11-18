@@ -1,0 +1,34 @@
+name: OFF-03D7C2 Official Reference Import Rehearsal (Ephemeral PG17 Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c2-reference-import-ci-e2e.sh'
+      - 'scripts/off-03d7c2-reference-import-ci-e2e.test.mjs'
+      - 'docs/OFF-03D7C2-reference-import-plan.md'
+      - '.github/workflows/off-03d7c2-reference-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-reference-pg17-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Safety and syntax gate
+        run: |
+          bash -n scripts/off-03d7c2-reference-import-ci-e2e.sh
+          node --test scripts/off-03d7c2-reference-import-ci-e2e.test.mjs
+      - name: Apply 31 migrations, ACL, official bundle in disposable PostgreSQL 17 only
+        run: bash scripts/off-03d7c2-reference-import-ci-e2e.sh
