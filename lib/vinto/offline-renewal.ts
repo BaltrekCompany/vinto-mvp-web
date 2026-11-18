@@ -16,6 +16,7 @@
  */
 import { openProfileDb, PACKAGE_STORE_NAME, readLocalProfile, SCOPE_STORE_NAME } from "./offline-profile-store.ts";
 import { openLocalDraft, sealLocalDraft, type OfflineVaultIdentity } from "./offline-vault.ts";
+import type { SealedValues } from "./offline-store";
 import {
     compareScopeFreshness, verifyOfflineScope, ScopeError, type SignedOfflineScope,
 } from "./offline-scope-verify.ts";
@@ -24,6 +25,9 @@ import {
     type VerifiedLocalScope,
 } from "./offline-scope-store.ts";
 import { verifyQualityPackage, QualityPackageError, type VerifiedQualityDefinition } from "./offline-quality-verify.ts";
+import {
+    clearUnrecordedRevocation, noteUnrecordedRevocation, unrecordedRevocationAt,
+} from "./offline-revocation-fallback.ts";
 import {
     assertPackageProgression, readQualityPackage, readRawPackage, sealPackageRecord,
     validPackageRecord, type StoredPackage,
@@ -38,7 +42,7 @@ export const DISCARD_CONFIRMATION = "DISCARD_SUPERSEDED_PACKAGES" as const;
 
 export type RenewalPair = Readonly<{ machine_code: string; form_code: string }>;
 export type RenewalReason =
-    | "network" | "auth" | "revoked" | "server_unavailable" | "invalid" | "rollback"
+    | "network" | "auth" | "revoked" | "revoked_unrecorded" | "server_unavailable" | "invalid" | "rollback"
     | "identity_mismatch" | "pin_mismatch" | "incompatible" | "needs_recovery" | "conflict"
     | "storage" | "commit_failed" | "no_local_scope";
 
@@ -76,7 +80,11 @@ export type RenewalResult = Readonly<{
     reduced: boolean;
 }>;
 export type RenewalStatusName = "renewed_online" | "revocation_known" | "legacy_unverified" | "unreadable";
-export type RenewalStatus = Readonly<{ status: RenewalStatusName; recordedAt: string | null }>;
+/**
+ * `durable` is false when the status comes from the fail-closed fallback (a refusal observed
+ * online that could not be sealed into IndexedDB), true when it comes from the sealed marker.
+ */
+export type RenewalStatus = Readonly<{ status: RenewalStatusName; recordedAt: string | null; durable: boolean }>;
 
 const pairKey = (p: RenewalPair): string => p.machine_code + "|" + p.form_code;
 
@@ -114,48 +122,90 @@ async function sealMarker(key: CryptoKey, identity: OfflineVaultIdentity, conten
     return sealLocalDraft(key, markerBinding(identity, content.snapshotId), content);
 }
 
+/** Opaque identity of a sealed marker (iv + ciphertext only); never the plaintext content. */
+function markerFingerprint(sealed: SealedValues | undefined): string {
+    return sealed === undefined ? "none" : sealed.format + "." + sealed.iv + "." + sealed.ciphertext;
+}
+
 /** Read the last online-verification outcome. Fail closed on any inconsistency. */
 export async function readRenewalStatus(key: CryptoKey, identity: OfflineVaultIdentity): Promise<RenewalStatus | null> {
     const raw = await readRawScope(identity);
     if (!raw) return null;
-    if (raw.renewal === undefined) return { status: "legacy_unverified", recordedAt: null };
-    try {
-        const body = await openLocalDraft(key, markerBinding(identity, raw.snapshotId), raw.renewal);
-        if (body.schema !== MARKER_SCHEMA || body.snapshotId !== raw.snapshotId ||
-            (body.status !== "renewed_online" && body.status !== "revocation_known") ||
-            typeof body.recordedAt !== "string" || !Number.isFinite(Date.parse(body.recordedAt))) {
-            return { status: "unreadable", recordedAt: null };
+    let sealedStatus: RenewalStatus;
+    if (raw.renewal === undefined) sealedStatus = { status: "legacy_unverified", recordedAt: null, durable: true };
+    else {
+        try {
+            const body = await openLocalDraft(key, markerBinding(identity, raw.snapshotId), raw.renewal);
+            sealedStatus = (body.schema !== MARKER_SCHEMA || body.snapshotId !== raw.snapshotId ||
+                (body.status !== "renewed_online" && body.status !== "revocation_known") ||
+                typeof body.recordedAt !== "string" || !Number.isFinite(Date.parse(body.recordedAt)))
+                ? { status: "unreadable", recordedAt: null, durable: true }
+                : { status: body.status, recordedAt: body.recordedAt, durable: true };
+        } catch { sealedStatus = { status: "unreadable", recordedAt: null, durable: true }; }
+    }
+    // A refusal observed online but never sealed still closes the set, unless a verified
+    // renewal that STARTED AFTER that refusal has since been committed.
+    const fallbackAt = unrecordedRevocationAt(raw.profileId);
+    if (fallbackAt !== null && sealedStatus.status !== "revocation_known" && sealedStatus.status !== "unreadable") {
+        const renewedAt = sealedStatus.status === "renewed_online" && sealedStatus.recordedAt
+            ? Date.parse(sealedStatus.recordedAt) : -Infinity;
+        if (renewedAt < fallbackAt) {
+            return { status: "revocation_known", recordedAt: new Date(fallbackAt).toISOString(), durable: false };
         }
-        return { status: body.status, recordedAt: body.recordedAt };
-    } catch { return { status: "unreadable", recordedAt: null }; }
+    }
+    return sealedStatus;
 }
 
-/** Best effort: record that the server refused the grant. Keeps ALL local data. */
-async function recordRevocationKnown(
-    key: CryptoKey, identity: OfflineVaultIdentity, expected: StoredScope, issuedAt: string | null, now: Date
-): Promise<void> {
-    const sealed = await sealMarker(key, identity, {
-        schema: MARKER_SCHEMA, status: "revocation_known", snapshotId: expected.snapshotId,
-        issuedAt, recordedAt: now.toISOString(),
-    });
-    const db = await openProfileDb();
-    try {
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(SCOPE_STORE_NAME, "readwrite");
-            const store = tx.objectStore(SCOPE_STORE_NAME);
-            const get = store.get(expected.profileId);
-            get.onsuccess = () => {
-                const current = get.result as StoredScope | undefined;
-                if (!current || !validStoredScope(current, identity) || current.snapshotId !== expected.snapshotId) {
-                    tx.abort(); return;
-                }
-                store.put({ ...current, schemaVersion: 2 as const, renewal: sealed });
-            };
-            tx.oncomplete = () => resolve();
-            tx.onabort = () => reject(new RenewalError("conflict", "commit"));
-            tx.onerror = () => reject(new RenewalError("commit_failed", "commit"));
+/**
+ * Seal a refusal into the scope record. THROWS if it could not be confirmed written.
+ * If another tab changed the record meanwhile the refusal is re-applied to the CURRENT
+ * snapshot (a 403 means the user has no effective grants regardless of snapshot): when the
+ * order of the two operations cannot be proven, the safe outcome is the closed one.
+ */
+async function recordRevocationKnown(key: CryptoKey, identity: OfflineVaultIdentity, observedAt: Date): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const current = await readRawScope(identity);
+        if (!current) throw new RenewalError("no_local_scope", "commit");
+        const sealed = await sealMarker(key, identity, {
+            schema: MARKER_SCHEMA, status: "revocation_known", snapshotId: current.snapshotId,
+            issuedAt: null, recordedAt: observedAt.toISOString(),
         });
-    } finally { db.close(); }
+        const db = await openProfileDb();
+        try {
+            const done = await new Promise<boolean>((resolve, reject) => {
+                const tx = db.transaction(SCOPE_STORE_NAME, "readwrite");
+                const store = tx.objectStore(SCOPE_STORE_NAME);
+                let changed = false;
+                const get = store.get(current.profileId);
+                get.onsuccess = () => {
+                    const row = get.result as StoredScope | undefined;
+                    if (!row || !validStoredScope(row, identity) || row.snapshotId !== current.snapshotId ||
+                        markerFingerprint(row.renewal) !== markerFingerprint(current.renewal)) {
+                        changed = true; return;                      // someone else wrote: re-read and retry
+                    }
+                    store.put({ ...row, schemaVersion: 2 as const, renewal: sealed });
+                };
+                tx.oncomplete = () => resolve(!changed);
+                tx.onabort = () => reject(new RenewalError("commit_failed", "commit"));
+                tx.onerror = () => reject(new RenewalError("commit_failed", "commit"));
+            });
+            if (done) return;
+        } finally { db.close(); }
+    }
+    throw new RenewalError("conflict", "commit");
+}
+
+/** Turn an online HTTP 403 into the right error, never claiming persistence that was not confirmed. */
+async function refuse(key: CryptoKey, identity: OfflineVaultIdentity, profileId: string, observedAt: Date): Promise<RenewalError> {
+    try {
+        await recordRevocationKnown(key, identity, observedAt);
+        clearUnrecordedRevocation(profileId, observedAt.getTime());
+        return new RenewalError("revoked");
+    } catch {
+        // Keep the set closed in this context (and across restarts when the browser's key-value storage accepts writes).
+        noteUnrecordedRevocation(profileId, observedAt.getTime());
+        return new RenewalError("revoked_unrecorded");
+    }
 }
 
 function statusOf(error: unknown): number | undefined {
@@ -211,6 +261,8 @@ function mapPackageError(error: unknown): RenewalError {
 
 type CommitPlan = Readonly<{
     profileId: string; identity: OfflineVaultIdentity; expectedScopeSnapshotId: string;
+    /** Fingerprint of the sealed renewal marker observed when preparing (R2). */
+    expectedRenewalFingerprint: string;
     scopeRecord: StoredScope; packageRecords: StoredPackage[]; expectedPackageIds: ReadonlyMap<string, string | null>;
 }>;
 
@@ -243,7 +295,10 @@ async function commit(plan: CommitPlan): Promise<void> {
             scope.onsuccess = () => {
                 const s = scope.result as StoredScope | undefined;
                 // Compare-and-swap: another tab/renewal changed the scope since we prepared.
-                if (!s || !validStoredScope(s, plan.identity) || s.snapshotId !== plan.expectedScopeSnapshotId) {
+                // A different snapshot, or ANY change of the renewal marker (for example a revocation
+                // recorded by another tab), means what we prepared is stale: abort, never overwrite.
+                if (!s || !validStoredScope(s, plan.identity) || s.snapshotId !== plan.expectedScopeSnapshotId ||
+                    markerFingerprint(s.renewal) !== plan.expectedRenewalFingerprint) {
                     stop("conflict"); return;
                 }
                 done();
@@ -282,6 +337,7 @@ export async function renewOfflineBundle(
     let rawScope: StoredScope | null;
     try { rawScope = await readRawScope(identity); } catch { throw new RenewalError("needs_recovery"); }
     if (!rawScope) throw new RenewalError("no_local_scope");
+    const observedFingerprint = markerFingerprint(rawScope.renewal);
 
     let previous: VerifiedLocalScope | null = null;
     try { previous = await readOfflineScope(key, identity); } catch { previous = null; }
@@ -292,15 +348,12 @@ export async function renewOfflineBundle(
         throw new RenewalError(previous ? "invalid" : "needs_recovery");
     }
 
+    const scopeObservedAt = now();            // moment the online answer is about (orders revocation vs renewal)
     let envelope: unknown;
     try { envelope = await deps.fetchScope(machines); }
     catch (error) {
         const reason = classifyFetch(error);
-        if (reason === "revoked") {
-            // Online refusal: remember it (sealed). Never delete anything and never show it as current.
-            await recordRevocationKnown(key, identity, rawScope, previous?.envelope.payload.issued_at ?? null, now())
-                .catch(() => undefined);
-        }
+        if (reason === "revoked") throw await refuse(key, identity, rawScope.profileId, scopeObservedAt);
         throw new RenewalError(reason);
     }
 
@@ -328,14 +381,12 @@ export async function renewOfflineBundle(
 
     const verifiedNew: VerifiedQualityDefinition[] = [];
     for (const pair of plan.renew) {
+        const packageObservedAt = now();
         let packageEnvelope: unknown;
         try { packageEnvelope = await deps.fetchPackage(pair.machine_code, pair.form_code, next); }
         catch (error) {
             const reason = classifyFetch(error);
-            if (reason === "revoked") {
-                await recordRevocationKnown(key, identity, rawScope, previous?.envelope.payload.issued_at ?? null, now())
-                    .catch(() => undefined);
-            }
+            if (reason === "revoked") throw await refuse(key, identity, rawScope.profileId, packageObservedAt);
             throw new RenewalError(reason);
         }
         let verified: VerifiedQualityDefinition;
@@ -357,7 +408,7 @@ export async function renewOfflineBundle(
         const base = await sealScopeRecord(key, identity, next, trusted);
         const marker = await sealMarker(key, identity, {
             schema: MARKER_SCHEMA, status: "renewed_online", snapshotId: next.payload.snapshot_id,
-            issuedAt: next.payload.issued_at, recordedAt: now().toISOString(),
+            issuedAt: next.payload.issued_at, recordedAt: scopeObservedAt.toISOString(),
         });
         scopeRecord = { ...base, schemaVersion: 2, renewal: marker };
         packageRecords = [];
@@ -371,8 +422,11 @@ export async function renewOfflineBundle(
     // ---------------- COMMIT: a single IndexedDB transaction ----------------
     await commit({
         profileId: rawScope.profileId, identity, expectedScopeSnapshotId: rawScope.snapshotId,
+        expectedRenewalFingerprint: observedFingerprint,
         scopeRecord, packageRecords, expectedPackageIds: expected,
     });
+    // A refusal observed BEFORE this renewal's online answer is now superseded by it.
+    clearUnrecordedRevocation(rawScope.profileId, scopeObservedAt.getTime());
     return {
         outcome: "renewed", snapshotId: next.payload.snapshot_id,
         renewedPackages: plan.renew, removedPairs: plan.removed,
