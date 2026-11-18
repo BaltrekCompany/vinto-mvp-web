@@ -1,0 +1,138 @@
+name: OFF-03C4 Atomic Scope and Package Renewal QA
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/offline-*.ts'
+      - 'app/offline-preparacion/page.tsx'
+      - 'public/sw.js'
+      - 'public/offline.html'
+      - 'public/offline-device-qa.js'
+      - 'scripts/off-03c4-*'
+      - 'scripts/off03c4_fixture.py'
+      - 'docs/OFF-03C4-renovacion-atomica.md'
+      - '.github/workflows/off-03c4-atomic-renewal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Synthetic fixtures signed by the real Python signer; Node renewal contract and offline regressions
+        env:
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4-renewal.json
+          OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/off03c4-b3.json
+          OFF03C2_FIXTURE_JSON: ${{ runner.temp }}/off03c4-b3.json
+        run: |
+          python scripts/off03c4_fixture.py
+          python scripts/off03b3_fixture.py
+          node --experimental-strip-types --test scripts/off-03c4-renewal.test.mjs
+          node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
+          node --test scripts/off-03c3-device-qa.test.mjs scripts/off-02-foundation.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Portable offline bundle
+        run: |
+          pnpm build
+          test -s dist/standalone/server.js
+          cmp -s public/offline-boot.js dist/standalone/public/offline-boot.js
+          node --check public/offline-boot.js
+          grep -q 'revocation_known' public/offline-boot.js
+          echo OFF03C4_PORTABLE_BUNDLE=PASS
+
+  chrome-indexeddb-renewal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt playwright==1.57.0
+          google-chrome --version
+      - name: Real Chrome IndexedDB integration (atomic commit, rollback, restart, rollback attacks)
+        env:
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4-renewal.json
+          OFF03C4_HARNESS_JS: ${{ runner.temp }}/off03c4-harness.js
+        run: |
+          python scripts/off03c4_fixture.py
+          node scripts/off-03c4-build-harness.mjs
+          python scripts/off-03c4-renewal-browser.py
+
+  chrome-ui-renewal-and-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt playwright==1.57.0
+          google-chrome --version
+      - name: Start isolated frontend
+        run: |
+          set -eu
+          nohup pnpm dev > "$RUNNER_TEMP/off03c4-dev.log" 2>&1 &
+          for i in $(seq 1 40); do
+            for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/' 'http://[::1]:5173/'; do
+              if curl --fail --silent --noproxy '*' --connect-timeout 1 --max-time 3 --output /dev/null "$endpoint"; then
+                echo "OFF03C4_BASE_URL=${endpoint%/}" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            done
+            sleep 2
+          done
+          tail -n 140 "$RUNNER_TEMP/off03c4-dev.log"
+          exit 1
+      - name: Chrome UI renewal, network failure, revocation withheld offline, restart
+        env:
+          OFF03C4_BASE_URL: ${{ env.OFF03C4_BASE_URL }}
+        run: python scripts/off-03c4-browser-smoke.py
+      - name: Regression OFF-03C.2 / 03C.3 quality package and device diagnostic
+        env:
+          OFF03C2_BASE_URL: ${{ env.OFF03C4_BASE_URL }}
+        run: python scripts/off-03c2-browser-smoke.py
+      - name: Show app logs on failure
+        if: failure()
+        run: tail -n 140 "$RUNNER_TEMP/off03c4-dev.log" || true
