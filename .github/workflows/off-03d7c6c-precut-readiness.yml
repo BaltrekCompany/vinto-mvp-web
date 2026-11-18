@@ -1,0 +1,44 @@
+name: OFF-03D7C6C QA Pre-Cut Identity Readiness (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/off-03d7c6c-qa-precut-readonly.sh'
+      - 'scripts/off-03d7c6c-qa-precut-readonly.test.mjs'
+      - 'scripts/off-03d7c6c-precut-ci-e2e.sh'
+      - 'docs/OFF-03D7C6C-qa-precut-readiness.md'
+      - '.github/workflows/off-03d7c6c-precut-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-precut-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Validate Bash and forbid DML cut/rollback
+        run: |
+          bash -n scripts/off-03d7c6c-qa-precut-readonly.sh
+          bash -n scripts/off-03d7c6c-precut-ci-e2e.sh
+          node --test scripts/off-03d7c6c-qa-precut-readonly.test.mjs
+
+  disposable-pg17-postrole-precut:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify same pre-cut SQL after official two-role grants, before rollback on ephemeral PG17
+        run: bash scripts/off-03d7c6c-precut-ci-e2e.sh
