@@ -1,0 +1,37 @@
+name: SEC-HOST-01 A0.2 Stop-only Observation Watchdog (Preparation)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/sec-host-01-a02-stop-watchdog.py'
+      - 'scripts/test_sec_host_01_a02_stop_watchdog.py'
+      - 'ops/sec-host-01-a02/**'
+      - 'docs/SEC-HOST-01-A02-watchdog-auto-stop-plan.md'
+      - '.github/workflows/sec-host-01-a02-watchdog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stop-only-watchdog-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Python and mock stop/restore with no Docker or PostgreSQL access
+        run: |
+          python -m py_compile scripts/sec-host-01-a02-stop-watchdog.py
+          python -m unittest discover -s scripts -p test_sec_host_01_a02_stop_watchdog.py -v
+      - name: Validate systemd watchdog templates only (not installed)
+        run: |
+          command -v systemd-analyze
+          systemd-analyze verify ops/sec-host-01-a02/sec-a01-watchdog.service ops/sec-host-01-a02/sec-a01-watchdog.timer
+          systemd-analyze calendar --iterations=2 '*-*-* *:*:00 UTC'
+          ! grep -E 'ALTER SYSTEM SET log_connections\s*=\s*(on|true)' scripts/sec-host-01-a02-stop-watchdog.py
+          ! grep -E 'ExecStart=.*(start|enable)' ops/sec-host-01-a02/sec-a01-watchdog.service
