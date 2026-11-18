@@ -28,7 +28,7 @@ $IP
 "*) echo 'OFF03D7A_QA_DNS=PASS' ;;
   *) echo 'OFF03D7A_QA_DNS=BLOCKED'; exit 1 ;;
 esac
-# No -k/--insecure, no cookies, no redirects, no body, no auth.
+# Validate the trusted HTTPS chain; do not forward credentials or follow redirects.
 status="$(curl --silent --show-error --noproxy '*' --proto '=https' \
   --max-redirs 0 --connect-timeout 6 --max-time 15 \
   --output /dev/null --write-out '%{http_code}' \
