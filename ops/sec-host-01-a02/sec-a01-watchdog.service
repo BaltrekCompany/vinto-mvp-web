@@ -5,7 +5,7 @@ Description=Temporary PostgreSQL connection observation stop-only watchdog
 Documentation=man:systemd.service(5)
 ConditionPathExists=/var/lib/sec-a01-watchdog/state.json
 After=docker.service
-Wants=docker.service
+# Deliberately do not require/want Docker: never start a stopped container service.
 
 [Service]
 Type=oneshot
