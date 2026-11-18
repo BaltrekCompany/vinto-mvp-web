@@ -1,8 +1,8 @@
 """OFF-03D.7C: immutable, read-only QA fixture contract. No DB or secrets.
 
 This validates the *approved repository reference bundle* (not production rows).
-The import pipeline creates new form versions as draft, so this NEVER claims
-the four machine Quality definitions are already published or granted.
+The importer builds draft versions and publishes them after adding children,
+within the same transaction. This file does not inspect a live QA database.
 """
 from __future__ import annotations
 
