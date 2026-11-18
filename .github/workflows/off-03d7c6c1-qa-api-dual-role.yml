@@ -1,0 +1,33 @@
+name: OFF-03D7C6C1 QA API Dual Role Code Readiness
+
+on:
+  pull_request:
+    paths:
+      - 'backend/tests/test_off03d7c6c1_qa_api_dual_role_contract.py'
+      - 'docs/OFF-03D7C6C1-qa-api-two-role-private-deploy-plan.md'
+      - '.github/workflows/off-03d7c6c1-qa-api-dual-role.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-api-middleware-and-dual-role-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend runtime in GitHub runner only
+        run: python -m pip install -r backend/requirements.txt
+      - name: Test actual FastAPI middleware, identity wiring and fail closed database connection
+        env:
+          PYTHONPATH: backend
+          APP_ENV: qa
+        run: |
+          python -m unittest discover -s backend/tests -p test_off03d7c6c1_qa_api_dual_role_contract.py -v
+          python -m unittest discover -s backend/tests -p test_off03d7c6a_qa_http_write_guard_contract.py -v
