@@ -310,7 +310,7 @@ identity_created="$(docker exec -e PGOPTIONS='-c default_transaction_read_only=o
 SELECT CASE WHEN
  (SELECT count(*) FROM pg_roles WHERE rolname='vinto_identity'
   AND rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
-  AND NOT rolinherit AND rolconfig @> ARRAY['search_path='])=1
+  AND NOT rolinherit AND array_to_string(rolconfig,',') LIKE 'search_path=%')=1
  AND NOT has_database_privilege('vinto_identity',current_database(),'CONNECT')
  AND NOT has_table_privilege('vinto_identity','vinto_master.\"user\"','INSERT')
 THEN 'PASS' ELSE 'BLOCKED' END;
