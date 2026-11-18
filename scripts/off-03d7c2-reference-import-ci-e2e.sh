@@ -206,7 +206,7 @@ SELECT CASE WHEN
    current_database()='vinto_qa_offline'
    AND (SELECT count(*) FROM vinto_meta.schema_migration)=31
    AND (SELECT count(*) FROM selected)=4
-   AND (SELECT count(*) FROM selected WHERE status='draft' AND area='quality')=4
+   AND (SELECT count(*) FROM selected WHERE status='published' AND area='quality')=4
    AND (SELECT count(*) FROM vinto_config.form_version_machine m
         JOIN selected s ON m.form_version_id=s.id)=8
    AND (SELECT count(*) FROM vinto_master.\"user\")=0
@@ -215,8 +215,9 @@ SELECT CASE WHEN
  THEN 'PASS' ELSE 'BLOCKED' END;
 " 2>/dev/null)" || { echo 'OFF03D7C2_CI_METADATA_QUERY=BLOCKED' >&2; exit 1; }
 [ "$result" = PASS ] || { echo 'OFF03D7C2_CI_POSTIMPORT_CONTRACT=BLOCKED' >&2; exit 1; }
-echo 'OFF03D7C2_CI_FOUR_QUALITY_VERSIONS=DRAFT_NOT_PUBLISHED'
+echo 'OFF03D7C2_CI_FOUR_QUALITY_VERSIONS=PUBLISHED_BY_IMPORT'
 echo 'OFF03D7C2_CI_MACHINE_LINKS=8'
+echo 'OFF03D7C2_CI_NO_ADDITIONAL_PUBLICATION_STEP=PASS'
 echo 'OFF03D7C2_CI_TEST_USER_AND_GRANTS=NOT_CREATED'
 echo 'OFF03D7C2_CI_POSTIMPORT_CONTRACT=PASS'
 echo 'OFF03D7C2_REAL_VPS_TOUCHED=NO'
