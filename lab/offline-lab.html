@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>VINTO | Laboratorio de borradores offline (sintético)</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2b26;background:#f3f6f4}
+    *{box-sizing:border-box}body{margin:0;padding:20px;display:grid;place-items:start center}
+    main{width:min(100%,720px);background:#fff;border:1px solid #d9e5e0;border-radius:16px;padding:22px}
+    .lab{background:#fff4d6;border:2px solid #c98a00;border-radius:10px;padding:12px 14px;font-weight:600}
+    .panel{background:#f4f7f6;border:1px solid #deebe4;border-radius:12px;padding:14px;margin-top:14px}
+    label{display:block;margin-top:10px}input,select,textarea{display:block;width:100%;padding:10px;border:1px solid #9aa;border-radius:8px;margin-top:4px;font:inherit}
+    input[disabled],textarea[disabled]{background:#e8ecea;color:#455}
+    button{background:#146b4f;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;margin:8px 8px 0 0}
+    button[disabled]{opacity:.5;cursor:not-allowed}.err{color:#a11d1d;font-size:.9rem}.muted{color:#526a60;font-size:.9rem}
+  </style>
+</head>
+<body>
+<main>
+  <div class="lab" role="note">LABORATORIO OFF-04.1 — DATOS SINTÉTICOS. Solo ensayo local, no sincronizado. No ingrese datos reales. No existe envío, cola, aprobación ni sincronización; esto NO autoriza ninguna captura industrial.</div>
+  <h1>Borradores cifrados de Calidad (ensayo)</h1>
+  <p id="lab-status" role="status" aria-live="polite">Preparando laboratorio…</p>
+  <form id="lab-unlock-form" class="panel" hidden>
+    <label for="lab-unlock-secret">Frase de acceso offline</label>
+    <input id="lab-unlock-secret" type="password" autocomplete="off" required>
+    <label><input id="lab-confirm-synthetic" type="checkbox" style="display:inline;width:auto"> Confirmo que usaré únicamente datos sintéticos de laboratorio</label>
+    <button id="lab-unlock-submit" type="submit">Desbloquear</button>
+  </form>
+  <section id="lab-workspace" class="panel" hidden>
+    <label for="lab-package-select">Definición sintética</label>
+    <select id="lab-package-select"></select>
+    <button id="lab-new-draft" type="button">Nuevo borrador</button>
+    <button id="lab-lock" type="button">Bloquear</button>
+    <h2>Borradores de este navegador y operario</h2>
+    <ul id="lab-drafts" aria-label="Borradores cifrados"></ul>
+  </section>
+  <form id="lab-editor" class="panel" hidden novalidate>
+    <h2 id="lab-editor-title">Borrador</h2>
+    <p class="muted" id="lab-info"></p>
+    <div id="lab-fields"></div>
+    <button id="lab-save" type="submit">Guardar borrador cifrado</button>
+    <button id="lab-reload" type="button" hidden>Cargar versión guardada</button>
+  </form>
+  <p class="muted">Todo se cifra en este navegador (AES-GCM). La fecha local es solo informativa y no prueba vigencia. Reglas no cubiertas: rangos y unidades, fórmulas de campos calculados, dependencias entre campos, contexto de OT/turno y cualquier autoridad central.</p>
+</main>
+<script src="/offline-draft-lab.js" defer></script>
+</body>
+</html>
