@@ -15,7 +15,7 @@ const U = (n) => `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).rep
 
 // Authorised laboratory code and QA scripts. Everything else (lib/, app/, backend/, build and other scripts) is operational.
 const AUTHORISED = new Set(["lib/vinto/offline-lab-db.ts", "lib/vinto/offline-lab-queue.ts", "lib/vinto/offline-lab-migration.ts",
-    "lib/vinto/offline-draft-store.ts", "lib/vinto/offline-draft-lab.ts"]);
+    "lib/vinto/offline-draft-store.ts", "lib/vinto/offline-draft-lab.ts", "lib/vinto/offline-quality-e2e-lab.ts"]);
 const QA_SCRIPT = /^scripts\/(off-04-[A-Za-z0-9.-]+\.(ts|mjs|py)|off04_fixture\.py)$/;
 const SOURCE = /\.(ts|tsx|mjs|js|py)$/;
 const FORBIDDEN = /offline-lab-(queue|db|migration)|vinto-off04lab|lab_pending|lab_drafts|lab_quarantine|lab_meta|queued_local_simulation/;

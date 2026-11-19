@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>VINTO | Laboratorio de Calidad offline extremo a extremo (sintético)</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2b26;background:#f3f6f4}
+    *{box-sizing:border-box}body{margin:0;padding:20px;display:grid;place-items:start center}
+    main{width:min(100%,780px);background:#fff;border:1px solid #d9e5e0;border-radius:16px;padding:22px}
+    .lab{background:#fff4d6;border:2px solid #c98a00;border-radius:10px;padding:12px 14px;font-weight:600}
+    .panel{background:#f4f7f6;border:1px solid #deebe4;border-radius:12px;padding:14px;margin-top:14px}
+    label{display:block;margin-top:10px}input,select,textarea{display:block;width:100%;padding:10px;border:1px solid #9aa;border-radius:8px;margin-top:4px;font:inherit}
+    input[type=checkbox]{display:inline;width:auto}input[disabled],textarea[disabled],select[disabled]{background:#e8ecea;color:#455}
+    button{background:#146b4f;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;margin:8px 8px 0 0}
+    button[disabled]{opacity:.5;cursor:not-allowed}.err{color:#a11d1d;font-size:.9rem}.muted{color:#526a60;font-size:.9rem}
+    li{margin:8px 0}.st-draft{color:#526a60}.st-pending,.st-queued,.st-retry_wait,.st-syncing{color:#8a5a00}.st-synced,.st-synced_warning{color:#146b4f}.st-requires_review,.st-conflict{color:#a11d1d}
+  </style>
+</head>
+<body>
+<main>
+  <div class="lab" role="note">LABORATORIO OFF-04.5A — CALIDAD OFFLINE DE PUNTA A PUNTA, DATOS SINTÉTICOS. Formulario sintético, no homologado. «Sincronizado» significa recepción TÉCNICA por un receptor de prueba aislado: NO es aprobación industrial, liberación ni cambio de ninguna orden. No usa el outbox operativo ni habilita captura industrial.</div>
+  <h1>Calidad offline: captura → pendiente → sincronización (ensayo)</h1>
+  <p id="e2e-status" role="status" aria-live="polite">Preparando laboratorio…</p>
+  <form id="e2e-unlock-form" class="panel" hidden>
+    <label for="e2e-unlock-secret">Frase de acceso offline</label>
+    <input id="e2e-unlock-secret" type="password" autocomplete="off" required>
+    <label><input id="e2e-confirm" type="checkbox"> Confirmo que usaré únicamente datos sintéticos</label>
+    <button id="e2e-unlock-submit" type="submit">Desbloquear</button>
+  </form>
+  <section id="e2e-workspace" class="panel" hidden>
+    <label for="e2e-package">Formulario sintético</label>
+    <select id="e2e-package"></select>
+    <button id="e2e-new" type="button">Nuevo borrador</button>
+    <button id="e2e-lock" type="button">Bloquear</button>
+    <h2>Capturas de este navegador y operario</h2>
+    <p id="e2e-counters" class="muted"></p>
+    <ul id="e2e-captures" aria-label="Capturas"></ul>
+    <h2>Sincronización (receptor de prueba aislado)</h2>
+    <p id="e2e-receiver-mode" class="muted"></p>
+    <label for="e2e-session">Sesión en línea del operario</label>
+    <select id="e2e-session"><option value="valid">Válida (autor original)</option><option value="expired">Vencida</option><option value="other">Otro usuario</option></select>
+    <button id="e2e-sync-now" type="button">Sincronizar ahora</button>
+    <button id="e2e-clock" type="button">Avanzar reloj simulado 60 s</button>
+    <p id="e2e-result" class="muted" role="status"></p>
+  </section>
+  <form id="e2e-editor" class="panel" hidden novalidate>
+    <h2 id="e2e-editor-title">Borrador</h2>
+    <p class="muted" id="e2e-info"></p>
+    <div id="e2e-fields"></div>
+    <button id="e2e-save" type="submit">Guardar borrador cifrado</button>
+    <button id="e2e-queue" type="button" hidden>Convertir en pendiente local</button>
+  </form>
+  <p class="muted">Todo se cifra en este navegador. Registro guardado localmente ≠ recepción técnica ≠ aprobación industrial. Reglas no cubiertas: rangos y unidades, dependencias entre campos, contexto de OT/turno y autoridad central real.</p>
+</main>
+<script src="/offline-e2e-lab.js" defer></script>
+</body>
+</html>
