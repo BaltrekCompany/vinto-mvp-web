@@ -34,7 +34,7 @@ const B64URL = /^[A-Za-z0-9_-]+$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
 export class OfflineStoreError extends Error {
-    readonly reason: "unavailable" | "invalid" | "owner_mismatch" | "not_found" | "already_queued" | "storage_failed";
+    readonly reason: "unavailable" | "invalid" | "owner_mismatch" | "not_found" | "already_queued" | "storage_failed" | "quota" | "conflict";
     constructor(reason: OfflineStoreError["reason"]) {
         super(`OFFLINE_STORE_${reason.toUpperCase()}`);
         this.reason = reason;
@@ -117,6 +117,52 @@ export async function saveSealedDraft(draft: OfflineDraft): Promise<void> {
         tx.oncomplete = () => resolve();
         tx.onabort = () => reject(reason ?? failed());
         tx.onerror = () => reject(reason ?? failed());
+    }));
+}
+
+/** OFF-04.1: a sealed draft carrying a monotonic revision, for optimistic concurrency between tabs. */
+export type RevisionedDraft = OfflineDraft & Readonly<{ revision: number }>;
+
+function reasonFromName(name: string | undefined): OfflineStoreError["reason"] {
+    return name === "QuotaExceededError" ? "quota" : "storage_failed";
+}
+
+/**
+ * Compare-and-swap write of ONE draft record. It resolves only after the transaction committed,
+ * so a caller can never report a save that did not happen. `expectedRevision` is the revision the
+ * caller last read (null = brand-new draft). A stored revision that differs, an existing record for a
+ * "new" draft, or a draft already in the outbox are rejected WITHOUT overwriting anything.
+ * It never touches the outbox: there is no transition to `queued` in OFF-04.1.
+ */
+export async function saveSealedDraftRevision(draft: RevisionedDraft, expectedRevision: number | null): Promise<void> {
+    if (!isDraft(draft) || !Number.isSafeInteger(draft.revision) || draft.revision < 1 ||
+        (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) ||
+        draft.revision !== (expectedRevision === null ? 1 : expectedRevision + 1)) {
+        throw new OfflineStoreError("invalid");
+    }
+    return withDb((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(["drafts", "outbox"], "readwrite");
+        const drafts = tx.objectStore("drafts"), outbox = tx.objectStore("outbox");
+        let reason: OfflineStoreError | null = null;
+        const stop = (r: OfflineStoreError["reason"]) => { reason = new OfflineStoreError(r); try { tx.abort(); } catch { /* finished */ } };
+        const prior = drafts.get(draft.id);
+        prior.onsuccess = () => {
+            const existing = prior.result as (OfflineDraft & { revision?: unknown }) | undefined;
+            if (existing) {
+                if (existing.ownerId !== draft.ownerId || existing.deviceKey !== draft.deviceKey ||
+                    existing.contextId !== draft.contextId || existing.formCode !== draft.formCode ||
+                    existing.formVersion !== draft.formVersion) { stop("owner_mismatch"); return; }
+                if (existing.revision !== expectedRevision) { stop("conflict"); return; }
+            } else if (expectedRevision !== null) { stop("conflict"); return; }
+            const queued = outbox.get(draft.id);
+            queued.onsuccess = () => {
+                if (queued.result !== undefined) { stop("already_queued"); return; }
+                try { drafts.put(draft); } catch (error) { stop(reasonFromName((error as DOMException)?.name)); }
+            };
+        };
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(reason ?? new OfflineStoreError(reasonFromName(tx.error?.name)));
+        tx.onerror = () => { if (!reason) reason = new OfflineStoreError(reasonFromName(tx.error?.name)); };
     }));
 }
 
