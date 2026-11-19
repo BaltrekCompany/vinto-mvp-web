@@ -54,3 +54,5 @@ __pycache__/
 
 # OFF-03B browser bundle generated from audited TypeScript before dev/build
 /public/offline-boot.js
+/public/offline-lab.html
+/public/offline-draft-lab.js
