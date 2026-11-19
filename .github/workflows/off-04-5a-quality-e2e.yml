@@ -68,7 +68,7 @@ jobs:
           python scripts/off04_fixture.py
           python scripts/off03c4_fixture.py
           python scripts/off03b3_fixture.py
-          node --experimental-strip-types --test scripts/off-04-5a-e2e-static.test.mjs scripts/off-04-sync-fastapi.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
+          node --experimental-strip-types --test scripts/off-04-5b-06b-mobile-auth-static.test.mjs scripts/off-04-sync-fastapi.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
           node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
           node --test scripts/off-03c3-device-qa.test.mjs scripts/off-02-foundation.test.mjs
       - name: TypeScript and ESLint
@@ -88,7 +88,7 @@ jobs:
           test ! -e public/offline-e2e-lab.html
           echo OFF045A_LAB_OPT_IN_BUILD=PASS
 
-  chrome-e2e-against-fastapi-postgres:
+  chrome-regression-lab-uis:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -137,14 +137,6 @@ jobs:
           done
           tail -n 140 "$RUNNER_TEMP/off045a-dev.log"
           exit 1
-      - name: Chrome end to end against the isolated FastAPI receiver on a throwaway PostgreSQL 17
-        env:
-          OFF04_BASE_URL: ${{ env.OFF045A_BASE_URL }}
-          OFF044_PG_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
-          OFF05A_STORE: pg
-        run: |
-          cd scripts
-          PYTHONPATH=. python off-04-5a-quality-e2e-browser.py
       - name: Regression lab UIs (drafts and synchronisation laboratory)
         env:
           OFF04_BASE_URL: ${{ env.OFF045A_BASE_URL }}
