@@ -125,6 +125,8 @@ def make_pg_store() -> PgOfflineCaptureStore:
     base = _pg_url()
     name = "off044_" + uuid4().hex[:10] + "_test"
     admin = psycopg.connect(base, autocommit=True)
+    # the proposed DDL grants to the application role (OFF-04.5B-03); in a throwaway cluster that role may not exist yet
+    admin.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vinto_app') THEN CREATE ROLE vinto_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; END IF; END $$")
     admin.execute(f'CREATE DATABASE "{name}"')
     admin.close()
     url = psycopg.conninfo.make_conninfo(base, dbname=name)
