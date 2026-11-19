@@ -3,7 +3,7 @@ const STATIC_CACHE = "vinto-off03c4-static-v1";
 const PUBLIC_ASSETS = ["/offline.html", "/offline-probe.js", "/offline-boot.js", "/offline-device-qa.js", "/manifest.webmanifest", "/favicon.svg"];
 const PUBLIC_PATHS = new Set(PUBLIC_ASSETS);
 // OFF-04.1 laboratory (exists only in lab builds). Never precached here; the lab page caches itself.
-const LAB_PATHS = new Set(["/offline-lab.html", "/offline-draft-lab.js"]);
+const LAB_PATHS = new Set(["/offline-lab.html", "/offline-draft-lab.js", "/offline-sync-lab.html", "/offline-sync-lab.js"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(PUBLIC_ASSETS)));
@@ -33,8 +33,8 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(caches.match("/offline.html").then((page) => page || fetch(request)));
       return;
     }
-    if (url.pathname === "/offline-lab.html") {
-      event.respondWith(caches.match("/offline-lab.html").then((page) => page || fetch(request)));
+    if (url.pathname === "/offline-lab.html" || url.pathname === "/offline-sync-lab.html") {
+      event.respondWith(caches.match(url.pathname).then((page) => page || fetch(request)));
       return;
     }
     // Do not cache the authenticated app's root HTML or its server components.
