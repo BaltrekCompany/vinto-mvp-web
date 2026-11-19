@@ -10,6 +10,17 @@ import { isLabPending, LAB_QUEUE_DB, LAB_QUEUE_STORE, LAB_STATUS } from "../lib/
 const root = resolve(import.meta.dirname, "..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
 const U = (n) => `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`;
+
+// Authorised laboratory code and QA scripts. Everything else (lib/, app/, backend/, build and other scripts) is operational.
+const AUTHORISED = new Set(["lib/vinto/offline-lab-queue.ts", "lib/vinto/offline-lab-queue-store.ts",
+    "lib/vinto/offline-draft-store.ts", "lib/vinto/offline-draft-lab.ts"]);
+const QA_SCRIPT = /^scripts\/(off-04-[A-Za-z0-9.-]+\.(ts|mjs|py)|off04_fixture\.py)$/;
+const SOURCE = /\.(ts|tsx|mjs|js|py)$/;
+const FORBIDDEN = /offline-lab-queue|vinto-off04lab-queue|lab_pending|queued_local_simulation/;
+const isOperational = (f) => SOURCE.test(f) && !AUTHORISED.has(f) && !QA_SCRIPT.test(f);
+export function findForbiddenRefs(files, readFile) {
+    return files.filter(f => isOperational(f) && FORBIDDEN.test(readFile(f)));
+}
 const QUEUE_FILES = ["lib/vinto/offline-lab-queue-store.ts", "lib/vinto/offline-lab-queue.ts"];
 const row = () => ({
     capture_id: U(1), draftId: U(2), ownerId: U(3), deviceKey: U(4), formCode: "VINTO-P1-26", formVersion: 1, contextId: U(5),
@@ -46,18 +57,18 @@ test("structural isolation: its own database, never the application database or 
         assert.doesNotMatch(src, /\boutbox\b|queueSealedDraft|listQueuedForOwner|saveSealedDraft/, f);
         assert.doesNotMatch(src, /status:\s*"queued"|"queued"|'queued'/, f);              // the real pending status is never produced
     }
-    // nothing outside the laboratory imports the simulated queue (a future sync engine cannot reach it by accident)
-    const allowed = new Set(["lib/vinto/offline-lab-queue.ts", "lib/vinto/offline-lab-queue-store.ts",
-        "lib/vinto/offline-draft-store.ts", "lib/vinto/offline-draft-lab.ts", "scripts/off-04-harness-entry.ts", "scripts/off-04-queue.test.mjs"]);
+    // nothing OPERATIONAL outside the laboratory references the simulated queue (a future sync engine cannot reach it by accident)
     const walk = (dir) => readdirSync(join(root, dir)).flatMap(n => {
         if (["node_modules", ".next", "dist", ".git"].includes(n)) return [];
         const rel = dir + "/" + n;
         return statSync(join(root, rel)).isDirectory() ? walk(rel) : [rel];
     });
-    for (const f of [...walk("lib"), ...walk("app"), ...walk("scripts"), ...walk("backend/app").filter(x => /\.(ts|tsx|mjs|js|py)$/.test(x))]) {
-        if (!/\.(ts|tsx|mjs|js|py)$/.test(f) || allowed.has(f) || f.endsWith("off-04-queue-browser.py")) continue;
-        assert.doesNotMatch(read(f), /offline-lab-queue|vinto-off04lab-queue|lab_pending|queued_local_simulation/, f);
-    }
+    const files = [...walk("lib"), ...walk("app"), ...walk("scripts"), ...walk("backend/app")];
+    const offenders = findForbiddenRefs(files, read);
+    assert.deepEqual(offenders, [], "simulated-queue reference in operational code: " + offenders.join(", "));
+    // the scan is not vacuous: it covers operational code and must have seen the authorised files it skips
+    assert.ok(files.some(f => f.startsWith("lib/vinto/offline-store")) && files.some(f => f.startsWith("app/")));
+    assert.ok(files.every(f => !isOperational(f) || !AUTHORISED.has(f)));
 });
 
 test("immutability by construction: the pending store only ADDS", () => {
@@ -91,4 +102,17 @@ test("no network, no innerHTML, no capture-flag or authorisation changes, no syn
     const ui = read("lib/vinto/offline-draft-lab.ts") + read("lab/offline-lab.html");
     assert.match(ui, /Pendiente local — NO sincronizado/);
     assert.doesNotMatch(ui, />\s*(Enviar|Sincronizar|Aprobar)\b/);
+});
+
+test("negative control: the isolation scanner flags operational code and ignores only authorised files", () => {
+    const fake = { "lib/vinto/offline-sync-engine.ts": 'import { listLabPending } from "./offline-lab-queue-store.ts";',
+        "app/page.tsx": 'indexedDB.open("vinto-off04lab-queue-v1")', "backend/app/x.py": "status = 'queued_local_simulation'",
+        "scripts/build-offline-boot.mjs": "const s = 'lab_pending';", "scripts/off-04-new-qa.py": "lab_pending",
+        "lib/vinto/offline-draft-lab.ts": "offline-lab-queue", "scripts/off-04-evil.txt": "lab_pending", "lib/vinto/ok.ts": "nothing" };
+    assert.deepEqual(findForbiddenRefs(Object.keys(fake), f => fake[f]).sort(),
+        ["app/page.tsx", "backend/app/x.py", "lib/vinto/offline-sync-engine.ts", "scripts/build-offline-boot.mjs"]);
+    // a QA-looking name outside the authorised pattern/extension, or in a subfolder, is NOT exempt
+    assert.equal(isOperational("scripts/off-04-queue.test.mjs"), false);
+    assert.equal(isOperational("scripts/other/off-04-queue-browser.py"), true);
+    assert.equal(isOperational("lib/vinto/offline-device.ts"), true);
 });
