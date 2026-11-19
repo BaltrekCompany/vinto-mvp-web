@@ -1,0 +1,59 @@
+[
+ {
+  "name": "simple",
+  "value": {
+   "synthetic": true,
+   "payload": {
+    "numero_de_cuba": "C-1-SINT",
+    "masa_g": "101"
+   }
+  },
+  "sha256": "956b451362a3cfdd2575e5e5597c1779ee5bfb84c6b118d4c629eba23b3e324b"
+ },
+ {
+  "name": "key order",
+  "value": {
+   "b": "2",
+   "a": "1"
+  },
+  "sha256": "21f76dfbfe6dfe21f762080ef484112cf2952974cef30741fd1931e1c6d92112"
+ },
+ {
+  "name": "nested and list",
+  "value": {
+   "z": [
+    {
+     "b": true,
+     "a": null
+    },
+    "x"
+   ],
+   "a": {
+    "d": "1",
+    "c": "2"
+   }
+  },
+  "sha256": "4a1264d9ad6e135576a692771302a832fd07ab356cf87083aec0678874bfc3f3"
+ },
+ {
+  "name": "unicode",
+  "value": {
+   "observación": "sintética ñ — ü ✓"
+  },
+  "sha256": "7d6b110179228a6a1d9303e1b683db0570e8f99e3f2d4efbf88b7033ef73e85b"
+ },
+ {
+  "name": "empty",
+  "value": {},
+  "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+ },
+ {
+  "name": "ints and bools",
+  "value": {
+   "n": 10,
+   "t": true,
+   "f": false
+  },
+  "sha256": "74ea82cccba6e94606095396736da59ff89c73c299e137755ba60feb9a0e2b74"
+ }
+]

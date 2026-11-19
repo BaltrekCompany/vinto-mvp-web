@@ -1,0 +1,86 @@
+name: OFF-04.4 Offline Capture Receiver Contract QA (isolated, synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/offline_capture/**'
+      - 'backend/offline_capture_migration/**'
+      - 'backend/tests/off044_*'
+      - 'backend/tests/test_off044_*'
+      - 'backend/tests/fixtures/off044_*'
+      - 'lib/vinto/offline-sync-*.ts'
+      - 'scripts/off-04-sync-*'
+      - 'docs/OFF-04-4-*.md'
+      - '.github/workflows/off-04-4-fastapi-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receiver-pytest-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt pytest httpx
+      - name: Receiver scenarios on SQLite and on a throwaway PostgreSQL 17 (never a deployed database)
+        working-directory: backend
+        env:
+          OFF044_PG_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
+          OFF044_REQUIRE_PG: '1'
+        run: |
+          python -m pytest tests/test_off044_receiver.py -v
+          python -m pytest tests/test_off03c1_unit.py tests/test_off03b2_signing.py -q
+      - name: The proposed DDL is not a numbered migration and is not applied by migrate.py
+        run: |
+          test ! -e backend/migrations/0032_offline_capture_receipt.sql
+          test -s backend/offline_capture_migration/proposed_0032_offline_capture_receipt.sql
+          ! grep -q offline_capture backend/app/main.py
+
+  engine-vs-receiver-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: OFF-04.3 engine against the isolated FastAPI receiver (disposable loopback server), static contracts and engine scenarios
+        env:
+          OFF044_PYTHON: python
+        run: |
+          node --experimental-strip-types --test scripts/off-04-sync-fastapi.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint

@@ -4,14 +4,15 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { TERMINAL_STATES, DONE_STATES } from "../lib/vinto/offline-sync-types.ts";
+import { payloadHash } from "../lib/vinto/offline-sync-engine.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
-const SYNC = ["types", "rules", "engine", "fake-server", "store", "capture", "lab"].map(n => `lib/vinto/offline-sync-${n}.ts`);
+const SYNC = ["types", "rules", "engine", "fake-server", "store", "capture", "lab", "http-transport"].map(n => `lib/vinto/offline-sync-${n}.ts`);
 const AUTHORISED = new Set(SYNC);
 const QA_SCRIPT = /^scripts\/(off-04-[A-Za-z0-9.-]+\.(ts|mjs|py)|off04_fixture\.py)$/;
 const SOURCE = /\.(ts|tsx|mjs|js|py)$/;
-const FORBIDDEN = /offline-sync-(types|rules|engine|fake-server|store|capture|lab)|vinto-off043|sync_queue|offline-sync-lab/;
+const FORBIDDEN = /offline-sync-(types|rules|engine|fake-server|store|capture|lab|http-transport)|vinto-off043|sync_queue|offline-sync-lab/;
 const isOperational = (f) => SOURCE.test(f) && !AUTHORISED.has(f) && !QA_SCRIPT.test(f) && f !== "scripts/build-offline-boot.mjs";
 export function findSyncRefs(files, readFile) { return files.filter(f => isOperational(f) && FORBIDDEN.test(readFile(f))); }
 
@@ -58,13 +59,15 @@ test("nothing operational references the engine laboratory (scan with negative c
 test("no real network access anywhere in the engine laboratory; the only transport is the fake server", () => {
     for (const f of SYNC) {
         const src = read(f);
-        assert.doesNotMatch(src, /\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|apiBaseUrl|\/api\/|https?:\/\//, f);
+        assert.doesNotMatch(src, /\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|apiBaseUrl|https?:\/\//, f);
+        if (!f.endsWith("http-transport.ts")) assert.doesNotMatch(src, /\/api\//, f);            // only the CI adapter names the receiver path
         assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/, f);
         assert.doesNotMatch(src, /capture_eligible\s*=[^=]|captures_enabled\s*=[^=]|capture_eligible:\s*true|captures_enabled:\s*true/, f);
         assert.doesNotMatch(src, /sessionStorage|document\.cookie|localStorage\.(setItem|removeItem)/, f);
     }
     const lab = read("lib/vinto/offline-sync-lab.ts") + read("lab/offline-sync-lab.html");
     assert.match(lab, /FakeSyncServer/);
+    assert.doesNotMatch(read("lib/vinto/offline-sync-lab.ts"), /http-transport/);               // the laboratory page never uses the HTTP adapter
     assert.match(lab, /SERVIDOR SIMULADO/);
     assert.match(lab, /Sincronizar ahora/);
     assert.match(lab, /NO se conecta con FastAPI/);
@@ -106,4 +109,20 @@ test("the laboratory ships only with the opt-in flag and is absent from default 
     assert.match(sw, /const PUBLIC_ASSETS = \["\/offline\.html", "\/offline-probe\.js", "\/offline-boot\.js", "\/offline-device-qa\.js", "\/manifest\.webmanifest", "\/favicon\.svg"\]/);
     assert.match(read(".gitignore"), /\/public\/offline-sync-lab\.html/);
     assert.doesNotMatch(read("public/offline.html"), /offline-sync-lab/);
+});
+
+test("OFF-04.4: the adapter never calls the network itself and is not wired into the app; hashes match the receiver across languages", async () => {
+    const adapter = read("lib/vinto/offline-sync-http-transport.ts");
+    assert.doesNotMatch(adapter, /\bfetch\s*\(|XMLHttpRequest|WebSocket|https?:\/\/|process\.env/);
+    assert.match(adapter, /injected|caller injects/);                              // the HTTP function is injected
+    assert.match(adapter, /j\.capture_id === captureId && j\.payload_sha256 === sha/);       // a reply must echo the id and checksum
+    assert.match(adapter, /technical_acceptance === true/);
+    assert.match(adapter, /response_unverifiable/);
+    assert.match(adapter, /throw new SyncTransportError\("network"\)/);            // a non-definitive lookup is never "found"/"not found"
+    // the receiver package is not registered in the operational application
+    assert.doesNotMatch(read("backend/app/main.py"), /offline_capture/);
+    // cross-language canonical hash vectors (the same file is asserted by pytest against the Python implementation)
+    const vectors = JSON.parse(read("backend/tests/fixtures/off044_hash_vectors.json"));
+    assert.ok(vectors.length >= 6);
+    for (const v of vectors) assert.equal(await payloadHash(v.value), v.sha256, v.name);
 });

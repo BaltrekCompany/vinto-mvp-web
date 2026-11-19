@@ -15,6 +15,8 @@ export type NewSyncCapture = Readonly<{
     formVersion?: number;
     contextVersion: string;
     dependsOn?: string | null;
+    machineCode?: string;
+    scopeSnapshotId?: string;
     seq: number;
 }>;
 
@@ -33,6 +35,7 @@ export async function createSyncCapture(
     const record: SyncRecord = {
         ...partial, ownerId: identity.ownerId.toLowerCase(), deviceKey: identity.deviceKey.toLowerCase(), seq: input.seq,
         dependsOn: input.dependsOn ? input.dependsOn.toLowerCase() : null, payloadSha256: await payloadHash({ synthetic: true, payload: input.payload }),
+        ...(input.machineCode ? { machineCode: input.machineCode } : {}), ...(input.scopeSnapshotId ? { scopeSnapshotId: input.scopeSnapshotId } : {}),
         state: "queued", attempts: 0, nextAttemptAt: null, uncertain: false, lease: null, version: 1, lastError: null, serverRef: null, warnings: [],
         createdAt: iso, updatedAt: iso, sealed,
     };
