@@ -1,18 +1,16 @@
 /**
- * OFF-04.1 (LABORATORY ONLY): encrypted local Quality drafts.
+ * OFF-04.1/04.2-R2 (LABORATORY ONLY): encrypted local Quality drafts.
  *
- * Reuses, unchanged in shape, the existing `drafts` store of `vinto-offline-v1` and the local vault
+ * Drafts live in the consolidated laboratory database (offline-lab-db.ts), together with the simulated pendings,
+ * so a save and the draft→pending transition are serialised by IndexedDB itself. The local vault is reused
  * (AES-256-GCM, AAD bound to owner, browser, draft, context, form and version). Values are only ever
- * persisted inside the sealed envelope. This module never opens the send queue store, never queues, never
+ * persisted inside the sealed envelope. This module never opens the application's send queue, never queues, never
  * calls a network API and never turns a read-only package into a capture permission.
  */
-import {
-    getSealedDraft, listSealedDrafts, saveSealedDraftRevision, OfflineStoreError, type OfflineDraft, type RevisionedDraft,
-} from "./offline-store.ts";
+import { getLabDraft, listLabDrafts, saveLabDraftRevision, LabDbError, type LabDraftRow } from "./offline-lab-db.ts";
 import { openLocalDraft, sealLocalDraft, VaultError, type OfflineVaultIdentity } from "./offline-vault.ts";
 import type { VerifiedQualityDefinition } from "./offline-quality-verify.ts";
 import type { VerifiedLocalScope } from "./offline-scope-store.ts";
-import { getLabPendingByDraft } from "./offline-lab-queue-store.ts";
 import {
     buildDraftPayload, contextIdFor, draftMatchesDefinition, evaluateDraft, isLabEligible, parseDraftPayload,
     DraftSchemaError, type DraftPayload, type FieldIssue,
@@ -22,7 +20,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type DraftErrorReason =
     | "invalid" | "ineligible" | "conflict" | "quota" | "storage" | "corrupt" | "locked"
-    | "not_found" | "stale_definition" | "no_grant" | "pending_local";
+    | "not_found" | "stale_definition" | "no_grant" | "pending_local" | "quarantined" | "lab_lost";
 export class DraftError extends Error {
     readonly reason: DraftErrorReason;
     readonly issues: readonly FieldIssue[];
@@ -35,23 +33,29 @@ export class DraftError extends Error {
 }
 
 export type DraftSaveResult = Readonly<{ revision: number; savedAt: string; complete: boolean; missingRequired: readonly FieldIssue[] }>;
-export type LoadedDraft = Readonly<{ payload: DraftPayload; revision: number }>;
+export type LoadedDraft = Readonly<{ payload: DraftPayload; revision: number; frozenBy: string | null; sealedFingerprint: string }>;
 export type DraftSummary = Readonly<
-    | { id: string; corrupt: false; formCode: string; formVersion: number; machineCode: string; revision: number; updatedLocal: string }
+    | { id: string; corrupt: false; frozen: boolean; formCode: string; formVersion: number; machineCode: string; revision: number; updatedLocal: string }
     | { id: string; corrupt: true; reason: "corrupt" | "locked" }
 >;
 
-const bindingOf = (identity: OfflineVaultIdentity, record: Pick<OfflineDraft, "id" | "contextId" | "formCode" | "formVersion">) =>
+const bindingOf = (identity: OfflineVaultIdentity, record: Pick<LabDraftRow, "id" | "contextId" | "formCode" | "formVersion">) =>
     ({ ownerId: identity.ownerId, deviceKey: identity.deviceKey, id: record.id,
        contextId: record.contextId, formCode: record.formCode, formVersion: record.formVersion });
 
-function mapStoreError(error: unknown): DraftError {
+export function mapLabDbError(error: unknown): DraftError {
     if (error instanceof DraftError) return error;
-    if (error instanceof OfflineStoreError) {
-        if (error.reason === "conflict" || error.reason === "owner_mismatch") return new DraftError("conflict");
-        if (error.reason === "quota") return new DraftError("quota");
-        if (error.reason === "invalid") return new DraftError("invalid");
-        if (error.reason === "already_queued") return new DraftError("invalid");
+    if (error instanceof LabDbError) {
+        switch (error.reason) {
+            case "conflict": case "owner_mismatch": case "duplicate": return new DraftError("conflict");
+            case "quota": return new DraftError("quota");
+            case "invalid": return new DraftError("invalid");
+            case "pending_local": return new DraftError("pending_local");
+            case "quarantined": return new DraftError("quarantined");
+            case "lab_lost": case "lab_mismatch": return new DraftError("lab_lost");
+            case "not_found": return new DraftError("not_found");
+            default: return new DraftError("storage");
+        }
     }
     return new DraftError("storage");
 }
@@ -81,12 +85,7 @@ export async function saveQualityDraft(
     if (pkg.subject_user_id.toLowerCase() !== identity.ownerId.toLowerCase() ||
         pkg.device_key.toLowerCase() !== identity.deviceKey.toLowerCase()) throw new DraftError("invalid");
     assertGranted(context.scope, context.pkg);
-    // OFF-04.2: a draft that already became a local pending simulation is immutable: "pending_local" (fail closed on read errors).
-    try {
-        if (await getLabPendingByDraft(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase(), input.id.toLowerCase())) {
-            throw new DraftError("pending_local");
-        }
-    } catch (error) { throw error instanceof DraftError ? error : new DraftError("storage"); }
+    // A draft that is (or may be) frozen is refused INSIDE the save transaction (see saveLabDraftRevision).
     const evaluation = evaluateDraft(pkg.definition, input.values);
     if (evaluation.typeIssues.length > 0) throw new DraftError("invalid", evaluation.typeIssues);
 
@@ -102,25 +101,30 @@ export async function saveQualityDraft(
     const contextId = await contextIdFor(pkg.scope_snapshot_id, pkg.machine_code, pkg.form_code);
     const payload = buildDraftPayload({ pkg, ownerId: identity.ownerId, deviceKey: identity.deviceKey },
         input.id, evaluation.clean, revision, createdLocal, updatedLocal);
-    const record: RevisionedDraft = {
+    const record: LabDraftRow = {
         id: input.id.toLowerCase(), ownerId: identity.ownerId.toLowerCase(), deviceKey: identity.deviceKey.toLowerCase(),
         formCode: pkg.form_code, formVersion: pkg.form_version, contextId, savedAt: updatedLocal, revision,
         sealed: await sealLocalDraft(key, bindingOf(identity, { id: input.id.toLowerCase(), contextId,
             formCode: pkg.form_code, formVersion: pkg.form_version }), payload).catch(() => { throw new DraftError("storage"); }),
     };
-    try { await saveSealedDraftRevision(record, input.expectedRevision); }
-    catch (error) { throw mapStoreError(error); }
+    try { await saveLabDraftRevision(record, input.expectedRevision); }
+    catch (error) { throw mapLabDbError(error); }
     return { revision, savedAt: updatedLocal, complete: evaluation.missingRequired.length === 0,
              missingRequired: evaluation.missingRequired };
 }
 
 /** Decrypt and strictly validate one draft; any inconsistency is `corrupt`, a wrong key is `locked`. */
 export async function loadQualityDraft(key: CryptoKey, identity: OfflineVaultIdentity, id: string): Promise<LoadedDraft> {
-    let record: (OfflineDraft & { revision?: unknown }) | null;
-    try { record = await getSealedDraft(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase(), id.toLowerCase()); }
-    catch (error) { throw error instanceof OfflineStoreError && error.reason === "invalid" ? new DraftError("invalid") : new DraftError("storage"); }
+    let record: LabDraftRow | null;
+    try { record = await getLabDraft(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase(), id.toLowerCase()); }
+    catch (error) {
+        if (error instanceof LabDbError && error.reason === "invalid") {
+            // a malformed row is damaged evidence, not an input error
+            throw new DraftError(/^[0-9a-f-]{36}$/i.test(id) ? "corrupt" : "invalid");
+        }
+        throw mapLabDbError(error);
+    }
     if (!record) throw new DraftError("not_found");
-    if (!Number.isSafeInteger(record.revision) || (record.revision as number) < 1) throw new DraftError("corrupt");
     let body: Record<string, unknown>;
     try { body = await openLocalDraft(key, bindingOf(identity, record), record.sealed); }
     catch (error) { throw error instanceof VaultError && error.reason === "unlock_failed" ? new DraftError("locked") : new DraftError("corrupt"); }
@@ -131,19 +135,19 @@ export async function loadQualityDraft(key: CryptoKey, identity: OfflineVaultIde
     if (payload.draft_id !== record.id || payload.author_user_id !== record.ownerId || payload.device_key !== record.deviceKey ||
         payload.form_code !== record.formCode || payload.form_version !== record.formVersion ||
         payload.revision !== record.revision || expectedContext !== record.contextId) throw new DraftError("corrupt");
-    return { payload, revision: payload.revision };
+    return { payload, revision: payload.revision, frozenBy: record.frozenBy ?? null, sealedFingerprint: record.sealed.ciphertext };
 }
 
 /** Drafts of THIS owner+browser only. A damaged draft is listed as corrupt, never hidden, never fatal. */
 export async function listQualityDrafts(key: CryptoKey, identity: OfflineVaultIdentity): Promise<DraftSummary[]> {
-    let records: OfflineDraft[];
-    try { records = await listSealedDrafts(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase()); }
-    catch { throw new DraftError("storage"); }
+    let records: LabDraftRow[];
+    try { records = await listLabDrafts(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase()); }
+    catch (error) { throw mapLabDbError(error); }
     const out: DraftSummary[] = [];
     for (const record of records) {
         try {
-            const { payload, revision } = await loadQualityDraft(key, identity, record.id);
-            out.push({ id: record.id, corrupt: false, formCode: payload.form_code, formVersion: payload.form_version,
+            const { payload, revision, frozenBy } = await loadQualityDraft(key, identity, record.id);
+            out.push({ id: record.id, corrupt: false, frozen: frozenBy !== null, formCode: payload.form_code, formVersion: payload.form_version,
                 machineCode: payload.machine_code, revision, updatedLocal: payload.updated_local });
         } catch (error) {
             out.push({ id: record.id, corrupt: true, reason: error instanceof DraftError && error.reason === "locked" ? "locked" : "corrupt" });
