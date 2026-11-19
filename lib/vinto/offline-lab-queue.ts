@@ -1,10 +1,10 @@
 /**
- * OFF-04.2 (LABORATORY ONLY): explicit transition of an encrypted synthetic Quality draft to a SIMULATED local
+ * OFF-04.2/04.2-R2 (LABORATORY ONLY): explicit transition of an encrypted synthetic Quality draft to a SIMULATED local
  * pending (`queued_local_simulation`). It does NOT send, sync, approve or authorise anything.
  *
- * The result lives in an isolated database (see offline-lab-queue-store.ts), never in the application's
- * send queue, and carries a frozen, re-sealed copy of the draft. Pending records are immutable: the only
- * write primitive is "add", the source draft becomes read-only (see saveQualityDraft) and a repeated
+ * The result lives in the isolated laboratory database (see offline-lab-db.ts), never in the application's
+ * send queue, and carries a frozen, re-sealed copy of the draft. The transition is ONE transaction that checks
+ * the draft's revision and ciphertext, adds the immutable pending and freezes the draft; a repeated
  * transition (double click, retry, second tab) is idempotent: it returns the existing pending unchanged.
  */
 import { openLocalDraft, sealLocalDraft, VaultError, type OfflineVaultIdentity } from "./offline-vault.ts";
@@ -15,8 +15,8 @@ import {
 } from "./offline-draft-schema.ts";
 import { assertGranted, DraftError, loadQualityDraft } from "./offline-draft-store.ts";
 import {
-    addLabPending, getLabPendingByDraft, listLabPending, LabQueueStoreError, LAB_STATUS, type LabPending,
-} from "./offline-lab-queue-store.ts";
+    getLabDraft, getLabPending, listLabDrafts, readAllPending, readQuarantine, transitionLabDraft, LabDbError, LAB_STATUS, type LabPending,
+} from "./offline-lab-db.ts";
 
 export const PENDING_SCHEMA = "vinto.offline.quality-pending-sim.v1";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +24,7 @@ const encoder = new TextEncoder();
 
 export type QueueErrorReason =
     | "invalid" | "ineligible" | "no_grant" | "conflict" | "incomplete" | "stale_definition"
-    | "locked" | "corrupt" | "not_found" | "quota" | "storage";
+    | "locked" | "corrupt" | "not_found" | "quota" | "storage" | "quarantined" | "lab_lost";
 export class LabQueueError extends Error {
     readonly reason: QueueErrorReason;
     readonly missing: readonly string[];
@@ -72,21 +72,26 @@ const bindingOf = (identity: OfflineVaultIdentity, r: Pick<LabPending, "capture_
 function mapDraftError(error: unknown): LabQueueError {
     if (error instanceof LabQueueError) return error;
     if (error instanceof DraftError) {
-        if (error.reason === "locked") return new LabQueueError("locked");
-        if (error.reason === "not_found") return new LabQueueError("not_found");
-        if (error.reason === "corrupt") return new LabQueueError("corrupt");
-        if (error.reason === "stale_definition") return new LabQueueError("stale_definition");
-        if (error.reason === "no_grant") return new LabQueueError("no_grant");
-        if (error.reason === "ineligible") return new LabQueueError("ineligible");
-        if (error.reason === "invalid") return new LabQueueError("invalid");
+        const r = error.reason;
+        if (r === "locked" || r === "not_found" || r === "corrupt" || r === "stale_definition" || r === "no_grant" ||
+            r === "ineligible" || r === "invalid" || r === "quarantined" || r === "lab_lost" || r === "quota") return new LabQueueError(r);
+        if (r === "conflict") return new LabQueueError("conflict");
     }
-    return new LabQueueError("storage");
+    return mapDbError(error);
 }
 
-function mapStoreError(error: unknown): LabQueueError {
-    if (error instanceof LabQueueStoreError) {
-        if (error.reason === "quota") return new LabQueueError("quota");
-        if (error.reason === "invalid") return new LabQueueError("invalid");
+function mapDbError(error: unknown): LabQueueError {
+    if (error instanceof LabQueueError) return error;
+    if (error instanceof LabDbError) {
+        switch (error.reason) {
+            case "quota": return new LabQueueError("quota");
+            case "invalid": return new LabQueueError("invalid");
+            case "conflict": case "duplicate": case "owner_mismatch": case "pending_local": return new LabQueueError("conflict");
+            case "quarantined": return new LabQueueError("quarantined");
+            case "lab_lost": case "lab_mismatch": return new LabQueueError("lab_lost");
+            case "not_found": return new LabQueueError("not_found");
+            default: return new LabQueueError("storage");
+        }
     }
     return new LabQueueError("storage");
 }
@@ -110,16 +115,16 @@ export async function queueLabDraft(
     if (pkg.subject_user_id.toLowerCase() !== owner || pkg.device_key.toLowerCase() !== device) throw new LabQueueError("invalid");
     try { assertGranted(context.scope, context.pkg); } catch (error) { throw mapDraftError(error); }
 
-    // Idempotency: an existing pending for this draft is returned unchanged (never overwritten).
-    let existing: LabPending | null;
-    try { existing = await getLabPendingByDraft(owner, device, draftId); } catch { throw new LabQueueError("storage"); }
-    if (existing) {
+    let loaded;
+    try { loaded = await loadQualityDraft(key, identity, draftId); } catch (error) { throw mapDraftError(error); }
+    if (loaded.frozenBy !== null) {
+        // Already frozen: the repeat is idempotent ONLY if its pending is intact; damaged evidence is never skipped over.
+        let existing: LabPending | null;
+        try { existing = await getLabPending(owner, device, loaded.frozenBy); } catch (error) { throw mapDbError(error); }
+        if (!existing || existing.draftId !== draftId) throw new LabQueueError("quarantined");
         if (existing.sourceRevision !== input.expectedRevision) throw new LabQueueError("conflict");
         return { captureId: existing.capture_id, created: false, sourceRevision: existing.sourceRevision, queuedAt: existing.queuedAt };
     }
-
-    let loaded;
-    try { loaded = await loadQualityDraft(key, identity, draftId); } catch (error) { throw mapDraftError(error); }
     if (loaded.revision !== input.expectedRevision) throw new LabQueueError("conflict");
     if (!draftMatchesDefinition(loaded.payload, pkg)) throw new LabQueueError("stale_definition");
     const evaluation = evaluateDraft(pkg.definition, loaded.payload.values);
@@ -143,20 +148,11 @@ export async function queueLabDraft(
         formVersion: loaded.payload.form_version, contextId, sourceRevision: loaded.revision, queuedAt,
         status: LAB_STATUS, lab: true, syncState: "NOT_SYNCED", sealed,
     };
-    try { await addLabPending(record); }
-    catch (error) {
-        if (error instanceof LabQueueStoreError && error.reason === "duplicate") {
-            // A concurrent tab/click won the race: report that pending, never a second one.
-            let winner: LabPending | null = null;
-            try { winner = await getLabPendingByDraft(owner, device, draftId); } catch { /* fall through */ }
-            if (winner && winner.sourceRevision === loaded.revision) {
-                return { captureId: winner.capture_id, created: false, sourceRevision: winner.sourceRevision, queuedAt: winner.queuedAt };
-            }
-            throw new LabQueueError("conflict");
-        }
-        throw mapStoreError(error);
-    }
-    return { captureId, created: true, sourceRevision: loaded.revision, queuedAt };
+    try {
+        const result = await transitionLabDraft({ ownerId: owner, deviceKey: device, draftId, expectedRevision: loaded.revision,
+            expectedCiphertext: loaded.sealedFingerprint, record });
+        return { captureId: result.pending.capture_id, created: result.created, sourceRevision: result.pending.sourceRevision, queuedAt: result.pending.queuedAt };
+    } catch (error) { throw mapDbError(error); }
 }
 
 function parsePending(body: Record<string, unknown>): PendingPayload {
@@ -187,15 +183,23 @@ export async function loadLabPending(key: CryptoKey, identity: OfflineVaultIdent
     return payload;
 }
 
-/** Pendings of THIS owner+browser. Damaged ones are listed as such; none is ever modified or removed. */
+export type QuarantineView = Readonly<{ id: string; kind: string; detail: string }>;
+
+/**
+ * Pendings of THIS owner+browser plus the visible quarantine: malformed pending rows, frozen drafts whose pending
+ * is missing/damaged, and migration evidence. Nothing is modified or removed; frozen drafts stay frozen.
+ */
 export async function listLabPendingSummaries(
     key: CryptoKey, identity: OfflineVaultIdentity
-): Promise<{ items: PendingSummary[]; malformed: number }> {
-    let listed;
-    try { listed = await listLabPending(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase()); }
-    catch { throw new LabQueueError("storage"); }
+): Promise<{ items: PendingSummary[]; quarantine: QuarantineView[] }> {
+    const owner = identity.ownerId.toLowerCase(), device = identity.deviceKey.toLowerCase();
+    let all, drafts, evidence;
+    try { all = await readAllPending(); drafts = await listLabDrafts(owner, device); evidence = await readQuarantine(); }
+    catch (error) { throw mapDbError(error); }
     const items: PendingSummary[] = [];
-    for (const record of listed.records) {
+    const quarantine: QuarantineView[] = all.malformed.map(m => ({ id: m.captureId, kind: "pending_malformed", detail: "registro pendiente ilegible o alterado" }));
+    const mine = all.valid.filter(p => p.ownerId === owner && p.deviceKey === device);
+    for (const record of mine) {
         try {
             const p = await loadLabPending(key, identity, record);
             items.push({ captureId: record.capture_id, corrupt: false, formCode: p.draft.form_code, formVersion: p.draft.form_version,
@@ -204,11 +208,25 @@ export async function listLabPendingSummaries(
             items.push({ captureId: record.capture_id, corrupt: true, reason: error instanceof LabQueueError && error.reason === "locked" ? "locked" : "corrupt" });
         }
     }
-    return { items: items.sort((a, b) => a.captureId.localeCompare(b.captureId)), malformed: listed.malformed };
+    const validIds = new Map(mine.map(r => [r.capture_id, r]));
+    for (const d of drafts) {
+        if (d.frozenBy === undefined) continue;
+        const p = validIds.get(d.frozenBy);
+        if (!p || p.draftId !== d.id) quarantine.push({ id: d.id, kind: "frozen_without_valid_pending", detail: "borrador congelado sin pendiente íntegro: sigue bloqueado" });
+    }
+    for (const q of evidence) if (q.ownerId === owner && q.deviceKey === device) quarantine.push({ id: q.id, kind: q.source, detail: q.reason });
+    return { items: items.sort((a, b) => a.captureId.localeCompare(b.captureId)), quarantine };
 }
 
-/** Which of this identity's draft ids are already pending (used to mark them read-only in the UI). */
-export async function pendingDraftIds(identity: OfflineVaultIdentity): Promise<Set<string>> {
-    const listed = await listLabPending(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase());
-    return new Set(listed.records.map(r => r.draftId));
+/** The FROZEN content of the pending bound to a draft (never a later draft version). */
+export async function loadFrozenForDraft(key: CryptoKey, identity: OfflineVaultIdentity, draftId: string): Promise<PendingPayload> {
+    const owner = identity.ownerId.toLowerCase(), device = identity.deviceKey.toLowerCase();
+    let row;
+    try { row = await getLabDraft(owner, device, draftId.toLowerCase()); } catch (error) { throw mapDbError(error); }
+    if (!row) throw new LabQueueError("not_found");
+    if (row.frozenBy === undefined) throw new LabQueueError("not_found");
+    let pending;
+    try { pending = await getLabPending(owner, device, row.frozenBy); } catch (error) { throw mapDbError(error); }
+    if (!pending || pending.draftId !== row.id) throw new LabQueueError("quarantined");
+    return loadLabPending(key, identity, pending);
 }

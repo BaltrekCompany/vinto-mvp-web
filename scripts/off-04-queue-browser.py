@@ -137,7 +137,10 @@ with tempfile.TemporaryDirectory(prefix="vinto-off042-") as tmp, sync_playwright
     assert row["capture_id"] == r["captureId"] and row["draftId"] == D1 and row["sourceRevision"] == 2
     assert row["sealed"]["format"] == "aes-gcm-v1"
     no_plaintext_pending(b)
-    assert b.call("rawDrafts") == drafts_before, "the source draft must stay byte-identical"
+    after = json.loads(b.call("rawDrafts"))
+    assert len(after) == 1 and after[0].get("frozenBy") == row["capture_id"], after       # the draft is FROZEN by its pending
+    assert {k: v for k, v in after[0].items() if k != "frozenBy"} == json.loads(drafts_before)[0], "only the freeze marker may change"
+    frozen_snapshot = b.call("rawDrafts")
     assert b.call("realOutbox") == 0, "the application's send queue must stay empty"
     p = b.call("pendingLoad", D1)
     assert p["found"] and p["payload"]["status"] == "queued_local_simulation" and p["payload"]["sync_state"] == "NOT_SYNCED"
@@ -150,11 +153,11 @@ with tempfile.TemporaryDirectory(prefix="vinto-off042-") as tmp, sync_playwright
     r = b.call("save", D1, {**GOOD, "observaciones": "intento"}, 2)
     assert r["ok"] is False and r["reason"] == "pending_local", r
     r = b.call("save", D1, {**GOOD, "observaciones": "intento"}, 3)
-    assert r["ok"] is False and r["reason"] == "pending_local", r
+    assert r["ok"] is False and r["reason"] in ("pending_local", "conflict"), r      # a wrong revision on a frozen draft is a conflict, never a save
     again = b.call("queue", D1, 2)
     assert again["ok"] and again["created"] is False and again["captureId"] == row["capture_id"], again
     assert b.call("queue", D1, 1)["reason"] == "conflict"
-    assert b.call("rawPending") == snapshot and b.call("rawDrafts") == drafts_before
+    assert b.call("rawPending") == snapshot and b.call("rawDrafts") == frozen_snapshot
     report("02_pending_is_immutable_and_repeat_transition_is_idempotent")
     b.kill()
 
@@ -211,7 +214,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off042-") as tmp, sync_playwright
     b.call("tamperPending", caps[D3], "draft_id")
     b.call("tamperPending", caps[D4], "status")
     lst = b.call("pendingList")
-    assert lst["ok"] and lst["malformed"] == 1, lst                                  # status != simulation: counted, not hidden
+    assert lst["ok"] and caps[D4] in {q["id"] for q in lst["quarantine"]} and D4 in {q["id"] for q in lst["quarantine"]}, lst   # malformed: visible in quarantine
     by = {i["captureId"]: i for i in lst["items"]}
     assert len(by) == 3, by
     assert by[caps[D3]]["corrupt"] is True and by[caps[D3]]["reason"] == "corrupt"

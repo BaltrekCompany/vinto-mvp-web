@@ -142,11 +142,9 @@ with tempfile.TemporaryDirectory(prefix="vinto-off04-ui-") as tmp, sync_playwrig
     report("04_create_edit_validate_and_save_encrypted_drafts")
 
     dump = lab.evaluate("""async () => await new Promise((resolve, reject) => {
-        const r = indexedDB.open('vinto-off03a-profiles-v1'); r.onerror = () => reject(new Error('x'));
-        r.onsuccess = () => { r.result.close();
-          const q = indexedDB.open('vinto-offline-v1'); q.onerror = () => reject(new Error('y'));
-          q.onsuccess = () => { const db = q.result; const g = db.transaction('drafts').objectStore('drafts').getAll();
-            g.onsuccess = () => { const out = JSON.stringify(g.result); db.close(); resolve(out); }; }; }; })""")
+        const q = indexedDB.open('vinto-off04lab-v2'); q.onerror = () => reject(new Error('y'));
+        q.onsuccess = () => { const db = q.result; const g = db.transaction('lab_drafts').objectStore('lab_drafts').getAll();
+          g.onsuccess = () => { const out = JSON.stringify(g.result); db.close(); resolve(out); }; }; })""")
     assert MARKER not in dump and "numero_de_cuba" not in dump and "Laboratorio de Calidad" not in dump
     assert json.loads(dump)[0]["sealed"]["format"] == "aes-gcm-v1" and len(json.loads(dump)) == 1
     ls = lab.evaluate("() => JSON.stringify(Object.entries(localStorage))")
@@ -212,6 +210,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off04-ui-") as tmp, sync_playwrig
     tab2.locator("#lab-queue").click()                                   # repeated transition from another tab: idempotent
     tab2.get_by_text("Este borrador ya era un pendiente local", exact=False).wait_for()
     tab2.locator("#lab-reload").wait_for(state="hidden")
+    assert off.locator("#f-observaciones").input_value() == "desde la segunda pestaña"   # frozen content of the pending, in the queuing tab
     off.reload(wait_until="domcontentloaded")
     off.get_by_text("Perfil local encontrado.", exact=False).wait_for()
     unlock(off)
@@ -220,7 +219,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off04-ui-") as tmp, sync_playwrig
     report("08_queue_local_simulation_double_click_second_tab_and_immutable")
 
     qdump = off.evaluate("""async () => await new Promise((resolve, reject) => {
-        const r = indexedDB.open('vinto-off04lab-queue-v1'); r.onerror = () => reject(new Error('q'));
+        const r = indexedDB.open('vinto-off04lab-v2'); r.onerror = () => reject(new Error('q'));
         r.onsuccess = () => { const db = r.result; const g = db.transaction('lab_pending').objectStore('lab_pending').getAll();
           g.onsuccess = () => { const out = JSON.stringify(g.result); db.close(); resolve(out); }; }; })""")
     rows = json.loads(qdump)
@@ -251,9 +250,23 @@ with tempfile.TemporaryDirectory(prefix="vinto-off04-ui-") as tmp, sync_playwrig
     again.get_by_text("Laboratorio desbloqueado.", exact=False).wait_for()
     assert again.locator("#lab-pending li[data-capture-id]").count() == 1
     again.locator("#lab-drafts button.open").first.click()
-    again.get_by_text("Pendiente local — NO sincronizado: inmutable.", exact=False).wait_for()
+    again.get_by_text("Contenido CONGELADO del pendiente local", exact=False).wait_for()
+    assert again.locator("#f-observaciones").input_value() == "desde la segunda pestaña" and again.locator("#f-numero_de_cuba").input_value() == MARKER
     assert again.locator("#lab-save").is_disabled() and again.locator("#lab-queue").is_hidden()
     assert [c for c in api_calls if not c.startswith("OPTIONS")] == [], api_calls
     report("11_pending_survives_browser_restart_offline_and_is_read_only")
+    assert again.locator("#lab-quarantine li[data-quarantine-id]").count() == 0
+
+    # ---- losing ONLY the laboratory database: blocked, nothing is recreated or reactivated ----
+    again.evaluate("""async () => await new Promise(r => { const q = indexedDB.deleteDatabase('vinto-off04lab-v2'); q.onsuccess = q.onerror = q.onblocked = () => r(); })""")
+    again.locator("#lab-lock").click()
+    again.reload(wait_until="domcontentloaded")
+    again.get_by_text("Perfil local encontrado.", exact=False).wait_for()
+    unlock(again)
+    again.get_by_text("LABORATORIO BLOQUEADO", exact=False).wait_for()
+    assert again.locator("#lab-workspace").is_hidden() and again.locator("#lab-editor").is_hidden()
+    exists = again.evaluate("""async () => (await indexedDB.databases()).map(d => d.name).includes('vinto-off04lab-v2')""")
+    assert exists is False, "the laboratory database must NOT be recreated after a loss"
+    report("12_lab_database_loss_is_blocked_and_not_recreated")
     ctx.close()
 print("OFF04_LAB_UI=PASS", flush=True)

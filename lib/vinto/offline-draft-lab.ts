@@ -12,7 +12,8 @@ import type { VerifiedQualityDefinition, QualityField } from "./offline-quality-
 import { DEVICE_KEY_STORAGE } from "./device";
 import { editableFields, isCalculated, isLabEligible, draftMatchesDefinition, type DraftValues } from "./offline-draft-schema.ts";
 import { DraftError, listQualityDrafts, loadQualityDraft, saveQualityDraft } from "./offline-draft-store.ts";
-import { LabQueueError, listLabPendingSummaries, pendingDraftIds, queueLabDraft } from "./offline-lab-queue.ts";
+import { LabQueueError, listLabPendingSummaries, loadFrozenForDraft, queueLabDraft } from "./offline-lab-queue.ts";
+import { LabMigrationError, runLegacyMigration } from "./offline-lab-migration.ts";
 
 const $ = <T>(id: string) => document.getElementById(id) as unknown as T | null;
 type Control = { value: string; dataset: DOMStringMap };
@@ -32,6 +33,7 @@ const title = $<HTMLHeadingElement>("lab-editor-title");
 const reloadButton = $<HTMLButtonElement>("lab-reload");
 const queueButton = $<HTMLButtonElement>("lab-queue");
 const pendingList = $<HTMLUListElement>("lab-pending");
+const quarantineList = $<HTMLUListElement>("lab-quarantine");
 
 type Session = { key: CryptoKey; identity: { ownerId: string; deviceKey: string }; scope: VerifiedLocalScope; packages: VerifiedQualityDefinition[] };
 type Editing = { id: string; revision: number | null; pkg: VerifiedQualityDefinition; readOnly: boolean; pending?: boolean };
@@ -40,6 +42,9 @@ let session: Session | null = null;
 let editing: Editing | null = null;
 
 const say = (text: string) => { if (status) status.textContent = text; };
+/** Loss/replacement of the laboratory database is fail-closed: nothing is shown or reactivated. */
+const isLabLost = (e: unknown) => (e instanceof DraftError || e instanceof LabQueueError || e instanceof LabMigrationError) && e.reason === "lab_lost";
+const LOST_TEXT = "LABORATORIO BLOQUEADO: la base de laboratorio se perdió o fue reemplazada. No se reactiva ningún borrador anterior ni se crea una base nueva. Requiere revisión explícita.";
 const ISSUE_TEXT: Record<string, string> = {
     required: "obligatorio", type: "valor no válido para el tipo", option: "no es una opción permitida",
     unknown: "campo desconocido", calculated: "campo calculado: no editable", too_long: "demasiado largo",
@@ -134,14 +139,15 @@ async function refreshDrafts(): Promise<void> {
     draftList.replaceChildren();
     let items;
     try { items = await listQualityDrafts(session.key, session.identity); }
-    catch { say("No se pudo leer el almacenamiento de borradores. No se muestra nada."); return; }
+    catch (error) { if (isLabLost(error)) { lockAll(LOST_TEXT); return; } say("No se pudo leer el almacenamiento de borradores. No se muestra nada."); return; }
     if (items.length === 0) { const li = document.createElement("li"); li.textContent = "Sin borradores en este navegador."; draftList.appendChild(li); }
     for (const item of items) {
         const li = document.createElement("li");
         if (item.corrupt) { li.textContent = "Borrador " + item.id.slice(0, 8) + " ilegible (" + item.reason + "): no se modifica."; li.dataset.corrupt = "1"; }
         else {
             const open = document.createElement("button"); open.type = "button"; open.className = "open"; open.dataset.draftId = item.id;
-            open.textContent = "Abrir " + item.machineCode + " · " + item.formCode + " v" + item.formVersion + " · rev " + item.revision + " · " + item.updatedLocal;
+            open.textContent = "Abrir " + item.machineCode + " · " + item.formCode + " v" + item.formVersion + " · rev " + item.revision + " · " + item.updatedLocal +
+                (item.frozen ? " · PENDIENTE LOCAL (congelado)" : "");
             open.addEventListener("click", () => { void openDraft(item.id); });
             li.appendChild(open);
         }
@@ -151,20 +157,26 @@ async function refreshDrafts(): Promise<void> {
 
 async function refreshPending(): Promise<void> {
     if (!session || !pendingList) return;
-    pendingList.replaceChildren();
+    pendingList.replaceChildren(); quarantineList?.replaceChildren();
     let result;
     try { result = await listLabPendingSummaries(session.key, session.identity); }
-    catch { say("No se pudo leer el almacenamiento de pendientes locales. No se muestra nada."); return; }
-    if (result.items.length === 0 && result.malformed === 0) { const li = document.createElement("li"); li.textContent = "Sin pendientes locales."; pendingList.appendChild(li); }
+    catch (error) { if (isLabLost(error)) { lockAll(LOST_TEXT); return; } say("No se pudo leer el almacenamiento de pendientes locales. No se muestra nada."); return; }
+    if (result.items.length === 0) { const li = document.createElement("li"); li.textContent = "Sin pendientes locales."; pendingList.appendChild(li); }
     for (const item of result.items) {
         const li = document.createElement("li"); li.dataset.captureId = item.captureId;
-        li.textContent = item.corrupt
-            ? "Pendiente " + item.captureId.slice(0, 8) + " ilegible (" + item.reason + "): se conserva sin modificar."
-            : "Pendiente local — NO sincronizado · " + item.machineCode + " · " + item.formCode + " v" + item.formVersion +
-              " · borrador rev " + item.sourceRevision + " · " + item.queuedAt;
+        if (item.corrupt) { li.textContent = "Pendiente " + item.captureId.slice(0, 8) + " ilegible (" + item.reason + "): se conserva sin modificar."; pendingList.appendChild(li); continue; }
+        li.textContent = "Pendiente local — NO sincronizado · " + item.machineCode + " · " + item.formCode + " v" + item.formVersion +
+            " · borrador rev " + item.sourceRevision + " · " + item.queuedAt + " ";
         pendingList.appendChild(li);
     }
-    if (result.malformed > 0) { const li = document.createElement("li"); li.textContent = result.malformed + " registro(s) pendiente(s) malformado(s): se conservan sin modificar."; pendingList.appendChild(li); }
+    if (quarantineList) {
+        for (const q of result.quarantine) {
+            const li = document.createElement("li"); li.dataset.quarantineId = q.id;
+            li.textContent = "EN CUARENTENA (" + q.kind + "): " + q.detail + ". Evidencia conservada; no se elimina ni se desbloquea ningún borrador.";
+            quarantineList.appendChild(li);
+        }
+        if (result.quarantine.length === 0) { const li = document.createElement("li"); li.textContent = "Sin elementos en cuarentena."; quarantineList.appendChild(li); }
+    }
 }
 
 async function queue(): Promise<void> {
@@ -173,8 +185,9 @@ async function queue(): Promise<void> {
     try {
         const result = await queueLabDraft(session.key, session.identity, { scope: session.scope, pkg: editing.pkg },
             { id: editing.id, expectedRevision: editing.revision });
-        editing = { ...editing, readOnly: true, pending: true };
-        renderEditor(editing, (await loadQualityDraft(session.key, session.identity, editing.id)).payload.values, null);
+        const frozen = await loadFrozenForDraft(session.key, session.identity, editing.id);
+        editing = { ...editing, revision: frozen.source_revision, readOnly: true, pending: true };
+        renderEditor(editing, frozen.draft.values, frozen.draft.created_local);
         if (queueButton) queueButton.hidden = true;
         say((result.created ? "Pendiente local creado" : "Este borrador ya era un pendiente local") +
             " — NO sincronizado. Es una simulación aislada: no se envió nada y el pendiente es inmutable.");
@@ -185,6 +198,8 @@ async function queue(): Promise<void> {
         if (r === "incomplete") { showIssues((error as LabQueueError).missing.map(key => ({ key, code: "required" }))); say("NO se creó el pendiente: faltan campos obligatorios. El borrador sigue como borrador."); }
         else if (r === "conflict") { say("NO se creó el pendiente: otra pestaña cambió este borrador. No se modificó nada; use «Cargar versión guardada»."); if (reloadButton) reloadButton.hidden = false; }
         else if (r === "quota") say("NO se creó el pendiente: el almacenamiento del navegador está lleno. El borrador se conserva intacto.");
+        else if (r === "lab_lost") lockAll(LOST_TEXT);
+        else if (r === "quarantined") say("NO se creó el pendiente: hay evidencia dañada asociada a este borrador (cuarentena). No se modificó nada ni se desbloqueó el borrador.");
         else say("NO se creó el pendiente (" + r + "). El borrador se conserva intacto y nada fue enviado.");
     } finally { queueing = false; }
 }
@@ -193,14 +208,19 @@ async function openDraft(id: string): Promise<void> {
     if (!session) return;
     try {
         const loaded = await loadQualityDraft(session.key, session.identity, id);
-        const isPending = (await pendingDraftIds(session.identity)).has(id.toLowerCase());
-        const pkg = session.packages.find(p => draftMatchesDefinition(loaded.payload, p.envelope.payload)) ??
-            session.packages.find(p => p.envelope.payload.machine_code === loaded.payload.machine_code && p.envelope.payload.form_code === loaded.payload.form_code);
+        // A frozen draft shows the FROZEN pending content, never a later draft version.
+        const frozen = loaded.frozenBy !== null ? await loadFrozenForDraft(session.key, session.identity, id) : null;
+        const source = frozen ? frozen.draft : loaded.payload;
+        const pkg = session.packages.find(p => draftMatchesDefinition(source, p.envelope.payload)) ??
+            session.packages.find(p => p.envelope.payload.machine_code === source.machine_code && p.envelope.payload.form_code === source.form_code);
         if (!pkg) { say("No hay una definición local para este borrador; no se puede editar."); return; }
-        editing = { id, revision: loaded.revision, pkg, readOnly: isPending || !draftMatchesDefinition(loaded.payload, pkg.envelope.payload), pending: isPending };
-        renderEditor(editing, loaded.payload.values, loaded.payload.created_local);
-        say("Borrador cargado (revisión " + loaded.revision + ")." + (isPending ? " Pendiente local — NO sincronizado: inmutable." : editing.readOnly ? " La definición cambió: solo lectura." : ""));
+        editing = { id, revision: frozen ? frozen.source_revision : loaded.revision, pkg, readOnly: frozen !== null || !draftMatchesDefinition(source, pkg.envelope.payload), pending: frozen !== null };
+        renderEditor(editing, source.values, source.created_local);
+        say(frozen ? "Contenido CONGELADO del pendiente local (revisión " + frozen.source_revision + ") — NO sincronizado: inmutable."
+            : "Borrador cargado (revisión " + loaded.revision + ")." + (editing.readOnly ? " La definición cambió: solo lectura." : ""));
     } catch (error) {
+        if (isLabLost(error)) { lockAll(LOST_TEXT); return; }
+        if ((error instanceof LabQueueError || error instanceof DraftError) && error.reason === "quarantined") { say("Este borrador está bloqueado: su pendiente está dañado (cuarentena). No se muestra contenido no verificado."); return; }
         say(error instanceof DraftError && error.reason === "locked" ? "La clave local no abre este borrador." : "Borrador ilegible o alterado: no se muestra ni se modifica.");
     }
 }
@@ -230,6 +250,8 @@ async function save(): Promise<void> {
         else if (error.reason === "quota") say("NO se guardó: el almacenamiento del navegador está lleno. Libere espacio y reintente.");
         else if (error.reason === "stale_definition") say("NO se guardó: la definición cambió; este borrador es de solo lectura.");
         else if (error.reason === "pending_local") say("NO se guardó: este borrador ya es un pendiente local inmutable (NO sincronizado).");
+        else if (error.reason === "quarantined") say("NO se guardó: la evidencia de su pendiente está dañada (cuarentena). El borrador permanece bloqueado.");
+        else if (error.reason === "lab_lost") lockAll(LOST_TEXT);
         else say("NO se guardó el borrador (" + error.reason + "). Nada fue enviado.");
     }
 }
@@ -273,10 +295,22 @@ async function start(): Promise<void> {
             packages.forEach((p, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = describe(p); select.appendChild(o); });
             newButton.disabled = packages.length === 0;
             unlockForm.hidden = true; workspace.hidden = false;
+            let migrationNote = "";
+            try {
+                const m = await runLegacyMigration(key, identity, true);   // the key is proven: the signed scope was just decrypted with it
+                if (!m.alreadyMigrated && (m.migratedDrafts + m.migratedPendings + m.quarantined) > 0) {
+                    migrationNote = " Migración no destructiva: " + m.migratedDrafts + " borrador(es), " + m.migratedPendings + " pendiente(s), " +
+                        m.quarantined + " en cuarentena" + (m.divergent > 0 ? ", " + m.divergent + " con versión posterior no capturada" : "") + "; los datos anteriores no se modificaron.";
+                }
+            } catch (error) {
+                if (isLabLost(error)) { lockAll(LOST_TEXT); return; }
+                migrationNote = " La migración de datos anteriores no se completó; nada se modificó y se reintentará.";
+            }
             await refreshDrafts(); await refreshPending();
+            if (!session) return;
             say(packages.length === 0
                 ? "No hay definiciones sintéticas editables" + (skipped ? " (" + skipped + " definición(es) real(es) no se editan en el laboratorio)." : ".")
-                : "Laboratorio desbloqueado. Datos sintéticos únicamente; nada se envía.");
+                : "Laboratorio desbloqueado. Datos sintéticos únicamente; nada se envía." + migrationNote);
         } catch { say("No fue posible desbloquear o validar. El laboratorio permanece bloqueado."); }
     });
     newButton.addEventListener("click", () => {
