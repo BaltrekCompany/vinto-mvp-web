@@ -23,6 +23,8 @@ export type SyncRecord = Readonly<{
     formCode: string;
     formVersion: number;
     contextVersion: string;       // industrial context the capture was prepared under
+    machineCode?: string;         // OFF-04.4: references sent to a central receiver (optional: the fake server ignores them)
+    scopeSnapshotId?: string;
     payloadSha256: string;        // integrity of the frozen payload
     state: SyncState;
     attempts: number;
@@ -46,6 +48,8 @@ export type SyncRequest = Readonly<{
     form_code: string;
     form_version: number;
     context_version: string;
+    machine_code?: string;
+    scope_snapshot_id?: string;
     payload_sha256: string;
     payload: unknown;
 }>;

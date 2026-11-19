@@ -176,7 +176,8 @@ export async function syncNow(deps: SyncDeps): Promise<SyncRunResult> {
 
             // 3) send (same capture_id every time)
             const request: SyncRequest = { capture_id: rec.capture_id, author_user_id: rec.ownerId, device_key: rec.deviceKey, form_code: rec.formCode,
-                form_version: rec.formVersion, context_version: rec.contextVersion, payload_sha256: rec.payloadSha256, payload };
+                form_version: rec.formVersion, context_version: rec.contextVersion, payload_sha256: rec.payloadSha256, payload,
+                ...(rec.machineCode ? { machine_code: rec.machineCode } : {}), ...(rec.scopeSnapshotId ? { scope_snapshot_id: rec.scopeSnapshotId } : {}) };
             let reply: SyncReply;
             try {
                 sent += 1;
