@@ -1,5 +1,8 @@
 # VINTO OFF-04.5A — Calidad offline de punta a punta (laboratorio sintético)
 
+> **Actualización OFF-04.5B-06B:** el cliente de este laboratorio ya no acepta `?receiver=` ni usa la cabecera sintética: habla solo con **su propio origen** con la cookie de sesión real. El navegador E2E de 5A (`off-04-5a-quality-e2e-browser.py`) fue sustituido por `off-04-5b-06b-mobile-auth-e2e-browser.py` y los contratos estáticos por `off-04-5b-06b-mobile-auth-static.test.mjs`. Ver `docs/OFF-04-5B-06B-autenticacion-qa-y-cliente-movil.md`. Lo que sigue describe el diseño original de 5A.
+
+
 **Estado:** candidato de ensayo aislado, PR Draft apilado sobre #235. Seguimiento: #236.
 **Solo identidades, capturas, contextos y autorizaciones sintéticos.** No conecta el outbox operativo, no habilita captura industrial, no cambia permisos ni paquetes de solo lectura, no registra rutas operativas, no aplica migraciones y no toca PostgreSQL real, VPS, Docker, Nginx, firewall, SEC-HOST-01 ni OFF-04.2-R3.
 
