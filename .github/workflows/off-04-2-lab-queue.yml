@@ -1,4 +1,4 @@
-name: OFF-04.2 Simulated Local Pending Queue Laboratory QA
+name: OFF-04.2 Simulated Local Pending Queue and Consistency Laboratory QA
 
 on:
   pull_request:
@@ -108,6 +108,7 @@ jobs:
           node scripts/off-03c4-build-harness.mjs
           python scripts/off-04-drafts-browser.py
           python scripts/off-04-queue-browser.py
+          python scripts/off-04-consistency-browser.py
           python scripts/off-03c4-renewal-browser.py
 
   chrome-ui-lab-and-regressions:
