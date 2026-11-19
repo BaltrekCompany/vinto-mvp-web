@@ -1,8 +1,9 @@
--- OFF-04.4 PROPOSED migration (NOT numbered, NOT applied, NOT in backend/migrations/ so migrate.py never picks it up).
--- Promote to backend/migrations/0032_offline_capture_receipt.sql only with explicit authorization, after review.
--- Isolated schema: it touches no operational schema and links to no operational table.
-BEGIN;
-CREATE SCHEMA IF NOT EXISTS vinto_offline;
+-- OFF-04.4 / OFF-04.5B-03 PROPOSED migration (NOT numbered, NOT applied, NOT in backend/migrations/ so migrate.py never picks it up).
+-- Promote to backend/migrations/0032_offline_capture_receipt.sql only with explicit authorization, after review
+-- (see promote_0032.py and docs/OFF-04-5B-03-*.md). migrate.py wraps every migration in ONE transaction: this file therefore has no
+-- BEGIN/COMMIT of its own, and runs as the schema owner (vinto_migrator in QA).
+-- Isolated schema: it touches no operational schema and links to no operational table. It FAILS if the schema already exists.
+CREATE SCHEMA vinto_offline;
 
 CREATE TABLE vinto_offline.capture_receipt (
     capture_id        uuid PRIMARY KEY,
@@ -59,4 +60,13 @@ CREATE FUNCTION vinto_offline.guard_capture_event() RETURNS trigger LANGUAGE plp
 BEGIN RAISE EXCEPTION 'capture_event is append-only'; END $$;
 CREATE TRIGGER capture_event_guard BEFORE UPDATE OR DELETE ON vinto_offline.capture_event
     FOR EACH ROW EXECUTE FUNCTION vinto_offline.guard_capture_event();
-COMMIT;
+
+-- Least privilege for the application role (backend/roles model: nothing by default, everything explicit). No DELETE, TRUNCATE, foreign-key or
+-- trigger privilege, no DDL, no sequence grants needed (identity columns), and nothing outside this schema. The role must already exist: a missing role
+-- aborts the whole migration (fail closed).
+REVOKE ALL ON SCHEMA vinto_offline FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA vinto_offline FROM PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA vinto_offline FROM PUBLIC;
+GRANT USAGE ON SCHEMA vinto_offline TO vinto_app;
+GRANT SELECT, INSERT, UPDATE ON vinto_offline.capture_receipt TO vinto_app;
+GRANT SELECT, INSERT ON vinto_offline.capture_event TO vinto_app;
