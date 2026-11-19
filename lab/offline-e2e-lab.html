@@ -20,9 +20,28 @@
 </head>
 <body>
 <main>
-  <div class="lab" role="note">LABORATORIO OFF-04.5A — CALIDAD OFFLINE DE PUNTA A PUNTA, DATOS SINTÉTICOS. Formulario sintético, no homologado. «Sincronizado» significa recepción TÉCNICA por un receptor de prueba aislado: NO es aprobación industrial, liberación ni cambio de ninguna orden. No usa el outbox operativo ni habilita captura industrial.</div>
+  <div class="lab" role="note">LABORATORIO OFF-04.5B-06B — CALIDAD OFFLINE DE PUNTA A PUNTA, DATOS SINTÉTICOS (QA). Formulario sintético, no homologado. «Sincronizado» significa recepción TÉCNICA por el receptor QA aislado: NO es aprobación industrial, liberación ni cambio de ninguna orden. No usa el outbox operativo ni habilita captura industrial.</div>
   <h1>Calidad offline: captura → pendiente → sincronización (ensayo)</h1>
   <p id="e2e-status" role="status" aria-live="polite">Preparando laboratorio…</p>
+  <section id="e2e-online" class="panel">
+    <h2>Sesión en línea y preparación del dispositivo</h2>
+    <p id="e2e-auth-status" class="muted" role="status">Comprobando sesión…</p>
+    <form id="e2e-login-form" novalidate>
+      <label for="e2e-login-user">Usuario</label>
+      <input id="e2e-login-user" type="text" autocomplete="username" required>
+      <label for="e2e-login-pass">Contraseña</label>
+      <input id="e2e-login-pass" type="password" autocomplete="current-password" required>
+      <button id="e2e-login-submit" type="submit">Iniciar sesión</button>
+    </form>
+    <button id="e2e-logout" type="button" hidden>Cerrar sesión</button>
+    <form id="e2e-prepare-form" hidden novalidate>
+      <label for="e2e-prepare-machine">Máquina</label>
+      <input id="e2e-prepare-machine" type="text" value="MP1" autocomplete="off" required>
+      <label for="e2e-prepare-pass">Frase de acceso offline (16 caracteres o más)</label>
+      <input id="e2e-prepare-pass" type="password" autocomplete="off" required>
+      <button id="e2e-prepare-submit" type="submit">Preparar este dispositivo (en línea)</button>
+    </form>
+  </section>
   <form id="e2e-unlock-form" class="panel" hidden>
     <label for="e2e-unlock-secret">Frase de acceso offline</label>
     <input id="e2e-unlock-secret" type="password" autocomplete="off" required>
@@ -37,10 +56,8 @@
     <h2>Capturas de este navegador y operario</h2>
     <p id="e2e-counters" class="muted"></p>
     <ul id="e2e-captures" aria-label="Capturas"></ul>
-    <h2>Sincronización (receptor de prueba aislado)</h2>
+    <h2>Sincronización (receptor QA aislado)</h2>
     <p id="e2e-receiver-mode" class="muted"></p>
-    <label for="e2e-session">Sesión en línea del operario</label>
-    <select id="e2e-session"><option value="valid">Válida (autor original)</option><option value="expired">Vencida</option><option value="other">Otro usuario</option></select>
     <button id="e2e-sync-now" type="button">Sincronizar ahora</button>
     <button id="e2e-clock" type="button">Avanzar reloj simulado 60 s</button>
     <p id="e2e-result" class="muted" role="status"></p>

@@ -1,19 +1,21 @@
 /**
- * OFF-04.5A LABORATORY page runtime (bundled only when OFFLINE_DRAFT_LAB=1; absent from default builds).
+ * OFF-04.5B-06B LABORATORY page runtime (bundled only when OFFLINE_DRAFT_LAB=1; absent from default builds).
  *
- * End to end, with SYNTHETIC data only:  capture → encrypted draft → immutable local pending → EXPLICIT bridge to the
- * sync-engine test queue → "Sincronizar ahora" through the OFF-04.3 engine → isolated FastAPI receiver (OFF-04.4).
- * The only network access is to a LOOPBACK receiver named in `?receiver=` (a disposable CI/test server). Without it the
- * page works fully offline and synchronisation is unavailable. It never touches the application's send queue, never
- * enables industrial capture, and "Sincronizado" means technical receipt only (never industrial approval).
+ * End to end, with SYNTHETIC data only:  online login (real VINTO session cookie) → device preparation (local vault, signed scope and package from the QA
+ * synthetic issuer) → capture offline → encrypted draft → immutable local pending → EXPLICIT bridge to the sync-engine queue → "Sincronizar ahora" through the
+ * OFF-04.3 engine → isolated QA receiver (OFF-04.4).
+ * The ONLY network target is the page's OWN origin (HTTPS, or loopback http for a disposable CI/dev server) through `api()`: relative `/api/...` paths, cookie
+ * credentials, no identity header, no configurable URL. Sync is only for the ORIGINAL author's authenticated session. It never touches the application's send
+ * queue, never enables industrial capture, and "Sincronizado" means technical receipt only (never industrial approval).
  */
-import { readLocalProfile } from "./offline-profile-store.ts";
-import { unlockLocalVault } from "./offline-vault.ts";
-import { readOfflineScope, type VerifiedLocalScope } from "./offline-scope-store.ts";
-import { readQualityPackage } from "./offline-quality-store.ts";
+import { readLocalProfile, storeLocalProfile } from "./offline-profile-store.ts";
+import { createLocalVault, unlockLocalVault, VaultError } from "./offline-vault.ts";
+import { readOfflineScope, storeOfflineScope, type VerifiedLocalScope } from "./offline-scope-store.ts";
+import { readQualityPackage, storeQualityPackage } from "./offline-quality-store.ts";
+import { interpretLogin, interpretSession, type AuthUser } from "./auth.ts";
 import { readRenewalStatus } from "./offline-renewal.ts";
 import type { VerifiedQualityDefinition, QualityField } from "./offline-quality-verify.ts";
-import { DEVICE_KEY_STORAGE } from "./device";
+import { DEVICE_KEY_STORAGE, getDeviceKey } from "./device";
 import { isCalculated, isLabEligible, type DraftValues } from "./offline-draft-schema.ts";
 import { DraftError, listQualityDrafts, loadQualityDraft, saveQualityDraft, type DraftSummary } from "./offline-draft-store.ts";
 import { captureIdFor, LabQueueError, loadFrozenForDraft, queueLabDraft } from "./offline-lab-queue.ts";
@@ -27,12 +29,15 @@ const $ = <T>(id: string) => document.getElementById(id) as unknown as T | null;
 const status = $<HTMLParagraphElement>("e2e-status"), unlockForm = $<HTMLFormElement>("e2e-unlock-form"), secretInput = $<HTMLInputElement>("e2e-unlock-secret");
 const confirmBox = $<HTMLInputElement>("e2e-confirm"), workspace = $<HTMLElement>("e2e-workspace"), select = $<HTMLSelectElement>("e2e-package");
 const newButton = $<HTMLButtonElement>("e2e-new"), lockButton = $<HTMLButtonElement>("e2e-lock"), counters = $<HTMLParagraphElement>("e2e-counters");
-const capturesList = $<HTMLUListElement>("e2e-captures"), modeLine = $<HTMLParagraphElement>("e2e-receiver-mode"), sessionSelect = $<HTMLSelectElement>("e2e-session");
+const capturesList = $<HTMLUListElement>("e2e-captures"), modeLine = $<HTMLParagraphElement>("e2e-receiver-mode");
+const authStatus = $<HTMLParagraphElement>("e2e-auth-status"), loginForm = $<HTMLFormElement>("e2e-login-form"), loginUser = $<HTMLInputElement>("e2e-login-user"), loginPass = $<HTMLInputElement>("e2e-login-pass");
+const logoutButton = $<HTMLButtonElement>("e2e-logout"), prepareForm = $<HTMLFormElement>("e2e-prepare-form"), prepareMachine = $<HTMLInputElement>("e2e-prepare-machine"), preparePass = $<HTMLInputElement>("e2e-prepare-pass");
 const syncButton = $<HTMLButtonElement>("e2e-sync-now"), clockButton = $<HTMLButtonElement>("e2e-clock"), resultLine = $<HTMLParagraphElement>("e2e-result");
 const editor = $<HTMLFormElement>("e2e-editor"), fieldsBox = $<HTMLDivElement>("e2e-fields"), info = $<HTMLParagraphElement>("e2e-info");
 const title = $<HTMLHeadingElement>("e2e-editor-title"), queueButton = $<HTMLButtonElement>("e2e-queue");
 
-const OTHER_USER = "22222222-2222-4222-8222-222222222222";
+const FORM_CODE = "VINTO-P1-22";   // the only synthetic form the QA issuer supports
+const MACHINE_RE = /^[A-Za-z0-9_.-]{1,48}$/;
 type Session = { key: CryptoKey; identity: { ownerId: string; deviceKey: string }; scope: VerifiedLocalScope; packages: VerifiedQualityDefinition[] };
 type Editing = { id: string; revision: number | null; pkg: VerifiedQualityDefinition; readOnly: boolean };
 let session: Session | null = null, editing: Editing | null = null, clockOffset = 0, syncing = false;
@@ -41,16 +46,28 @@ const tabId = "tab-" + crypto.randomUUID().slice(0, 8);
 const nowMs = () => Date.now() + clockOffset;
 const say = (t: string) => { if (status) status.textContent = t; };
 
-/** Loopback receivers only: a disposable CI/test server, never a deployed API. */
-function receiverBase(): string | null {
-    try {
-        const raw = new URLSearchParams(location.search).get("receiver");
-        if (!raw) return null;
-        const u = new URL(raw);
-        return u.protocol === "http:" && (u.hostname === "127.0.0.1" || u.hostname === "localhost") && u.pathname === "/" ? u.origin : null;
-    } catch { return null; }
+/** Same origin only: HTTPS, or loopback http for a disposable CI/dev server. There is no way to point the page at another URL. */
+function sameOriginAllowed(): boolean {
+    return location.protocol === "https:" || (location.protocol === "http:" && (location.hostname === "127.0.0.1" || location.hostname === "localhost"));
 }
-const RECEIVER = receiverBase();
+const ONLINE_OK = sameOriginAllowed();
+
+/** The page's single network primitive: a relative /api/ path on its own origin, with the real session cookie and no identity header. */
+async function api(method: "GET" | "POST", path: string, body?: unknown, signal?: AbortSignal): Promise<{ status: number; json: unknown }> {
+    if (!ONLINE_OK || !/^\/api\/[A-Za-z0-9_\-/]*$/.test(path)) throw new Error("path");
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "include", cache: "no-store", signal });
+    return { status: res.status, json: await res.json().catch(() => ({})) };
+}
+type Me = { status: "ok"; user: AuthUser } | { status: "anonymous" } | { status: "unreachable" };
+async function currentUser(signal?: AbortSignal): Promise<Me> {
+    try {
+        const res = await api("GET", "/api/auth/me", undefined, signal);
+        const view = interpretSession(res.status, res.json);
+        return view.status === "authenticated" ? { status: "ok", user: view.user } : view.status === "anonymous" ? { status: "anonymous" } : { status: "unreachable" };
+    } catch { return { status: "unreachable" }; }
+}
 
 const CAPTION: Record<string, string> = {
     draft: "Guardado localmente (borrador editable) — aún NO es un pendiente",
@@ -254,28 +271,25 @@ async function bridgeToSync(draftId: string): Promise<void> {
 }
 
 const REASON: Record<string, string> = {
-    auth_required: "La sesión en línea no es válida: sincronización pausada sin cambiar nada. Reautentique al autor original.",
+    auth_required: "No hay sesión en línea válida: sincronización pausada sin cambiar nada. Inicie sesión de nuevo como el autor original.",
     session_invalid: "No hay sesión en línea válida: sincronización pausada, ningún registro cambió.",
     different_user: "La sesión en línea es de otro usuario: pausada. Ninguna captura se reasigna ni se envía con otra cuenta.",
     busy: "Ya hay una sincronización en curso en esta pestaña.",
 };
 
 async function syncOnce(): Promise<void> {
-    if (!session || syncing || !RECEIVER) return;
+    if (!session || syncing || !ONLINE_OK) return;
     syncing = true; if (syncButton) syncButton.disabled = true;
     const s = session;
     try {
-        const mode = sessionSelect?.value ?? "valid";
-        const user = mode === "expired" ? null : mode === "other" ? OTHER_USER : s.identity.ownerId;
-        const http: HttpCall = async ({ method, path, body, signal }) => {
-            const headers: Record<string, string> = {};
-            if (body !== undefined) headers["Content-Type"] = "application/json";
-            if (user) headers["X-Synthetic-User"] = user;
-            const res = await fetch(RECEIVER + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
-            return { status: res.status, json: await res.json().catch(() => ({})) };
-        };
+        // Reachability first: with no connection nothing is sent and no record changes (the engine would only add backoff noise).
+        const probe = await currentUser();
+        if (probe.status === "unreachable") { say("Sin conexión con el servidor QA: no se envió nada. Los pendientes se conservan."); return; }
+        const http: HttpCall = ({ method, path, body, signal }) => api(method, path, body, signal);
         const result = await syncNow({
-            store: syncStore, transport: createHttpSyncTransport(http), session: async () => user ? { userId: user } : null,
+            store: syncStore, transport: createHttpSyncTransport(http),
+            // The session is the REAL one: asked to the server every time. Another user's session, an expired one or none pauses the engine without any change.
+            session: async () => { const me = await currentUser(); return me.status === "ok" ? { userId: me.user.id.toLowerCase() } : null; },
             openPayload: openSyncPayload(s.key, s.identity), identity: s.identity, tabId, now: nowMs,
             options: { timeoutMs: 8000, baseDelayMs: 5000, maxDelayMs: 120000, leaseMs: 30000, maxAttempts: 6 },
         });
@@ -285,11 +299,16 @@ async function syncOnce(): Promise<void> {
             (result.stopped ? ". Se detuvo por: " + result.stopped + " (se reintenta con espera creciente)." : ".") +
             (result.outcomes.length ? " Resultados: " + result.outcomes.map(o => o.capture_id.slice(0, 8) + "→" + o.to + "(" + o.detail + ")").join("; ") : "");
         if (resultLine) resultLine.textContent = text;
-        say(result.paused ? REASON[result.paused] ?? "Pausada." : "Sincronización con el receptor de prueba finalizada. Recepción técnica no es aprobación industrial.");
+        say(result.paused ? REASON[result.paused] ?? "Pausada." : "Sincronización con el receptor QA finalizada. Recepción técnica no es aprobación industrial.");
     } catch {
         say("La sincronización se interrumpió por un error de almacenamiento. Ningún pendiente se perdió; se recupera al reintentar.");
         await refresh();
-    } finally { syncing = false; if (syncButton) syncButton.disabled = false; }
+    } finally { syncing = false; if (syncButton) syncButton.disabled = false; void refreshAuth(); }
+}
+
+/** The lab is its own offline shell: it registers the same public service worker the app uses (public assets and lab pages only; it never touches /api/). */
+async function registerShell(): Promise<void> {
+    try { if ("serviceWorker" in navigator && ONLINE_OK) await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }); } catch { /* offline or blocked: a cached page keeps working */ }
 }
 
 async function cacheSelf(): Promise<void> {
@@ -299,46 +318,119 @@ async function cacheSelf(): Promise<void> {
     } catch { /* offline or blocked */ }
 }
 
-async function start(): Promise<void> {
-    if (!status || !unlockForm || !secretInput || !confirmBox || !workspace || !select || !newButton || !lockButton || !editor) return;
-    void cacheSelf();
-    if (modeLine) modeLine.textContent = RECEIVER ? "Receptor de prueba aislado (loopback): " + RECEIVER : "Sin receptor configurado: la captura y los pendientes funcionan sin conexión; la sincronización no está disponible.";
-    if (syncButton) syncButton.disabled = !RECEIVER;
-    if (!window.isSecureContext) { say("Se requiere un contexto seguro."); return; }
+async function refreshAuth(): Promise<void> {
+    if (!authStatus) return;
+    const me = await currentUser();
+    authStatus.textContent = me.status === "ok" ? "Sesión en línea: " + me.user.username + " (autor autenticado)." : me.status === "anonymous" ? "Sin sesión en línea." : "Sin conexión con el servidor QA.";
+    authStatus.dataset.state = me.status;
+    if (loginForm) loginForm.hidden = me.status === "ok";
+    if (logoutButton) logoutButton.hidden = me.status !== "ok";
+    if (prepareForm) prepareForm.hidden = me.status !== "ok";
+}
+
+async function doLogin(): Promise<void> {
+    if (!loginUser || !loginPass) return;
+    const username = loginUser.value.trim(), password = loginPass.value; loginPass.value = "";
+    if (!username || !password) { say("Indique usuario y contraseña."); return; }
+    try {
+        const res = await api("POST", "/api/auth/login", { username, password });
+        const result = interpretLogin(res.status, res.json);
+        say(result.status === "ok" ? "Sesión iniciada." : result.status === "invalid" ? "Credenciales incorrectas." : result.status === "rejected" ? "Datos de acceso rechazados." : "No se pudo iniciar sesión ahora.");
+    } catch { say("Sin conexión con el servidor QA: no se pudo iniciar sesión."); }
+    await refreshAuth();
+}
+
+async function doLogout(): Promise<void> {
+    try { await api("POST", "/api/auth/logout"); } catch { /* the local cookie may remain: /me decides */ }
+    await refreshAuth();
+    say("Sesión cerrada en línea. Las capturas locales se conservan; el envío requiere iniciar sesión de nuevo.");
+}
+
+/** ONLINE enrolment with the same building blocks as /offline-preparacion: local vault → signed scope (key pinned from THIS authenticated response) → signed package. */
+async function prepareDevice(): Promise<void> {
+    if (!prepareMachine || !preparePass) return;
+    const secret = preparePass.value; preparePass.value = "";
+    const machine = prepareMachine.value.trim();
+    if (!MACHINE_RE.test(machine)) { say("Código de máquina no válido."); return; }
+    try {
+        const me = await currentUser();
+        if (me.status !== "ok") { say("Inicie sesión en línea antes de preparar el dispositivo."); return; }
+        const deviceKey = getDeviceKey();
+        if (localStorage.getItem(DEVICE_KEY_STORAGE) !== deviceKey) { say("El navegador no pudo guardar la identidad del dispositivo."); return; }
+        const identity = { ownerId: me.user.id.toLowerCase(), deviceKey: deviceKey.toLowerCase() };
+        let record = await readLocalProfile();
+        if (!record) { record = (await createLocalVault(identity, secret)).record; await storeLocalProfile(record); await showUnlock(); }
+        else if (record.ownerId !== identity.ownerId || record.deviceKey !== identity.deviceKey) { say("Este navegador ya tiene un perfil de otro usuario: no se reemplaza."); return; }
+        const key = await unlockLocalVault(record, secret);
+        const scopeRes = await api("POST", "/api/offline/scope", { device_key: deviceKey, machine_codes: [machine] });
+        if (scopeRes.status !== 200) { say(scopeRes.status === 403 ? "No hay una concesión de piloto para este usuario y máquina." : "No se obtuvo el alcance firmado (" + scopeRes.status + ")."); return; }
+        const envelope = scopeRes.json as { public_key_b64url: string };
+        await storeOfflineScope(key, identity, envelope, envelope.public_key_b64url);
+        const pkgRes = await api("POST", "/api/offline/quality-package", { device_key: deviceKey, machine_code: machine, form_code: FORM_CODE, signed_scope: envelope });
+        if (pkgRes.status !== 200) { say("No se obtuvo la definición firmada (" + pkgRes.status + ")."); return; }
+        await storeQualityPackage(key, identity, pkgRes.json);
+        await showUnlock();
+        say("Dispositivo preparado: perfil local, alcance firmado y definición sintética guardados cifrados. Ahora desbloquee con su frase offline.");
+    } catch (error) {
+        say(error instanceof VaultError && error.reason === "weak_passphrase" ? "Frase local débil: use al menos 16 caracteres." : "No se pudo preparar el dispositivo. No se guardó nada incompleto.");
+    }
+}
+
+let unlockBound = false;
+async function showUnlock(): Promise<void> {
+    if (!unlockForm) return;
     let record;
     try { record = await readLocalProfile(); } catch { say("No es posible leer el perfil local."); return; }
-    if (!record) { say("No hay perfil local preparado en este navegador."); return; }
+    if (!record) { say("No hay perfil local preparado en este navegador: inicie sesión y prepare el dispositivo."); return; }
     let deviceKey: string | null = null;
     try { deviceKey = localStorage.getItem(DEVICE_KEY_STORAGE); } catch { /* fail closed */ }
     if (!deviceKey || deviceKey.toLowerCase() !== record.deviceKey) { say("El perfil no corresponde a este navegador. No se desbloqueará."); return; }
     say("Perfil local encontrado. Ingrese su frase offline y confirme el uso de datos sintéticos.");
     unlockForm.hidden = false;
-    unlockForm.addEventListener("submit", async (event: SubmitEvent) => {
-        event.preventDefault();
-        const secret = secretInput.value; secretInput.value = "";
-        if (!confirmBox.checked) { say("Confirme que usará únicamente datos sintéticos."); return; }
-        try {
-            const key = await unlockLocalVault(record, secret);
-            const identity = { ownerId: record.ownerId, deviceKey: record.deviceKey };
-            const scope = await readOfflineScope(key, identity);
-            if (!scope) { say("No hay alcance firmado local."); return; }
-            const renewal = await readRenewalStatus(key, identity);
-            if (renewal?.status === "revocation_known" || renewal?.status === "unreadable") { say("El alcance local no está vigente o no se puede confirmar. El laboratorio permanece bloqueado."); return; }
-            const packages: VerifiedQualityDefinition[] = [];
-            for (const item of scope.envelope.payload.form_scopes) {
-                if (item.operation !== "quality_machine_capture" || !/^VINTO-P1-(18|22|26|27)$/.test(item.form_code)) continue;
-                const pkg = await readQualityPackage(key, identity, scope, item.machine_code, item.form_code);
-                if (pkg && isLabEligible(pkg.envelope.payload.definition)) packages.push(pkg);
-            }
-            session = { key, identity, scope, packages };
-            select.replaceChildren();
-            packages.forEach((p, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = describe(p); select.appendChild(o); });
-            newButton.disabled = packages.length === 0;
-            unlockForm.hidden = true; workspace.hidden = false;
-            await refresh();
-            if (session) say(packages.length === 0 ? "No hay definiciones sintéticas editables." : "Laboratorio desbloqueado (perfil original). Datos sintéticos; nada se envía sin su acción.");
-        } catch { say("No fue posible desbloquear o validar. El laboratorio permanece bloqueado."); }
-    });
+    if (unlockBound) return;
+    unlockBound = true;
+    unlockForm.addEventListener("submit", (event: SubmitEvent) => { event.preventDefault(); void unlock(); });
+}
+
+async function unlock(): Promise<void> {
+    if (!secretInput || !confirmBox || !workspace || !select || !newButton || !unlockForm) return;
+    const secret = secretInput.value; secretInput.value = "";
+    if (!confirmBox.checked) { say("Confirme que usará únicamente datos sintéticos."); return; }
+    try {
+        const record = await readLocalProfile();
+        if (!record) { say("No hay perfil local."); return; }
+        const key = await unlockLocalVault(record, secret);
+        const identity = { ownerId: record.ownerId, deviceKey: record.deviceKey };
+        const scope = await readOfflineScope(key, identity);
+        if (!scope) { say("No hay alcance firmado local."); return; }
+        const renewal = await readRenewalStatus(key, identity);
+        if (renewal?.status === "revocation_known" || renewal?.status === "unreadable") { say("El alcance local no está vigente o no se puede confirmar. El laboratorio permanece bloqueado."); return; }
+        const packages: VerifiedQualityDefinition[] = [];
+        for (const item of scope.envelope.payload.form_scopes) {
+            if (item.operation !== "quality_machine_capture" || !/^VINTO-P1-(18|22|26|27)$/.test(item.form_code)) continue;
+            const pkg = await readQualityPackage(key, identity, scope, item.machine_code, item.form_code);
+            if (pkg && isLabEligible(pkg.envelope.payload.definition)) packages.push(pkg);
+        }
+        session = { key, identity, scope, packages };
+        select.replaceChildren();
+        packages.forEach((p, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = describe(p); select.appendChild(o); });
+        newButton.disabled = packages.length === 0;
+        unlockForm.hidden = true; workspace.hidden = false;
+        await refresh();
+        if (session) say(packages.length === 0 ? "No hay definiciones sintéticas editables." : "Laboratorio desbloqueado (perfil original). Datos sintéticos; nada se envía sin su acción.");
+    } catch { say("No fue posible desbloquear o validar. El laboratorio permanece bloqueado."); }
+}
+
+async function start(): Promise<void> {
+    if (!status || !unlockForm || !secretInput || !confirmBox || !workspace || !select || !newButton || !lockButton || !editor) return;
+    void registerShell();
+    void cacheSelf();
+    if (modeLine) modeLine.textContent = ONLINE_OK ? "API QA del mismo origen (cookie de sesión real, sin cabeceras de identidad)." : "Origen no seguro: la sincronización no está disponible. La captura y los pendientes funcionan sin conexión.";
+    if (syncButton) syncButton.disabled = !ONLINE_OK;
+    if (!window.isSecureContext) { say("Se requiere un contexto seguro."); return; }
+    loginForm?.addEventListener("submit", (event: SubmitEvent) => { event.preventDefault(); void doLogin(); });
+    logoutButton?.addEventListener("click", () => { void doLogout(); });
+    prepareForm?.addEventListener("submit", (event: SubmitEvent) => { event.preventDefault(); void prepareDevice(); });
     newButton.addEventListener("click", () => {
         if (!session) return;
         const pkg = session.packages[Number(select.value)];
@@ -352,6 +444,8 @@ async function start(): Promise<void> {
     queueButton?.addEventListener("click", () => { void makePending(); });
     syncButton?.addEventListener("click", () => { void syncOnce(); });
     clockButton?.addEventListener("click", () => { clockOffset += 60_000; say("Reloj simulado avanzado 60 s (solo afecta a los tiempos de espera del laboratorio)."); });
+    await showUnlock();
+    await refreshAuth();   // offline: reports "sin conexión" and leaves everything else working
 }
 
 void start();
