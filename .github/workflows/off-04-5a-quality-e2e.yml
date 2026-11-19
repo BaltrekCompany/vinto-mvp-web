@@ -1,0 +1,157 @@
+name: OFF-04.5A Offline Quality End-to-End QA (isolated receiver, synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/offline-*.ts'
+      - 'lab/**'
+      - 'public/sw.js'
+      - 'scripts/build-offline-boot.mjs'
+      - 'scripts/off-04-*'
+      - 'scripts/off04_fixture.py'
+      - 'backend/app/offline_capture/**'
+      - 'backend/tests/off044_*'
+      - 'docs/OFF-04-5A-*.md'
+      - '.gitignore'
+      - '.github/workflows/off-04-5a-quality-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-build-and-backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt pytest httpx
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: pytest receiver on SQLite and PostgreSQL 17
+        working-directory: backend
+        env:
+          OFF044_PG_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
+          OFF044_REQUIRE_PG: '1'
+        run: python -m pytest tests/test_off044_receiver.py -q
+      - name: Synthetic fixtures, Node contracts and engine-vs-receiver scenarios
+        env:
+          OFF04_FIXTURE_JSON: ${{ runner.temp }}/off04.json
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4.json
+          OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF03C2_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF044_PYTHON: python
+        run: |
+          python scripts/off04_fixture.py
+          python scripts/off03c4_fixture.py
+          python scripts/off03b3_fixture.py
+          node --experimental-strip-types --test scripts/off-04-5a-e2e-static.test.mjs scripts/off-04-sync-fastapi.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
+          node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
+          node --test scripts/off-03c3-device-qa.test.mjs scripts/off-02-foundation.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Default build ships NO laboratory; opt-in build generates the E2E page
+        run: |
+          pnpm build
+          test ! -e public/offline-e2e-lab.html
+          test ! -e public/offline-e2e-lab.js
+          test ! -e dist/standalone/public/offline-e2e-lab.html
+          OFFLINE_DRAFT_LAB=1 node scripts/build-offline-boot.mjs
+          test -s public/offline-e2e-lab.html
+          node --check public/offline-e2e-lab.js
+          node scripts/build-offline-boot.mjs
+          test ! -e public/offline-e2e-lab.html
+          echo OFF045A_LAB_OPT_IN_BUILD=PASS
+
+  chrome-e2e-against-fastapi-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt pytest httpx playwright==1.57.0
+          google-chrome --version
+      - name: Start isolated frontend WITH the laboratory enabled (opt-in)
+        env:
+          OFFLINE_DRAFT_LAB: '1'
+        run: |
+          set -eu
+          nohup pnpm dev > "$RUNNER_TEMP/off045a-dev.log" 2>&1 &
+          for i in $(seq 1 40); do
+            for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/'; do
+              if curl --fail --silent --noproxy '*' --connect-timeout 1 --max-time 3 --output /dev/null "$endpoint"; then
+                echo "OFF045A_BASE_URL=${endpoint%/}" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            done
+            sleep 2
+          done
+          tail -n 140 "$RUNNER_TEMP/off045a-dev.log"
+          exit 1
+      - name: Chrome end to end against the isolated FastAPI receiver on a throwaway PostgreSQL 17
+        env:
+          OFF04_BASE_URL: ${{ env.OFF045A_BASE_URL }}
+          OFF044_PG_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
+          OFF05A_STORE: pg
+        run: |
+          cd scripts
+          PYTHONPATH=. python off-04-5a-quality-e2e-browser.py
+      - name: Regression lab UIs (drafts and synchronisation laboratory)
+        env:
+          OFF04_BASE_URL: ${{ env.OFF045A_BASE_URL }}
+        run: |
+          cd scripts
+          PYTHONPATH=. python off-04-lab-browser-smoke.py
+          PYTHONPATH=. python off-04-sync-lab-browser-smoke.py
+      - name: Show app logs on failure
+        if: failure()
+        run: tail -n 140 "$RUNNER_TEMP/off045a-dev.log" || true
