@@ -46,12 +46,13 @@ class SyntheticAuthorizer:
 
 class ScriptedContext:
     """`ctx-1` is current; other versions map to a verdict kind (default: incompatible)."""
-    def __init__(self, table=None):
+    def __init__(self, table=None, default="incompatible_change"):
+        self.default = default
         self.table = {"ctx-1": "same", "ctx-compat": "compatible_change", "ctx-incompat": "incompatible_change", "ctx-oldform": "unknown_form_version",
                       "ctx-unknown": "unverifiable", **(table or {})}
 
     def evaluate(self, capture):
-        return ContextVerdict(self.table.get(capture.context_version, "incompatible_change"))
+        return ContextVerdict(self.table.get(capture.context_version, self.default))
 
 
 class FlakyStore:

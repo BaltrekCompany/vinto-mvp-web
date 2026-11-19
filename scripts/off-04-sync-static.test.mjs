@@ -9,7 +9,7 @@ import { payloadHash } from "../lib/vinto/offline-sync-engine.ts";
 const root = resolve(import.meta.dirname, "..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
 const SYNC = ["types", "rules", "engine", "fake-server", "store", "capture", "lab", "http-transport"].map(n => `lib/vinto/offline-sync-${n}.ts`);
-const AUTHORISED = new Set(SYNC);
+const AUTHORISED = new Set([...SYNC, "lib/vinto/offline-quality-e2e-lab.ts"]);   // OFF-04.5A: the explicit, laboratory-only bridge
 const QA_SCRIPT = /^scripts\/(off-04-[A-Za-z0-9.-]+\.(ts|mjs|py)|off04_fixture\.py)$/;
 const SOURCE = /\.(ts|tsx|mjs|js|py)$/;
 const FORBIDDEN = /offline-sync-(types|rules|engine|fake-server|store|capture|lab|http-transport)|vinto-off043|sync_queue|offline-sync-lab/;

@@ -57,19 +57,48 @@ def definition(version):
     }
 
 
-def lab_package(scope_envelope, version):
+FORM_P122 = "VINTO-P1-22"
+NAME_P122 = "SINTÉTICO · Grado de refinación Schopper (candidato OFF-04.5A, no homologado)"
+
+
+def definition_p122(version):
+    """Synthetic mirror of the published P1-22 seed contract (5 manual fields, no calculated field, no option lists).
+
+    Field keys, types and required flags follow backend/seed_data/forms/VINTO-P1-22.json. Ranges, units, precision and
+    cross-field rules are NOT in the seed and are deliberately not invented: the form is NOT industrially homologated.
+    """
+    return {
+        "form_code": FORM_P122, "form_name": NAME_P122, "form_version": version, "area": "quality",
+        "source_definition_checksum": hashlib.sha256(f"off045a:{FORM_P122}:{version}".encode()).hexdigest(),
+        "published_at": "2026-11-18T10:00:00+00:00", "groups": [],
+        "fields": [
+            field("numero_de_cuba", "Número de cuba", "text", 1, True),
+            field("masa_humeda", "Masa húmeda", "decimal", 2, True),
+            field("grado_de_refinacion_sr", "Grado de refinación (°SR)", "decimal", 3, True),
+            field("amperaje", "Amperaje", "decimal", 4, True),
+            field("observacion", "Observación", "textarea", 5, False),
+        ],
+        "calculated_rules": {}, "option_dependencies": [], "recipe_bundle_included": False, "capture_eligible": False, "note": NOTE,
+    }
+
+
+def lab_package(scope_envelope, version, form=FORM, make_definition=None):
     sp = scope_envelope["payload"]
-    item = next(x for x in sp["form_scopes"] if x["form_code"] == FORM)
-    d = definition(version)
+    item = next(x for x in sp["form_scopes"] if x["form_code"] == form)
+    d = (make_definition or definition)(version)
     payload = {
         "schema": PACKAGE_SCHEMA, "issuer": ISSUER, "audience": PACKAGE_AUDIENCE,
         "kind": "quality_definition_readiness_only", "captures_enabled": False,
         "package_id": uid("off04-package", sp["snapshot_id"], str(version)),
         "scope_snapshot_id": sp["snapshot_id"], "subject_user_id": sp["subject_user_id"], "device_key": sp["device_key"],
-        "machine_code": item["machine_code"], "form_code": FORM, "form_version": version, "grant_id": item["grant_id"],
+        "machine_code": item["machine_code"], "form_code": form, "form_version": version, "grant_id": item["grant_id"],
         "issued_at": sp["issued_at"], "content_sha256": hashlib.sha256(canonical_payload(d)).hexdigest(), "definition": d,
     }
     return sign_quality_package(payload, signer=signer())
+
+
+def lab_package_p122(scope_envelope, version=1):
+    return lab_package(scope_envelope, version, FORM_P122, definition_p122)
 
 
 def build():
