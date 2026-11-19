@@ -1,0 +1,56 @@
+name: OFF-04.5B QA Synthetic Pilot Guard and Authorization QA (isolated, synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/qa_offline_pilot.py'
+      - 'backend/app/qa_offline_guard.py'
+      - 'backend/app/offline_capture/**'
+      - 'backend/tests/test_off045b_*'
+      - 'backend/tests/off044_*'
+      - 'docs/OFF-04-5B-*.md'
+      - '.github/workflows/off-04-5b-qa-pilot-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-guard-asgi-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-throwaway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt pytest httpx
+      - name: Pilot guard and authorization (ASGI, synthetic grants, throwaway PostgreSQL 17 and SQLite; never a deployed API)
+        working-directory: backend
+        env:
+          OFF044_PG_URL: postgresql://postgres:ci-throwaway@127.0.0.1:5432/postgres
+          OFF044_REQUIRE_PG: '1'
+        run: |
+          python -m pytest tests/test_off045b_qa_pilot.py -v
+          python -m pytest tests/test_off044_receiver.py -q
+          python -m pytest tests/test_off03c1_unit.py tests/test_off03b2_signing.py -q
+      - name: Nothing is wired into the operational app and no migration is numbered
+        run: |
+          ! grep -q "qa_offline_pilot\|offline_capture" backend/app/main.py
+          test ! -e backend/migrations/0032_offline_capture_receipt.sql
+          test -s backend/offline_capture_migration/proposed_0032_offline_capture_receipt.sql

@@ -230,8 +230,8 @@ def test_activation_refuses_half_configured_pilot():
         with pytest.raises(PilotConfigError, match="database_not_isolated_qa"):
             create_qa_pilot_app(settings=settings_for(), store=store, database_name=name, principal_dependency=who)
     with pytest.raises(PilotConfigError, match="engine_required"):
-        create_qa_pilot_app(settings=settings_for(authz_mode="observe"), store=store, database_name="vinto_qa_offline", principal_dependency=who)
-    for ok in ("vinto_qa_offline", "qa", "vinto_qa", "off044_ab12_test"):
+        create_qa_pilot_app(settings=settings_for(authz_mode="observe"), store=store, database_name="proj_qa_x", principal_dependency=who)
+    for ok in ("proj_qa_x", "qa", "vinto_qa", "off044_ab12_test"):
         assert is_isolated_qa_database_name(ok)
         create_qa_pilot_app(settings=settings_for(), store=store, database_name=ok, principal_dependency=who)
 
