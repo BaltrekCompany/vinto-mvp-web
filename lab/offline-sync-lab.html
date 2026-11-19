@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>VINTO | Laboratorio de sincronización offline (servidor simulado)</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2b26;background:#f3f6f4}
+    *{box-sizing:border-box}body{margin:0;padding:20px;display:grid;place-items:start center}
+    main{width:min(100%,760px);background:#fff;border:1px solid #d9e5e0;border-radius:16px;padding:22px}
+    .lab{background:#fff4d6;border:2px solid #c98a00;border-radius:10px;padding:12px 14px;font-weight:600}
+    .panel{background:#f4f7f6;border:1px solid #deebe4;border-radius:12px;padding:14px;margin-top:14px}
+    label{display:block;margin-top:10px}input,select{display:block;width:100%;padding:10px;border:1px solid #9aa;border-radius:8px;margin-top:4px;font:inherit}
+    input[type=checkbox]{display:inline;width:auto}
+    button{background:#146b4f;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;margin:8px 8px 0 0}
+    button[disabled]{opacity:.5;cursor:not-allowed}.muted{color:#526a60;font-size:.9rem}
+    li{margin:6px 0}.st-synced,.st-synced_warning{color:#146b4f}.st-conflict,.st-requires_review{color:#a11d1d}.st-retry_wait,.st-syncing{color:#8a5a00}
+  </style>
+</head>
+<body>
+<main>
+  <div class="lab" role="note">LABORATORIO OFF-04.3 — SERVIDOR SIMULADO Y DATOS SINTÉTICOS. Esta página NO se conecta con FastAPI ni con ninguna API real: el «servidor» vive en la memoria de esta pestaña. Las capturas de prueba no son capturas industriales y no autorizan nada.</div>
+  <h1>Sincronización offline (ensayo)</h1>
+  <p id="sync-status" role="status" aria-live="polite">Preparando laboratorio…</p>
+  <form id="sync-unlock-form" class="panel" hidden>
+    <label for="sync-unlock-secret">Frase de acceso offline</label>
+    <input id="sync-unlock-secret" type="password" autocomplete="off" required>
+    <label><input id="sync-confirm" type="checkbox"> Confirmo que usaré únicamente datos sintéticos y el servidor simulado</label>
+    <button id="sync-unlock-submit" type="submit">Desbloquear</button>
+  </form>
+  <section id="sync-workspace" class="panel" hidden>
+    <h2>Capturas de prueba (cola de laboratorio, separada del outbox operativo)</h2>
+    <label><input id="sync-depends" type="checkbox"> La nueva captura depende de la anterior</label>
+    <button id="sync-add" type="button">Crear captura de prueba</button>
+    <button id="sync-now" type="button">Sincronizar ahora</button>
+    <button id="sync-lock" type="button">Bloquear</button>
+    <p id="sync-counters" class="muted"></p>
+    <ul id="sync-list" aria-label="Capturas de prueba"></ul>
+    <p id="sync-result" class="muted" role="status"></p>
+    <h2>Servidor simulado</h2>
+    <label for="sync-fault">Próxima falla a simular</label>
+    <select id="sync-fault">
+      <option value="">Ninguna (respuesta normal)</option>
+      <option value="lose_response">Perder la respuesta después de guardar</option>
+      <option value="timeout_after_persist">Tiempo agotado después de guardar</option>
+      <option value="network_before">Red caída antes de llegar</option>
+      <option value="s503">HTTP 503 temporal</option>
+      <option value="s401">HTTP 401 (sesión vencida)</option>
+      <option value="s403">HTTP 403 (sin permiso)</option>
+      <option value="review">Enviar a revisión central (202)</option>
+      <option value="warning">Aceptar con advertencia</option>
+    </select>
+    <button id="sync-arm" type="button">Armar falla</button>
+    <label><input id="sync-context" type="checkbox"> El contexto industrial cambió en el servidor simulado</label>
+    <label for="sync-session">Sesión en línea del operario</label>
+    <select id="sync-session"><option value="valid">Válida (autor original)</option><option value="expired">Vencida</option><option value="other">Otro usuario</option></select>
+    <button id="sync-clock" type="button">Avanzar reloj simulado 60 s</button>
+    <p id="sync-server" class="muted"></p>
+  </section>
+  <p class="muted">Cada captura conserva su <code>capture_id</code>. El servidor simulado registra cada captura lógica una sola vez, aunque reciba varios intentos. Ninguna captura se elimina.</p>
+</main>
+<script src="/offline-sync-lab.js" defer></script>
+</body>
+</html>
