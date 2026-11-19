@@ -19,7 +19,7 @@
 </head>
 <body>
 <main>
-  <div class="lab" role="note">LABORATORIO OFF-04.1 — DATOS SINTÉTICOS. Solo ensayo local, no sincronizado. No ingrese datos reales. No existe envío, cola, aprobación ni sincronización; esto NO autoriza ninguna captura industrial.</div>
+  <div class="lab" role="note">LABORATORIO OFF-04.1/04.2 — DATOS SINTÉTICOS. Solo ensayo local, no sincronizado. No ingrese datos reales. No existe envío, aprobación ni sincronización: un «pendiente local» es una simulación aislada y NO autoriza ninguna captura industrial.</div>
   <h1>Borradores cifrados de Calidad (ensayo)</h1>
   <p id="lab-status" role="status" aria-live="polite">Preparando laboratorio…</p>
   <form id="lab-unlock-form" class="panel" hidden>
@@ -35,6 +35,9 @@
     <button id="lab-lock" type="button">Bloquear</button>
     <h2>Borradores de este navegador y operario</h2>
     <ul id="lab-drafts" aria-label="Borradores cifrados"></ul>
+    <h2>Pendientes locales (simulación)</h2>
+    <p class="muted">Pendiente local — NO sincronizado. Inmutables; no se envían ni se borran desde aquí.</p>
+    <ul id="lab-pending" aria-label="Pendientes locales simulados"></ul>
   </section>
   <form id="lab-editor" class="panel" hidden novalidate>
     <h2 id="lab-editor-title">Borrador</h2>
@@ -42,6 +45,7 @@
     <div id="lab-fields"></div>
     <button id="lab-save" type="submit">Guardar borrador cifrado</button>
     <button id="lab-reload" type="button" hidden>Cargar versión guardada</button>
+    <button id="lab-queue" type="button" hidden>Marcar como pendiente local (simulación)</button>
   </form>
   <p class="muted">Todo se cifra en este navegador (AES-GCM). La fecha local es solo informativa y no prueba vigencia. Reglas no cubiertas: rangos y unidades, fórmulas de campos calculados, dependencias entre campos, contexto de OT/turno y cualquier autoridad central.</p>
 </main>

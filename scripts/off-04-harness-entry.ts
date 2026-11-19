@@ -11,6 +11,10 @@ import type { VerifiedQualityDefinition } from "../lib/vinto/offline-quality-ver
 import type { SignedOfflineScope } from "../lib/vinto/offline-scope-verify.ts";
 import { DraftError, listQualityDrafts, loadQualityDraft, saveQualityDraft } from "../lib/vinto/offline-draft-store.ts";
 
+import { LabQueueError, listLabPendingSummaries, loadLabPending, queueLabDraft } from "../lib/vinto/offline-lab-queue.ts";
+import { getLabPendingByDraft, listLabPending } from "../lib/vinto/offline-lab-queue-store.ts";
+import { listQueuedForOwner } from "../lib/vinto/offline-store.ts";
+
 type Json = Record<string, unknown>;
 let key: CryptoKey | null = null;
 let identity: OfflineVaultIdentity | null = null;
@@ -47,12 +51,31 @@ async function dump(name: string): Promise<unknown[]> {
 const wrap = async (fn: () => Promise<Json>): Promise<Json> => {
     try { return { ok: true, ...(await fn()) }; }
     catch (error) {
+        if (error instanceof LabQueueError) return { ok: false, reason: error.reason, missing: [...error.missing] };
         if (error instanceof DraftError) return { ok: false, reason: error.reason, issues: error.issues.map(i => i.key + ":" + i.code) };
         return { ok: false, reason: "unexpected:" + String(error) };
     }
 };
 
 const originalPut = IDBObjectStore.prototype.put;
+const originalAdd = IDBObjectStore.prototype.add;
+
+async function labDb(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const r = indexedDB.open("vinto-off04lab-queue-v1", 1);
+        r.onsuccess = () => resolve(r.result); r.onerror = () => reject(new Error("labdb"));
+    });
+}
+async function labRows(): Promise<Json[]> {
+    await listLabPending(identity!.ownerId.toLowerCase(), identity!.deviceKey.toLowerCase());   // ensures the database exists
+    const db = await labDb();
+    try {
+        return await new Promise<Json[]>((resolve, reject) => {
+            const q = db.transaction("lab_pending", "readonly").objectStore("lab_pending").getAll();
+            q.onsuccess = () => resolve(q.result as Json[]); q.onerror = () => reject(new Error("dump"));
+        });
+    } finally { db.close(); }
+}
 const originalEncrypt = crypto.subtle.encrypt.bind(crypto.subtle);
 
 const H = {
@@ -124,6 +147,61 @@ const H = {
         try { return await H.save(id, valuesB, expected); }
         finally { (crypto.subtle as { encrypt: unknown }).encrypt = originalEncrypt; }
     },
+    queue: (id: string, expected: number, asIdentity?: OfflineVaultIdentity) =>
+        wrap(async () => { const c = await context(); return { ...(await queueLabDraft(key!, asIdentity ?? identity!, c, { id, expectedRevision: expected })) }; }),
+    /** N simultaneous transitions of the same draft inside this tab (double click / retries). */
+    queueMany: async (id: string, expected: number, n: number): Promise<Json> => {
+        const results = await Promise.all(Array.from({ length: n }, () => H.queue(id, expected)));
+        return { ok: true, results: results as unknown as Json[] };
+    },
+    pendingList: (asIdentity?: OfflineVaultIdentity) =>
+        wrap(async () => ({ ...(await listLabPendingSummaries(key!, asIdentity ?? identity!)) as unknown as Json })),
+    pendingLoad: (draftId: string) => wrap(async () => {
+        const r = await getLabPendingByDraft(identity!.ownerId.toLowerCase(), identity!.deviceKey.toLowerCase(), draftId);
+        if (!r) return { found: false };
+        const p = await loadLabPending(key!, identity!, r);
+        return { found: true, record: r as unknown as Json, payload: p as unknown as Json };
+    }),
+    rawPending: async () => JSON.stringify(await labRows()),
+    rawPendingRows: async () => (await labRows()) as unknown as Json[],
+    realOutbox: async () => (await dump("outbox")).length + (await listQueuedForOwner(identity!.ownerId.toLowerCase(), identity!.deviceKey.toLowerCase())).length,
+    /** Raw attempts to break the immutability/uniqueness contract (what a buggy or hostile writer could do). */
+    async rawAddPending(row: Json): Promise<Json> {
+        const db = await labDb();
+        try {
+            return await new Promise<Json>(resolve => {
+                const tx = db.transaction("lab_pending", "readwrite");
+                try { tx.objectStore("lab_pending").add(row); } catch (e) { resolve({ ok: false, reason: (e as DOMException).name }); return; }
+                tx.oncomplete = () => resolve({ ok: true }); tx.onabort = () => resolve({ ok: false, reason: tx.error?.name ?? "abort" });
+            });
+        } finally { db.close(); }
+    },
+    async tamperPending(captureId: string, kind: "ciphertext" | "status" | "revision" | "draft_id"): Promise<void> {
+        const db = await labDb();
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const tx = db.transaction("lab_pending", "readwrite"); const store = tx.objectStore("lab_pending"); const g = store.get(captureId);
+                g.onsuccess = () => {
+                    const row = g.result as Record<string, unknown> & { sealed: { ciphertext: string } };
+                    if (kind === "ciphertext") row.sealed.ciphertext = (row.sealed.ciphertext[0] === "A" ? "B" : "A") + row.sealed.ciphertext.slice(1);
+                    if (kind === "status") row.status = "queued";
+                    if (kind === "revision") row.sourceRevision = (row.sourceRevision as number) + 1;
+                    if (kind === "draft_id") row.draftId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+                    store.put(row);
+                };
+                tx.oncomplete = () => resolve(); tx.onerror = () => reject(new Error("t"));
+            });
+        } finally { db.close(); }
+    },
+    failAddOn(n: number, name = "DataError", after = false): void {
+        let count = 0;
+        IDBObjectStore.prototype.add = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore["add"]>) {
+            count += 1;
+            if (count !== n) return originalAdd.apply(this, args);
+            if (after) { const r = originalAdd.apply(this, args); throw new DOMException("injected-after", name) ; void r; }
+            throw new DOMException("injected", name);
+        };
+    },
     networkAttempts: () => attempts.slice(),
     failPutOn(n: number, name = "DataError"): void {
         let count = 0;
@@ -138,7 +216,7 @@ const H = {
             count += 1; return count === n ? Promise.reject(new DOMException("injected", "OperationError")) : originalEncrypt(...args);
         };
     },
-    clearFaults(): void { IDBObjectStore.prototype.put = originalPut; (crypto.subtle as { encrypt: unknown }).encrypt = originalEncrypt; },
+    clearFaults(): void { IDBObjectStore.prototype.put = originalPut; IDBObjectStore.prototype.add = originalAdd; (crypto.subtle as { encrypt: unknown }).encrypt = originalEncrypt; },
     profileDbOpen: () => openProfileDb().then(db => { db.close(); return true; }),
 };
 Object.assign(globalThis, { H });

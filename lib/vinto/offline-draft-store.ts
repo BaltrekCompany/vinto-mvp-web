@@ -12,6 +12,7 @@ import {
 import { openLocalDraft, sealLocalDraft, VaultError, type OfflineVaultIdentity } from "./offline-vault.ts";
 import type { VerifiedQualityDefinition } from "./offline-quality-verify.ts";
 import type { VerifiedLocalScope } from "./offline-scope-store.ts";
+import { getLabPendingByDraft } from "./offline-lab-queue-store.ts";
 import {
     buildDraftPayload, contextIdFor, draftMatchesDefinition, evaluateDraft, isLabEligible, parseDraftPayload,
     DraftSchemaError, type DraftPayload, type FieldIssue,
@@ -21,7 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type DraftErrorReason =
     | "invalid" | "ineligible" | "conflict" | "quota" | "storage" | "corrupt" | "locked"
-    | "not_found" | "stale_definition" | "no_grant";
+    | "not_found" | "stale_definition" | "no_grant" | "pending_local";
 export class DraftError extends Error {
     readonly reason: DraftErrorReason;
     readonly issues: readonly FieldIssue[];
@@ -56,7 +57,7 @@ function mapStoreError(error: unknown): DraftError {
 }
 
 /** Grant check against the signed scope: the pair must be a Quality machine entry at the same version. */
-function assertGranted(scope: VerifiedLocalScope, pkg: VerifiedQualityDefinition): void {
+export function assertGranted(scope: VerifiedLocalScope, pkg: VerifiedQualityDefinition): void {
     const p = pkg.envelope.payload;
     const grant = scope.envelope.payload.form_scopes.filter(x => x.machine_code === p.machine_code &&
         x.form_code === p.form_code && x.operation === "quality_machine_capture");
@@ -80,6 +81,12 @@ export async function saveQualityDraft(
     if (pkg.subject_user_id.toLowerCase() !== identity.ownerId.toLowerCase() ||
         pkg.device_key.toLowerCase() !== identity.deviceKey.toLowerCase()) throw new DraftError("invalid");
     assertGranted(context.scope, context.pkg);
+    // OFF-04.2: a draft that already became a local pending simulation is immutable: "pending_local" (fail closed on read errors).
+    try {
+        if (await getLabPendingByDraft(identity.ownerId.toLowerCase(), identity.deviceKey.toLowerCase(), input.id.toLowerCase())) {
+            throw new DraftError("pending_local");
+        }
+    } catch (error) { throw error instanceof DraftError ? error : new DraftError("storage"); }
     const evaluation = evaluateDraft(pkg.definition, input.values);
     if (evaluation.typeIssues.length > 0) throw new DraftError("invalid", evaluation.typeIssues);
 

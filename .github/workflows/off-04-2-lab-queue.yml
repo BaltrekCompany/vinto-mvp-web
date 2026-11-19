@@ -1,0 +1,163 @@
+name: OFF-04.2 Simulated Local Pending Queue Laboratory QA
+
+on:
+  pull_request:
+    paths:
+      - 'lib/vinto/offline-*.ts'
+      - 'lab/**'
+      - 'public/sw.js'
+      - 'scripts/build-offline-boot.mjs'
+      - 'scripts/off-04-*'
+      - 'scripts/off04_fixture.py'
+      - 'scripts/off03c4_fixture.py'
+      - 'scripts/off-03c4-*'
+      - 'docs/OFF-04-1-*.md'
+      - 'docs/OFF-04-2-*.md'
+      - '.gitignore'
+      - '.github/workflows/off-04-2-lab-queue.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Synthetic fixtures (real Python signer), Node draft contracts and OFF-02..03C.4 regressions
+        env:
+          OFF04_FIXTURE_JSON: ${{ runner.temp }}/off04.json
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4.json
+          OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF03C2_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+        run: |
+          python scripts/off04_fixture.py
+          python scripts/off03c4_fixture.py
+          python scripts/off03b3_fixture.py
+          node --experimental-strip-types --test scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
+          node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
+          node --test scripts/off-03c3-device-qa.test.mjs scripts/off-02-foundation.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Default build ships NO laboratory; opt-in build generates it
+        run: |
+          pnpm build
+          test -s dist/standalone/server.js
+          cmp -s public/offline-boot.js dist/standalone/public/offline-boot.js
+          test ! -e public/offline-lab.html
+          test ! -e public/offline-draft-lab.js
+          test ! -e dist/standalone/public/offline-lab.html
+          test ! -e dist/standalone/public/offline-draft-lab.js
+          OFFLINE_DRAFT_LAB=1 node scripts/build-offline-boot.mjs
+          test -s public/offline-lab.html
+          test -s public/offline-draft-lab.js
+          node --check public/offline-draft-lab.js
+          grep -q 'LABORATORIO OFF-04.1' public/offline-lab.html
+          node scripts/build-offline-boot.mjs
+          test ! -e public/offline-lab.html
+          echo OFF042_LAB_OPT_IN_BUILD=PASS
+
+  chrome-indexeddb-drafts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt playwright==1.57.0
+          google-chrome --version
+      - name: Real Chrome IndexedDB integration for encrypted drafts and OFF-03C.4 renewal regression
+        env:
+          OFF04_FIXTURE_JSON: ${{ runner.temp }}/off04.json
+          OFF04_HARNESS_JS: ${{ runner.temp }}/off04-harness.js
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4.json
+          OFF03C4_HARNESS_JS: ${{ runner.temp }}/off03c4-harness.js
+        run: |
+          python scripts/off04_fixture.py
+          python scripts/off03c4_fixture.py
+          OFF_HARNESS_ENTRY=scripts/off-04-harness-entry.ts OFF03C4_HARNESS_JS="$OFF04_HARNESS_JS" node scripts/off-03c4-build-harness.mjs
+          node scripts/off-03c4-build-harness.mjs
+          python scripts/off-04-drafts-browser.py
+          python scripts/off-04-queue-browser.py
+          python scripts/off-03c4-renewal-browser.py
+
+  chrome-ui-lab-and-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt playwright==1.57.0
+          google-chrome --version
+      - name: Start isolated frontend WITH the laboratory enabled (opt-in)
+        env:
+          OFFLINE_DRAFT_LAB: '1'
+        run: |
+          set -eu
+          nohup pnpm dev > "$RUNNER_TEMP/off042-dev.log" 2>&1 &
+          for i in $(seq 1 40); do
+            for endpoint in 'http://localhost:5173/' 'http://127.0.0.1:5173/' 'http://[::1]:5173/'; do
+              if curl --fail --silent --noproxy '*' --connect-timeout 1 --max-time 3 --output /dev/null "$endpoint"; then
+                echo "OFF042_BASE_URL=${endpoint%/}" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            done
+            sleep 2
+          done
+          tail -n 140 "$RUNNER_TEMP/off042-dev.log"
+          exit 1
+      - name: Chrome lab page, drafts, simulated pending queue, offline reopen, tabs and no central call
+        env:
+          OFF04_BASE_URL: ${{ env.OFF042_BASE_URL }}
+        run: python scripts/off-04-lab-browser-smoke.py
+      - name: Regression OFF-03C.4 UI renewal and OFF-03C.2/03C.3
+        env:
+          OFF03C4_BASE_URL: ${{ env.OFF042_BASE_URL }}
+          OFF03C2_BASE_URL: ${{ env.OFF042_BASE_URL }}
+        run: |
+          python scripts/off-03c4-browser-smoke.py
+          python scripts/off-03c2-browser-smoke.py
+      - name: Show app logs on failure
+        if: failure()
+        run: tail -n 140 "$RUNNER_TEMP/off042-dev.log" || true

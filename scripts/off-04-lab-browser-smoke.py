@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OFF-04.1 real Chrome through the LABORATORY page: create/edit drafts, close, reopen OFFLINE, recover.
+"""OFF-04.1/04.2 real Chrome through the LABORATORY page: create/edit drafts, close, reopen OFFLINE, recover.
 
 Auth / scope / package endpoints are mocked here only, with synthetic users and the real Python signer.
 Requires a build made with OFFLINE_DRAFT_LAB=1. No central write call is allowed: every /api/ request
@@ -199,10 +199,61 @@ with tempfile.TemporaryDirectory(prefix="vinto-off04-ui-") as tmp, sync_playwrig
     assert off.locator("#f-observaciones").input_value() == "desde la segunda pestaña"
     report("07_second_tab_wins_and_stale_tab_is_refused_without_overwrite")
 
+    # ---- OFF-04.2: explicit transition to a SIMULATED local pending (double click, second tab, immutable) ----
+    off.locator("#lab-queue").wait_for(state="visible")
+    off.locator("#lab-queue").dblclick()
+    off.get_by_text("Pendiente local creado — NO sincronizado.", exact=False).wait_for()
+    assert off.locator("#lab-pending li[data-capture-id]").count() == 1
+    assert "Pendiente local — NO sincronizado" in off.locator("#lab-pending").inner_text()
+    assert off.locator("#lab-save").is_disabled() and off.locator("#f-numero_de_cuba").is_disabled() and off.locator("#lab-queue").is_hidden()
+    assert "PENDIENTE LOCAL — NO sincronizado" in off.locator("#lab-info").inner_text()
+    tab2.locator("#lab-save").click()                                    # the other tab still holds an editable view
+    tab2.get_by_text("NO se guardó: este borrador ya es un pendiente local inmutable", exact=False).wait_for()
+    tab2.locator("#lab-queue").click()                                   # repeated transition from another tab: idempotent
+    tab2.get_by_text("Este borrador ya era un pendiente local", exact=False).wait_for()
+    tab2.locator("#lab-reload").wait_for(state="hidden")
+    off.reload(wait_until="domcontentloaded")
+    off.get_by_text("Perfil local encontrado.", exact=False).wait_for()
+    unlock(off)
+    off.get_by_text("Laboratorio desbloqueado.", exact=False).wait_for()
+    assert off.locator("#lab-pending li[data-capture-id]").count() == 1
+    report("08_queue_local_simulation_double_click_second_tab_and_immutable")
+
+    qdump = off.evaluate("""async () => await new Promise((resolve, reject) => {
+        const r = indexedDB.open('vinto-off04lab-queue-v1'); r.onerror = () => reject(new Error('q'));
+        r.onsuccess = () => { const db = r.result; const g = db.transaction('lab_pending').objectStore('lab_pending').getAll();
+          g.onsuccess = () => { const out = JSON.stringify(g.result); db.close(); resolve(out); }; }; })""")
+    rows = json.loads(qdump)
+    assert len(rows) == 1 and rows[0]["status"] == "queued_local_simulation" and rows[0]["syncState"] == "NOT_SYNCED"
+    assert MARKER not in qdump and "numero_de_cuba" not in qdump and "editado" not in qdump
+    outbox = off.evaluate("""async () => await new Promise((resolve, reject) => {
+        const q = indexedDB.open('vinto-offline-v1'); q.onerror = () => reject(new Error('y'));
+        q.onsuccess = () => { const db = q.result; const g = db.transaction('outbox').objectStore('outbox').count();
+          g.onsuccess = () => { db.close(); resolve(g.result); }; }; })""")
+    assert outbox == 0
+    report("09_pending_encrypted_in_isolated_database_and_application_send_queue_empty")
+
     off.locator("#lab-lock").click()
     off.get_by_text("Laboratorio bloqueado.", exact=False).wait_for()
     assert off.locator("#lab-editor").is_hidden() and off.locator("#lab-workspace").is_hidden()
     assert [c for c in api_calls if not c.startswith("OPTIONS")] == [], api_calls
-    report("08_lock_discards_key_and_no_central_write_call_was_made")
+    report("10_lock_discards_key_and_no_central_write_call_was_made")
+    ctx.close()
+
+    # ---- restart OFFLINE again: the pending survives and is still immutable ----
+    ctx = launch(pw, profile)
+    ctx.set_offline(True)
+    again = ctx.new_page()
+    again.set_default_timeout(90000)
+    assert again.goto(BASE + "/offline-lab.html", wait_until="domcontentloaded", timeout=60000).status == 200
+    again.get_by_text("Perfil local encontrado.", exact=False).wait_for()
+    unlock(again)
+    again.get_by_text("Laboratorio desbloqueado.", exact=False).wait_for()
+    assert again.locator("#lab-pending li[data-capture-id]").count() == 1
+    again.locator("#lab-drafts button.open").first.click()
+    again.get_by_text("Pendiente local — NO sincronizado: inmutable.", exact=False).wait_for()
+    assert again.locator("#lab-save").is_disabled() and again.locator("#lab-queue").is_hidden()
+    assert [c for c in api_calls if not c.startswith("OPTIONS")] == [], api_calls
+    report("11_pending_survives_browser_restart_offline_and_is_read_only")
     ctx.close()
 print("OFF04_LAB_UI=PASS", flush=True)
