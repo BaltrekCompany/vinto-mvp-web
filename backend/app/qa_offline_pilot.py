@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Mapping, Optional, Protocol
 from uuid import UUID
 
@@ -39,6 +39,9 @@ PILOT_POST_PATH = "/api/offline/captures"
 ENV_ENABLED = "OFFLINE_QA_PILOT_ENABLED"
 ENV_GRANTS = "OFFLINE_QA_PILOT_GRANTS"
 ENV_AUTHZ_MODE = "OFFLINE_QA_PILOT_AUTHZ_MODE"
+ENV_AUTH_ENABLED = "OFFLINE_QA_PILOT_AUTH_ENABLED"
+ENV_ORIGINS = "OFFLINE_QA_PILOT_ALLOWED_ORIGINS"
+ENV_SIGNING_SEED = "OFFLINE_QA_PILOT_SIGNING_SEED_B64URL"
 MAX_GRANTS = 20
 FORBIDDEN_BODY = {"detail": "Operación no disponible en QA offline"}
 
@@ -175,6 +178,10 @@ class PilotSettings:
     enabled: bool
     authz_mode: AuthzMode
     grants: tuple[PilotGrant, ...]
+    # OFF-04.5B-06B: independent authentication flag (off by default), Origin allow-list and the SYNTHETIC signing seed (never shown in a repr)
+    auth_enabled: bool = False
+    origins_raw: Optional[str] = field(default=None, repr=False)
+    signing_seed: Optional[str] = field(default=None, repr=False)
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None, *, app_env: str) -> "PilotSettings":
@@ -185,23 +192,40 @@ class PilotSettings:
         mode = env.get(ENV_AUTHZ_MODE, "off").strip().lower() or "off"
         if mode not in ("off", "observe", "enforce"):
             raise PilotConfigError("authz_mode_invalid")
-        return PilotSettings(app_env=app_env, enabled=flag in ("1", "true"), authz_mode=mode, grants=parse_grants(env.get(ENV_GRANTS)))
+        auth_flag = env.get(ENV_AUTH_ENABLED, "").strip().lower()
+        if auth_flag not in ("", "0", "1", "true", "false"):
+            raise PilotConfigError("auth_flag_invalid")
+        return PilotSettings(app_env=app_env, enabled=flag in ("1", "true"), authz_mode=mode, grants=parse_grants(env.get(ENV_GRANTS)),
+                             auth_enabled=auth_flag in ("1", "true"), origins_raw=env.get(ENV_ORIGINS), signing_seed=env.get(ENV_SIGNING_SEED))
 
 
 # ---------------------------------------------------------------- application factory
 def create_qa_pilot_app(*, settings: PilotSettings, store: OfflineCaptureStore | None, database_name: str | None,
-                        principal_dependency: Callable | None = None, engine: EngineProbe | None = None) -> FastAPI:
+                        principal_dependency: Callable | None = None, engine: EngineProbe | None = None, auth_mount: Any = None) -> FastAPI:
     """A SEPARATE application, never `app.main`. The receiver router exists only if every activation condition holds; otherwise the app has no capture route
     at all (every call 404, and in QA every mutating call 403 by the guard)."""
     active = settings.app_env == "qa" and settings.enabled
+    auth_active = settings.app_env == "qa" and settings.auth_enabled
+    allowed_origins = tuple(auth_mount.allowed_origins) if (auth_active and auth_mount is not None) else ()
     app = FastAPI(title="VINTO QA synthetic pilot receiver", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
     async def qa_pilot_write_guard(request: Request, call_next):
         if not pilot_request_permitted(app_env=settings.app_env, method=request.method, path=request.url.path, pilot_enabled=active):
             return JSONResponse(status_code=403, content=FORBIDDEN_BODY, headers={"Cache-Control": "no-store"})
+        # CSRF defence for authenticated writes (together with the SameSite cookie): the Origin header must be present and EXACTLY one allowed origin.
+        if auth_active and request.method in ("POST", "PUT", "PATCH", "DELETE") and request.headers.get("origin") not in allowed_origins:
+            return JSONResponse(status_code=403, content={"detail": "Origen no permitido"}, headers={"Cache-Control": "no-store"})
         return await call_next(request)
 
+    if auth_active:
+        if auth_mount is None:
+            raise PilotConfigError("auth_mount_required")
+        if not settings.grants:
+            raise PilotConfigError("grants_required")
+        app.dependency_overrides.update(auth_mount.dependency_overrides)
+        for router in auth_mount.routers:
+            app.include_router(router)
     if not active:
         return app
     # Activation conditions that must hold at startup; any failure raises (fail closed: the pilot does not start half-configured).
