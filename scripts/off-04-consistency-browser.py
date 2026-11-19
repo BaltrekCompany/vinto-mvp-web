@@ -210,7 +210,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off042r2-") as tmp, sync_playwrig
         assert b.call("realOutbox") == 0
         report("S2_lab_database_loss_is_fail_closed_nothing_is_reactivated")
         b.kill()
-    
+
     def legacy_world(name):
         """Legacy data exactly as OFF-04.1/04.2 left it: drafts in the application store, pendings in the former queue database."""
         b = baseline(pw, tmp, name)
