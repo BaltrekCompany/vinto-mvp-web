@@ -10,7 +10,7 @@ import { copyFileSync, rmSync } from "node:fs";
  * (and any operational build) deletes stale lab files, so the lab cannot be served by accident.
  */
 export async function buildOfflineDraftLab() {
-  const files = ["public/offline-lab.html", "public/offline-draft-lab.js", "public/offline-sync-lab.html", "public/offline-sync-lab.js"];
+  const files = ["public/offline-lab.html", "public/offline-draft-lab.js", "public/offline-sync-lab.html", "public/offline-sync-lab.js", "public/offline-e2e-lab.html", "public/offline-e2e-lab.js"];
   if (process.env.OFFLINE_DRAFT_LAB !== "1") {
     for (const file of files) rmSync(file, { force: true });
     return false;
@@ -42,6 +42,20 @@ export async function buildOfflineDraftLab() {
     },
   });
   copyFileSync("lab/offline-sync-lab.html", "public/offline-sync-lab.html");
+  // OFF-04.5A: the end-to-end Quality laboratory (loopback receiver only) ships ONLY with the same opt-in flag.
+  await build({
+    configFile: false,
+    publicDir: false,
+    logLevel: "error",
+    build: {
+      outDir: "public",
+      emptyOutDir: false,
+      copyPublicDir: false,
+      minify: true,
+      lib: { entry: "lib/vinto/offline-quality-e2e-lab.ts", name: "VINTOOfflineQualityE2ELab", formats: ["iife"], fileName: () => "offline-e2e-lab.js" },
+    },
+  });
+  copyFileSync("lab/offline-e2e-lab.html", "public/offline-e2e-lab.html");
   return true;
 }
 

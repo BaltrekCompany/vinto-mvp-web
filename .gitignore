@@ -57,4 +57,6 @@ __pycache__/
 /public/offline-lab.html
 /public/offline-sync-lab.html
 /public/offline-sync-lab.js
+/public/offline-e2e-lab.html
+/public/offline-e2e-lab.js
 /public/offline-draft-lab.js
