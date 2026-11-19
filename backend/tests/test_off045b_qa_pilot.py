@@ -291,9 +291,10 @@ def test_pilot_is_not_part_of_the_operational_app_or_default_routes():
     main = (BACKEND / "app" / "main.py").read_text(encoding="utf-8")
     assert "qa_offline_pilot" not in main and "offline_capture" not in main
     for path in (BACKEND / "app").rglob("*.py"):
-        if path.name == "qa_offline_pilot.py" or "offline_capture" in path.parts:
-            continue
-        assert "qa_offline_pilot" not in path.read_text(encoding="utf-8"), path
+        if path.name in ("qa_offline_pilot.py", "qa_pilot_main.py") or "offline_capture" in path.parts:
+            continue  # qa_pilot_main.py (OFF-04.5B-03) is the one authorised importer: the separate ASGI entrypoint
+        text = path.read_text(encoding="utf-8")
+        assert "qa_offline_pilot" not in text and "qa_pilot_main" not in text, path
     source = (BACKEND / "app" / "qa_offline_pilot.py").read_text(encoding="utf-8")
     assert not re.search(r"(DATABASE_URL|IDENTITY_DATABASE_URL|TEST_DATABASE_URL|\.env\b|subprocess|requests\.|httpx|urllib|socket\.)", source)
     assert "capture_eligible" not in source and "captures_enabled" not in source  # readiness-only flags are never reinterpreted
