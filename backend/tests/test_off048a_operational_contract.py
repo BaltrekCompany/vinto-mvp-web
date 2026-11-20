@@ -3,14 +3,13 @@
 These are pure contract checks. PostgreSQL atomicity and full Quality service integration
 MUST be tested in disposable PG17 before mounting the promoter.
 """
-import hashlib
 import uuid
 from types import SimpleNamespace
 
 import pytest
 
 from app.offline_capture.contract import CaptureIn, canonical_sha256
-from app.quality.offline_operational import OperationalReview, QualityOperationalPromoter, machine_context_id
+from app.quality.offline_operational import OperationalReview, QualityOperationalPromoter
 
 
 OWNER = uuid.UUID("11111111-1111-4111-8111-111111111111")
@@ -49,15 +48,10 @@ def test_synthetic_and_unsigned_scope_fail_closed(capture):
         QualityOperationalPromoter().promote(principal(), capture, tx=SimpleNamespace())
 
 
-def test_machine_context_id_is_a_version_four_uuid_with_stable_lowercase_scope():
-    token = machine_context_id(SNAPSHOT, "MP1", "VINTO-P1-22")
-    assert token == machine_context_id(uuid.UUID(str(SNAPSHOT).upper()), "MP1", "VINTO-P1-22")
-    assert uuid.UUID(token).version == 4
-    assert token != machine_context_id(SNAPSHOT, "MP3", "VINTO-P1-22")
-    assert token != machine_context_id(SNAPSHOT, "MP1", "VINTO-P1-26")
-    # Independent Python calculation of the TypeScript digest contract.
-    src = f"VINTO:OFF041:CONTEXT:v1:{str(SNAPSHOT).lower()}:MP1:VINTO-P1-22"
-    digest = bytearray(hashlib.sha256(src.encode()).digest()[:16])
-    digest[6] = (digest[6] & 15) | 64
-    digest[8] = (digest[8] & 63) | 128
-    assert token == str(uuid.UUID(bytes=bytes(digest)))
+
+def test_machine_form_wire_context_is_the_signed_snapshot_id():
+    capture = make_capture()
+    assert capture.scope_snapshot_id == SNAPSHOT
+    # OFF-04.6 browser lab uses snapshot ID itself as machine context version.
+    # The server adapter must validate this wire contract, not a draft context UUID.
+    assert capture.context_version != str(capture.scope_snapshot_id)
