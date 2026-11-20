@@ -70,7 +70,7 @@ jobs:
         run: python -m pytest tests/test_off046_form_contracts.py tests/test_off046_batch_receiver.py tests/test_off046_bobbin_context_db.py -v
       - name: OFF-04.8A operational bridge must fail closed (no live DB)
         working-directory: backend
-        run: python -m pytest tests/test_off048a_operational_contract.py tests/test_off048b_promotion_contract.py tests/test_off048b_pg_atomicity.py tests/test_off048c_capture_scope.py -v
+        run: python -m pytest tests/test_off048a_operational_contract.py tests/test_off048b_promotion_contract.py tests/test_off048b_pg_atomicity.py tests/test_off048c_capture_scope.py tests/test_off048d_capture_authority_db.py -v
       - name: Offline regressions (receiver, bootstrap, pilot, authentication, signing)
         working-directory: backend
         run: python -m pytest tests/test_off044_receiver.py tests/test_off045b03_qa_bootstrap.py tests/test_off045b_qa_pilot.py tests/test_off045b06b_mobile_auth.py tests/test_off03c1_unit.py tests/test_off03b2_signing.py tests/test_off03b2_pg17.py tests/test_off03c1_pg17.py -q
