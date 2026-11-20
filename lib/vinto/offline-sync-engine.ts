@@ -21,8 +21,10 @@ import {
 export type SessionInfo = Readonly<{ userId: string }> | null;
 export type SyncOptions = Readonly<{
     leaseMs: number; timeoutMs: number; maxAttempts: number; baseDelayMs: number; maxDelayMs: number;
+    /** OFF-04.8: require durable operational registration ACK, not only receipt. Off by default for historical QA. */
+    requireOperationalAck: boolean;
 }>;
-export const DEFAULT_SYNC_OPTIONS: SyncOptions = { leaseMs: 30_000, timeoutMs: 15_000, maxAttempts: 6, baseDelayMs: 2_000, maxDelayMs: 300_000 };
+export const DEFAULT_SYNC_OPTIONS: SyncOptions = { leaseMs: 30_000, timeoutMs: 15_000, maxAttempts: 6, baseDelayMs: 2_000, maxDelayMs: 300_000, requireOperationalAck: false };
 
 export type SyncDeps = Readonly<{
     store: SyncQueueStore;
@@ -71,9 +73,12 @@ export async function payloadHash(payload: unknown): Promise<string> {
     return sha256Hex(JSON.stringify(canon(payload)));
 }
 
-function applyLookup(found: Extract<LookupReply, { found: true }>): { state: SyncState; reason: string | null } {
+function applyLookup(found: Extract<LookupReply, { found: true }>, requireOperationalAck: boolean, captureId: string): { state: SyncState; reason: string | null } {
     if (found.outcome === "review") return { state: "requires_review", reason: found.reason ?? "central_review" };
     if (found.outcome === "conflict") return { state: "conflict", reason: found.reason ?? "central_conflict" };
+    if (requireOperationalAck && (found.operational_registered !== true || found.operational_capture_id !== captureId)) {
+        return { state: "requires_review", reason: "operational_unconfirmed" };
+    }
     return { state: found.outcome === "accepted_warning" ? "synced_warning" : "synced", reason: null };
 }
 
@@ -82,9 +87,12 @@ type Classified =
     | { kind: "auth" }
     | { kind: "transient"; detail: string; stop: "server_error" };
 
-function classify(reply: SyncReply): Classified {
+function classify(reply: SyncReply, requireOperationalAck: boolean, captureId: string): Classified {
     const { status, body } = reply;
     if (status === 200 || status === 201) {
+        if (requireOperationalAck && (body.operational_registered !== true || body.operational_capture_id !== captureId)) {
+            return { kind: "done", state: "requires_review", serverRef: body.server_id ?? null, warnings: [], detail: "operational_unconfirmed" };
+        }
         const warnings = [...(body.warnings ?? [])];
         return { kind: "done", state: warnings.length > 0 ? "synced_warning" : "synced", serverRef: body.server_id ?? null, warnings, detail: body.outcome ?? "ok" };
     }
@@ -156,7 +164,7 @@ export async function syncNow(deps: SyncDeps): Promise<SyncRunResult> {
                     const found = await withTimeout(s => deps.transport.lookup(rec.capture_id, { signal: s }), o.timeoutMs);
                     reconciled += 1;
                     if (found.found) {
-                        const r = applyLookup(found);
+                        const r = applyLookup(found, o.requireOperationalAck, rec.capture_id);
                         await done(r.state, "reconciled", { serverRef: found.server_id, warnings: found.warnings ?? [], uncertain: false, lastError: r.reason, nextAttemptAt: null });
                         continue;
                     }
@@ -187,7 +195,7 @@ export async function syncNow(deps: SyncDeps): Promise<SyncRunResult> {
                 await retry(stopped, true);                      // the request may have been persisted: reconcile next time
                 break;
             }
-            const c = classify(reply);
+            const c = classify(reply, o.requireOperationalAck, rec.capture_id);
             if (c.kind === "auth") {
                 await done("queued", "auth_required", { uncertain: false, nextAttemptAt: null, lastError: "auth_required", attempts: Math.max(0, rec.attempts - 1) });
                 paused = "auth_required";
