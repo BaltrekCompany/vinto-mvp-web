@@ -48,7 +48,7 @@ test("the only network access is ONE fetch, to the page's OWN origin, with the r
     assert.match(src, /if \(!session \|\| syncing \|\| !ONLINE_OK\) return;/);
     assert.match(src, /syncButton\.disabled = !ONLINE_OK/);
     const paths = [...src.matchAll(/api\("(?:GET|POST)", "([^"]+)"/g)].map(m => m[1]).sort();
-    assert.deepEqual([...new Set(paths)], ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/offline/quality-package", "/api/offline/scope"]);
+    assert.deepEqual([...new Set(paths)], ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/offline/bobbin-context", "/api/offline/quality-package", "/api/offline/scope"]);
 });
 
 test("login, enrolment and sync use the existing building blocks and the ORIGINAL author's real session", () => {
@@ -69,7 +69,7 @@ test("the bridge is explicit and keeps identity: same capture_id, frozen content
     assert.match(src, /loadFrozenForDraft\(session\.key, session\.identity, draftId\)/);
     assert.match(src, /captureId: frozen\.capture_id/);
     assert.match(src, /payload: frozen\.draft\.values/);
-    assert.match(src, /contextVersion: frozen\.draft\.scope_snapshot_id/);
+    assert.match(src, /bobbinContextVersion\(frozen\.draft\.scope_snapshot_id, b\.bobbin_id, b\.context_digest\) : frozen\.draft\.scope_snapshot_id/);   // OFF-04.6: machine forms keep the snapshot; by-bobbin forms bind the bobbin
     assert.match(src, /bridge\.addEventListener\("click"/);                       // only a user click bridges; nothing is bridged automatically
     assert.equal([...src.matchAll(/bridgeToSync\(/g)].length, 2);                   // definition + the single click handler
     assert.match(src, /if \(r\.stage === "pending"\)/);                             // only frozen pendings can be bridged

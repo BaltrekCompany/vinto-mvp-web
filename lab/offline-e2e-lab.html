@@ -20,7 +20,7 @@
 </head>
 <body>
 <main>
-  <div class="lab" role="note">LABORATORIO OFF-04.5B-06B — CALIDAD OFFLINE DE PUNTA A PUNTA, DATOS SINTÉTICOS (QA). Formulario sintético, no homologado. «Sincronizado» significa recepción TÉCNICA por el receptor QA aislado: NO es aprobación industrial, liberación ni cambio de ninguna orden. No usa el outbox operativo ni habilita captura industrial.</div>
+  <div class="lab" role="note">LABORATORIO OFF-04.6 — CALIDAD OFFLINE (10 FORMULARIOS) DE PUNTA A PUNTA, DATOS SINTÉTICOS (QA). Formulario sintético, no homologado. «Sincronizado» significa recepción TÉCNICA por el receptor QA aislado: NO es aprobación industrial, liberación ni cambio de ninguna orden. No usa el outbox operativo ni habilita captura industrial.</div>
   <h1>Calidad offline: captura → pendiente → sincronización (ensayo)</h1>
   <p id="e2e-status" role="status" aria-live="polite">Preparando laboratorio…</p>
   <section id="e2e-online" class="panel">
@@ -51,6 +51,15 @@
   <section id="e2e-workspace" class="panel" hidden>
     <label for="e2e-package">Formulario sintético</label>
     <select id="e2e-package"></select>
+    <section id="e2e-bobbin-box" hidden>
+      <h3>Bobina (formularios por bobina)</h3>
+      <label for="e2e-bobbin">Bobina preparada</label>
+      <select id="e2e-bobbin"></select>
+      <label for="e2e-bobbin-code">Número de bobina (en línea)</label>
+      <input id="e2e-bobbin-code" type="text" autocomplete="off">
+      <button id="e2e-bobbin-prepare" type="button">Preparar contexto de bobina (en línea)</button>
+      <p id="e2e-bobbin-info" class="muted"></p>
+    </section>
     <button id="e2e-new" type="button">Nuevo borrador</button>
     <button id="e2e-lock" type="button">Bloquear</button>
     <h2>Capturas de este navegador y operario</h2>

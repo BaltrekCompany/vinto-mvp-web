@@ -28,6 +28,33 @@ export type DraftValues = Readonly<Record<string, DraftValue>>;
 export type IssueCode = "required" | "type" | "option" | "unknown" | "calculated" | "too_long";
 export type FieldIssue = Readonly<{ key: string; code: IssueCode }>;
 
+/** OFF-04.6: the HISTORICAL context of the physical bobbin a by-bobbin Quality draft belongs to, prepared ONLINE and embedded in the draft (the receiver recomputes it from the database). */
+export type BobbinContext = Readonly<{
+    bobbin_id: string; bobbin_code: string; machine_code: string; is_mother: boolean; work_order: string; line_code: string; pv_reference: string;
+    article_code: string; article_description: string; shift_code: string; operating_date: string; context_digest: string;
+}>;
+const BOBBIN_KEYS = ["bobbin_id", "bobbin_code", "machine_code", "is_mother", "work_order", "line_code", "pv_reference", "article_code", "article_description",
+    "shift_code", "operating_date", "context_digest"];
+
+export function parseBobbinContext(input: unknown): BobbinContext {
+    if (!exact(input, BOBBIN_KEYS)) throw new DraftSchemaError("invalid");
+    const b = input;
+    const text = (k: string, max: number) => typeof b[k] === "string" && (b[k] as string).length >= 1 && (b[k] as string).length <= max;
+    if (typeof b.bobbin_id !== "string" || !UUID.test(b.bobbin_id) || !text("bobbin_code", 48) || typeof b.machine_code !== "string" || !/^[A-Za-z0-9_.-]{1,48}$/.test(b.machine_code) ||
+        typeof b.is_mother !== "boolean" || !text("work_order", 48) || !text("line_code", 48) || !text("pv_reference", 64) || !text("article_code", 64) || !text("article_description", 200) ||
+        !text("shift_code", 16) || typeof b.operating_date !== "string" || !validDate(b.operating_date) || typeof b.context_digest !== "string" || !/^[0-9a-f]{64}$/.test(b.context_digest)) throw new DraftSchemaError("invalid");
+    return b as unknown as BobbinContext;
+}
+
+/** Key that binds the draft's local-storage context: machine forms use the form code, by-bobbin forms add the bobbin, so two bobbins never share a context. */
+export const draftContextKey = (formCode: string, bobbin: BobbinContext | null | undefined): string => bobbin ? formCode + "@b:" + bobbin.bobbin_id.toLowerCase() : formCode;
+
+/** `context_version` of a capture by bobbin: SHA-256 of (domain, signed-scope snapshot, bobbin id, server digest); identical to backend `bobbin_context.context_version`. */
+export async function bobbinContextVersion(snapshotId: string, bobbinId: string, digest: string): Promise<string> {
+    const bytes = encoder.encode(["vinto-offline-bobbin-context-v1", snapshotId.toLowerCase(), bobbinId.toLowerCase(), digest].join("\0"));
+    return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource)), b => b.toString(16).padStart(2, "0")).join("");
+}
+
 export type DraftPayload = Readonly<{
     schema: typeof DRAFT_SCHEMA;
     status: "draft";
@@ -46,8 +73,10 @@ export type DraftPayload = Readonly<{
     created_local: string;
     updated_local: string;
     values: DraftValues;
+    bobbin_context?: BobbinContext;      // OFF-04.6: present only for by-bobbin Quality forms
 }>;
 
+const PAYLOAD_KEYS_WITH_BOBBIN_SUFFIX = "bobbin_context";
 const PAYLOAD_KEYS = ["schema", "status", "synthetic", "draft_id", "author_user_id", "device_key", "machine_code",
     "form_code", "form_version", "form_checksum", "definition_sha256", "package_id", "scope_snapshot_id", "revision",
     "created_local", "updated_local", "values"];
@@ -150,7 +179,7 @@ export type DraftSource = Readonly<{
 }>;
 
 export function buildDraftPayload(
-    source: DraftSource, draftId: string, values: DraftValues, revision: number, createdLocal: string, updatedLocal: string
+    source: DraftSource, draftId: string, values: DraftValues, revision: number, createdLocal: string, updatedLocal: string, bobbin?: BobbinContext
 ): DraftPayload {
     const p = source.pkg;
     return {
@@ -159,7 +188,7 @@ export function buildDraftPayload(
         machine_code: p.machine_code, form_code: p.form_code, form_version: p.form_version,
         form_checksum: p.definition.source_definition_checksum, definition_sha256: p.content_sha256,
         package_id: p.package_id, scope_snapshot_id: p.scope_snapshot_id, revision,
-        created_local: createdLocal, updated_local: updatedLocal, values,
+        created_local: createdLocal, updated_local: updatedLocal, values, ...(bobbin ? { bobbin_context: bobbin } : {}),
     };
 }
 
@@ -171,8 +200,10 @@ const iso = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-
 
 /** Strict parse of a DECRYPTED payload. Anything unexpected is refused, never coerced. */
 export function parseDraftPayload(input: unknown): DraftPayload {
-    if (!exact(input, PAYLOAD_KEYS)) throw new DraftSchemaError("invalid");
+    const hasBobbin = typeof input === "object" && input !== null && !Array.isArray(input) && PAYLOAD_KEYS_WITH_BOBBIN_SUFFIX in (input as object);
+    if (!exact(input, hasBobbin ? [...PAYLOAD_KEYS, PAYLOAD_KEYS_WITH_BOBBIN_SUFFIX] : PAYLOAD_KEYS)) throw new DraftSchemaError("invalid");
     const p = input;
+    if (hasBobbin) parseBobbinContext(p.bobbin_context);
     if (p.schema !== DRAFT_SCHEMA || p.status !== "draft" || p.synthetic !== true ||
         !["draft_id", "author_user_id", "device_key", "scope_snapshot_id", "package_id"].every(k => typeof p[k] === "string" && UUID.test(p[k] as string)) ||
         typeof p.machine_code !== "string" || !/^[A-Za-z0-9_.-]{1,48}$/.test(p.machine_code) ||

@@ -63,8 +63,8 @@ async function start(): Promise<void> {
                 const packageCards: HTMLDetailsElement[] = [];
                 if (scope && packagePanel && !withheld) {
                     const candidates = scope.envelope.payload.form_scopes.filter(item =>
-                        item.operation === "quality_machine_capture" &&
-                        /^VINTO-P1-(18|22|26|27)$/.test(item.form_code)).slice(0,12);
+                        (item.operation === "quality_machine_capture" || item.operation === "quality_bobbin_capture") &&
+                        /^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/.test(item.form_code)).slice(0,12);
                     for (const item of candidates) {
                         const stored = await readQualityPackage(key,
                             { ownerId: record.ownerId, deviceKey: record.deviceKey },

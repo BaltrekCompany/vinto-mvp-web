@@ -14,7 +14,9 @@ import { readOfflineScope, storeOfflineScope, type VerifiedLocalScope } from "./
 import { readQualityPackage, storeQualityPackage } from "./offline-quality-store.ts";
 import { interpretLogin, interpretSession, type AuthUser } from "./auth.ts";
 import { readRenewalStatus } from "./offline-renewal.ts";
-import type { VerifiedQualityDefinition, QualityField } from "./offline-quality-verify.ts";
+import { QUALITY_OPERATIONS, type VerifiedQualityDefinition, type QualityField } from "./offline-quality-verify.ts";
+import { bobbinContextVersion, type BobbinContext } from "./offline-draft-schema.ts";
+import { listBobbinContexts, storeBobbinContext, BobbinStoreError } from "./offline-bobbin-store.ts";
 import { DEVICE_KEY_STORAGE, getDeviceKey } from "./device";
 import { isCalculated, isLabEligible, type DraftValues } from "./offline-draft-schema.ts";
 import { DraftError, listQualityDrafts, loadQualityDraft, saveQualityDraft, type DraftSummary } from "./offline-draft-store.ts";
@@ -35,11 +37,13 @@ const logoutButton = $<HTMLButtonElement>("e2e-logout"), prepareForm = $<HTMLFor
 const syncButton = $<HTMLButtonElement>("e2e-sync-now"), clockButton = $<HTMLButtonElement>("e2e-clock"), resultLine = $<HTMLParagraphElement>("e2e-result");
 const editor = $<HTMLFormElement>("e2e-editor"), fieldsBox = $<HTMLDivElement>("e2e-fields"), info = $<HTMLParagraphElement>("e2e-info");
 const title = $<HTMLHeadingElement>("e2e-editor-title"), queueButton = $<HTMLButtonElement>("e2e-queue");
+const bobbinBox = $<HTMLElement>("e2e-bobbin-box"), bobbinSelect = $<HTMLSelectElement>("e2e-bobbin"), bobbinCode = $<HTMLInputElement>("e2e-bobbin-code");
+const bobbinPrepare = $<HTMLButtonElement>("e2e-bobbin-prepare"), bobbinInfo = $<HTMLParagraphElement>("e2e-bobbin-info");
 
-const FORM_CODE = "VINTO-P1-22";   // the only synthetic form the QA issuer supports
+const FORMS_RE = /^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/;   // the ten Quality forms of OFF-04.6 (the QA issuer decides which ones this user holds)
 const MACHINE_RE = /^[A-Za-z0-9_.-]{1,48}$/;
 type Session = { key: CryptoKey; identity: { ownerId: string; deviceKey: string }; scope: VerifiedLocalScope; packages: VerifiedQualityDefinition[] };
-type Editing = { id: string; revision: number | null; pkg: VerifiedQualityDefinition; readOnly: boolean };
+type Editing = { id: string; revision: number | null; pkg: VerifiedQualityDefinition; readOnly: boolean; bobbin: BobbinContext | null };
 let session: Session | null = null, editing: Editing | null = null, clockOffset = 0, syncing = false;
 const syncStore = createIdbSyncStore();
 const tabId = "tab-" + crypto.randomUUID().slice(0, 8);
@@ -91,6 +95,11 @@ function lockAll(message: string): void {
     if (unlockForm) unlockForm.hidden = false;
     say(message);
 }
+const byBobbin = (pkg: VerifiedQualityDefinition, scope: VerifiedLocalScope): boolean => {
+    const p = pkg.envelope.payload;
+    return scope.envelope.payload.form_scopes.some(x => x.machine_code === p.machine_code && x.form_code === p.form_code && x.operation === "quality_bobbin_capture");
+};
+const bobbinLine = (b: BobbinContext | null) => b ? " · bobina " + b.bobbin_code + " (OT " + b.work_order + ", línea " + b.line_code + ", PV " + b.pv_reference + ", " + b.article_code + ", turno " + b.shift_code + ", " + b.operating_date + ")" : "";
 const describe = (pkg: VerifiedQualityDefinition) => { const p = pkg.envelope.payload; return p.machine_code + " · " + p.definition.form_name + " · " + p.form_code + " (v" + p.form_version + ")"; };
 
 function inputFor(field: QualityField, value: string | boolean | undefined, readOnly: boolean): HTMLElement {
@@ -109,13 +118,13 @@ function inputFor(field: QualityField, value: string | boolean | undefined, read
         el.value = typeof value === "string" ? value : "";
     }
     el.id = "f-" + field.key; el.dataset.key = field.key;
-    if (isCalculated(field)) { el.disabled = true; el.dataset.calculated = "1"; el.value = ""; } else if (readOnly) el.disabled = true;
+    if (isCalculated(field)) { el.disabled = true; el.dataset.calculated = "1"; el.value = ""; if (!(el instanceof HTMLSelectElement)) el.placeholder = "calculado por el servidor al sincronizar"; } else if (readOnly) el.disabled = true;
     return el as unknown as HTMLElement;
 }
 
 function renderEditor(e: Editing, values: DraftValues, note: string): void {
     if (!editor || !fieldsBox || !info || !title) return;
-    title.textContent = describe(e.pkg) + (e.revision === null ? " — nuevo borrador" : " — revisión " + e.revision);
+    title.textContent = describe(e.pkg) + bobbinLine(e.bobbin) + (e.revision === null ? " — nuevo borrador" : " — revisión " + e.revision);
     info.textContent = note;
     editor.dataset.draftId = e.id;
     fieldsBox.replaceChildren();
@@ -194,6 +203,46 @@ async function refresh(): Promise<void> {
         " retry_wait=" + sc("retry_wait") + " synced=" + sc("synced") + " synced_warning=" + sc("synced_warning") + " requires_review=" + sc("requires_review") + " conflict=" + sc("conflict");
 }
 
+let bobbinsOfMachine: BobbinContext[] = [];
+/** Show the bobbin controls only for by-bobbin forms, and list the contexts prepared (online) for the selected machine and signed-scope snapshot. */
+async function refreshBobbins(): Promise<void> {
+    if (!session || !bobbinBox || !bobbinSelect) return;
+    const pkg = session.packages[Number(select?.value ?? 0)];
+    const wanted = !!pkg && byBobbin(pkg, session.scope);
+    bobbinBox.hidden = !wanted;
+    bobbinsOfMachine = [];
+    bobbinSelect.replaceChildren();
+    if (!wanted || !pkg) return;
+    try {
+        const r = await listBobbinContexts(session.key, session.identity, session.scope.envelope.payload.snapshot_id, pkg.envelope.payload.machine_code);
+        bobbinsOfMachine = r.contexts;
+        for (const b of r.contexts) { const o = document.createElement("option"); o.value = b.bobbin_id; o.textContent = b.bobbin_code + " · OT " + b.work_order + " · " + b.article_code; bobbinSelect.appendChild(o); }
+        if (bobbinInfo) bobbinInfo.textContent = r.contexts.length === 0 ? "Sin bobinas preparadas para esta máquina: use «Preparar contexto de bobina» (requiere conexión)." :
+            r.contexts.length + " bobina(s) preparada(s)." + (r.damaged ? " " + r.damaged + " ilegible(s) se conservan sin usar." : "");
+    } catch (error) { if (bobbinInfo) bobbinInfo.textContent = error instanceof BobbinStoreError && error.reason === "locked" ? "Bobinas bloqueadas." : "No se pudieron leer las bobinas preparadas."; }
+}
+
+/** ONLINE: ask the QA API for the historical context of one bobbin (signed scope proves the by-bobbin grant), seal it locally. Nothing else changes. */
+async function prepareBobbin(): Promise<void> {
+    if (!session || !bobbinCode) return;
+    const pkg = session.packages[Number(select?.value ?? 0)];
+    const code = bobbinCode.value.trim();
+    if (!pkg || !/^[A-Za-z0-9_.-]{1,48}$/.test(code)) { say("Indique un número de bobina válido."); return; }
+    try {
+        const me = await currentUser();
+        if (me.status !== "ok" || me.user.id.toLowerCase() !== session.identity.ownerId) { say("Preparar una bobina requiere la sesión en línea del mismo operario."); return; }
+        const res = await api("POST", "/api/offline/bobbin-context", { device_key: session.identity.deviceKey, machine_code: pkg.envelope.payload.machine_code, bobbin_code: code, signed_scope: session.scope.envelope });
+        if (res.status !== 200) { say(res.status === 403 ? "No hay concesión por bobina para este usuario y máquina." : "No se obtuvo el contexto de la bobina (" + res.status + ")."); return; }
+        const body = res.json as { snapshot_id?: string; contexts?: unknown[] };
+        if (body.snapshot_id !== session.scope.envelope.payload.snapshot_id || !Array.isArray(body.contexts)) { say("Respuesta de contexto no válida: no se guardó nada."); return; }
+        if (body.contexts.length === 0) { say("No existe una bobina con ese número en esta máquina."); return; }
+        for (const ctx of body.contexts) await storeBobbinContext(session.key, session.identity, body.snapshot_id, ctx);
+        bobbinCode.value = "";
+        await refreshBobbins();
+        say("Contexto de bobina guardado cifrado (" + body.contexts.length + "). Ya puede crear borradores de esa bobina sin conexión.");
+    } catch (error) { say(error instanceof BobbinStoreError ? "No se pudo guardar el contexto de la bobina localmente. No se guardó nada incompleto." : "Sin conexión con el servidor QA: no se preparó la bobina."); }
+}
+
 async function openDraft(id: string): Promise<void> {
     if (!session) return;
     try {
@@ -203,7 +252,7 @@ async function openDraft(id: string): Promise<void> {
         const pkg = session.packages.find(p => p.envelope.payload.machine_code === source.machine_code && p.envelope.payload.form_code === source.form_code &&
             p.envelope.payload.form_version === source.form_version);
         if (!pkg) { say("No hay una definición local para este borrador."); return; }
-        editing = { id, revision: frozen ? frozen.source_revision : loaded.revision, pkg, readOnly: frozen !== null };
+        editing = { id, revision: frozen ? frozen.source_revision : loaded.revision, pkg, readOnly: frozen !== null, bobbin: (source as { bobbin_context?: BobbinContext }).bobbin_context ?? null };
         renderEditor(editing, source.values, frozen ? "CONTENIDO CONGELADO del pendiente local (revisión " + frozen.source_revision + "). Inmutable; no es aprobación industrial." : "Borrador editable (revisión " + loaded.revision + ").");
         say(frozen ? "Contenido congelado del pendiente local cargado." : "Borrador cargado (revisión " + loaded.revision + ").");
     } catch (error) {
@@ -216,9 +265,9 @@ async function save(): Promise<void> {
     if (!session || !editing || editing.readOnly) return;
     showIssues([]);
     try {
-        const r = await saveQualityDraft(session.key, session.identity, { scope: session.scope, pkg: editing.pkg }, { id: editing.id, values: collect(), expectedRevision: editing.revision });
+        const r = await saveQualityDraft(session.key, session.identity, { scope: session.scope, pkg: editing.pkg }, { id: editing.id, values: collect(), expectedRevision: editing.revision, bobbin: editing.bobbin });
         editing = { ...editing, revision: r.revision };
-        if (title) title.textContent = describe(editing.pkg) + " — revisión " + r.revision;
+        if (title) title.textContent = describe(editing.pkg) + bobbinLine(editing.bobbin) + " — revisión " + r.revision;
         if (queueButton) queueButton.hidden = false;
         showIssues(r.missingRequired);
         say("Guardado localmente (borrador cifrado, revisión " + r.revision + "): " + (r.complete ? "completo" : "incompleto, faltan " + r.missingRequired.length + " obligatorio(s)") + ". No se envió nada.");
@@ -228,6 +277,7 @@ async function save(): Promise<void> {
         if (error instanceof DraftError && error.reason === "invalid") { showIssues(error.issues); say("NO se guardó: corrija los campos marcados."); }
         else if (error instanceof DraftError && error.reason === "conflict") say("NO se guardó: otra pestaña guardó una versión más reciente. Reabra el borrador.");
         else if (error instanceof DraftError && error.reason === "pending_local") say("NO se guardó: este borrador ya es un pendiente local inmutable.");
+        else if (error instanceof DraftError && error.reason === "bobbin_required") say("NO se guardó: este formulario es por bobina; prepare y seleccione una bobina.");
         else if (error instanceof DraftError && error.reason === "quota") say("NO se guardó: el almacenamiento del navegador está lleno.");
         else say("NO se guardó el borrador. Nada fue enviado.");
     }
@@ -257,9 +307,13 @@ async function bridgeToSync(draftId: string): Promise<void> {
     try {
         const frozen = await loadFrozenForDraft(session.key, session.identity, draftId);
         const existing = await syncStore.list(session.identity.ownerId.toLowerCase(), session.identity.deviceKey.toLowerCase());
+        const b = frozen.draft.bobbin_context;
         const record = await createSyncCapture(session.key, session.identity, syncStore, {
             captureId: frozen.capture_id, payload: frozen.draft.values as Record<string, unknown>, formCode: frozen.draft.form_code, formVersion: frozen.draft.form_version,
-            machineCode: frozen.draft.machine_code, scopeSnapshotId: frozen.draft.scope_snapshot_id, contextVersion: frozen.draft.scope_snapshot_id,
+            machineCode: frozen.draft.machine_code, scopeSnapshotId: frozen.draft.scope_snapshot_id,
+            // machine forms: the signed-scope snapshot is the context; by-bobbin forms: SHA-256(snapshot, bobbin, server digest), the same derivation the receiver recomputes from its database
+            contextVersion: b ? await bobbinContextVersion(frozen.draft.scope_snapshot_id, b.bobbin_id, b.context_digest) : frozen.draft.scope_snapshot_id,
+            ...(b ? { bobbin: { bobbin_id: b.bobbin_id, context_digest: b.context_digest } } : {}),
             seq: Date.now() * 1000 + existing.length,
         }, nowMs);
         say("Incorporado a la cola de sincronización del laboratorio (" + record.state + "). Aún no se envió: use «Sincronizar ahora».");
@@ -366,11 +420,18 @@ async function prepareDevice(): Promise<void> {
         if (scopeRes.status !== 200) { say(scopeRes.status === 403 ? "No hay una concesión de piloto para este usuario y máquina." : "No se obtuvo el alcance firmado (" + scopeRes.status + ")."); return; }
         const envelope = scopeRes.json as { public_key_b64url: string };
         await storeOfflineScope(key, identity, envelope, envelope.public_key_b64url);
-        const pkgRes = await api("POST", "/api/offline/quality-package", { device_key: deviceKey, machine_code: machine, form_code: FORM_CODE, signed_scope: envelope });
-        if (pkgRes.status !== 200) { say("No se obtuvo la definición firmada (" + pkgRes.status + ")."); return; }
-        await storeQualityPackage(key, identity, pkgRes.json);
+        const granted = ((scopeRes.json as { payload?: { form_scopes?: { machine_code: string; form_code: string; operation: string }[] } }).payload?.form_scopes ?? [])
+            .filter(x => x.machine_code === machine && FORMS_RE.test(x.form_code) && QUALITY_OPERATIONS.has(x.operation));
+        if (granted.length === 0) { say("El alcance firmado no incluye formularios de Calidad para esta máquina."); return; }
+        let stored = 0;
+        for (const item of granted) {
+            const pkgRes = await api("POST", "/api/offline/quality-package", { device_key: deviceKey, machine_code: machine, form_code: item.form_code, signed_scope: envelope });
+            if (pkgRes.status !== 200) { say("No se obtuvo la definición firmada de " + item.form_code + " (" + pkgRes.status + "). Ya guardadas: " + stored + "."); return; }
+            await storeQualityPackage(key, identity, pkgRes.json);
+            stored += 1;
+        }
         await showUnlock();
-        say("Dispositivo preparado: perfil local, alcance firmado y definición sintética guardados cifrados. Ahora desbloquee con su frase offline.");
+        say("Dispositivo preparado: perfil local, alcance firmado y " + stored + " definición(es) sintética(s) guardados cifrados. Ahora desbloquee con su frase offline.");
     } catch (error) {
         say(error instanceof VaultError && error.reason === "weak_passphrase" ? "Frase local débil: use al menos 16 caracteres." : "No se pudo preparar el dispositivo. No se guardó nada incompleto.");
     }
@@ -407,15 +468,17 @@ async function unlock(): Promise<void> {
         if (renewal?.status === "revocation_known" || renewal?.status === "unreadable") { say("El alcance local no está vigente o no se puede confirmar. El laboratorio permanece bloqueado."); return; }
         const packages: VerifiedQualityDefinition[] = [];
         for (const item of scope.envelope.payload.form_scopes) {
-            if (item.operation !== "quality_machine_capture" || !/^VINTO-P1-(18|22|26|27)$/.test(item.form_code)) continue;
+            if (!QUALITY_OPERATIONS.has(item.operation) || !FORMS_RE.test(item.form_code)) continue;
             const pkg = await readQualityPackage(key, identity, scope, item.machine_code, item.form_code);
             if (pkg && isLabEligible(pkg.envelope.payload.definition)) packages.push(pkg);
         }
+        packages.sort((a, b) => a.envelope.payload.form_code.localeCompare(b.envelope.payload.form_code) || a.envelope.payload.machine_code.localeCompare(b.envelope.payload.machine_code));
         session = { key, identity, scope, packages };
         select.replaceChildren();
         packages.forEach((p, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = describe(p); select.appendChild(o); });
         newButton.disabled = packages.length === 0;
         unlockForm.hidden = true; workspace.hidden = false;
+        await refreshBobbins();
         await refresh();
         if (session) say(packages.length === 0 ? "No hay definiciones sintéticas editables." : "Laboratorio desbloqueado (perfil original). Datos sintéticos; nada se envía sin su acción.");
     } catch { say("No fue posible desbloquear o validar. El laboratorio permanece bloqueado."); }
@@ -435,10 +498,18 @@ async function start(): Promise<void> {
         if (!session) return;
         const pkg = session.packages[Number(select.value)];
         if (!pkg) return;
-        editing = { id: crypto.randomUUID(), revision: null, pkg, readOnly: false };
+        let bobbin: BobbinContext | null = null;
+        if (byBobbin(pkg, session.scope)) {
+            const wanted = bobbinSelect?.value ?? "";
+            bobbin = bobbinsOfMachine.find(b => b.bobbin_id === wanted) ?? null;
+            if (!bobbin) { say("Este formulario es por bobina: prepare (en línea) y seleccione una bobina antes de crear el borrador."); return; }
+        }
+        editing = { id: crypto.randomUUID(), revision: null, pkg, readOnly: false, bobbin };
         renderEditor(editing, {}, "Nuevo borrador (aún sin guardar).");
         say("Nuevo borrador (aún sin guardar).");
     });
+    select.addEventListener("change", () => { void refreshBobbins(); });
+    bobbinPrepare?.addEventListener("click", () => { void prepareBobbin(); });
     lockButton.addEventListener("click", () => lockAll("Laboratorio bloqueado. La clave se descartó de la memoria."));
     editor.addEventListener("submit", (event: SubmitEvent) => { event.preventDefault(); void save(); });
     queueButton?.addEventListener("click", () => { void makePending(); });
