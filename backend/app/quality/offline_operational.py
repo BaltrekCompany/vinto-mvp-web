@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import psycopg
 
@@ -23,18 +23,14 @@ from app.capture_errors import (CaptureIdempotencyConflictError, CaptureValidati
                                 DeviceInactiveError, DeviceMachineMismatchError)
 from app.offline_capture import contract as C
 from app.offline_capture.store import StoreUnavailable
+from app.offline_capture.service import PromotionReview
 from app.offline_quality import bobbin_context
 from app.offline_quality.registry import BATCH_FORMS, BOBBIN, MACHINE, spec_for
 from app.quality import capture_service as bobbin_service
 from app.quality import machine_capture_service as machine_service
 
 
-class OperationalReview(Exception):
-    """Deterministic rejection for this receipt; keep it for review, never create vinto_txn rows."""
-
-    def __init__(self, reason: str):
-        self.reason = reason
-        super().__init__(reason)
+OperationalReview = PromotionReview
 
 
 @dataclass(frozen=True)
