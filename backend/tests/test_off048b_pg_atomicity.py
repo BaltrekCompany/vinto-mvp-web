@@ -88,31 +88,15 @@ def test_postgres_rollback_both_on_error_after_operational_side_effect(prepared)
 
 
 def test_postgres_review_rolls_back_candidate_side_effect_via_savepoint(prepared):
-    # The receiver's real promoter must use an inner savepoint as the
-    # production adapter does. A synthetic proof does the same here.
-    class ReviewWithSavepoint(ProofPromoter):
-        def promote(self, user, incoming, tx):
-            try:
-                with tx.c.transaction():
-                    return super().promote(user, incoming, tx)
-            except PromotionReview:
-                raise
-
+    # The PROMOTER intentionally has no savepoint. The RECEIVER owns it.
     body = capture()
-    result = receive(prepared, body, ReviewWithSavepoint(mode="review"))
+    result = receive(prepared, body, ProofPromoter(mode="review"))
     assert result.status == 202 and result.body["operational_registered"] is False
     assert count_receipts(prepared) == 1 and count_proofs(prepared) == 0
 
 
 def test_postgres_review_and_valid_capture_are_independent(prepared):
     bad, good = capture(), capture()
-    reject = ProofPromoter(mode="review")
-
-    class SafeReview(ProofPromoter):
-        def promote(self, user, incoming, tx):
-            with tx.c.transaction():
-                return reject.promote(user, incoming, tx)
-
-    assert receive(prepared, bad, SafeReview()).status == 202
+    assert receive(prepared, bad, ProofPromoter(mode="review")).status == 202
     assert receive(prepared, good, ProofPromoter()).status == 201
     assert count_receipts(prepared) == 2 and count_proofs(prepared) == 1
