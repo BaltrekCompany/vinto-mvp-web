@@ -165,7 +165,12 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
         operational_registered = False
         if promoter is not None and outcome in ("accepted", "accepted_warning"):
             try:
-                registration = promoter.promote(principal, capture, tx)
+                # The receiver, not the adapter, owns rollback of a candidate write.
+                # Any review/exception must roll back its side effects before finalizing.
+                with tx.promotion_savepoint():
+                    registration = promoter.promote(principal, capture, tx)
+                    if getattr(registration, "capture_id", None) != capture.capture_id:
+                        raise StoreUnavailable("operational_ack_invalid")
             except PromotionReview as error:
                 outcome, reason, status, label = "review", error.reason, 202, "review"
             except StoreUnavailable:
@@ -173,8 +178,6 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
             except Exception as error:  # noqa: BLE001 - rollback both receipt and operational write on unknown failure
                 raise StoreUnavailable("operational_registration_unavailable") from error
             else:
-                if getattr(registration, "capture_id", None) != capture.capture_id:
-                    raise StoreUnavailable("operational_ack_invalid")
                 operational_registered = True
         body = C.public_body(outcome=label, capture_id=cid, payload_sha256=capture.payload_sha256,
                              server_id=server_id, warnings=warnings, reason=reason)
