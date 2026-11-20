@@ -69,3 +69,31 @@ test("stopping before a scheduled save cancels work", async () => {
   assert.equal(f.attempts.length, 0);
   assert.equal(f.save.hasUnsavedChanges, true);
 });
+
+test("Save Capture flush waits for a second edit made during an ongoing encrypted write", async () => {
+  let releaseFirst;const gate=new Promise(resolve=>{releaseFirst=resolve;});
+  let revision=null, value="first", writes=0;
+  const snapshots=[];
+  const a=createDraftAutosave({
+    unlocked:()=>true,
+    current:()=>({draftId:"draft-1",ownerId:"user-1",revision,values:{test:value}}),
+    async persist(snapshot) {
+      snapshots.push(snapshot.values.test);
+      writes += 1;
+      if (writes===1) await gate;
+      return {revision:(snapshot.revision??0)+1};
+    },
+    setTimer:()=>1,clearTimer:()=>{},
+    onSaved:n=>{revision=n;},
+  });
+  a.changed();
+  const first=a.flush();
+  await Promise.resolve();
+  value="latest";a.changed();
+  const barrier=a.flush();
+  releaseFirst();
+  assert.deepEqual(await first,{ok:true,revision:2});
+  assert.deepEqual(await barrier,{ok:true,revision:2});
+  assert.deepEqual(snapshots,["first","latest"]);
+  assert.equal(a.hasUnsavedChanges,false);
+});
