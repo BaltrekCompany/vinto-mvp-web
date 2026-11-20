@@ -59,3 +59,25 @@ No activar ninguna API, no modificar `main`, no merge, no desplegar, no tocar VP
 
 ### Decisión pendiente de política
 La ventana actual del contrato `capture_authority` es **máximo 24 horas desde emisión hasta sincronización**. Esto es seguro por defecto, pero **puede impedir el registro automático de capturas válidas si el dispositivo permanece más de 24 horas desconectado**. No se habilitará para uso operativo hasta definir explícitamente duración, tratamiento de captura hecha durante una sesión válida pero sincronizada después de caducar y criterio de revocación. Ninguna captura local se borra aunque el plazo expire.
+
+## OFF-04.8E — política aprobada: hasta OCHO horas sin Internet + experiencia sin botones técnicos
+
+Decisión funcional: **un operario permanecerá como máximo 8 horas sin Internet**. No habrá botones obligatorios de «Autorizar», «Preparar dispositivo» ni «Sincronizar». **«Guardar captura»** es la confirmación explícita de un formulario terminado. El guardado automático previo es solo **borrador editable cifrado**, sin envío ni aprobación.
+
+### Contrato de cobertura propuesto
+
+- Firma operativa server-side con vigencia máxima **24 horas** desde su emisión. Renovación **automática mientras existe conexión y sesión del autor**, cuando restan **12 horas o menos**. Prepara una jornada offline de hasta **8 horas** con margen de 4 horas.
+- Antes de informar «Preparado sin conexión», comprobar que el alcance cubre las siguientes 8 horas. Si falta cobertura, mostrar «Se requiere conexión para renovar» sin borrar borradores ni pendientes.
+- Al reconectar, el servidor valida permisos actuales y firma. Revocación, contexto incompatible o validación fallida dejan solo el registro afectado para corrección/revisión, sin bloquear los demás.
+- La vida útil de 24h **no autoriza trabajar sin Internet por 24h**; el máximo operacional permanece 8h.
+- Reingreso bajo el usuario original cuando su sesión haya expirado; no autorizar capturas con otra cuenta.
+- La política de captura hecha con firma vigente pero enviada tras caducar requiere gate adicional. Los datos permanecen locales; nunca se asumirán aprobados.
+
+### Componentes aislados, aún no montados
+
+- `lib/vinto/offline-capture-coverage.ts`: función pura que evalúa cobertura de 8 horas y cuándo renovar.
+- `lib/vinto/offline-capture-renewal.ts`: renovación opt-in en evento online/focus o reautenticación. No gestiona claves ni llama a una API sin el adaptador futuro.
+- `lib/vinto/offline-draft-autosave.ts`: autosave coalescente con escritor cifrado y CAS de revisión inyectado. No congela, encola ni envía: la confirmación explícita es «Guardar captura».
+- Pruebas Node `off-04-8e-coverage.test.mjs`, `off-04-8e-renewal.test.mjs`, `off-04-8e-draft-autosave.test.mjs` en workflow OFF-04.6; **CI todavía sin PASS**.
+
+Antes de montar en una PWA real: E2E de 8h simuladas, suspensión y reapertura, expiración de sesión, identidad original, múltiples pestañas, servicio de emisión real, actualización Service Worker sin borrar IndexedDB y confirmación operativa idempotente. **Sin merge ni deploy o reactivación QA en este incremento.**
