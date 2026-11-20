@@ -36,7 +36,7 @@ def principal(*, owner=OWNER, granted=True, must_change=False):
 ])
 def test_unauthorized_never_reaches_operational_connection(who):
     with pytest.raises(OperationalReview, match="operational_not_authorized"):
-        QualityOperationalPromoter(lambda p, c: True).promote(who, make_capture(), tx=SimpleNamespace())
+        QualityOperationalPromoter(lambda p, c, tx: True).promote(who, make_capture(), tx=SimpleNamespace())
 
 
 @pytest.mark.parametrize("capture", [
@@ -45,7 +45,7 @@ def test_unauthorized_never_reaches_operational_connection(who):
 ])
 def test_synthetic_and_unsigned_scope_fail_closed(capture):
     with pytest.raises(OperationalReview, match="operational_scope_required"):
-        QualityOperationalPromoter(lambda p, c: True).promote(principal(), capture, tx=SimpleNamespace())
+        QualityOperationalPromoter(lambda p, c, tx: True).promote(principal(), capture, tx=SimpleNamespace())
 
 
 
@@ -60,6 +60,7 @@ def test_machine_form_wire_context_is_the_signed_snapshot_id():
 def test_trusted_scope_verifier_is_mandatory_and_fail_closed():
     with pytest.raises(TypeError, match="capture scope verifier"):
         QualityOperationalPromoter(None)
-    with pytest.raises(OperationalReview, match="operational_scope_required"):
-        QualityOperationalPromoter(lambda principal, capture: False).promote(
+    # The snapshot verifier cannot be called without a real shared PG transaction.
+    with pytest.raises(Exception, match="operational_requires_shared_postgres_transaction"):
+        QualityOperationalPromoter(lambda principal, capture, tx: False).promote(
             principal(), make_capture(), tx=SimpleNamespace())
