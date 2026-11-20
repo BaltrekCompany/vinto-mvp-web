@@ -81,3 +81,16 @@ Decisión funcional: **un operario permanecerá como máximo 8 horas sin Interne
 - Pruebas Node `off-04-8e-coverage.test.mjs`, `off-04-8e-renewal.test.mjs`, `off-04-8e-draft-autosave.test.mjs` en workflow OFF-04.6; **CI todavía sin PASS**.
 
 Antes de montar en una PWA real: E2E de 8h simuladas, suspensión y reapertura, expiración de sesión, identidad original, múltiples pestañas, servicio de emisión real, actualización Service Worker sin borrar IndexedDB y confirmación operativa idempotente. **Sin merge ni deploy o reactivación QA en este incremento.**
+
+## OFF-04.8F — confirmación de captura y recuperación de la cola (opt-in, sin montar)
+
+La UX aprobada tiene **un solo botón «Guardar captura»**. El autoguardado del borrador ocurre automáticamente durante la edición, sin crear pendiente ni enviarlo.
+
+- `offline-draft-autosave.ts` ahora tiene `flush()` como **barrera de durabilidad**: si el usuario escribe mientras se guarda una revisión anterior, espera y guarda también la más reciente antes de permitir congelar el formulario. Un CAS conflictivo, almacenamiento no disponible o bóveda bloqueada impiden avanzar; nunca se confirma falsamente.
+- `offline-confirm-capture.ts` implementa el comando único: espera al autoguardado → congela mediante transición inmutable con revisión esperada → incorpora idempotentemente a la cola → despierta la sincronización, sin exigir acción manual adicional. Doble pulsación en la misma pestaña comparte la promesa; si falla el puente a la cola, se conserva el pendiente local congelado para recuperación, sin borrarlo.
+- `offline-frozen-queue-bridge.ts` es el adaptador propuesto para `AutoSyncDeps.prepareQueue`: vuelve a incorporar pendientes operativos al arrancar/volver Internet sin alterar `capture_id`, autor ni payload; rechaza pendientes sintéticos del piloto, no cruza identidades y procesa individualmente fallos de almacenamiento.
+- Pruebas nuevas: `off-04-8f-confirm-capture.test.mjs` y `off-04-8f-frozen-bridge.test.mjs`, añadidas al workflow del PR.
+
+**Importante:** estos son componentes de coordinación aislados, todavía **no montados** en la aplicación de operarios ni en el laboratorio OFF-04.7, y no sustituyen el emisor de autorización vigente ni el gate real PostgreSQL 17 con los diez formularios. El flujo real debe **bloquear edición al iniciar la confirmación hasta completar la transición**, coordinar múltiples pestañas mediante compare-and-swap IndexedDB, conservar evidencia congelada ante fallo y verificar el ACK operativo del servidor antes de mostrar «Registrada en Calidad». No mezclar los borradores `synthetic:true` de laboratorio con el nuevo flujo `synthetic:false`.
+
+**Estado:** implementación de módulos y pruebas propuesta; esperar CI verde y construir la integración PWA autorizada antes de considerar funcional OFF-04.8.
