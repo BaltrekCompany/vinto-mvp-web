@@ -45,15 +45,21 @@ class OperationalRegistration:
 class QualityOperationalPromoter:
     """Production candidate. No route creates or invokes this adapter yet.
 
-    Its caller MUST verify the signed capture-capable scope and the current authenticated
-    operator, independently of this adapter. This adapter *always* re-checks current Quality
-    permissions and effective machine/form grants inside the operational write transaction.
+    The mandatory verifier must resolve the snapshot from a trusted server-side store,
+    validate its capture-capable signature and binding, never trust a client boolean.
+    The adapter also re-checks effective Quality grants in the write transaction.
     """
+
+    def __init__(self, verify_capture_scope: Callable[[Any, C.CaptureIn], bool]) -> None:
+        if not callable(verify_capture_scope):
+            raise TypeError("capture scope verifier is mandatory")
+        self._verify_capture_scope = verify_capture_scope
 
     def promote(self, principal: Any, capture: C.CaptureIn, tx: Any) -> OperationalRegistration:
         if principal.user_id != capture.author_user_id or principal.must_change or not principal.can(QUALITY_CAPTURE):
             raise OperationalReview("operational_not_authorized")
-        if capture.scope_snapshot_id is None or capture.payload.get("synthetic") is not False:
+        if (capture.scope_snapshot_id is None or capture.payload.get("synthetic") is not False
+                or not self._verify_capture_scope(principal, capture)):
             raise OperationalReview("operational_scope_required")
         values = capture.payload.get("payload")
         if not isinstance(values, dict):
