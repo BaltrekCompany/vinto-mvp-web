@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.offline_capture.contract import CaptureIn, canonical_sha256
-from app.offline_capture.operational import OperationalReview, QualityOperationalPromoter, machine_context_id
+from app.quality.offline_operational import OperationalReview, QualityOperationalPromoter, machine_context_id
 
 
 OWNER = uuid.UUID("11111111-1111-4111-8111-111111111111")
