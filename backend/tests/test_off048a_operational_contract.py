@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.offline_capture.contract import CaptureIn, canonical_sha256
+from app.offline_capture.store import StoreUnavailable
 from app.quality.offline_operational import OperationalReview, QualityOperationalPromoter
 
 
@@ -61,6 +62,6 @@ def test_trusted_scope_verifier_is_mandatory_and_fail_closed():
     with pytest.raises(TypeError, match="capture scope verifier"):
         QualityOperationalPromoter(None)
     # The snapshot verifier cannot be called without a real shared PG transaction.
-    with pytest.raises(Exception, match="operational_requires_shared_postgres_transaction"):
+    with pytest.raises(StoreUnavailable, match="operational_requires_shared_postgres_transaction"):
         QualityOperationalPromoter(lambda principal, capture, tx: False).promote(
             principal(), make_capture(), tx=SimpleNamespace())
