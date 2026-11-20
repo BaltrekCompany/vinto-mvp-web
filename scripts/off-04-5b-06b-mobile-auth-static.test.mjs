@@ -1,4 +1,4 @@
-// OFF-04.5A: structural contracts of the end-to-end Quality laboratory (bridge between the lab pending queue and the sync engine).
+// OFF-04.5A / OFF-04.5B-06B: structural contracts of the end-to-end Quality laboratory (bridge between the lab pending queue and the sync engine; same-origin real-session client).
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -33,15 +33,35 @@ test("the E2E page is lab-only, opt-in at build time and never reaches the app's
     }
 });
 
-test("the only network access is ONE fetch to a loopback receiver named explicitly; without it nothing leaves the device", () => {
+test("the only network access is ONE fetch, to the page's OWN origin, with the real cookie and no identity header; there is no way to name another URL", () => {
     assert.equal([...src.matchAll(/\bfetch\s*\(/g)].length, 1);
     assert.doesNotMatch(src, /XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts/);
-    assert.match(src, /u\.hostname === "127\.0\.0\.1" \|\| u\.hostname === "localhost"/);
-    assert.match(src, /u\.protocol === "http:"/);
-    assert.match(src, /new URLSearchParams\(location\.search\)\.get\("receiver"\)/);
-    assert.match(src, /if \(!session \|\| syncing \|\| !RECEIVER\) return;/);
+    assert.match(src, /credentials: "include"/);
+    assert.match(src, /cache: "no-store"/);
+    assert.match(src, /fetch\(path, \{/);                                                       // a RELATIVE path, never a composed URL
+    assert.match(src, /\^\\\/api\\\/\[A-Za-z0-9_\\-\/\]\*\$/);                                  // api() only accepts /api/... paths
+    assert.match(src, /location\.protocol === "https:" \|\| \(location\.protocol === "http:" && \(location\.hostname === "127\.0\.0\.1" \|\| location\.hostname === "localhost"\)\)/);
+    assert.doesNotMatch(src, /URLSearchParams|location\.search|[?&]receiver=|X-Synthetic-User|X-Synthetic|OTHER_USER/);
     assert.doesNotMatch(src, /https?:\/\/(?!127\.0\.0\.1|localhost)/);
-    assert.match(src, /syncButton\.disabled = !RECEIVER/);
+    assert.doesNotMatch(src, /\bnew URL\(|\bnew Request\(/);
+    assert.doesNotMatch(html, /e2e-session|receiver=|X-Synthetic/);
+    assert.match(src, /if \(!session \|\| syncing \|\| !ONLINE_OK\) return;/);
+    assert.match(src, /syncButton\.disabled = !ONLINE_OK/);
+    const paths = [...src.matchAll(/api\("(?:GET|POST)", "([^"]+)"/g)].map(m => m[1]).sort();
+    assert.deepEqual([...new Set(paths)], ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/offline/quality-package", "/api/offline/scope"]);
+});
+
+test("login, enrolment and sync use the existing building blocks and the ORIGINAL author's real session", () => {
+    assert.match(src, /import \{ interpretLogin, interpretSession, type AuthUser \} from "\.\/auth\.ts"/);
+    assert.match(src, /createLocalVault\(identity, secret\)/);
+    assert.match(src, /storeOfflineScope\(key, identity, envelope, envelope\.public_key_b64url\)/);        // the key is pinned from the authenticated online response
+    assert.match(src, /storeQualityPackage\(key, identity, pkgRes\.json\)/);
+    assert.match(src, /record\.ownerId !== identity\.ownerId \|\| record\.deviceKey !== identity\.deviceKey/);  // never replaces another user's profile
+    assert.match(src, /session: async \(\) => \{ const me = await currentUser\(\); return me\.status === "ok" \? \{ userId: me\.user\.id\.toLowerCase\(\) \} : null; \}/);
+    assert.match(src, /probe\.status === "unreachable"/);                                                     // offline: nothing is sent, nothing changes
+    assert.match(src, /loginPass\.value = ""/);                                                              // the password never stays in the DOM
+    assert.doesNotMatch(src, /localStorage\.setItem\([^)]*(password|secret|token)/i);
+    assert.match(html, /e2e-login-form/); assert.match(html, /e2e-prepare-form/); assert.match(html, /autocomplete="current-password"/);
 });
 
 test("the bridge is explicit and keeps identity: same capture_id, frozen content only, original author, one record", () => {
@@ -53,8 +73,6 @@ test("the bridge is explicit and keeps identity: same capture_id, frozen content
     assert.match(src, /bridge\.addEventListener\("click"/);                       // only a user click bridges; nothing is bridged automatically
     assert.equal([...src.matchAll(/bridgeToSync\(/g)].length, 2);                   // definition + the single click handler
     assert.match(src, /if \(r\.stage === "pending"\)/);                             // only frozen pendings can be bridged
-    assert.match(src, /session: async \(\) => user \? \{ userId: user \} : null/);
-    assert.match(src, /mode === "other" \? OTHER_USER : s\.identity\.ownerId/);
 });
 
 test("the UI distinguishes local save, technical receipt and industrial approval, with all seven required states", () => {

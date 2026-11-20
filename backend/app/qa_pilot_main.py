@@ -69,8 +69,9 @@ def verify_receiver_database(connection) -> str:
 
 
 def create_app_from_env(env: Mapping[str, str] | None = None, *, app_env: str | None = None, database_url: str | None = None,
-                        principal_dependency: Callable | None = None, connect: Callable[[], Any] | None = None) -> FastAPI:
-    """Build the pilot application from the environment. `connect` and `principal_dependency` exist so tests can inject disposable resources."""
+                        principal_dependency: Callable | None = None, connect: Callable[[], Any] | None = None,
+                        identity_connect: Callable[[], Any] | None = None) -> FastAPI:
+    """Build the pilot application from the environment. `connect`, `identity_connect` and `principal_dependency` exist so tests can inject disposable resources."""
     import os
     env = os.environ if env is None else env
     if app_env is None:
@@ -78,8 +79,9 @@ def create_app_from_env(env: Mapping[str, str] | None = None, *, app_env: str | 
         app_env = settings.app_env
     settings_ = PilotSettings.from_env(env, app_env=app_env)
     active = settings_.app_env == "qa" and settings_.enabled
-    logger.info("qa_pilot startup: active=%s authz_mode=%s grants=%d", active, settings_.authz_mode, len(settings_.grants))
-    if not active:
+    auth_active = settings_.app_env == "qa" and settings_.auth_enabled
+    logger.info("qa_pilot startup: active=%s auth=%s authz_mode=%s grants=%d", active, auth_active, settings_.authz_mode, len(settings_.grants))
+    if not active and not auth_active:
         return create_qa_pilot_app(settings=settings_, store=None, database_name=None, principal_dependency=principal_dependency)
     if connect is None:
         if database_url is None:
@@ -91,13 +93,42 @@ def create_app_from_env(env: Mapping[str, str] | None = None, *, app_env: str | 
     try:
         with connect() as connection:
             database_name = verify_receiver_database(connection)
+            receiver_role = connection.execute("SELECT current_user").fetchone()[0]
     except PilotConfigError:
         raise
     except Exception:  # driver or network failures: fixed code, never the driver's message (it may echo the connection)
         raise PilotConfigError("database_unavailable") from None
-    engine = AuthzEngineProbe(connect) if settings_.authz_mode != "off" else None
-    return create_qa_pilot_app(settings=settings_, store=PgOfflineCaptureStore(connect), database_name=database_name,
-                               principal_dependency=principal_dependency, engine=engine)
+    mount = _build_auth_mount(settings_, identity_connect, database_name, receiver_role, principal_dependency) if auth_active else None
+    engine = AuthzEngineProbe(connect) if settings_.authz_mode != "off" and active else None
+    return create_qa_pilot_app(settings=settings_, store=PgOfflineCaptureStore(connect) if active else None, database_name=database_name if active else None,
+                               principal_dependency=principal_dependency if mount is None else None, engine=engine, auth_mount=mount)
+
+
+def _build_auth_mount(settings_: PilotSettings, identity_connect, database_name: str, receiver_role: str, principal_dependency):
+    """Authentication conditions, all fail-closed with fixed codes: QA-exclusive cookie, DEDICATED identity connection that differs from the application
+    URL and passes a privilege check, an Origin allow-list and a synthetic signing key that exists only for the pilot."""
+    from app.config import settings as global_settings
+    from app.database import identity_connection_mode
+    from app.qa_pilot_auth import COOKIE_NAME_RE, build_auth_mount, parse_origins, signer_from_seed, verify_identity_database
+    origins = parse_origins(settings_.origins_raw)
+    signer = signer_from_seed(settings_.signing_seed)
+    if not COOKIE_NAME_RE.fullmatch(global_settings.auth_cookie_name):
+        raise PilotConfigError("cookie_name_not_qa_exclusive")
+    if global_settings.app_env == "local":
+        raise PilotConfigError("cookie_would_not_be_secure")   # cookie_options() marks the cookie Secure everywhere except APP_ENV=local
+    if identity_connection_mode() != "dedicated":
+        raise PilotConfigError("identity_connection_not_dedicated")
+    identity_url = global_settings.identity_database_url.get_secret_value()
+    if global_settings.database_url is not None and identity_url == global_settings.database_url.get_secret_value():
+        raise PilotConfigError("identity_equals_application_url")
+    try:
+        with (identity_connect or connect_factory(identity_url))() as connection:
+            verify_identity_database(connection, receiver_database=database_name, receiver_role=receiver_role)
+    except PilotConfigError:
+        raise
+    except Exception:
+        raise PilotConfigError("identity_database_unavailable") from None
+    return build_auth_mount(grants=settings_.grants, signer=signer, origins=origins)
 
 
 def create_app() -> FastAPI:

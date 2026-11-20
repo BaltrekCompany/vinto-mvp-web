@@ -291,7 +291,7 @@ def test_pilot_is_not_part_of_the_operational_app_or_default_routes():
     main = (BACKEND / "app" / "main.py").read_text(encoding="utf-8")
     assert "qa_offline_pilot" not in main and "offline_capture" not in main
     for path in (BACKEND / "app").rglob("*.py"):
-        if path.name in ("qa_offline_pilot.py", "qa_pilot_main.py") or "offline_capture" in path.parts:
+        if path.name in ("qa_offline_pilot.py", "qa_pilot_main.py", "qa_pilot_auth.py") or "offline_capture" in path.parts:
             continue  # qa_pilot_main.py (OFF-04.5B-03) is the one authorised importer: the separate ASGI entrypoint
         text = path.read_text(encoding="utf-8")
         assert "qa_offline_pilot" not in text and "qa_pilot_main" not in text, path
