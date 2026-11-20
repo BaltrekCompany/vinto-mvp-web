@@ -9,7 +9,6 @@ together or are rolled back together. No release/approval API is invoked.
 from __future__ import annotations
 
 import uuid
-import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,7 +24,7 @@ from app.capture_errors import (CaptureIdempotencyConflictError, CaptureValidati
 from app.offline_capture import contract as C
 from app.offline_capture.store import StoreUnavailable
 from app.offline_quality import bobbin_context
-from app.offline_quality.registry import BOBBIN, MACHINE, spec_for
+from app.offline_quality.registry import BATCH_FORMS, BOBBIN, MACHINE, spec_for
 from app.quality import capture_service as bobbin_service
 from app.quality import machine_capture_service as machine_service
 
@@ -41,15 +40,6 @@ class OperationalReview(Exception):
 @dataclass(frozen=True)
 class OperationalRegistration:
     capture_id: uuid.UUID
-
-
-def machine_context_id(snapshot_id: uuid.UUID, machine_code: str, form_code: str) -> str:
-    """Cross-language match to offline-draft-schema.ts contextIdFor; does NOT grant access."""
-    joined = ":".join(("VINTO:OFF041:CONTEXT:v1", str(snapshot_id).lower(), machine_code, form_code))
-    digest = bytearray(hashlib.sha256(joined.encode("utf-8")).digest()[:16])
-    digest[6] = (digest[6] & 0x0F) | 0x40
-    digest[8] = (digest[8] & 0x3F) | 0x80
-    return str(uuid.UUID(bytes=bytes(digest)))
 
 
 class QualityOperationalPromoter:
@@ -69,7 +59,7 @@ class QualityOperationalPromoter:
         if not isinstance(values, dict):
             raise OperationalReview("operational_payload_shape")
         spec = spec_for(capture.form_code)
-        if spec is None or spec.kind not in (MACHINE, BOBBIN):
+        if capture.form_code not in BATCH_FORMS or spec is None or spec.kind not in (MACHINE, BOBBIN):
             raise OperationalReview("operational_unsupported_form")
         connection = getattr(tx, "c", None)
         if not isinstance(connection, psycopg.Connection):
@@ -83,7 +73,7 @@ class QualityOperationalPromoter:
             # operational write while the outer receipt remains available for review.
             with connection.transaction():
                 if spec.kind == MACHINE:
-                    if capture.context_version != machine_context_id(capture.scope_snapshot_id, capture.machine_code, capture.form_code):
+                    if capture.context_version != str(capture.scope_snapshot_id):
                         raise OperationalReview("operational_context_changed")
                     if "bobbin" in capture.payload:
                         raise OperationalReview("operational_unexpected_bobbin")
