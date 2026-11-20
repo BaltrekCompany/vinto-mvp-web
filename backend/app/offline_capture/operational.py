@@ -9,6 +9,7 @@ together or are rolled back together. No release/approval API is invoked.
 from __future__ import annotations
 
 import uuid
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,6 +43,15 @@ class OperationalRegistration:
     capture_id: uuid.UUID
 
 
+def machine_context_id(snapshot_id: uuid.UUID, machine_code: str, form_code: str) -> str:
+    """Cross-language match to offline-draft-schema.ts contextIdFor; does NOT grant access."""
+    joined = ":".join(("VINTO:OFF041:CONTEXT:v1", str(snapshot_id).lower(), machine_code, form_code))
+    digest = bytearray(hashlib.sha256(joined.encode("utf-8")).digest()[:16])
+    digest[6] = (digest[6] & 0x0F) | 0x40
+    digest[8] = (digest[8] & 0x3F) | 0x80
+    return str(uuid.UUID(bytes=bytes(digest)))
+
+
 class QualityOperationalPromoter:
     """Production candidate. No route creates or invokes this adapter yet.
 
@@ -73,7 +83,7 @@ class QualityOperationalPromoter:
             # operational write while the outer receipt remains available for review.
             with connection.transaction():
                 if spec.kind == MACHINE:
-                    if capture.context_version != str(capture.scope_snapshot_id):
+                    if capture.context_version != machine_context_id(capture.scope_snapshot_id, capture.machine_code, capture.form_code):
                         raise OperationalReview("operational_context_changed")
                     if "bobbin" in capture.payload:
                         raise OperationalReview("operational_unexpected_bobbin")
