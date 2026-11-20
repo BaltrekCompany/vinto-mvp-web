@@ -69,6 +69,10 @@ def build_template() -> str:
             with contextlib.redirect_stdout(io.StringIO()):
                 migrate.apply(connection, migrate.read_migrations(tree))
             connection.execute(grants, prepare=False)
+            # OFF-04.6: the central validation reads the published definitions with the APPLICATION role (the real QA role already has exactly this read access); never identity tables
+            connection.execute("GRANT USAGE ON SCHEMA vinto_master, vinto_config TO vinto_app")
+            connection.execute("GRANT SELECT ON vinto_master.machine, vinto_master.sector, vinto_master.unit TO vinto_app")
+            connection.execute("GRANT SELECT ON ALL TABLES IN SCHEMA vinto_config TO vinto_app")
     finally:
         shutil.rmtree(tree, ignore_errors=True)
     return name
@@ -105,6 +109,6 @@ def new_seed() -> str:
 
 
 def grant_for(user_id, **over) -> dict:
-    g = {"user_id": str(user_id), "machine_code": MACHINE, "form_code": FORM, "form_version": 1, "synthetic": True, "scope_snapshot_id": str(SNAPSHOT), "context_version": CONTEXT}
+    g = {"user_id": str(user_id), "machine_code": MACHINE, "form_code": FORM, "form_version": 2, "synthetic": True, "scope_snapshot_id": str(SNAPSHOT), "context_version": CONTEXT}
     g.update(over)
     return g

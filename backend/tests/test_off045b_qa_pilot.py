@@ -246,7 +246,7 @@ def test_inactive_pilot_does_not_validate_or_mount_anything():
 def test_grants_are_strict_and_synthetic():
     assert parse_grants(None) == () and parse_grants("") == ()
     bad = [{**GRANT, "synthetic": False}, {k: v for k, v in GRANT.items() if k != "synthetic"}, {**GRANT, "extra": 1}, {**GRANT, "user_id": "x"},
-           {**GRANT, "form_code": "p1-22"}, {**GRANT, "machine_code": "../x"}, {**GRANT, "form_version": 0}, "notalist", [GRANT] * 21]
+           {**GRANT, "form_code": "p1-22"}, {**GRANT, "machine_code": "../x"}, {**GRANT, "form_version": 0}, "notalist", [GRANT] * 41]
     for item in bad:
         with pytest.raises(PilotConfigError):
             parse_grants(item if isinstance(item, str) or isinstance(item, list) and len(item) > 1 else [item])

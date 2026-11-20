@@ -20,6 +20,8 @@ R_CONTEXT_COMPAT = "context_changed_after_prepare"  # warning
 R_CONTEXT_INCOMPATIBLE = "context_incompatible"
 R_CONTEXT_UNVERIFIABLE = "context_unverifiable"
 R_UNSUPPORTED_VALUE = "unsupported_value"
+R_VALIDATION = "validation_failed"                  # the central validation (same code as the online route) refused the content: kept for review
+R_VALIDATION_UNAVAILABLE = "validation_unavailable"  # the central validation could not run: kept for review
 R_UNAVAILABLE = "receiver_unavailable"
 R_DISABLED = "receiver_disabled"
 

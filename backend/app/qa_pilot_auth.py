@@ -5,7 +5,7 @@ What it adds to the pilot application (all behind the independent flag OFFLINE_Q
   * session resolution for the receiver through the existing `current_user`, whose connection dependency is redirected to the dedicated IDENTITY
     connection, so the capture role never needs (nor receives) identity privileges;
   * a QA-only issuer, at the same two paths and with the same request contracts as the real readiness endpoints (`/api/offline/scope`,
-    `/api/offline/quality-package`), that signs SYNTHETIC P1-22 packages with a SYNTHETIC Ed25519 key for explicit registry grants only.
+    `/api/offline/quality-package`), that signs SYNTHETIC packages for the ten OFF-04.6 Quality forms with a SYNTHETIC Ed25519 key for explicit registry grants only.
     The real issuer (database authorisation, real form versions, the real signing seed) is never mounted here;
   * an Origin allow-list for every authenticated write (CSRF defence together with the SameSite cookie). No CORS is configured at all.
 Nothing here enables industrial capture: every artefact it signs is readiness-only (`captures_enabled=false`).
@@ -20,16 +20,19 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.auth.service import AuthenticatedUser
 from app.offline_scope.router import IssueScopeRequest, QualityPackageRequest
 from app.offline_scope.signing import (AUDIENCE, ISSUER, PACKAGE_AUDIENCE, PACKAGE_SCHEMA, SCHEMA, SigningKey, canonical_payload, decode_b64, encode_b64,
                                        sign_quality_package, sign_scope, verify_scope)
+from app.offline_quality.registry import BATCH_FORMS, BOBBIN, spec_for
+from app.offline_quality.rules import UnsupportedCalculation, calculated_rules
 from app.qa_offline_pilot import PilotConfigError, PilotGrant, is_isolated_qa_database_name
 
 logger = logging.getLogger("vinto.qa_pilot")
@@ -37,8 +40,7 @@ logger = logging.getLogger("vinto.qa_pilot")
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 COOKIE_NAME_RE = re.compile(r"^vinto_qa_[A-Za-z0-9_-]{1,50}$")
 SEED_DIR = pathlib.Path(__file__).resolve().parents[1] / "seed_data" / "forms"
-SUPPORTED_FORM = "VINTO-P1-22"
-SYNTHETIC_NAME = "SINTÉTICO · Grado de refinación Schopper (piloto QA, no homologado)"
+SUPPORTED_FORMS = frozenset(BATCH_FORMS)      # OFF-04.6: the ten Quality forms (the registry says which are by machine and which by bobbin)
 SYNTHETIC_NOTE = "Synthetic QA-only definition; no industrial captures."
 GRANT_NAMESPACE = uuid.UUID("b3a1c0de-5b06-4b06-8b06-0ff0455b06b0")
 SCOPE_MAX_AGE_SECONDS = 24 * 3600
@@ -76,20 +78,44 @@ def signer_from_seed(seed_b64url: str | None) -> SigningKey:
     return SigningKey(private, encode_b64(public), "ed25519-" + hashlib.sha256(public).hexdigest()[:20])
 
 
-# ---------------------------------------------------------------- synthetic definition (fields and required flags follow the published seed)
-def synthetic_definition(version: int) -> dict:
-    seed = json.loads((SEED_DIR / f"{SUPPORTED_FORM}.json").read_text(encoding="utf-8"))
+# ---------------------------------------------------------------- synthetic definition (fields, options, required flags and rules follow the published seed of each form)
+_SEEDS: dict = {}
+
+
+def seed_for(form_code: str) -> dict:
+    if form_code not in SUPPORTED_FORMS:
+        raise PilotConfigError("form_not_supported")
+    if form_code not in _SEEDS:
+        seed = json.loads((SEED_DIR / f"{form_code}.json").read_text(encoding="utf-8"))
+        if seed.get("code") != form_code:
+            raise PilotConfigError("seed_mismatch")
+        _SEEDS[form_code] = seed
+    return _SEEDS[form_code]
+
+
+def synthetic_name(form_code: str) -> str:
+    return f"SINTÉTICO · {seed_for(form_code)['name']} (piloto QA, no homologado)"
+
+
+def synthetic_definition(form_code: str, version: int) -> dict:
+    seed = seed_for(form_code)
+    if version != seed["version_number"]:
+        raise PilotConfigError("seed_version_mismatch")     # the device only ever edits the version the repository's contract describes
     fields = []
     for f in seed["fields"]:
-        if f["source"] != "manual":
-            raise PilotConfigError("seed_has_calculated_field")  # this synthetic form is manual-only; anything else needs a new, reviewed contract
-        fields.append({"key": f["key"], "label": f["label"], "description": "", "value_type": f["value_type"], "source": "manual", "required": bool(f["required"]),
+        options = [{"option_key": o["option_key"], "label": o["label"], "display_order": o["display_order"]} for o in f.get("options", [])]
+        calculated = f["source"] == "calculated"
+        fields.append({"key": f["key"], "label": f["label"], "description": "", "value_type": f["value_type"], "source": f["source"], "required": False if calculated else bool(f["required"]),
                        "unit": f.get("unit"), "classification": None, "proposal": None, "needs_validation": False, "display_order": f["display_order"],
-                       "calculation_rule": None, "options": []})
-    return {"form_code": SUPPORTED_FORM, "form_name": SYNTHETIC_NAME, "form_version": version, "area": "quality",
-            "source_definition_checksum": hashlib.sha256(f"off045b06b:{SUPPORTED_FORM}:{version}".encode()).hexdigest(),
-            "published_at": "2026-11-19T00:00:00+00:00", "groups": [], "fields": sorted(fields, key=lambda x: x["display_order"]), "calculated_rules": {},
-            "option_dependencies": [], "recipe_bundle_included": False, "capture_eligible": False, "note": SYNTHETIC_NOTE}
+                       "calculation_rule": None, "options": options})
+    try:
+        rules = calculated_rules(form_code, [{"key": x["key"], "value_type": x["value_type"], "source": x["source"]} for x in fields])
+    except UnsupportedCalculation:
+        raise PilotConfigError("seed_calculation_unsupported") from None
+    return {"form_code": form_code, "form_name": synthetic_name(form_code), "form_version": version, "area": "quality",
+            "source_definition_checksum": seed["definition_checksum"], "published_at": "2026-11-19T00:00:00+00:00", "groups": [],
+            "fields": sorted(fields, key=lambda x: x["display_order"]), "calculated_rules": rules, "option_dependencies": [], "recipe_bundle_included": False,
+            "capture_eligible": False, "note": SYNTHETIC_NOTE}
 
 
 def grant_id_for(g: PilotGrant) -> str:
@@ -107,8 +133,12 @@ class IssuerUnavailable(Exception):
 class SyntheticIssuer:
     """Readiness-only scope and quality package for explicit registry grants. Never reads the database, never uses real keys or real definitions."""
 
-    def __init__(self, grants: tuple[PilotGrant, ...], signer: SigningKey, *, now: Callable[[], datetime] | None = None) -> None:
-        self.grants, self.signer = tuple(g for g in grants if g.form_code == SUPPORTED_FORM), signer
+    def __init__(self, grants: tuple[PilotGrant, ...], signer: SigningKey, *, now: Callable[[], datetime] | None = None, bobbins=()) -> None:
+        self.grants, self.signer = tuple(g for g in grants if g.form_code in SUPPORTED_FORMS), signer
+        for g in self.grants:       # a grant for another version than the repository's contract is a configuration error (fail closed at startup)
+            if g.form_version != seed_for(g.form_code)["version_number"]:
+                raise PilotConfigError("grant_version_not_seed")
+        self.bobbins = tuple(bobbins)
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     @staticmethod
@@ -128,13 +158,13 @@ class SyntheticIssuer:
         if len(snapshots) != 1 or None in snapshots:
             raise IssuerDenied()          # the pilot grant must pin ONE snapshot: the receiver only accepts captures carrying exactly that snapshot
         pairs = sorted(({"machine_code": g.machine_code, "form_code": g.form_code, "form_version": g.form_version, "grant_id": grant_id_for(g),
-                         "operation": "quality_machine_capture"} for g in matched), key=lambda p: (p["machine_code"], p["form_code"]))
+                         "operation": spec_for(g.form_code).operation.value} for g in matched), key=lambda p: (p["machine_code"], p["form_code"]))
         payload = {"schema": SCHEMA, "issuer": ISSUER, "audience": AUDIENCE, "snapshot_id": str(snapshots.pop()), "subject_user_id": str(principal.user_id),
                    "device_key": str(device_key), "issued_at": self._stamp(self._now()), "kind": "scope_readiness_only", "captures_enabled": False, "form_scopes": pairs}
         return sign_scope(payload, signer=self.signer)
 
     def package(self, principal: AuthenticatedUser, device_key: uuid.UUID, machine_code: str, form_code: str, signed_scope: dict) -> dict:
-        if principal.must_change or device_key.version != 4 or form_code != SUPPORTED_FORM:
+        if principal.must_change or device_key.version != 4 or form_code not in SUPPORTED_FORMS:
             raise IssuerDenied()
         if not verify_scope(signed_scope, trusted_public_key_b64url=self.signer.public_b64url):   # a scope signed by any other key (real or not) is refused
             raise IssuerDenied()
@@ -153,12 +183,43 @@ class SyntheticIssuer:
         if item is None or grant is None or item.get("grant_id") != grant_id_for(grant) or item.get("form_version") != grant.form_version \
                 or sp.get("snapshot_id") != str(grant.scope_snapshot_id):
             raise IssuerDenied()
-        definition = synthetic_definition(grant.form_version)
+        definition = synthetic_definition(form_code, grant.form_version)
         payload = {"schema": PACKAGE_SCHEMA, "issuer": ISSUER, "audience": PACKAGE_AUDIENCE, "kind": "quality_definition_readiness_only", "captures_enabled": False,
                    "package_id": str(uuid.uuid4()), "scope_snapshot_id": sp["snapshot_id"], "subject_user_id": str(principal.user_id), "device_key": str(device_key),
                    "machine_code": machine_code, "form_code": form_code, "form_version": grant.form_version, "grant_id": item["grant_id"],
                    "issued_at": self._stamp(self._now()), "content_sha256": hashlib.sha256(canonical_payload(definition)).hexdigest(), "definition": definition}
         return sign_quality_package(payload, signer=self.signer)
+
+
+def _bobbin_contexts(self, principal: AuthenticatedUser, device_key: uuid.UUID, machine_code: str, bobbin_code: str, signed_scope: dict) -> dict:
+    """Historical context of the SYNTHETIC bobbins with that exact code on that machine, for a user who holds a by-bobbin grant there (read-only, nothing is created)."""
+    if principal.must_change or device_key.version != 4 or not verify_scope(signed_scope, trusted_public_key_b64url=self.signer.public_b64url):
+        raise IssuerDenied()
+    sp = signed_scope["payload"]
+    if sp.get("kind") != "scope_readiness_only" or sp.get("subject_user_id") != str(principal.user_id) or sp.get("device_key") != str(device_key):
+        raise IssuerDenied()
+    try:
+        issued = datetime.fromisoformat(str(sp["issued_at"]).replace("Z", "+00:00"))
+    except ValueError:
+        raise IssuerDenied() from None
+    if (self._now() - issued).total_seconds() > SCOPE_MAX_AGE_SECONDS or issued > self._now():
+        raise IssuerDenied()
+    mine = [g for g in self._mine(principal) if g.machine_code == machine_code and spec_for(g.form_code).kind == BOBBIN and g.scope_snapshot_id is not None and str(g.scope_snapshot_id) == sp.get("snapshot_id")]
+    if not mine:
+        raise IssuerDenied()
+    found = [b.context() for b in self.bobbins if b.machine_code == machine_code and b.bobbin_code == bobbin_code]
+    return {"snapshot_id": sp["snapshot_id"], "machine_code": machine_code, "contexts": found}
+
+
+SyntheticIssuer.bobbin_contexts = _bobbin_contexts
+
+
+class BobbinContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    device_key: uuid.UUID
+    machine_code: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,48}$")]
+    bobbin_code: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,48}$")]
+    signed_scope: dict
 
 
 def create_issuer_router(issuer: SyntheticIssuer, principal_dependency: Callable) -> APIRouter:
@@ -183,6 +244,14 @@ def create_issuer_router(issuer: SyntheticIssuer, principal_dependency: Callable
             return denied()
         logger.info("qa pilot synthetic package issued")
         return JSONResponse(content=package, headers=NO_STORE)
+
+    @router.post("/bobbin-context")
+    def issue_bobbin_context(body: BobbinContextRequest, principal: AuthenticatedUser = Depends(principal_dependency)):
+        try:
+            result = issuer.bobbin_contexts(principal, body.device_key, body.machine_code, body.bobbin_code, body.signed_scope)
+        except IssuerDenied:
+            return denied()
+        return JSONResponse(content=result, headers=NO_STORE)
 
     return router
 
@@ -221,13 +290,13 @@ class AuthMount:
     dependency_overrides: dict = field(default_factory=dict)
 
 
-def build_auth_mount(*, grants: tuple[PilotGrant, ...], signer: SigningKey, origins: tuple[str, ...], principal_dependency: Callable | None = None) -> AuthMount:
+def build_auth_mount(*, grants: tuple[PilotGrant, ...], signer: SigningKey, origins: tuple[str, ...], principal_dependency: Callable | None = None, bobbins=()) -> AuthMount:
     """`principal_dependency` is the existing `current_user`; the redirection of its connection to the identity role is what keeps identity privileges
     out of the capture role."""
     from app.auth.dependencies import current_user
     from app.auth.router import router as auth_router
     from app.database import get_connection, get_identity_connection
     principal_dependency = principal_dependency or current_user
-    issuer = SyntheticIssuer(grants, signer)
+    issuer = SyntheticIssuer(grants, signer, bobbins=bobbins)
     return AuthMount(routers=(auth_router, create_issuer_router(issuer, principal_dependency)), allowed_origins=origins,
                      dependency_overrides={get_connection: get_identity_connection})

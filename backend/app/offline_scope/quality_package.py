@@ -2,7 +2,7 @@
 
 Never exports operational captures or creates write privileges. Uses the exact
 published PostgreSQL form version + the existing effective grant engine.
-Only independent machine-quality candidates are supported for this increment.
+OFF-04.6: every Quality form of the offline batch (by machine AND by bobbin) is supported, with the calculation vocabulary of app.offline_quality.rules.
 """
 import hashlib
 import uuid
@@ -12,7 +12,8 @@ from app import capture_service as capture
 from app.auth.service import AuthenticatedUser
 from app.authz.engine import authorize
 from app.authz.policies import Operation
-from app.quality.machine_capture_service import MACHINE_QUALITY_FORM_CODES, PERCENT_RULES
+from app.offline_quality.registry import spec_for
+from app.offline_quality.rules import FieldInfo, UnsupportedCalculation, calculated_rules
 from app.offline_scope.signing import (
     AUDIENCE, SCHEMA, ISSUER, PACKAGE_AUDIENCE, PACKAGE_SCHEMA,
     SigningKey, canonical_payload, verify_scope, sign_quality_package,
@@ -31,7 +32,8 @@ class PackageUnavailable(Exception):
 
 
 def _quality_scope(signed_scope, signer: SigningKey, principal: AuthenticatedUser,
-                   device_key: uuid.UUID, machine_code: str, form_code: str) -> dict:
+                   device_key: uuid.UUID, machine_code: str, form_code: str,
+                   operation: Operation = Operation.QUALITY_MACHINE_CAPTURE) -> dict:
     if not isinstance(signed_scope, dict) or not verify_scope(
         signed_scope, trusted_public_key_b64url=signer.public_b64url
     ):
@@ -46,7 +48,7 @@ def _quality_scope(signed_scope, signer: SigningKey, principal: AuthenticatedUse
     matches = [entry for entry in payload.get("form_scopes", []) if isinstance(entry, dict)
                and entry.get("machine_code") == machine_code
                and entry.get("form_code") == form_code
-               and entry.get("operation") == Operation.QUALITY_MACHINE_CAPTURE.value]
+               and entry.get("operation") == operation.value]
     if len(matches) != 1 or not isinstance(matches[0].get("form_version"), int):
         raise PackageDenied()
     if not isinstance(payload.get("snapshot_id"), str):
@@ -127,20 +129,10 @@ def _definition(connection, *, machine_code: str, form_code: str, version: int) 
             "needs_validation":bool(needs_validation), "display_order":order,
             "calculation_rule":rule, "options":by_id[field_id]
         })
-    calculated = {}
-    rules = PERCENT_RULES.get(form_code, {})
-    if calculated_keys != set(rules):
-        raise PackageUnavailable()
-    for calc_key,(numerator, denominator) in rules.items():
-        if (field_types.get(calc_key) != ("calculated","decimal") or
-            field_types.get(numerator) != ("manual","decimal") or
-            field_types.get(denominator) != ("manual","decimal")):
-            raise PackageUnavailable()
-        calculated[calc_key] = {
-            "method":"percent_two_decimals_half_up",
-            "numerator":numerator, "denominator":denominator,
-            "denominator_zero":"omit_calculation"
-        }
+    try:   # every calculated field needs a known server rule; otherwise the definition is not exported (fail closed)
+        calculated = calculated_rules(form_code, [FieldInfo(k, t, src) for k, (src, t) in field_types.items()])
+    except UnsupportedCalculation as exc:
+        raise PackageUnavailable() from exc
     return {
         "form_code":form_code, "form_name":name, "form_version":number,
         "area":area, "source_definition_checksum":checksum,
@@ -158,12 +150,13 @@ def build_quality_package(connection, principal: AuthenticatedUser, *, device_ke
     if (not isinstance(principal, AuthenticatedUser) or principal.must_change
             or not isinstance(device_key, uuid.UUID) or device_key.version != 4
             or not isinstance(machine_code, str) or not isinstance(form_code, str)
-            or form_code not in MACHINE_QUALITY_FORM_CODES):
+            or spec_for(form_code) is None):
         raise PackageDenied()
-    token = _quality_scope(signed_scope, signer, principal, device_key, machine_code, form_code)
+    operation = spec_for(form_code).operation          # machine route or bobbin route, as the ONLINE policy says
+    token = _quality_scope(signed_scope, signer, principal, device_key, machine_code, form_code, operation)
     with connection.transaction():
         # Still current? Revoked, inactive, wrong sector or unpublished -> deny.
-        decision = authorize(connection, principal, Operation.QUALITY_MACHINE_CAPTURE,
+        decision = authorize(connection, principal, operation,
                              machine_code, form_code, lock=True)
         item = token["scope"]
         if (not decision.allowed or not decision.grant_id or

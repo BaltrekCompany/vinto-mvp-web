@@ -100,8 +100,13 @@ def create_app_from_env(env: Mapping[str, str] | None = None, *, app_env: str | 
         raise PilotConfigError("database_unavailable") from None
     mount = _build_auth_mount(settings_, identity_connect, database_name, receiver_role, principal_dependency) if auth_active else None
     engine = AuthzEngineProbe(connect) if settings_.authz_mode != "off" and active else None
+    validator = None
+    if active:   # OFF-04.6: central validation with the online rules, read-only, against the QA catalog; bobbin contexts are the SYNTHETIC registry
+        from app.offline_quality.central import QualityPayloadValidator
+        from app.offline_quality.synthetic import SyntheticBobbinSource
+        validator = QualityPayloadValidator(connect, synthetic_bobbins=SyntheticBobbinSource(settings_.bobbins))
     return create_qa_pilot_app(settings=settings_, store=PgOfflineCaptureStore(connect) if active else None, database_name=database_name if active else None,
-                               principal_dependency=principal_dependency if mount is None else None, engine=engine, auth_mount=mount)
+                               principal_dependency=principal_dependency if mount is None else None, engine=engine, auth_mount=mount, validator=validator)
 
 
 def _build_auth_mount(settings_: PilotSettings, identity_connect, database_name: str, receiver_role: str, principal_dependency):
@@ -128,7 +133,7 @@ def _build_auth_mount(settings_: PilotSettings, identity_connect, database_name:
         raise
     except Exception:
         raise PilotConfigError("identity_database_unavailable") from None
-    return build_auth_mount(grants=settings_.grants, signer=signer, origins=origins)
+    return build_auth_mount(grants=settings_.grants, signer=signer, origins=origins, bobbins=settings_.bobbins)
 
 
 def create_app() -> FastAPI:
