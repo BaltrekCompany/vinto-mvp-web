@@ -157,7 +157,9 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
         elif verdict.kind != "same":
             outcome, reason, status, label = "review", C.R_CONTEXT_UNVERIFIABLE, 202, "review"
         if outcome in ("accepted", "accepted_warning"):
-            if validator_down:
+            if validator_down or (promoter is not None and vv is None):
+                # Operational promotion requires an affirmative central verdict.
+                # Technical-only receivers retain the old behaviour.
                 outcome, reason, status, label = "review", C.R_VALIDATION_UNAVAILABLE, 202, "review"
             elif vv is not None and not vv.ok:
                 outcome, reason, status, label = "review", C.R_VALIDATION, 202, "review"
