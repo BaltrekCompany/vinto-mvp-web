@@ -14,6 +14,7 @@ export type NewSyncCapture = Readonly<{
     formCode?: string;
     formVersion?: number;
     contextVersion: string;
+    bobbin?: Readonly<{ bobbin_id: string; context_digest: string }>;   // OFF-04.6: by-bobbin forms carry the bobbin reference INSIDE the sealed, hashed payload
     dependsOn?: string | null;
     machineCode?: string;
     scopeSnapshotId?: string;
@@ -30,11 +31,12 @@ export async function createSyncCapture(
 ): Promise<SyncRecord> {
     const captureId = (input.captureId ?? crypto.randomUUID()).toLowerCase();
     const partial = { capture_id: captureId, formCode: input.formCode ?? "VINTO-P1-26", formVersion: input.formVersion ?? 1, contextVersion: input.contextVersion };
-    const sealed = await sealLocalDraft(key, await binding(identity, partial), { synthetic: true, payload: input.payload });
+    const content = { synthetic: true, payload: input.payload, ...(input.bobbin ? { bobbin: input.bobbin } : {}) };
+    const sealed = await sealLocalDraft(key, await binding(identity, partial), content);
     const iso = new Date(now()).toISOString();
     const record: SyncRecord = {
         ...partial, ownerId: identity.ownerId.toLowerCase(), deviceKey: identity.deviceKey.toLowerCase(), seq: input.seq,
-        dependsOn: input.dependsOn ? input.dependsOn.toLowerCase() : null, payloadSha256: await payloadHash({ synthetic: true, payload: input.payload }),
+        dependsOn: input.dependsOn ? input.dependsOn.toLowerCase() : null, payloadSha256: await payloadHash(content),
         ...(input.machineCode ? { machineCode: input.machineCode } : {}), ...(input.scopeSnapshotId ? { scopeSnapshotId: input.scopeSnapshotId } : {}),
         state: "queued", attempts: 0, nextAttemptAt: null, uncertain: false, lease: null, version: 1, lastError: null, serverRef: null, warnings: [],
         createdAt: iso, updatedAt: iso, sealed,

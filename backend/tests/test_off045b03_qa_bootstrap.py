@@ -159,7 +159,7 @@ def who(x_synthetic_user: str | None = Header(default=None)):
     return principal(UUID(x_synthetic_user))
 
 
-GRANT = {"user_id": str(USER_A), "machine_code": "MP1", "form_code": FORM, "form_version": 1, "synthetic": True,
+GRANT = {"user_id": str(USER_A), "machine_code": "MP1", "form_code": FORM, "form_version": 2, "synthetic": True,
          "scope_snapshot_id": str(SNAPSHOT_CAPTURE), "context_version": "ctx-1"}
 
 
@@ -169,8 +169,11 @@ def pilot_env(**extra):
     return env
 
 
+VALID_P122 = {"numero_de_cuba": "C-1-SINT", "masa_humeda": "12.5", "grado_de_refinacion_sr": "35.2", "amperaje": "88"}   # a valid VINTO-P1-22 v2 content: the pilot now validates it centrally with the online rules (OFF-04.6)
+
+
 def cap(**over):
-    return capture(**{"form": FORM, **over})
+    return capture(**{"form": FORM, "form_version": 2, "payload": VALID_P122, **over})
 
 
 def receipts(name) -> int:
@@ -598,7 +601,7 @@ def test_engine_outage_denies_in_enforce_and_changes_nothing_in_observe(engine):
         assert state["fail_next"] == 0  # the failure really hit the engine, not something else
     # an engine that always fails is never an allow, whatever the mode
     broken = AuthzEngineProbe(lambda: (_ for _ in ()).throw(psycopg.OperationalError("down")))
-    capture_like = type("Cap", (), dict(machine_code="MP1", form_code=FORM, form_version=1, scope_snapshot_id=SNAPSHOT_CAPTURE))()
+    capture_like = type("Cap", (), dict(machine_code="MP1", form_code=FORM, form_version=2, scope_snapshot_id=SNAPSHOT_CAPTURE))()
     grants = (PilotGrant.model_validate(registry_grant_for(user)),)
     assert QaPilotAuthorizer(grants, engine=broken, engine_mode="enforce").authorize(principal(user), capture_like).allowed is False
     assert QaPilotAuthorizer(grants, engine=broken, engine_mode="observe").authorize(principal(user), capture_like).allowed is True  # the registry grant stands; observe never changes it

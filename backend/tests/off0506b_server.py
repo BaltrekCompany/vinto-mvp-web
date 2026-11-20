@@ -27,12 +27,14 @@ from app.config import settings  # noqa: E402
 from app.ephemeral_db import connect, copy_database, drop_database  # noqa: E402
 from app.qa_pilot_main import create_app_from_env  # noqa: E402
 from tests import off045b06b_support as S  # noqa: E402
+from tests import off046_support as T  # noqa: E402
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--public", required=True)
     ap.add_argument("--mode", choices=("full", "off"), default="full")
+    ap.add_argument("--forms", choices=("p122", "all"), default="p122", help="all: OFF-04.6, the ten Quality forms with SYNTHETIC bobbins")
     args = ap.parse_args()
     template = S.build_template()
     name = copy_database(template, "off06b_e2e")
@@ -50,9 +52,13 @@ def main() -> None:
         authorizers.append(self)
     qa_offline_pilot.QaPilotAuthorizer.__init__ = register
     # the client sends the snapshot id as its context version, so the pilot grant pins that same value
-    grant = S.grant_for(users["a"]["id"], context_version=str(S.SNAPSHOT))
-    env = {} if args.mode == "off" else {"OFFLINE_QA_PILOT_ENABLED": "1", "OFFLINE_QA_PILOT_AUTH_ENABLED": "1", "OFFLINE_QA_PILOT_GRANTS": json.dumps([grant]),
-                                         "OFFLINE_QA_PILOT_ALLOWED_ORIGINS": origin, "OFFLINE_QA_PILOT_SIGNING_SEED_B64URL": S.new_seed()}
+    grants = [S.grant_for(users["a"]["id"], context_version=str(S.SNAPSHOT))]
+    extra = {}
+    if args.forms == "all":
+        grants = [{**g, "context_version": str(S.SNAPSHOT)} for g in T.grants_all(users["a"]["id"])]
+        extra = {"OFFLINE_QA_PILOT_BOBBINS": json.dumps(T.BOBBINS)}
+    env = {} if args.mode == "off" else {"OFFLINE_QA_PILOT_ENABLED": "1", "OFFLINE_QA_PILOT_AUTH_ENABLED": "1", "OFFLINE_QA_PILOT_GRANTS": json.dumps(grants),
+                                         "OFFLINE_QA_PILOT_ALLOWED_ORIGINS": origin, "OFFLINE_QA_PILOT_SIGNING_SEED_B64URL": S.new_seed(), **extra}
     app = create_app_from_env(env, app_env="qa")
     state = {"lose": 0, "tamper": None}
 
@@ -89,6 +95,17 @@ def main() -> None:
         with admin() as c:
             rows = c.execute("SELECT capture_id::text, author_user_id::text, outcome, reason, server_seq FROM vinto_offline.capture_receipt ORDER BY server_seq").fetchall()
         return [{"capture_id": r[0], "author": r[1], "outcome": r[2], "reason": r[3], "seq": r[4]} for r in rows]
+
+    @app.get("/__test__/values")
+    def values(form: str):
+        v, calc = T.valid_values(form)
+        return {"values": v, "calculated": calc}
+
+    @app.get("/__test__/receipt")
+    def receipt(capture_id: str):
+        with admin() as c:
+            r = c.execute("SELECT outcome, reason, response_body, warnings FROM vinto_offline.capture_receipt WHERE capture_id = %s", (capture_id,)).fetchone()
+        return None if r is None else {"outcome": r[0], "reason": r[1], "body": r[2], "warnings": r[3]}
 
     @app.get("/__test__/events")
     def events():

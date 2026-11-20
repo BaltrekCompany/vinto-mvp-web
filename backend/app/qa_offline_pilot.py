@@ -42,7 +42,8 @@ ENV_AUTHZ_MODE = "OFFLINE_QA_PILOT_AUTHZ_MODE"
 ENV_AUTH_ENABLED = "OFFLINE_QA_PILOT_AUTH_ENABLED"
 ENV_ORIGINS = "OFFLINE_QA_PILOT_ALLOWED_ORIGINS"
 ENV_SIGNING_SEED = "OFFLINE_QA_PILOT_SIGNING_SEED_B64URL"
-MAX_GRANTS = 20
+ENV_BOBBINS = "OFFLINE_QA_PILOT_BOBBINS"
+MAX_GRANTS = 40
 FORBIDDEN_BODY = {"detail": "Operación no disponible en QA offline"}
 
 
@@ -51,14 +52,18 @@ class PilotConfigError(Exception):
 
 
 # ---------------------------------------------------------------- guard
-def pilot_request_permitted(*, app_env: str, method: str, path: str, pilot_enabled: bool) -> bool:
-    """The #219 guard, plus exactly one extra unsafe request, only in QA and only with the pilot flag on.
+PILOT_BOBBIN_CONTEXT_PATH = "/api/offline/bobbin-context"
+
+
+def pilot_request_permitted(*, app_env: str, method: str, path: str, pilot_enabled: bool, auth_enabled: bool = False) -> bool:
+    """The #219 guard (NOT widened), plus the pilot's own extra unsafe requests, only in QA: the capture POST with the pilot flag on, and (OFF-04.6) the read-only bobbin-context POST
+    with the independent authentication flag on.
 
     Case-sensitive exact path: aliases, suffixes, trailing slashes, percent-encoded variants and every other mutating endpoint stay blocked.
     """
     if qa_offline_request_permitted(app_env=app_env, method=method, path=path):
         return True
-    return app_env == "qa" and pilot_enabled and method == "POST" and path == PILOT_POST_PATH
+    return app_env == "qa" and method == "POST" and ((pilot_enabled and path == PILOT_POST_PATH) or (auth_enabled and path == PILOT_BOBBIN_CONTEXT_PATH))
 
 
 # ---------------------------------------------------------------- grants
@@ -99,10 +104,13 @@ class AuthzEngineProbe:
 
     def allowed(self, principal, machine_code, form_code) -> bool:
         from app.authz.engine import authorize
-        from app.authz.policies import Operation
+        from app.offline_quality.registry import operation_for
+        operation = operation_for(form_code)   # machine route or bobbin route, as the online policy says; an unknown form is never allowed
+        if operation is None:
+            return False
         with self._open() as connection:
             with connection.transaction():
-                return bool(authorize(connection, principal, Operation.QUALITY_MACHINE_CAPTURE, machine_code, form_code, lock=False).allowed)
+                return bool(authorize(connection, principal, operation, machine_code, form_code, lock=False).allowed)
 
 
 AuthzMode = Literal["off", "observe", "enforce"]
@@ -145,10 +153,24 @@ class QaPilotAuthorizer:
 class PilotContext:
     """No industrial context is evaluated in the pilot: a capture is `same` only if the grant pins that exact synthetic context, else `unverifiable`
     (central review). Never reports a change as compatible."""
-    def __init__(self, grants: tuple[PilotGrant, ...]) -> None:
+    def __init__(self, grants: tuple[PilotGrant, ...], bobbins=()) -> None:
         self.grants = tuple(grants)
+        self.bobbins = {str(b.bobbin_id): b for b in bobbins}
 
     def evaluate(self, capture) -> ContextVerdict:
+        from app.offline_quality import bobbin_context
+        from app.offline_quality.registry import BOBBIN, spec_for
+        spec = spec_for(capture.form_code)
+        if spec is not None and spec.kind == BOBBIN:
+            # By-bobbin forms (OFF-04.6): the context is the SYNTHETIC bobbin the device prepared online. Same digest and `context_version` derivation as the real contexts.
+            ref = capture.payload.get("bobbin") if isinstance(capture.payload, dict) else None
+            bobbin = self.bobbins.get(str(ref.get("bobbin_id", "")).lower()) if isinstance(ref, dict) else None
+            grant = next((g for g in self.grants if (g.machine_code, g.form_code, g.form_version) == (capture.machine_code, capture.form_code, capture.form_version)
+                          and g.scope_snapshot_id is not None and g.scope_snapshot_id == capture.scope_snapshot_id), None)
+            if bobbin is None or grant is None or bobbin.machine_code != capture.machine_code:
+                return ContextVerdict("unverifiable")
+            expected = bobbin_context.context_version(str(grant.scope_snapshot_id), str(bobbin.bobbin_id), bobbin.context()["context_digest"])
+            return ContextVerdict("same") if expected == capture.context_version else ContextVerdict("incompatible_change")
         for g in self.grants:
             if (g.machine_code, g.form_code, g.form_version, g.context_version) == (capture.machine_code, capture.form_code, capture.form_version, capture.context_version) \
                     and g.context_version is not None:
@@ -182,6 +204,7 @@ class PilotSettings:
     auth_enabled: bool = False
     origins_raw: Optional[str] = field(default=None, repr=False)
     signing_seed: Optional[str] = field(default=None, repr=False)
+    bobbins: tuple = ()     # OFF-04.6 synthetic bobbin contexts (the isolated QA database holds no industrial bobbin)
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None, *, app_env: str) -> "PilotSettings":
@@ -195,13 +218,20 @@ class PilotSettings:
         auth_flag = env.get(ENV_AUTH_ENABLED, "").strip().lower()
         if auth_flag not in ("", "0", "1", "true", "false"):
             raise PilotConfigError("auth_flag_invalid")
+        from app.offline_quality.synthetic import parse_bobbins
+        try:
+            bobbins = parse_bobbins(env.get(ENV_BOBBINS))
+        except ValueError:
+            raise PilotConfigError("bobbins_invalid") from None
         return PilotSettings(app_env=app_env, enabled=flag in ("1", "true"), authz_mode=mode, grants=parse_grants(env.get(ENV_GRANTS)),
-                             auth_enabled=auth_flag in ("1", "true"), origins_raw=env.get(ENV_ORIGINS), signing_seed=env.get(ENV_SIGNING_SEED))
+                             auth_enabled=auth_flag in ("1", "true"), origins_raw=env.get(ENV_ORIGINS), signing_seed=env.get(ENV_SIGNING_SEED),
+                             bobbins=bobbins)
 
 
 # ---------------------------------------------------------------- application factory
 def create_qa_pilot_app(*, settings: PilotSettings, store: OfflineCaptureStore | None, database_name: str | None,
-                        principal_dependency: Callable | None = None, engine: EngineProbe | None = None, auth_mount: Any = None) -> FastAPI:
+                        principal_dependency: Callable | None = None, engine: EngineProbe | None = None, auth_mount: Any = None,
+                        validator: Any = None) -> FastAPI:
     """A SEPARATE application, never `app.main`. The receiver router exists only if every activation condition holds; otherwise the app has no capture route
     at all (every call 404, and in QA every mutating call 403 by the guard)."""
     active = settings.app_env == "qa" and settings.enabled
@@ -211,7 +241,7 @@ def create_qa_pilot_app(*, settings: PilotSettings, store: OfflineCaptureStore |
 
     @app.middleware("http")
     async def qa_pilot_write_guard(request: Request, call_next):
-        if not pilot_request_permitted(app_env=settings.app_env, method=request.method, path=request.url.path, pilot_enabled=active):
+        if not pilot_request_permitted(app_env=settings.app_env, method=request.method, path=request.url.path, pilot_enabled=active, auth_enabled=auth_active):
             return JSONResponse(status_code=403, content=FORBIDDEN_BODY, headers={"Cache-Control": "no-store"})
         # CSRF defence for authenticated writes (together with the SameSite cookie): the Origin header must be present and EXACTLY one allowed origin.
         if auth_active and request.method in ("POST", "PUT", "PATCH", "DELETE") and request.headers.get("origin") not in allowed_origins:
@@ -239,6 +269,6 @@ def create_qa_pilot_app(*, settings: PilotSettings, store: OfflineCaptureStore |
         from app.auth.dependencies import current_user
         principal_dependency = current_user
     authorizer: CaptureAuthorizer = QaPilotAuthorizer(settings.grants, engine=engine, engine_mode=settings.authz_mode)
-    context: ContextProvider = PilotContext(settings.grants)
-    app.include_router(create_offline_capture_router(store=store, enabled=True, authorizer=authorizer, context=context, principal_dependency=principal_dependency))
+    context: ContextProvider = PilotContext(settings.grants, settings.bobbins)
+    app.include_router(create_offline_capture_router(store=store, enabled=True, authorizer=authorizer, context=context, principal_dependency=principal_dependency, validator=validator))
     return app

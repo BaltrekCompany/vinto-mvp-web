@@ -30,6 +30,7 @@ ORIGIN = "https://qa-pilot.test"
 OH = {"Origin": ORIGIN}
 COOKIE = "vinto_qa_test_session"
 DEVICE_KEY = str(DEVICE)
+VALID_P122 = {"numero_de_cuba": "C-1-SINT", "masa_humeda": "12.5", "grado_de_refinacion_sr": "35.2", "amperaje": "88"}   # valid VINTO-P1-22 v2 content (the pilot validates it centrally, OFF-04.6)
 
 
 def _need_pg(exc: Exception):
@@ -107,7 +108,7 @@ def prepare(client, user):
 
 
 def cap(stack, who="a", **over):
-    body = {"form": S.FORM, "author": stack.users[who]["id"], "snapshot": S.SNAPSHOT, "context": S.CONTEXT}
+    body = {"form": S.FORM, "author": stack.users[who]["id"], "snapshot": S.SNAPSHOT, "context": S.CONTEXT, "form_version": 2, "payload": VALID_P122}
     body.update(over)
     return capture(**body)
 
@@ -209,8 +210,9 @@ def test_identity_connection_must_be_a_separate_minimal_role(template, monkeypat
 def test_the_application_role_has_no_identity_privileges_and_the_flow_works_without_them(stack):
     with psycopg.connect(S.app_url(stack.name), autocommit=True) as c:
         for schema, table in (("vinto_auth", "credential"), ("vinto_auth", "session"), ("vinto_auth", "auth_event"), ("vinto_master", "user")):
-            assert not c.execute("SELECT has_table_privilege(c.oid, 'SELECT') OR has_schema_privilege(n.oid, 'USAGE') FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                                 "WHERE n.nspname = %s AND c.relname = %s", (schema, table)).fetchone()[0], (schema, table)
+            # the catalog schema is readable for the central validation (OFF-04.6); the identity tables themselves never are
+            assert not c.execute("SELECT has_table_privilege(c.oid, 'SELECT') OR (%s = 'vinto_auth' AND has_schema_privilege(n.oid, 'USAGE')) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                 "WHERE n.nspname = %s AND c.relname = %s", (schema, schema, table)).fetchone()[0], (schema, table)
     client = stack.client()
     prepare(client, stack.users["a"])
     r = client.post("/api/offline/captures", json=cap(stack), headers=OH)
@@ -288,7 +290,7 @@ def test_synthetic_scope_and_package_verify_with_the_synthetic_key_only(stack):
     assert not verify_scope(scope, trusted_public_key_b64url=other.public_b64url) and not verify_quality_package(package, trusted_public_key_b64url=other.public_b64url)
     p = scope["payload"]
     assert (p["kind"], p["captures_enabled"], p["subject_user_id"], p["device_key"], p["snapshot_id"]) == ("scope_readiness_only", False, str(stack.users["a"]["id"]), DEVICE_KEY, str(S.SNAPSHOT))
-    assert p["form_scopes"] == [{"machine_code": "MP1", "form_code": "VINTO-P1-22", "form_version": 1, "grant_id": p["form_scopes"][0]["grant_id"], "operation": "quality_machine_capture"}]
+    assert p["form_scopes"] == [{"machine_code": "MP1", "form_code": "VINTO-P1-22", "form_version": 2, "grant_id": p["form_scopes"][0]["grant_id"], "operation": "quality_machine_capture"}]
     q = package["payload"]
     assert (q["kind"], q["captures_enabled"], q["form_code"], q["machine_code"], q["scope_snapshot_id"]) == ("quality_definition_readiness_only", False, "VINTO-P1-22", "MP1", str(S.SNAPSHOT))
     d = q["definition"]
@@ -354,14 +356,16 @@ def test_issuer_rejects_stale_future_and_unpinned_scopes_and_removed_grants(stac
         SyntheticIssuer((grant,), stack.signer, now=lambda: now - timedelta(hours=1)).package(principal, UUID(DEVICE_KEY), "MP1", "VINTO-P1-22", scope)   # from the future
     with pytest.raises(IssuerDenied):
         SyntheticIssuer((), stack.signer, now=lambda: now).package(principal, UUID(DEVICE_KEY), "MP1", "VINTO-P1-22", scope)                                # grant removed since
-    with pytest.raises(IssuerDenied):
-        SyntheticIssuer((PilotGrant.model_validate(S.grant_for(a["id"], form_version=2)),), stack.signer, now=lambda: now).package(principal, UUID(DEVICE_KEY), "MP1", "VINTO-P1-22", scope)
+    with pytest.raises(PilotConfigError):   # a grant for another version than the repository's contract is refused at startup (fail closed)
+        SyntheticIssuer((PilotGrant.model_validate(S.grant_for(a["id"], form_version=3)),), stack.signer, now=lambda: now)
     unpinned = PilotGrant.model_validate({k: v for k, v in S.grant_for(a["id"]).items() if k != "scope_snapshot_id"})
     with pytest.raises(IssuerDenied):
         SyntheticIssuer((unpinned,), stack.signer).scope(principal, UUID(DEVICE_KEY), ["MP1"])        # the receiver only accepts a pinned snapshot: no ambiguous scope
     with pytest.raises(IssuerDenied):
         issuer.scope(type("P", (), {"user_id": a["id"], "must_change": True})(), UUID(DEVICE_KEY), ["MP1"])
-    assert synthetic_definition(3)["form_version"] == 3
+    assert synthetic_definition("VINTO-P1-22", 2)["form_version"] == 2
+    with pytest.raises(PilotConfigError):
+        synthetic_definition("VINTO-P1-22", 3)
 
 
 # ------------------------------------------------------------------ capture flow with a real session
@@ -398,7 +402,7 @@ def test_readiness_snapshots_and_foreign_contexts_never_authorise(stack):
     for snap in (uuid4(), UUID("44444444-4444-4444-8444-444444444444"), None):
         r = client.post("/api/offline/captures", json=cap(stack, snapshot=snap), headers=OH)
         assert r.status_code == 403 and r.json()["reason"] in (C.R_READ_ONLY_SCOPE, C.R_NOT_AUTHORIZED)
-    for over in ({"machine": "MP3"}, {"form": "VINTO-P1-26"}, {"form_version": 2}):
+    for over in ({"machine": "MP3"}, {"form": "VINTO-P1-26"}, {"form_version": 1}):
         assert client.post("/api/offline/captures", json=cap(stack, **over), headers=OH).status_code == 403
     assert stack.receipts() == 0
 
@@ -423,7 +427,7 @@ def test_flag_combinations_and_the_guard(template, monkeypatch):
 def test_industrial_routes_are_not_mounted_with_everything_on(stack):
     app = stack.app()
     paths = sorted(p for p in app.openapi()["paths"] if p.startswith("/api"))
-    assert paths == ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/offline/captures", "/api/offline/captures/{capture_id}", "/api/offline/quality-package", "/api/offline/scope"]
+    assert paths == ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/offline/bobbin-context", "/api/offline/captures", "/api/offline/captures/{capture_id}", "/api/offline/quality-package", "/api/offline/scope"]
 
 
 # ------------------------------------------------------------------ isolation contracts and no leaks

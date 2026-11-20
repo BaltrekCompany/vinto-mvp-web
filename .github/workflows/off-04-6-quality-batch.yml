@@ -1,0 +1,178 @@
+name: OFF-04.6 Quality Offline Batch (ten forms, isolated, synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/offline_quality/**'
+      - 'backend/app/offline_capture/**'
+      - 'backend/app/offline_scope/**'
+      - 'backend/app/qa_pilot_auth.py'
+      - 'backend/app/qa_pilot_main.py'
+      - 'backend/app/qa_offline_pilot.py'
+      - 'backend/tests/test_off04*'
+      - 'backend/tests/off04*'
+      - 'backend/tests/off0506b_*'
+      - 'lib/vinto/offline-*.ts'
+      - 'lab/**'
+      - 'scripts/off-04-*'
+      - 'scripts/build-offline-boot.mjs'
+      - 'docs/OFF-04-6-*.md'
+      - '.github/workflows/off-04-6-quality-batch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APP_ENV: ci
+  TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_test
+  TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+  DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_unused
+  OFF044_PG_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+  OFF044_REQUIRE_PG: '1'
+  OFF045B03_REQUIRE_PG: '1'
+  OFF045B06B_REQUIRE_PG: '1'
+  OFF046_REQUIRE_PG: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  backend-postgres17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt pytest httpx
+      - name: The ten forms - contracts, batch receiver, bobbin context (throwaway PostgreSQL 17)
+        working-directory: backend
+        run: python -m pytest tests/test_off046_form_contracts.py tests/test_off046_batch_receiver.py tests/test_off046_bobbin_context_db.py -v
+      - name: Offline regressions (receiver, bootstrap, pilot, authentication, signing)
+        working-directory: backend
+        run: python -m pytest tests/test_off044_receiver.py tests/test_off045b03_qa_bootstrap.py tests/test_off045b_qa_pilot.py tests/test_off045b06b_mobile_auth.py tests/test_off03c1_unit.py tests/test_off03b2_signing.py tests/test_off03b2_pg17.py tests/test_off03c1_pg17.py -q
+      - name: Online Quality and authorisation regressions (no change of online behaviour)
+        working-directory: backend
+        run: python -m pytest tests/test_authz_engine.py tests/test_authz_version_equivalence.py tests/test_bobbin_authz.py tests/test_f3_bobbin_service.py tests/test_f3_bobbins_api.py tests/test_int01_quality_policy.py tests/test_machine_form_grants.py tests/test_machine_form_grants_attribution.py tests/test_machine_form_grants_hardening.py tests/test_quality_*.py -q
+      - name: Nothing is wired into the operational app
+        run: |
+          ! grep -q "qa_pilot\|qa_offline_pilot\|offline_capture\|offline_quality" backend/app/main.py
+          test ! -e backend/migrations/0032_offline_capture_receipt.sql
+
+  contracts-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Node contracts with Python-signed synthetic fixtures
+        env:
+          OFF046_FIXTURE_JSON: ${{ runner.temp }}/off046.json
+          OFF04_FIXTURE_JSON: ${{ runner.temp }}/off04.json
+          OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4.json
+          OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF03C2_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF044_PYTHON: python
+        run: |
+          (cd backend && python -m tests.off046_fixture "$OFF046_FIXTURE_JSON")
+          python scripts/off04_fixture.py
+          python scripts/off03c4_fixture.py
+          python scripts/off03b3_fixture.py
+          node --experimental-strip-types --test scripts/off-04-6-quality-batch.test.mjs scripts/off-04-5b-06b-mobile-auth-static.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
+          node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
+      - name: TypeScript and ESLint
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm lint
+      - name: Default build ships NO laboratory; the opt-in build generates it
+        run: |
+          pnpm build
+          test ! -e public/offline-e2e-lab.html
+          OFFLINE_DRAFT_LAB=1 node scripts/build-offline-boot.mjs
+          test -s public/offline-e2e-lab.html
+          node --check public/offline-e2e-lab.js
+          node scripts/build-offline-boot.mjs
+          test ! -e public/offline-e2e-lab.html
+
+  chrome-e2e-same-origin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+          python -m pip install -r backend/requirements.txt pytest httpx playwright==1.57.0
+          google-chrome --version
+      - name: Build the laboratory (opt-in) into ./public
+        env:
+          OFFLINE_DRAFT_LAB: '1'
+        run: node scripts/build-offline-boot.mjs
+      - name: Chrome end to end - the ten Quality forms
+        env:
+          OFF06B_PUBLIC: ${{ github.workspace }}/public
+        run: |
+          cd scripts
+          PYTHONPATH=. python off-04-6-quality-batch-e2e-browser.py
+      - name: Chrome end to end - OFF-04.5B-06B regression (single form, authentication, failures)
+        env:
+          OFF06B_PUBLIC: ${{ github.workspace }}/public
+        run: |
+          cd scripts
+          PYTHONPATH=. python off-04-5b-06b-mobile-auth-e2e-browser.py

@@ -25,6 +25,9 @@ const FIELD_KEYS=["key","label","description","value_type","source","required","
 const OPTION_KEYS=["option_key","label","display_order"];
 const TYPE=new Set(["text","textarea","decimal","integer","boolean","date","time"]);
 const SOURCE=new Set(["manual","calculated"]);
+/** OFF-04.6: the two effective-authorization operations of Quality (by machine, by bobbin). */
+export const QUALITY_OPERATIONS=new Set(["quality_machine_capture","quality_bobbin_capture"]);
+const PROFILE_COLUMNS=["gramaje","peso_seco","humedad"];
 const encoder=new TextEncoder();
 
 export type VerifiedQualityDefinition=Readonly<{
@@ -96,18 +99,26 @@ function validDefinition(input:unknown,formCode:string,version:number):asserts i
   }
   if(count>512||Object.keys(input.calculated_rules).sort().join("|")!==[...calculated].sort().join("|"))
       throw new QualityPackageError("invalid");
+  const defFields=input.fields as QualityField[];
+  const field=(k:unknown)=>defFields.find(x=>x.key===k);
+  const manualDecimal=(k:unknown)=>{const f=field(k);return typeof k==="string"&&f?.source==="manual"&&f.value_type==="decimal";};
   for(const key of calculated){
-    const rule=input.calculated_rules[key];
-    if(!exact(rule,["method","numerator","denominator","denominator_zero"])||
-       rule.method!=="percent_two_decimals_half_up"||rule.denominator_zero!=="omit_calculation"||
-       typeof rule.numerator!=="string"||typeof rule.denominator!=="string"){
-      throw new QualityPackageError("invalid");
-    }
-    const source=input.fields.find(x=>x.key===key);
-    const num=input.fields.find(x=>x.key===rule.numerator);
-    const den=input.fields.find(x=>x.key===rule.denominator);
-    if(source?.value_type!=="decimal"||num?.source!=="manual"||num.value_type!=="decimal"||
-      den?.source!=="manual"||den.value_type!=="decimal")throw new QualityPackageError("invalid");
+    const rule=input.calculated_rules[key];const target=field(key);
+    if(!rec(rule)||typeof rule.method!=="string")throw new QualityPackageError("invalid");
+    // OFF-04.6: the device NEVER calculates; the rule only states what the server will do. Every method has an exact key set and operands that are manual decimals of the same definition.
+    if(rule.method==="percent_two_decimals_half_up"){
+      if(!exact(rule,["method","numerator","denominator","denominator_zero"])||rule.denominator_zero!=="omit_calculation"||
+         target?.value_type!=="decimal"||!manualDecimal(rule.numerator)||!manualDecimal(rule.denominator))throw new QualityPackageError("invalid");
+    }else if(rule.method==="mean_two_decimals_half_up"){
+      if(!exact(rule,["method","operands"])||!Array.isArray(rule.operands)||rule.operands.length<2||rule.operands.length>8||
+         new Set(rule.operands).size!==rule.operands.length||!rule.operands.every(manualDecimal)||target?.value_type!=="decimal")throw new QualityPackageError("invalid");
+    }else if(rule.method==="profile_mean_two_decimals_half_up"){
+      if(!exact(rule,["method","column","complete_columns"])||typeof rule.column!=="string"||!Array.isArray(rule.complete_columns)||
+         rule.complete_columns.join("|")!==PROFILE_COLUMNS.join("|")||!PROFILE_COLUMNS.includes(rule.column)||target?.value_type!=="decimal")throw new QualityPackageError("invalid");
+    }else if(rule.method==="profile_complete_positions_count"){
+      if(!exact(rule,["method","complete_columns"])||!Array.isArray(rule.complete_columns)||rule.complete_columns.join("|")!==PROFILE_COLUMNS.join("|")||
+         target?.value_type!=="integer")throw new QualityPackageError("invalid");
+    }else throw new QualityPackageError("invalid");
   }
 }
 /** Only accepts the pin already decrypted and verified from the signed local scope. */
@@ -134,7 +145,7 @@ export async function verifyQualityPackage(input:unknown,scope:VerifiedLocalScop
      p.device_key.toLowerCase()!==identity.deviceKey.toLowerCase()||
      p.scope_snapshot_id!==scope.envelope.payload.snapshot_id)throw new QualityPackageError("scope");
   const candidates=scope.envelope.payload.form_scopes.filter(x=>x.machine_code===p.machine_code&&
-      x.form_code===p.form_code&&x.operation==="quality_machine_capture");
+      x.form_code===p.form_code&&QUALITY_OPERATIONS.has(x.operation));
   if(candidates.length!==1||candidates[0].form_version!==p.form_version||
      candidates[0].grant_id!==p.grant_id)throw new QualityPackageError("scope");
   if(input.public_key_b64url!==scope.trustedPublicKey)throw new QualityPackageError("pin");

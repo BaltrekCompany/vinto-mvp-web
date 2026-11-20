@@ -11,7 +11,7 @@ import { openLocalDraft, sealLocalDraft, VaultError, type OfflineVaultIdentity }
 import type { VerifiedQualityDefinition } from "./offline-quality-verify.ts";
 import type { VerifiedLocalScope } from "./offline-scope-store.ts";
 import {
-    contextIdFor, draftMatchesDefinition, evaluateDraft, isLabEligible, parseDraftPayload, DraftSchemaError, type DraftPayload,
+    contextIdFor, draftContextKey, draftMatchesDefinition, evaluateDraft, isLabEligible, parseDraftPayload, DraftSchemaError, type DraftPayload,
 } from "./offline-draft-schema.ts";
 import { assertGranted, DraftError, loadQualityDraft } from "./offline-draft-store.ts";
 import {
@@ -132,7 +132,7 @@ export async function queueLabDraft(
     if (evaluation.missingRequired.length > 0) throw new LabQueueError("incomplete", evaluation.missingRequired.map(i => i.key));
 
     const captureId = await captureIdFor(owner, device, draftId);
-    const contextId = await contextIdFor(loaded.payload.scope_snapshot_id, loaded.payload.machine_code, loaded.payload.form_code);
+    const contextId = await contextIdFor(loaded.payload.scope_snapshot_id, loaded.payload.machine_code, draftContextKey(loaded.payload.form_code, loaded.payload.bobbin_context));
     const queuedAt = now().toISOString();
     const payload: PendingPayload = {
         schema: PENDING_SCHEMA, status: LAB_STATUS, synthetic: true, sync_state: "NOT_SYNCED", capture_id: captureId,
@@ -174,7 +174,7 @@ export async function loadLabPending(key: CryptoKey, identity: OfflineVaultIdent
     try { payload = parsePending(body); } catch { throw new LabQueueError("corrupt"); }
     const d = payload.draft;
     const expectedCapture = await captureIdFor(record.ownerId, record.deviceKey, record.draftId);
-    const expectedContext = await contextIdFor(d.scope_snapshot_id, d.machine_code, d.form_code);
+    const expectedContext = await contextIdFor(d.scope_snapshot_id, d.machine_code, draftContextKey(d.form_code, d.bobbin_context));
     if (payload.capture_id !== record.capture_id || expectedCapture !== record.capture_id || payload.source_draft_id !== record.draftId ||
         d.draft_id !== record.draftId || d.author_user_id !== record.ownerId || d.device_key !== record.deviceKey ||
         d.form_code !== record.formCode || d.form_version !== record.formVersion || d.revision !== record.sourceRevision ||

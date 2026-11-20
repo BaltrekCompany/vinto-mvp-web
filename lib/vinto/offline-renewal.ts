@@ -35,7 +35,8 @@ import {
 
 export const RENEWAL_MARKER_FORM = "VINTO-OFFLINE-RENEWAL";
 const MARKER_SCHEMA = "vinto.offline.renewal-marker.v1";
-const QUALITY_FORMS = /^VINTO-P1-(18|22|26|27)$/;
+const QUALITY_FORMS = /^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/;      // OFF-04.6: the ten Quality forms (by machine and by bobbin)
+const QUALITY_OPS = new Set(["quality_machine_capture", "quality_bobbin_capture"]);
 const MACHINE = /^[A-Za-z0-9_.-]{1,48}$/;
 const MAX_RENEWED_PACKAGES = 24;
 export const DISCARD_CONFIRMATION = "DISCARD_SUPERSEDED_PACKAGES" as const;
@@ -93,7 +94,7 @@ export function planRenewalPairs(
     existing: readonly RenewalPair[], extra: readonly RenewalPair[], next: SignedOfflineScope
 ): { renew: RenewalPair[]; removed: RenewalPair[]; missingExtra: RenewalPair[] } {
     const granted = new Set(next.payload.form_scopes
-        .filter(x => x.operation === "quality_machine_capture" && QUALITY_FORMS.test(x.form_code))
+        .filter(x => QUALITY_OPS.has(x.operation) && QUALITY_FORMS.test(x.form_code))
         .map(x => x.machine_code + "|" + x.form_code));
     const renew = new Map<string, RenewalPair>(), removed: RenewalPair[] = [], missingExtra: RenewalPair[] = [];
     for (const p of existing) {
@@ -228,7 +229,7 @@ async function enumerateExisting(
     const out: Existing[] = [];
     const seen = new Set<string>();
     for (const item of previous.envelope.payload.form_scopes) {
-        if (item.operation !== "quality_machine_capture" || !QUALITY_FORMS.test(item.form_code)) continue;
+        if (!QUALITY_OPS.has(item.operation) || !QUALITY_FORMS.test(item.form_code)) continue;
         const pair = { machine_code: item.machine_code, form_code: item.form_code };
         if (seen.has(pairKey(pair))) continue;
         seen.add(pairKey(pair));

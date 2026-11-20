@@ -52,6 +52,11 @@ class UnverifiableContext:
         return ContextVerdict("unverifiable")
 
 
+class PayloadValidator(Protocol):
+    """Central validation of the CONTENT with the online rules (OFF-04.6). Read-only; a failure keeps the capture for review, it never discards or approves it."""
+    def validate(self, principal: AuthenticatedUser, capture: C.CaptureIn): ...
+
+
 @dataclass(frozen=True)
 class ReceiverReply:
     status: int
@@ -73,7 +78,7 @@ def _error(status: int, reason: str, outcome: str = "error", **extra) -> Receive
 
 
 def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, capture: C.CaptureIn, *,
-                    authorizer: CaptureAuthorizer, context: ContextProvider) -> ReceiverReply:
+                    authorizer: CaptureAuthorizer, context: ContextProvider, validator: Optional[PayloadValidator] = None) -> ReceiverReply:
     cid = str(capture.capture_id)
     # 1) RECEIVE: the declared checksum must match the received payload (integrity conflict, nothing persisted as a capture)
     try:
@@ -108,6 +113,19 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
             tx.event(capture.capture_id, "duplicate", capture.payload_sha256, principal.user_id, None)
             return _reply_from_receipt(existing, duplicate=True)
         verdict = context.evaluate(capture)
+        vv, validator_down = None, False
+        if validator is not None:      # OFF-04.6 central validation: same rules and calculations as the online route; never discards the capture
+            try:
+                vv = validator.validate(principal, capture)
+            except Exception:  # noqa: BLE001 - the capture is already persisted; it goes to review, never lost, never approved
+                validator_down = True
+        if vv is not None:
+            if vv.context_kind == "incompatible_change":
+                verdict = ContextVerdict("incompatible_change")
+            elif vv.context_kind == "same" and verdict.kind == "unverifiable":
+                verdict = ContextVerdict("same")
+            if vv.version_mismatch:
+                verdict = ContextVerdict("unknown_form_version")
         seq = tx.get(capture.capture_id).server_seq
         server_id = C.server_id_for(seq)
         outcome, reason, warnings, status, label = "accepted", None, [], 201, "created"
@@ -119,8 +137,19 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
             outcome, reason, status, label = "conflict", C.R_FORM_VERSION, 409, "conflict"
         elif verdict.kind != "same":
             outcome, reason, status, label = "review", C.R_CONTEXT_UNVERIFIABLE, 202, "review"
+        if outcome in ("accepted", "accepted_warning"):
+            if validator_down:
+                outcome, reason, status, label = "review", C.R_VALIDATION_UNAVAILABLE, 202, "review"
+            elif vv is not None and not vv.ok:
+                outcome, reason, status, label = "review", C.R_VALIDATION, 202, "review"
+                warnings = warnings + [f"validation:{k}:{c}" for k, c in vv.errors][:50]
         body = C.public_body(outcome=label, capture_id=cid, payload_sha256=capture.payload_sha256,
                              server_id=server_id, warnings=warnings, reason=reason)
+        if vv is not None:
+            if vv.ok:
+                body["server_calculated"] = dict(vv.calculated)
+            else:
+                body["validation_errors"] = [{"field": k, "code": c} for k, c in vv.errors][:50]
         tx.finalize(capture.capture_id, outcome=outcome, reason=reason, warnings=warnings, response_status=status, response_body=body)
         tx.event(capture.capture_id, "received", capture.payload_sha256, principal.user_id, outcome)
         return ReceiverReply(status, body)
