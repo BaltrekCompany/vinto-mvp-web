@@ -4,13 +4,13 @@
 
 ## Estado de este primer incremento
 
-Este PR implementa únicamente un **candidato de adaptador de backend opt-in** (`app.offline_capture.operational.QualityOperationalPromoter`), con el contrato fail-closed y pruebas unitarias de barreras iniciales. **NO está cableado al receptor HTTP ni a la aplicación. NO sincroniza automáticamente aún.** No habilitarlo ni usarlo con datos reales hasta superar los gates siguientes.
+Este PR implementa únicamente un **candidato de adaptador de backend opt-in** (`app.quality.offline_operational.QualityOperationalPromoter`), con el contrato fail-closed, verificador obligatorio de alcance de captura firmado y pruebas unitarias de barreras iniciales. **NO está cableado al receptor HTTP ni a la aplicación. NO sincroniza automáticamente aún.** No habilitarlo ni usarlo con datos reales hasta superar los gates siguientes.
 
 ### Confirmaciones verificadas en el código existente
 
 - `receive_capture()` actual: autoriza, guarda un `capture_receipt`, evalúa contexto y validación de reglas online, reconcilia un resultado técnico; no escribe en `vinto_txn`.
 - `submit_machine_capture()` y `submit_quality_capture()` actuales ya crean captura en `vinto_txn.capture` de manera idempotente por `capture_id`; ambos operan con transacciones internas y compuerta `gate`.
-- `contextIdFor()` del cliente calcula UUID determinista basado en snapshot, máquina y formulario; para bobinas `bobbin_context.context_version()` es SHA256 de snapshot, bobina y digest del contexto F3.
+- `contextIdFor()` calcula únicamente la clave interna de borrador; el `context_version` que se envía para formularios por máquina es el `snapshot_id`. Para bobinas `bobbin_context.context_version()` es SHA256 de snapshot, bobina y digest del contexto F3.
 - `offline-sync-engine` tiene estados de recibo técnico y retries, pero la PWA de laboratorio aún exige puente manual + botón `Sincronizar ahora`.
 - `public/sw.js` usa cache-first y nombre de caché estático. No borrar datos del sitio en una actualización real.
 
