@@ -22,7 +22,7 @@ class GoodValidator:
 
     def validate(self, user, incoming):
         self.calls += 1
-        return SimpleNamespace(ok=self.ok, context_kind="same", version_mismatch=False,
+        return SimpleNamespace(ok=self.ok, context_kind=None, version_mismatch=False,
                                errors=[] if self.ok else [("test", "invalid")], calculated={})
 
 
