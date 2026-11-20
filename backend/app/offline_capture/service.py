@@ -57,6 +57,20 @@ class PayloadValidator(Protocol):
     def validate(self, principal: AuthenticatedUser, capture: C.CaptureIn): ...
 
 
+class PromotionReview(Exception):
+    """A deterministic business exception. The technical receipt is retained for review."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class OperationalPromoter(Protocol):
+    """Opt-in write adapter: MUST use receipt transaction's same database connection."""
+
+    def promote(self, principal: AuthenticatedUser, capture: C.CaptureIn, tx) -> object: ...
+
+
 @dataclass(frozen=True)
 class ReceiverReply:
     status: int
@@ -78,7 +92,12 @@ def _error(status: int, reason: str, outcome: str = "error", **extra) -> Receive
 
 
 def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, capture: C.CaptureIn, *,
-                    authorizer: CaptureAuthorizer, context: ContextProvider, validator: Optional[PayloadValidator] = None) -> ReceiverReply:
+                    authorizer: CaptureAuthorizer, context: ContextProvider, validator: Optional[PayloadValidator] = None,
+                    promoter: Optional[OperationalPromoter] = None) -> ReceiverReply:
+    # An operational write is forbidden unless the central validator is configured.
+    # No API mounts a promoter by default, so the historical technical pilot is unchanged.
+    if promoter is not None and validator is None:
+        raise StoreUnavailable("operational_requires_validator")
     cid = str(capture.capture_id)
     # 1) RECEIVE: the declared checksum must match the received payload (integrity conflict, nothing persisted as a capture)
     try:
@@ -143,8 +162,28 @@ def receive_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, ca
             elif vv is not None and not vv.ok:
                 outcome, reason, status, label = "review", C.R_VALIDATION, 202, "review"
                 warnings = warnings + [f"validation:{k}:{c}" for k, c in vv.errors][:50]
+        operational_registered = False
+        if promoter is not None and outcome in ("accepted", "accepted_warning"):
+            try:
+                registration = promoter.promote(principal, capture, tx)
+            except PromotionReview as error:
+                outcome, reason, status, label = "review", error.reason, 202, "review"
+            except StoreUnavailable:
+                raise
+            except Exception as error:  # noqa: BLE001 - rollback both receipt and operational write on unknown failure
+                raise StoreUnavailable("operational_registration_unavailable") from error
+            else:
+                if getattr(registration, "capture_id", None) != capture.capture_id:
+                    raise StoreUnavailable("operational_ack_invalid")
+                operational_registered = True
         body = C.public_body(outcome=label, capture_id=cid, payload_sha256=capture.payload_sha256,
                              server_id=server_id, warnings=warnings, reason=reason)
+        if promoter is not None:
+            # This acknowledgement is durable only if this very transaction commits.
+            # Technical receipt is NEVER an operational confirmation by itself.
+            body["operational_registered"] = operational_registered
+            if operational_registered:
+                body["operational_capture_id"] = cid
         if vv is not None:
             if vv.ok:
                 body["server_calculated"] = dict(vv.calculated)
@@ -172,7 +211,12 @@ def reconcile_capture(store: OfflineCaptureStore, principal: AuthenticatedUser, 
     receipt = store.get(capture_id)
     if receipt is None or receipt.outcome == "received" or receipt.author_user_id != principal.user_id:
         return ReceiverReply(404, {"found": False})
-    return ReceiverReply(200, {"found": True, "outcome": _LOOKUP[receipt.outcome], "capture_id": str(receipt.capture_id),
-                               "payload_sha256": receipt.payload_sha256, "server_id": C.server_id_for(receipt.server_seq),
-                               "warnings": receipt.warnings, "reason": receipt.reason, "technical_acceptance": receipt.outcome != "conflict",
-                               "industrial_approval": False})
+    body = {"found": True, "outcome": _LOOKUP[receipt.outcome], "capture_id": str(receipt.capture_id),
+            "payload_sha256": receipt.payload_sha256, "server_id": C.server_id_for(receipt.server_seq),
+            "warnings": receipt.warnings, "reason": receipt.reason, "technical_acceptance": receipt.outcome != "conflict",
+            "industrial_approval": False}
+    if isinstance(receipt.response_body, dict) and "operational_registered" in receipt.response_body:
+        body["operational_registered"] = receipt.response_body["operational_registered"] is True
+        if body["operational_registered"]:
+            body["operational_capture_id"] = str(receipt.capture_id)
+    return ReceiverReply(200, body)
