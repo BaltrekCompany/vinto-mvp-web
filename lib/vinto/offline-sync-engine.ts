@@ -22,7 +22,7 @@ export type SessionInfo = Readonly<{ userId: string }> | null;
 export type SyncOptions = Readonly<{
     leaseMs: number; timeoutMs: number; maxAttempts: number; baseDelayMs: number; maxDelayMs: number;
     /** OFF-04.8: require durable operational registration ACK, not only receipt. Off by default for historical QA. */
-    requireOperationalAck: boolean;
+    requireOperationalAck?: boolean;
 }>;
 export const DEFAULT_SYNC_OPTIONS: SyncOptions = { leaseMs: 30_000, timeoutMs: 15_000, maxAttempts: 6, baseDelayMs: 2_000, maxDelayMs: 300_000, requireOperationalAck: false };
 
