@@ -120,3 +120,14 @@ def test_unknown_context_does_not_invoke_promoter():
     reply = send(store, body, validator=GoodValidator(), promoter=promoter)
     assert reply.status == 202 and reply.body["operational_registered"] is False
     assert promoter.calls == 0
+
+
+def test_validator_returning_no_verdict_never_promotes():
+    class EmptyValidator:
+        def validate(self, user, incoming):
+            return None
+    store, body, promoter = make_sqlite_store(), capture(), FakePromoter()
+    reply = send(store, body, validator=EmptyValidator(), promoter=promoter)
+    assert reply.status == 202 and reply.body["reason"] == C.R_VALIDATION_UNAVAILABLE
+    assert reply.body["operational_registered"] is False
+    assert promoter.calls == 0
