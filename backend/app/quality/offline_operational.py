@@ -46,7 +46,7 @@ class QualityOperationalPromoter:
     The adapter also re-checks effective Quality grants in the write transaction.
     """
 
-    def __init__(self, verify_capture_scope: Callable[[Any, C.CaptureIn], bool]) -> None:
+    def __init__(self, verify_capture_scope: Callable[[Any, C.CaptureIn, Any], bool]) -> None:
         if not callable(verify_capture_scope):
             raise TypeError("capture scope verifier is mandatory")
         self._verify_capture_scope = verify_capture_scope
@@ -54,8 +54,7 @@ class QualityOperationalPromoter:
     def promote(self, principal: Any, capture: C.CaptureIn, tx: Any) -> OperationalRegistration:
         if principal.user_id != capture.author_user_id or principal.must_change or not principal.can(QUALITY_CAPTURE):
             raise OperationalReview("operational_not_authorized")
-        if (capture.scope_snapshot_id is None or capture.payload.get("synthetic") is not False
-                or not self._verify_capture_scope(principal, capture)):
+        if capture.scope_snapshot_id is None or capture.payload.get("synthetic") is not False:
             raise OperationalReview("operational_scope_required")
         values = capture.payload.get("payload")
         if not isinstance(values, dict):
@@ -67,6 +66,10 @@ class QualityOperationalPromoter:
         if not isinstance(connection, psycopg.Connection):
             raise StoreUnavailable("operational_requires_shared_postgres_transaction")
 
+        # The snapshot check MUST run inside the same receipt/operational transaction,
+        # with an authoritative DB callback taking suitable row locks.
+        if not self._verify_capture_scope(principal, capture, connection):
+            raise OperationalReview("operational_scope_required")
         # Effective authorization cannot be switched off/observed by caller or client.
         request_id = "offline-quality:" + str(uuid.uuid4())
         gate = gate_for(principal, "enforce", request_id, spec.operation)
