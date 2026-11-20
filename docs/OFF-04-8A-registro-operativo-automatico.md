@@ -36,3 +36,16 @@ Este PR implementa únicamente un **candidato de adaptador de backend opt-in** (
 ### Invariantes de esta rama
 
 No activar ninguna API, no modificar `main`, no merge, no desplegar, no tocar VPS ni QA. El adaptador es **candidato no conectado** y la implementación completa requiere los gates anteriores y aprobación específica de despliegue.
+
+## OFF-04.8B — integración opt-in de ACK y atomicidad (candidato, todavía NO productivo)
+
+- `receive_capture(..., promoter=None)` y `create_offline_capture_router(..., promoter=None)` preservan el flujo técnico del QA de OFF-04.7 sin cambios por defecto. **Ninguna ruta en `app.main` activa el promotor.**
+- Si se inyecta un promotor, el receptor exige un validador central. Para una captura nueva aceptada (nunca para `review` ni duplicado), el receptor invoca el adaptador dentro de un **savepoint propio** (`promotion_savepoint` en PostgreSQL y SQLite de tests); solo un retorno de `capture_id` coincidente permite fijar `operational_registered=true` en la respuesta persistida.
+- Si el registro falla de forma transitoria, se revierte la transacción de recibo y escritura candidata. Si un rechazo determinista `PromotionReview` ocurre luego de alguna escritura candidata, el savepoint revierte esa escritura y deja el recibo técnico en revisión, sin registro operativo. No hay cambios a decisiones o liberación industrial.
+- Al consultar o reintentar un recibo, el ACK operativo se reconstruye **exclusivamente del resultado persistido**. Los recibos técnicos históricos que no guardaron ACK no se pueden confundir con registros operativos.
+- `SyncOptions.requireOperationalAck` es **opt-in**. Cuando está habilitado, una respuesta técnica exitosa o una conciliación sin `operational_registered=true` y `operational_capture_id` idéntico a `capture_id` deja la captura en `requires_review` con `operational_unconfirmed`; nunca informa éxito operativo. El transporte HTTP valida la identidad del ACK. Los demás flujos de laboratorio mantienen comportamiento anterior.
+- Tests agregados: SQLite contrato de revisión/rollback/reintento; PostgreSQL descartable con tabla **solo de prueba** para demostrar que recibo y efecto candidato comparten transacción; Node de sync-ACK incluyendo respuesta perdida y consulta posterior. **Esto NO sustituye** el gate de PostgreSQL 17 integrado contra el servicio real de Calidad, ni firma de alcance operativo.
+
+### Estado y restricciones
+
+**IN_PROGRESS, sin autorización de despliegue.** Falta: conectar los servicios de Calidad reales en PG17 descartable y verificar autorización de roles/DDL; implementar emisor y verificador robustos de snapshot **capture-capable** del servidor (el actual de QA es `readiness_only`); activar el controlador de autocolocación en cola y la reconexión en la PWA real; versionar SW y cache; validar cortes de Internet, sesión expirada, author mismatch, 10 formularios + 1 negativa. Ninguna de estas brechas se resuelve con cambiar `synthetic` de true a false; está expresamente prohibido.
