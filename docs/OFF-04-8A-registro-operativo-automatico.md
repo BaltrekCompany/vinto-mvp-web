@@ -136,3 +136,9 @@ Cobertura diseñada:
 8. Construcción normal excluye el driver y los assets opt-in de QA.
 
 **Estado:** pruebas codificadas y añadidas a CI, **NO ejecutadas/verificadas todavía**. No concluir PASS sin registro del workflow. El driver es test-only y usa valores ficticios, no emite autoridad operativa ni conecta la PWA de operarios. OFF-04.7 QA sigue apagado; no merge ni despliegue. Aún quedan el emisor/validador de captura operativa real, diez formularios con PostgreSQL en mismo entorno ficticio, actualización SW sin borrar IndexedDB y simulación de 8 horas offline.
+
+## OFF-04.8J — integridad de los valores al congelar (revisión del arnés)
+
+La primera implementación del driver Chrome `off048i-indexeddb-browser.ts` preparaba el pendiente con un **payload de prueba fabricado** en vez de los valores ya guardados en el borrador. Eso probaba atomicidad de IndexedDB, pero NO la trazabilidad operario → borrador → pendiente. **Corregido:** ahora descifra el borrador original bajo AAD de usuario/dispositivo/formulario/contexto, verifica revisión e identidad, sella exactamente sus valores en `{synthetic:false,payload:values}`, calcula SHA-256 canónico, y usa el mismo `capture_id` en pendiente y cola. La prueba Chrome exige igualdad entre el contenido real de la última revisión del borrador y el pendiente recuperado. En reintentos, se reforzó la identidad original en `decideOperationalFreeze`.
+
+**Alcance:** corrección y pruebas **en código**, aún sin CI PASS. Sigue siendo un driver de laboratorio local: no sustituye el servicio operativo de Calidad, su validación de campos, el alcance firmado ni una prueba real con el operador. No activar en aplicación real hasta superar los gates anteriores.
