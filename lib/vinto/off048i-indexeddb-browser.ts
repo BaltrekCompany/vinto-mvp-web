@@ -57,7 +57,14 @@ async function confirm(args:{draftId:string;captureId:string;revision:number}) {
  const row=await store.getDraft(args.draftId);
  if(!row)throw Error("draft missing");
  const owner=ensureIdentity();
- const content={synthetic:false,payload:{test:"operational-synthetic-only",revision:args.revision}};
+ // Preserve EXACTLY the original encrypted draft's values. Never replace
+ // user input with a QA placeholder; a write after the freeze CAS fails closed.
+ if (row.revision!==args.revision || row.frozenBy && row.frozenBy!==args.captureId)
+   throw Error("revision or capture mismatch");
+ if (row.ownerId!==owner.ownerId || row.deviceKey!==owner.deviceKey)
+   throw Error("original owner mismatch");
+ const values=await openLocalDraft(localKey,aad(row.id,row.scopeSnapshotId,row.formCode,row.formVersion),row.sealed);
+ const content={synthetic:false,payload:values};
  const encrypted=await sealLocalDraft(localKey,aad(args.captureId,row.scopeSnapshotId,row.formCode,row.formVersion),content);
  const sha=await payloadHash(content);
  const iso=new Date().toISOString();
