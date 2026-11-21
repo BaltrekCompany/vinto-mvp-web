@@ -10,7 +10,7 @@ import { applyClaim, applyFinalize } from "./offline-sync-rules.ts";
 import type { SyncQueueStore, SyncRecord, ClaimResult, FinalizePatch } from "./offline-sync-types.ts";
 import { validOperationalDraft, validOperationalPending, nextOperationalDraft, decideOperationalFreeze,
   OperationalLocalError, type OperationalDraftRow, type OperationalPendingRow } from "./offline-operational-model.ts";
-import { isSyncRecord } from "./offline-sync-store.ts";
+import { isSyncRecord } from "./offline-queue-record.ts";
 
 export const OPERATIONAL_LOCAL_DB = "vinto-off048-operational-v1";
 const DRAFTS="drafts", PENDING="pending", QUEUE="sync_queue";
