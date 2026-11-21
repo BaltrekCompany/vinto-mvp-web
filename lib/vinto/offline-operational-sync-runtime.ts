@@ -30,8 +30,10 @@ export type OperationalSyncRuntimeDeps = Readonly<{
 }>;
 
 export class OperationalSyncIntegrityError extends Error {
-  constructor(readonly reason: "owner" | "scope" | "missing_pending" | "mismatch" | "payload") {
+  readonly reason:"owner" | "scope" | "missing_pending" | "mismatch" | "payload";
+  constructor(reason:OperationalSyncIntegrityError["reason"]) {
     super("OFF048_OPERATIONAL_SYNC_" + reason.toUpperCase());
+    this.reason=reason;
   }
 }
 
