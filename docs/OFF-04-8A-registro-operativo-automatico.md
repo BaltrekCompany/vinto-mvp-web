@@ -120,3 +120,19 @@ El usuario confirmó que **toda la información existente en VINTO es ficticia**
 - **Queda pendiente** prueba con IndexedDB REAL en navegador (abrir/cerrar, múltiples pestañas, quota, upgrade de Service Worker sin borrado), además de integración del adaptador de vault y firma, 10 formularios online contra el mismo PostgreSQL ficticio, sincronización automática y gate de CI aprobado.
 
 **Estado: OFF04_8H=IMPLEMENTED_ISOLATED_PENDING_CI.** Todavía NO está conectado a la PWA del operario, no se ha instalado SQL ni habilitado ninguna ruta industrial, y el piloto OFF-04.7 permanece apagado. PR #246 Draft, sin merge ni despliegue.
+
+## OFF-04.8I — Prueba E2E de IndexedDB real en Chrome (sin montaje operativo)
+
+Se añadieron: `lib/vinto/off048i-indexeddb-browser.ts` (driver exclusivo de QA), `lab/off048i-indexeddb.html`, `scripts/off-04-8i-operational-indexeddb-browser.py` y build opt-in en `scripts/build-offline-boot.mjs`. El workflow OFF-04.6 ejecutará Playwright/Chrome con un perfil descartable y servidor HTTP **exclusivamente local**, sin APIs ni PostgreSQL.
+
+Cobertura diseñada:
+1. Crear bóveda cifrada para usuario/dispositivo sintéticos y borrador IndexedDB sin texto legible persistido.
+2. Cerrar/reabrir pestaña y recuperar el borrador descifrando con su bóveda.
+3. Revisión CAS: edición nueva correcta; revisión antigua rechazada.
+4. Confirmación **atómica**: `drafts` queda congelado, se agregan `pending` y `sync_queue` en la misma transacción, sin clic separado.
+5. Confirmación repetida idempotente.
+6. Dos pestañas reclaman el mismo `capture_id`: solo una toma lease, la otra no puede finalizar.
+7. Reiniciar el navegador conservando evidencia, pending y estado de cola.
+8. Construcción normal excluye el driver y los assets opt-in de QA.
+
+**Estado:** pruebas codificadas y añadidas a CI, **NO ejecutadas/verificadas todavía**. No concluir PASS sin registro del workflow. El driver es test-only y usa valores ficticios, no emite autoridad operativa ni conecta la PWA de operarios. OFF-04.7 QA sigue apagado; no merge ni despliegue. Aún quedan el emisor/validador de captura operativa real, diez formularios con PostgreSQL en mismo entorno ficticio, actualización SW sin borrar IndexedDB y simulación de 8 horas offline.
