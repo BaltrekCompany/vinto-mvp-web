@@ -68,7 +68,9 @@ export function createOperationalCaptureBindings(deps:OperationalCaptureBindings
     async persist(snapshot:Readonly<{draftId:string;ownerId:string;revision:number|null;values:Readonly<Record<string,string|boolean>>}>){
       if(!same(snapshot.ownerId,identity.ownerId)||snapshot.draftId!==context.draftId)
         throw new OperationalLocalError("conflict");
-      await deps.assertCaptureScope();
+      // Editable drafts are NOT operational captures. A lapse in network or
+      // signed-scope renewal must never discard the operator's unfinished
+      // measurements. Capture authority is mandatory at freeze/upload time.
       const prev=await store.getDraft(context.draftId);
       if(prev)assertRow(prev);
       const revision=(snapshot.revision??0)+1;
