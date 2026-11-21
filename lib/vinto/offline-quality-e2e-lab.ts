@@ -44,18 +44,10 @@ const FORMS_RE = /^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/;   // the ten Qual
 const MACHINE_RE = /^[A-Za-z0-9_.-]{1,48}$/;
 type Session = { key: CryptoKey; identity: { ownerId: string; deviceKey: string }; scope: VerifiedLocalScope; packages: VerifiedQualityDefinition[] };
 type Editing = { id: string; revision: number | null; pkg: VerifiedQualityDefinition; readOnly: boolean; bobbin: BobbinContext | null };
-let session: Session | null = null, editing: Editing | null = null, syncing = false;
+let session: Session | null = null, editing: Editing | null = null, clockOffset = 0, syncing = false;
 const syncStore = createIdbSyncStore();
 const tabId = "tab-" + crypto.randomUUID().slice(0, 8);
-// CI-only simulated time is shared across same-origin tabs. Per-tab offsets can
-// falsely expire another tab\'s durable lease and cause a second HTTP POST.
-const LAB_CLOCK_KEY = "vinto-off06b-shared-clock-offset";
-const clockOffsetMs = (): number => {
-    const raw = localStorage.getItem(LAB_CLOCK_KEY);
-    const value = raw === null ? 0 : Number(raw);
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
-};
-const nowMs = () => Date.now() + clockOffsetMs();
+const nowMs = () => Date.now() + clockOffset;
 const say = (t: string) => { if (status) status.textContent = t; };
 
 /** Same origin only: HTTPS, or loopback http for a disposable CI/dev server. There is no way to point the page at another URL. */
@@ -522,7 +514,7 @@ async function start(): Promise<void> {
     editor.addEventListener("submit", (event: SubmitEvent) => { event.preventDefault(); void save(); });
     queueButton?.addEventListener("click", () => { void makePending(); });
     syncButton?.addEventListener("click", () => { void syncOnce(); });
-    clockButton?.addEventListener("click", () => { localStorage.setItem(LAB_CLOCK_KEY, String(clockOffsetMs() + 60_000)); say("Reloj simulado avanzado 60 s (compartido entre pestañas del laboratorio)."); });
+    clockButton?.addEventListener("click", () => { clockOffset += 60_000; say("Reloj simulado avanzado 60 s (solo afecta a los tiempos de espera del laboratorio)."); });
     await showUnlock();
     await refreshAuth();   // offline: reports "sin conexión" and leaves everything else working
 }
