@@ -166,3 +166,82 @@ def test_off048p_binding_refuses_unregistered_capture_scope(db, signer):
     promoter = registered_scope_promoter(trusted_public_key_b64url=signer.public_b64url)
     with db.transaction() as tx:
         assert promoter._verify_capture_scope(principal(), capture(uuid4()), tx.c) is False
+
+
+def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope(db, signer, monkeypatch):
+    """Intermediary PG17 gate. Online-service call is a stub, NOT a full industrial E2E."""
+    from app.offline_capture import contract as C
+    from app.offline_capture.service import ContextVerdict, AuthzDecision, receive_capture, StoreUnavailable
+    from app.quality import offline_operational as operational
+    from app.quality.offline_operational_binding import registered_scope_promoter
+
+    seed_catalog(db)
+    monkeypatch.setattr(authority, "authorize", lambda *args, **kwargs:
+                        SimpleNamespace(allowed=True, grant_id=uuid4(), effective_version=2))
+    with db.transaction() as tx:
+        tx.c.execute("CREATE TABLE off048p_operational_proof (capture_id uuid PRIMARY KEY)")
+        signed = authority.issue_capture_scope(
+            tx.c, principal(), device_key=DEVICE, machine_codes=["MP1"], signer=signer,
+        )
+    snapshot = UUID(signed["payload"]["snapshot_id"])
+    incoming = capture(snapshot)
+    payload = C.CaptureIn(**incoming.model_dump())
+
+    class Authorizer:
+        def authorize(self, user, candidate):
+            return AuthzDecision(True)
+
+    class Context:
+        def evaluate(self, candidate):
+            return ContextVerdict("same")
+
+    class Validator:
+        def validate(self, user, candidate):
+            return SimpleNamespace(
+                ok=True, errors=[], calculated={}, context_kind="same",
+                version_mismatch=False,
+            )
+
+    def simulated_online_service(connection, **kwargs):
+        assert isinstance(connection, psycopg.Connection)
+        assert kwargs["actor_id"] == USER
+        assert kwargs["capture_id"] == incoming.capture_id
+        assert kwargs["gate"] is not None
+        connection.execute(
+            "INSERT INTO off048p_operational_proof (capture_id) VALUES (%s)",
+            (kwargs["capture_id"],),
+        )
+        return SimpleNamespace(capture=SimpleNamespace(
+            id=kwargs["capture_id"], form_version_number=2, status="submitted",
+        ))
+
+    monkeypatch.setattr(operational, "gate_for", lambda *args: object())
+    monkeypatch.setattr(operational.machine_service, "submit_machine_capture", simulated_online_service)
+    promoter = registered_scope_promoter(trusted_public_key_b64url=signer.public_b64url)
+
+    def submit(candidate):
+        return receive_capture(
+            db, principal(), candidate, authorizer=Authorizer(),
+            context=Context(), validator=Validator(), promoter=promoter,
+        )
+
+    first = submit(payload)
+    assert first.status == 201
+    assert first.body["operational_registered"] is True
+    assert first.body["operational_capture_id"] == str(incoming.capture_id)
+    replay = submit(payload)
+    assert replay.status == 200
+    with db.transaction() as tx:
+        assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 1
+        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 1
+
+    # A revoked authority cannot register another capture even with a valid session.
+    with db.transaction() as tx:
+        assert authority.revoke_capture_scope(
+            tx.c, snapshot_id=snapshot, subject_user_id=USER,
+        )
+    denied = submit(capture(snapshot))
+    assert denied.status == 202
+    assert denied.body["operational_registered"] is False
+    with db.transaction() as tx:
+        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 1
