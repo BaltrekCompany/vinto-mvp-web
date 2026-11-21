@@ -84,6 +84,10 @@ if __name__ == "__main__":
             assert state["drafts"][0]["frozenBy"] == CAPTURE
             assert state["queue"][0]["state"] == "queued"
             assert invoke(page, "openPending", [CAPTURE])["synthetic"] is False
+            payload = invoke(page, "openPending", [CAPTURE])
+            assert payload["payload"]["test"] == "last synthetic revision", payload
+            assert payload["payload"] == invoke(page, "openDraft", [DRAFT])["payload"]
+            result("04b_frozen_capture_exactly_matches_latest_encrypted_draft")
             result("04_atomic_freeze_pending_queue_and_encrypted_open")
 
             # Repeat confirmation is idempotent with no second pending.
