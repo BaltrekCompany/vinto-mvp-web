@@ -10,9 +10,13 @@ export const BOBBIN_QUALITY_FORMS = new Set(["VINTO-P1-19","VINTO-P1-20","VINTO-
 export const ALL_OFFLINE_QUALITY_FORMS = new Set([...MACHINE_QUALITY_FORMS,...BOBBIN_QUALITY_FORMS]);
 
 export class OperationalQualityFieldError extends Error {
- constructor(readonly reason:"definition"|"invalid"|"incomplete"|"bobbin"|"context",
-             readonly issues:ReadonlyArray<{key:string;code:string}>=[]){
+ readonly reason:"definition"|"invalid"|"incomplete"|"bobbin"|"context";
+ readonly issues:ReadonlyArray<{key:string;code:string}>;
+ constructor(reason:OperationalQualityFieldError["reason"],
+             issues:ReadonlyArray<{key:string;code:string}>=[]){
   super("OFF048_QUALITY_"+reason.toUpperCase());
+  this.reason=reason;
+  this.issues=issues;
  }
 }
 export function createOperationalQualityValidator(
