@@ -142,3 +142,14 @@ Cobertura diseñada:
 La primera implementación del driver Chrome `off048i-indexeddb-browser.ts` preparaba el pendiente con un **payload de prueba fabricado** en vez de los valores ya guardados en el borrador. Eso probaba atomicidad de IndexedDB, pero NO la trazabilidad operario → borrador → pendiente. **Corregido:** ahora descifra el borrador original bajo AAD de usuario/dispositivo/formulario/contexto, verifica revisión e identidad, sella exactamente sus valores en `{synthetic:false,payload:values}`, calcula SHA-256 canónico, y usa el mismo `capture_id` en pendiente y cola. La prueba Chrome exige igualdad entre el contenido real de la última revisión del borrador y el pendiente recuperado. En reintentos, se reforzó la identidad original en `decideOperationalFreeze`.
 
 **Alcance:** corrección y pruebas **en código**, aún sin CI PASS. Sigue siendo un driver de laboratorio local: no sustituye el servicio operativo de Calidad, su validación de campos, el alcance firmado ni una prueba real con el operador. No activar en aplicación real hasta superar los gates anteriores.
+
+## OFF-04.8K — conexión opt-in de IndexedDB operativo al motor de sincronización
+
+Implementado `lib/vinto/offline-operational-sync-runtime.ts` (SIN MONTAR):
+- Usa el `sync_queue` creado atómicamente en OFF-04.8H; no vuelve a copiar pendientes ni exige botón de sincronización.
+- Antes de abrir un mensaje, exige `capture_id` presente exactamente una vez en los pendientes del usuario/dispositivo original, `synthetic:false` y coincidencia de SHA-256 y ciphertext/IV con la cola; rechaza huérfanos, contenido ajeno, snapshots ausentes y filas copiadas del laboratorio. Descifra con bóveda AES-GCM/AAD de autor+dispositivo+captura+formulario+snapshot. El motor valida adicionalmente hash canónico antes del POST.
+- Inyecta sesión del servidor de **ese mismo autor** y transporte autenticado: el runtime no hace `fetch` directo. Instala `requireOperationalAck:true` obligatoriamente, por lo que una mera recepción técnica sin registro operativo no permite marcar `synced`.
+- Usa `createAutoSyncScheduler` opt-in para eventos `online`, `focus`, `visible`, notificación tras Guardar captura y reintentos. Nunca envía si está desconectado o bóveda bloqueada.
+- `scripts/off-04-8k-operational-sync.test.mjs`: pruebas de integridad (captura huérfana, hash/ciphertext/identidad incorrectos, sintético), offline, bloqueo local y arranque opt-in; ejecutables desde workflow OFF-04.6.
+
+**No se ha hecho una llamada a ningún endpoint operativo ni montado en la PWA.** Hasta disponer de un emisor de autorización operativa válido en backend y del adaptador de almacenamiento/firma, siguen pendientes el E2E de diez formularios con PostgreSQL ficticio, pruebas de reconexión y ACK operativo, CI PASS y validación de ocho horas. PR #246 sigue Draft; no merge, cambios de VPS ni QA reactivado.
