@@ -18,8 +18,10 @@ export type OperationalPendingRow = Readonly<{
   synthetic:false;sealed:Sealed;createdAt:string;
 }>;
 export class OperationalLocalError extends Error {
-  constructor(readonly reason:"invalid"|"conflict"|"frozen"|"missing"|"corrupt"|"unavailable"|"storage") {
+  readonly reason:"invalid"|"conflict"|"frozen"|"missing"|"corrupt"|"unavailable"|"storage";
+  constructor(reason:OperationalLocalError["reason"]) {
     super("OFF048_OPERATIONAL_LOCAL_"+reason.toUpperCase());
+    this.reason=reason;
   }
 }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
