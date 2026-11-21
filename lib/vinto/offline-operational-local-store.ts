@@ -50,7 +50,7 @@ function single<T>(db:IDBDatabase, name:string, mode:IDBTransactionMode,
  return new Promise((resolve,reject)=>{
    let tx:IDBTransaction;
    try{tx=db.transaction(name,mode);}catch{reject(new OperationalLocalError("storage"));return;}
-   let value:T;
+   let value!:T;
    let bad:unknown=null;
    const store=tx.objectStore(name);
    const get=store.get(key);
@@ -127,7 +127,7 @@ export function createOperationalLocalStore():OperationalLocalStore{
      let tx:IDBTransaction;
      try{tx=db.transaction([DRAFTS,PENDING,QUEUE],"readwrite");}
      catch{reject(new OperationalLocalError("storage"));return;}
-     let bad:unknown=null, outcome:{created:boolean;captureId:string};
+     let bad:unknown=null, outcome!:{created:boolean;captureId:string};
      const drafts=tx.objectStore(DRAFTS),pendingStore=tx.objectStore(PENDING),queueStore=tx.objectStore(QUEUE);
      // Requests are chained inside one active IDB transaction, not separated
      // by unrelated async operations or a second database.
