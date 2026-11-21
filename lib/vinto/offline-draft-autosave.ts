@@ -65,8 +65,7 @@ export function createDraftAutosave(deps: DraftAutosaveDeps, delayMs = DEFAULT_A
         dirty = true;
         blocked = error instanceof Error &&
           (error.message === "conflict" ||
-           (typeof (error as {reason?:unknown}).reason === "string" &&
-            (error as {reason:string}).reason === "conflict"))
+           ("reason" in error && error.reason === "conflict"))
           ? "conflict" : "storage";
         return notify(blocked);
       }
