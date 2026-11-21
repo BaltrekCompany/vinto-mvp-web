@@ -102,7 +102,11 @@ class ShapeTests(unittest.TestCase):
                      if "app/authz" not in str(path).replace("\\", "/") and re.search(r"\bapp\.authz\b|\bfrom app import authz\b", path.read_text(encoding="utf-8"))]
         # MF-13-03B PR5: los routers de asignaciones y de OT solo importan app.authz.visibility (lectura por máquina, vía el motor sin bloqueos). MF-13-01D.2A/2B/2C.1/2C.2: las cuatro rutas de captura (central, F3, Calidad por bobina y por máquina) y el manejador de errores (main.py); el resto no lo usa
         # OFF-04.5B/OFF-04.6: the isolated offline stack (signed scope issuer, QA pilot authorizer, offline Quality registry and bobbin context) READS the engine to decide what a device may be told; none of it is an online route.
-        self.assertEqual(consumers, ["app/assignments/router.py", "app/bobbins/router.py", "app/captures.py", "app/main.py", "app/offline_quality/bobbin_context.py", "app/offline_quality/registry.py", "app/offline_scope/quality_package.py", "app/offline_scope/service.py", "app/production_access.py", "app/qa_offline_pilot.py", "app/quality/capture_service.py", "app/quality/form_availability.py", "app/quality/machine_capture_service.py", "app/quality/machine_router.py", "app/quality/router.py", "app/work_orders/router.py"])
+        self.assertEqual(consumers, ["app/assignments/router.py", "app/bobbins/router.py", "app/captures.py", "app/main.py", "app/offline_quality/bobbin_context.py", "app/offline_quality/registry.py", "app/offline_scope/quality_package.py", "app/offline_scope/service.py", "app/production_access.py", "app/qa_offline_pilot.py", "app/quality/capture_service.py", "app/quality/form_availability.py", "app/quality/machine_capture_service.py", "app/quality/machine_router.py", "app/quality/offline_capture_authority.py", "app/quality/offline_operational.py", "app/quality/router.py", "app/work_orders/router.py"])
+        # Offline issuer/promoter are explicitly isolated candidates, not mounted routes.
+        app_main = (BACKEND / "app/main.py").read_text(encoding="utf-8")
+        self.assertNotIn("offline_capture_authority", app_main)
+        self.assertNotIn("offline_operational", app_main)
         self.assertIn("lock=False", (BACKEND / "app/authz/availability.py").read_text(encoding="utf-8"))  # MF-13-02: production_access y los servicios/listados de Calidad solo CONSULTAN la elegibilidad (sin bloqueos ni escrituras)
 
     def test_the_locked_tables_are_exactly_those_vinto_app_may_lock(self):
