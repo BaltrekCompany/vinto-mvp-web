@@ -376,6 +376,11 @@ with tempfile.TemporaryDirectory(prefix="vinto-off06b-") as tmp, sync_playwright
         wait_stage(page, i, "synced")
         tab2.reload(); unlock(tab2)
         wait_stage(tab2, i, "synced")
+        # Keep strict single-POST invariant; print only event metadata when broken.
+        if srv.deliveries(iid) != 1:
+            events = [{"kind": e.get("kind"), "capture_id": e.get("capture_id"), "at": e.get("at")}
+                      for e in srv.get("/__test__/events") if e.get("capture_id") == iid]
+            print("OFF06B_MULTITAB_EVENT_DIAG=" + json.dumps(events), flush=True)
         assert len(receipts_for({iid})) == 1 and srv.deliveries(iid) == 1, (srv.deliveries(iid), receipts_for({iid}))
         tab2.close()
         report("11_two_simultaneous_tabs_send_once_and_register_once")
