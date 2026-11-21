@@ -69,15 +69,15 @@ test("nothing operational references the engine laboratory (scan with negative c
 test("operational candidates cannot import synthetic lab storage or call synthetic network",()=>{
  for(const file of OPERATIONAL_CANDIDATES){
   const body=read(file);
-  assert.doesNotMatch(body,/from ["']\\.\\/offline-sync-(store|fake-server|lab|capture|http-transport)\\.ts["']/,
+  assert.doesNotMatch(body,/from ["']\.\/offline-sync-(store|fake-server|lab|capture|http-transport)\.ts["']/,
    "operational code imported a lab-only module: "+file);
   assert.doesNotMatch(body,/vinto-off043-sync-lab-v1|vinto-off04lab|offline-e2e-lab\.html|offline-sync-lab\.html/,
    "operational code references a lab database or page: "+file);
-  assert.doesNotMatch(body,/\\bfetch\\s*\\(|XMLHttpRequest|sendBeacon/,
+  assert.doesNotMatch(body,/\bfetch\s*\(|XMLHttpRequest|sendBeacon/,
    "operational candidate sent direct network traffic: "+file);
  }
  // Negative controls MUST fail when unsafe code is added to an approved path.
- assert.match('import "./offline-sync-store.ts"',/offline-sync-(store|fake-server|lab|capture|http-transport)\\.ts/);
+ assert.match('import "./offline-sync-store.ts"',/offline-sync-(store|fake-server|lab|capture|http-transport)\.ts/);
 });
 test("no real network access anywhere in the engine laboratory; the only transport is the fake server", () => {
     for (const f of SYNC) {
