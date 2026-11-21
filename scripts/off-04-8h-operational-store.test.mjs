@@ -55,3 +55,11 @@ test("capture identity, content hash and revision must match",()=>{
  assert.throws(()=>decideOperationalFreeze(draft,undefined,undefined,1,seal.ciphertext,{...pending,ownerId:D},queue),/CONFLICT/);
  assert.throws(()=>decideOperationalFreeze(draft,undefined,undefined,1,seal.ciphertext,pending,{...queue,payloadSha256:"b".repeat(64)}),/CONFLICT/);
 });
+
+test("repeat confirmation detects altered owner/device in frozen evidence",()=>{
+ const committed=decideOperationalFreeze(draft,undefined,undefined,1,seal.ciphertext,pending,queue);
+ assert.throws(()=>decideOperationalFreeze(committed.draft,{...committed.pending,ownerId:D},committed.queue,
+  1,seal.ciphertext,pending,queue),/CORRUPT/);
+ assert.throws(()=>decideOperationalFreeze(committed.draft,committed.pending,{...committed.queue,deviceKey:A},
+  1,seal.ciphertext,pending,queue),/CORRUPT/);
+});
