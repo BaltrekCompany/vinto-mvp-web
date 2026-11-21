@@ -94,3 +94,17 @@ La UX aprobada tiene **un solo botón «Guardar captura»**. El autoguardado del
 **Importante:** estos son componentes de coordinación aislados, todavía **no montados** en la aplicación de operarios ni en el laboratorio OFF-04.7, y no sustituyen el emisor de autorización vigente ni el gate real PostgreSQL 17 con los diez formularios. El flujo real debe **bloquear edición al iniciar la confirmación hasta completar la transición**, coordinar múltiples pestañas mediante compare-and-swap IndexedDB, conservar evidencia congelada ante fallo y verificar el ACK operativo del servidor antes de mostrar «Registrada en Calidad». No mezclar los borradores `synthetic:true` de laboratorio con el nuevo flujo `synthetic:false`.
 
 **Estado:** implementación de módulos y pruebas propuesta; esperar CI verde y construir la integración PWA autorizada antes de considerar funcional OFF-04.8.
+
+## OFF-04.8G — integración de editor en memoria, todavía NO PWA operativa
+
+Se aprobó autoguardado **ligero de 1–2 segundos** y un único botón **«Guardar captura»**. Implementado:
+
+- `offline-draft-autosave.ts` ahora usa **1500 ms** de inactividad por defecto, serializa `flush()` concurrentes para impedir escrituras CAS superpuestas y devuelve la revisión ya guardada si se abre un borrador completo sin editarlo.
+- `offline-capture-editor-workflow.ts` conecta el autoguardado y el comando único de confirmación como coordinador de UI **sin montar servicios**: al pulsar Guardar captura, bloquea inmediatamente los campos; espera el flush cifrado; congela la revisión; encola y despierta el auto-sync. Si ocurre un fallo, desbloquea el editor; si se confirmó, conserva inmutable el formulario.
+- `off-04-8g-editor-workflow.test.mjs` y pruebas adicionales de carreras/existing-draft en `off-04-8e-draft-autosave.test.mjs`, incorporadas al workflow OFF-04.6.
+
+### Bloqueo de integración que no debe omitirse
+
+El almacén disponible `offline-draft-store.ts` y el que construye capturas `offline-sync-capture.ts` son **SOLO laboratorio**, fijan `synthetic:true`, dependen de `LAB_STATUS` y las firmas de consulta. **No** se deben utilizar para producir capturas industriales cambiando una bandera. La PWA operativa necesita un esquema, almacén y firma propios, vinculados al usuario, dispositivo y autorización operativa registrada, con pruebas de migración/compatibilidad y SW seguro. El código del coordinador está listo para inyectar ese almacén cuando exista y haya pasado el QA.
+
+**No se ha montado la interfaz real, ni se ha habilitado el envío industrial.** CI del nuevo HEAD pendiente. QA OFF-04.7 sigue apagado; no merge ni despliegue.
