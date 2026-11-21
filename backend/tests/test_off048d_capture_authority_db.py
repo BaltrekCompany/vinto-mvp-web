@@ -130,3 +130,39 @@ def test_schema_is_standalone_and_fails_on_second_application(db):
             with tx.c.transaction():
                 tx.c.execute(DDL.read_text(encoding="utf-8"), prepare=False)
         assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_scope_authority").fetchone()[0] == 0
+
+
+def test_off048p_binding_uses_registered_postgres_scope_and_honors_revocation(db, signer, monkeypatch):
+    """Integrated binding + real registry: no envelope or client flag can bypass revocation."""
+    from app.quality.offline_operational_binding import registered_scope_promoter
+
+    seed_catalog(db)
+    monkeypatch.setattr(authority, "authorize", lambda *args, **kwargs:
+                        SimpleNamespace(allowed=True, grant_id=uuid4(), effective_version=2))
+    with db.transaction() as tx:
+        signed = authority.issue_capture_scope(
+            tx.c, principal(), device_key=DEVICE, machine_codes=["MP1"], signer=signer,
+        )
+    snapshot = UUID(signed["payload"]["snapshot_id"])
+    promoter = registered_scope_promoter(trusted_public_key_b64url=signer.public_b64url)
+    incoming = capture(snapshot)
+    with db.transaction() as tx:
+        assert promoter._verify_capture_scope(principal(), incoming, tx.c) is True
+        # Read-only readiness and signatures for other devices are not substitutes.
+        assert promoter._verify_capture_scope(
+            principal(), incoming.model_copy(update={"device_key": uuid4()}), tx.c
+        ) is False
+    with db.transaction() as tx:
+        assert authority.revoke_capture_scope(
+            tx.c, snapshot_id=snapshot, subject_user_id=USER,
+        ) is True
+    with db.transaction() as tx:
+        assert promoter._verify_capture_scope(principal(), incoming, tx.c) is False
+
+
+def test_off048p_binding_refuses_unregistered_capture_scope(db, signer):
+    from app.quality.offline_operational_binding import registered_scope_promoter
+
+    promoter = registered_scope_promoter(trusted_public_key_b64url=signer.public_b64url)
+    with db.transaction() as tx:
+        assert promoter._verify_capture_scope(principal(), capture(uuid4()), tx.c) is False
