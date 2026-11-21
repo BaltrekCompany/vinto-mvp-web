@@ -3,7 +3,7 @@
  * snapshot before making a draft; the server checks it AGAIN on upload.
  * The old synthetic laboratory records are structurally incompatible.
  */
-import { isSyncRecord } from "./offline-sync-store.ts";
+import { isSyncRecord } from "./offline-queue-record.ts";
 import type { SyncRecord } from "./offline-sync-types.ts";
 export type Sealed = Readonly<{format:"aes-gcm-v1";iv:string;ciphertext:string}>;
 export type OperationalDraftRow = Readonly<{
