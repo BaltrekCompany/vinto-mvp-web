@@ -62,6 +62,7 @@ class Receipt:
 
 
 class ReceiptTx(Protocol):
+    def promotion_savepoint(self) -> Any: ...  # context manager: deterministic review rolls back candidate writes
     def insert_received(self, receipt: NewReceipt) -> bool: ...
     def get(self, capture_id: UUID) -> Optional[Receipt]: ...
     def finalize(self, capture_id: UUID, *, outcome: str, reason: Optional[str], warnings: list, response_status: int, response_body: dict) -> None: ...
@@ -86,6 +87,12 @@ def _receipt_from(row: tuple) -> Receipt:
 class _PgTx:
     def __init__(self, connection) -> None:
         self.c = connection
+
+    @contextmanager
+    def promotion_savepoint(self):
+        # The outer receipt transaction is already open; this is a PostgreSQL savepoint.
+        with self.c.transaction():
+            yield
 
     def insert_received(self, r: NewReceipt) -> bool:
         row = self.c.execute(
@@ -154,6 +161,19 @@ INSERT OR IGNORE INTO seq (id, n) VALUES (1, 0);
 class _SqliteTx:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.c = connection
+
+    @contextmanager
+    def promotion_savepoint(self):
+        # Only used for disposable tests; outer transaction is BEGIN IMMEDIATE.
+        self.c.execute("SAVEPOINT off048_promotion")
+        try:
+            yield
+        except BaseException:
+            self.c.execute("ROLLBACK TO SAVEPOINT off048_promotion")
+            self.c.execute("RELEASE SAVEPOINT off048_promotion")
+            raise
+        else:
+            self.c.execute("RELEASE SAVEPOINT off048_promotion")
 
     def insert_received(self, r: NewReceipt) -> bool:
         if self.c.execute("SELECT 1 FROM capture_receipt WHERE capture_id=?", (str(r.capture_id),)).fetchone():

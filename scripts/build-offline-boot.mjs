@@ -10,7 +10,7 @@ import { copyFileSync, rmSync } from "node:fs";
  * (and any operational build) deletes stale lab files, so the lab cannot be served by accident.
  */
 export async function buildOfflineDraftLab() {
-  const files = ["public/offline-lab.html", "public/offline-draft-lab.js", "public/offline-sync-lab.html", "public/offline-sync-lab.js", "public/offline-e2e-lab.html", "public/offline-e2e-lab.js"];
+  const files = ["public/offline-lab.html", "public/offline-draft-lab.js", "public/offline-sync-lab.html", "public/offline-sync-lab.js", "public/offline-e2e-lab.html", "public/offline-e2e-lab.js", "public/off048i-indexeddb.html", "public/off048i-indexeddb.js"];
   if (process.env.OFFLINE_DRAFT_LAB !== "1") {
     for (const file of files) rmSync(file, { force: true });
     return false;
@@ -56,6 +56,20 @@ export async function buildOfflineDraftLab() {
     },
   });
   copyFileSync("lab/offline-e2e-lab.html", "public/offline-e2e-lab.html");
+  // OFF-04.8I isolated Chrome IndexedDB QA (no API or operational routes).
+  await build({
+    configFile: false,
+    publicDir: false,
+    logLevel: "error",
+    build: {
+      outDir: "public",
+      emptyOutDir: false,
+      copyPublicDir: false,
+      minify: true,
+      lib: { entry: "lib/vinto/off048i-indexeddb-browser.ts", name: "VINTO_OFF048I_TEST", formats: ["iife"], fileName: () => "off048i-indexeddb.js" },
+    },
+  });
+  copyFileSync("lab/off048i-indexeddb.html", "public/off048i-indexeddb.html");
   return true;
 }
 
