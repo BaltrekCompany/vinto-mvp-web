@@ -43,7 +43,7 @@ export class CaptureScopeError extends Error{
  constructor(reason:CaptureScopeReason){super("OFF048_CAPTURE_SCOPE_"+reason.toUpperCase());this.name="CaptureScopeError";this.reason=reason;}
 }
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==="object"&&!Array.isArray(v);
-const exact=(v:unknown,keys:readonly string[])=>record(v)&&Object.keys(v).sort().join("|")===[...keys].sort().join("|");
+const exact=(v:unknown,keys:readonly string[]):v is Record<string,unknown>=>record(v)&&Object.keys(v).sort().join("|")===[...keys].sort().join("|");
 const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 const operation=(formCode:string):FormScope["operation"]|null=>
  MACHINE_FORMS.has(formCode)?"quality_machine_capture":BOBBIN_FORMS.has(formCode)?"quality_bobbin_capture":null;
