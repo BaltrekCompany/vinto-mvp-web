@@ -164,7 +164,7 @@ export async function syncNow(deps: SyncDeps): Promise<SyncRunResult> {
                     const found = await withTimeout(s => deps.transport.lookup(rec.capture_id, { signal: s }), o.timeoutMs);
                     reconciled += 1;
                     if (found.found) {
-                        const r = applyLookup(found, o.requireOperationalAck, rec.capture_id);
+                        const r = applyLookup(found, o.requireOperationalAck === true, rec.capture_id);
                         await done(r.state, "reconciled", { serverRef: found.server_id, warnings: found.warnings ?? [], uncertain: false, lastError: r.reason, nextAttemptAt: null });
                         continue;
                     }
@@ -195,7 +195,7 @@ export async function syncNow(deps: SyncDeps): Promise<SyncRunResult> {
                 await retry(stopped, true);                      // the request may have been persisted: reconcile next time
                 break;
             }
-            const c = classify(reply, o.requireOperationalAck, rec.capture_id);
+            const c = classify(reply, o.requireOperationalAck === true, rec.capture_id);
             if (c.kind === "auth") {
                 await done("queued", "auth_required", { uncertain: false, nextAttemptAt: null, lastError: "auth_required", attempts: Math.max(0, rec.attempts - 1) });
                 paused = "auth_required";
