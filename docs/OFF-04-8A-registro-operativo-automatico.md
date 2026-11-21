@@ -153,3 +153,9 @@ Implementado `lib/vinto/offline-operational-sync-runtime.ts` (SIN MONTAR):
 - `scripts/off-04-8k-operational-sync.test.mjs`: pruebas de integridad (captura huérfana, hash/ciphertext/identidad incorrectos, sintético), offline, bloqueo local y arranque opt-in; ejecutables desde workflow OFF-04.6.
 
 **No se ha hecho una llamada a ningún endpoint operativo ni montado en la PWA.** Hasta disponer de un emisor de autorización operativa válido en backend y del adaptador de almacenamiento/firma, siguen pendientes el E2E de diez formularios con PostgreSQL ficticio, pruebas de reconexión y ACK operativo, CI PASS y validación de ocho horas. PR #246 sigue Draft; no merge, cambios de VPS ni QA reactivado.
+
+### OFF-04.8K — prueba de integración en memoria añadida
+
+`scripts/off-04-8k-operational-sync-integration.test.mjs` enlaza el cifrado AES-GCM real y su descifrado con `syncNow` y un transporte simulado, sin endpoint. Prueba que la cola conserva exactamente los datos originales del borrador, que `operational_registered=true` y `operational_capture_id=capture_id` producen confirmación operativa, que un recibo técnico sin ACK o un ACK para otro ID no produce estado `synced`, y que un usuario de sesión diferente no puede iniciar el envío. Añadido al workflow.
+
+**Importante:** el test en memoria no prueba aún el endpoint FastAPI/PG17 ni la autorización firmada, ni implica que el sistema esté activado. `CI=UNVERIFIED` hasta que termine una ejecución real.
