@@ -63,7 +63,11 @@ export function createDraftAutosave(deps: DraftAutosaveDeps, delayMs = DEFAULT_A
         // and the next loop persists the LATEST snapshot with the new CAS revision.
       } catch (error) {
         dirty = true;
-        blocked = error instanceof Error && error.message === "conflict" ? "conflict" : "storage";
+        blocked = error instanceof Error &&
+          (error.message === "conflict" ||
+           (typeof (error as {reason?:unknown}).reason === "string" &&
+            (error as {reason:string}).reason === "conflict"))
+          ? "conflict" : "storage";
         return notify(blocked);
       }
     }
