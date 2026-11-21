@@ -159,3 +159,15 @@ Implementado `lib/vinto/offline-operational-sync-runtime.ts` (SIN MONTAR):
 `scripts/off-04-8k-operational-sync-integration.test.mjs` enlaza el cifrado AES-GCM real y su descifrado con `syncNow` y un transporte simulado, sin endpoint. Prueba que la cola conserva exactamente los datos originales del borrador, que `operational_registered=true` y `operational_capture_id=capture_id` producen confirmación operativa, que un recibo técnico sin ACK o un ACK para otro ID no produce estado `synced`, y que un usuario de sesión diferente no puede iniciar el envío. Añadido al workflow.
 
 **Importante:** el test en memoria no prueba aún el endpoint FastAPI/PG17 ni la autorización firmada, ni implica que el sistema esté activado. `CI=UNVERIFIED` hasta que termine una ejecución real.
+
+## OFF-04.8L — adaptador de captura cifrada y único botón Guardar captura
+
+Se construyó el **binding funcional**, aislado del frontend en producción:
+
+- `offline-operational-id.ts`: identificador estable SHA-256 dominio `VINTO:OFF048:OPCAP:v1`, asociado exclusivamente al autor original, dispositivo y borrador, sin reutilizar el dominio del laboratorio sintético.
+- `offline-operational-capture-bindings.ts`: adapta `persist` del autoguardado a `saveDraft` cifrado con CAS; no exige completar el formulario mientras es borrador. En `freeze`, exige callback de autoridad **firmada CAPTURE**, recupera del vault los **mismos valores** del borrador, valida campos completos con validador de definición inyectado, crea ID idempotente, sella `synthetic:false`, calcula hash canónico y confirma borrador+pending+sync_queue con UNA transacción IndexedDB. Incluye `resume` para reabrir borradores sin perder datos. No sustituye la autorización server-side.
+- `offline-operational-editor-integration.ts`: conecta este binding con `createOfflineCaptureEditorWorkflow` (autoguardado ligero 1500ms, bloquear campos al Guardar captura, `flush`, confirmación atómica, verificar que existe queue y notificar auto-sync). Sin botones manuales de bridge ni sincronización.
+- `offline-draft-autosave.ts` y `offline-confirm-capture.ts`: preservan el motivo `conflict` devuelto por CAS operativa en vez de presentarlo como un error genérico.
+- `scripts/off-04-8l-capture-bindings.test.mjs`: cifrado AES-GCM real en pruebas Node, persistencia y reanudación, última revisión exacta, idempotencia, borrador incompleto, revocación de alcance, propietario ajeno y prueba integrada del único botón. Añadido al workflow OFF-04.6.
+
+**Gates aún abiertos:** test Chrome real, inyección de validador firmado de captura offline (no `readiness_only`), montaje de editor en los diez formularios, adaptador HTTP de producción y backend PostgreSQL, sesión original, simulación de 8h, SW y CI PASS. La existencia de datos ficticios actuales permite usar la misma base PostgreSQL de desarrollo, pero NO levantar restricciones de identidad/autoridad ni promover recibos sintéticos históricos. **No activado**, PR #246 Draft, OFF-04.7 QA apagado y sin despliegue.
