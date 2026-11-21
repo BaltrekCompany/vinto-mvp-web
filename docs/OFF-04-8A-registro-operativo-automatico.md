@@ -183,3 +183,14 @@ Se construyó el **binding funcional**, aislado del frontend en producción:
 - Pruebas `off-04-8m-quality-validation.test.mjs`, `off-04-8m-quality-editor.test.mjs` y actualización de `off-04-8l-capture-bindings.test.mjs`, incluidas en el workflow de OFF-04.6.
 
 **Estado real:** código y tests agregados; CI no verificado. No hay montaje de esta fábrica en la PWA ni permisos nuevos, conexión FastAPI/PostgreSQL real o QA de 8h. Los datos técnicos actuales de VINTO son ficticios y pueden usarse en el mismo PostgreSQL de desarrollo, pero el aislamiento de autorización e integridad se mantiene. PR #246 Draft; OFF-04.7 desactivado; no merge/despliegue/VPS.
+
+## OFF-04.8N — respuesta al CI real: 7 trabajos rojos, 31 correctos
+
+GitHub Actions del HEAD `416bc98e` pasó de `queued` a `completed`: 31 checks success, 7 failed. Se revisaron **logs reales** de los siete:
+
+1. OFF-04.3/04.4/04.5A/04.5B-06B fallaban en `scripts/off-04-sync-static.test.mjs` porque el escáner negativo de aislación marcaba cualquier referencia al motor compartido incluso dentro de candidatos operativos **no montados**. Se extrajo el validador `isSyncRecord` a `offline-queue-record.ts` (solo reglas, sin IndexedDB) y los consumidores nuevos importan la validación pura, **no** `offline-sync-store.ts` del laboratorio. La prueba actualiza una lista explícita de candidatos no montados, **prohíbe** imports de módulos de almacenamiento, fake server, captura y transporte sintético, así como conexiones directas.
+2. OFF-04.6 / contracts-build falló porque Node 22.18.0 con `--experimental-strip-types` **no soporta parameter properties** (por ejemplo `constructor(readonly reason: ...)`). Se usaron campos declarados y asignaciones explícitas en `OperationalLocalError`, `OperationalSyncIntegrityError` y `OperationalQualityFieldError`.
+3. OFF-04.6 / backend-postgres17 encontró 2 tests de forma con listas congeladas de consumidores `app.authz` y de grants; ahora enumeran los dos candidatos nuevos `quality/offline_operational.py` y `quality/offline_capture_authority.py`, y exigen que `app/main.py` **NO los importe ni monte**.
+4. OFF-04.6 / chrome-e2e-same-origin: los casos 01–10 pasaron y el caso 11 conservó **UN recibo PostgreSQL**, pero contó **DOS entregas HTTP** para la misma captura. **Aún sin causa raíz resuelta.** La aserción estricta de 1 POST se conserva; si vuelve a fallar, imprime solamente metadatos de eventos (tipo/ID/fecha), nunca payloads ni credenciales, para distinguir una carrera de dos envíos y del comportamiento idempotente. No se ha relajado la condición de QA.
+
+**Estado:** `OFF04_8N=CORRECTIONS_COMMITTED_PENDING_CI`. Estas modificaciones todavía requieren validación en un nuevo HEAD: NO declarar PASS. No merge, despliegue, migración, VPS ni activación de QA.
