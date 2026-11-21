@@ -171,3 +171,15 @@ Se construyó el **binding funcional**, aislado del frontend en producción:
 - `scripts/off-04-8l-capture-bindings.test.mjs`: cifrado AES-GCM real en pruebas Node, persistencia y reanudación, última revisión exacta, idempotencia, borrador incompleto, revocación de alcance, propietario ajeno y prueba integrada del único botón. Añadido al workflow OFF-04.6.
 
 **Gates aún abiertos:** test Chrome real, inyección de validador firmado de captura offline (no `readiness_only`), montaje de editor en los diez formularios, adaptador HTTP de producción y backend PostgreSQL, sesión original, simulación de 8h, SW y CI PASS. La existencia de datos ficticios actuales permite usar la misma base PostgreSQL de desarrollo, pero NO levantar restricciones de identidad/autoridad ni promover recibos sintéticos históricos. **No activado**, PR #246 Draft, OFF-04.7 QA apagado y sin despliegue.
+
+## OFF-04.8M — diez formularios y preservación de borradores sin autoridad vigente
+
+**Decisión de protección de datos:** el autoguardado de un borrador cifrado es distinto de la confirmación operativa. Si el teléfono pierde Internet o caduca el alcance firmado durante el llenado, **el borrador local se conserva y sigue siendo editable**. Solamente el paso `Guardar captura` exige el alcance independiente `capture_authority`, y el servidor verificará nuevamente la autorización original al sincronizar. El operario no debe perder mediciones por la caducidad de la credencial.
+
+**Código candidato añadido:**
+- `offline-operational-quality-validation.ts`: reutiliza `evaluateDraft` de la definición verificada, cubre exactamente P1-18/19/20/21/22/24/25/26/27/28, exige campos requeridos, prohíbe desconocidos y calculados, valida decimal canónico y controla la obligatoriedad del contexto por bobina (6 formularios) frente al contexto por máquina (4 formularios). La definición de solo lectura no otorga permisos.
+- `offline-operational-quality-editor.ts`: fábrica que conecta definición de campos con `offline-operational-editor-integration.ts` y firma `capture_authority` inyectada por separado. Para formularios por bobina calcula `context_version` sobre snapshot de captura/bobina/digest; para máquina usa el snapshot. No copia ni convierte un scope `readiness_only` en capturas autorizadas.
+- `offline-operational-capture-bindings.ts`: `persist()` mantiene borradores editables sin requerir revalidación online; `freeze()` sigue fail-closed si la autorización no está vigente.
+- Pruebas `off-04-8m-quality-validation.test.mjs`, `off-04-8m-quality-editor.test.mjs` y actualización de `off-04-8l-capture-bindings.test.mjs`, incluidas en el workflow de OFF-04.6.
+
+**Estado real:** código y tests agregados; CI no verificado. No hay montaje de esta fábrica en la PWA ni permisos nuevos, conexión FastAPI/PostgreSQL real o QA de 8h. Los datos técnicos actuales de VINTO son ficticios y pueden usarse en el mismo PostgreSQL de desarrollo, pero el aislamiento de autorización e integridad se mantiene. PR #246 Draft; OFF-04.7 desactivado; no merge/despliegue/VPS.
