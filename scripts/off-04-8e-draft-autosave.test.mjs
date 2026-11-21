@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createDraftAutosave } from "../lib/vinto/offline-draft-autosave.ts";
+import { createDraftAutosave, DEFAULT_AUTOSAVE_DELAY_MS } from "../lib/vinto/offline-draft-autosave.ts";
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 function env() {
@@ -97,3 +97,36 @@ test("Save Capture flush waits for a second edit made during an ongoing encrypte
   assert.deepEqual(snapshots,["first","latest"]);
   assert.equal(a.hasUnsavedChanges,false);
 });
+
+test("existing complete draft can confirm with persisted revision even without new edits",async()=>{
+  let saves=0;
+  const autosave=createDraftAutosave({
+    unlocked:()=>true,
+    current:()=>({draftId:"draft-existing",ownerId:"user-1",revision:4,values:{test:"saved"}}),
+    persist:async()=>{saves++;return {revision:5};},
+    setTimer:()=>1,clearTimer:()=>{},
+  });
+  assert.deepEqual(await autosave.flush(),{ok:true,revision:4});
+  assert.equal(saves,0);
+});
+test("two simultaneous Save Capture flushes share one CAS write",async()=>{
+  let release;const gate=new Promise(done=>{release=done;});
+  let revision=null,writes=0;
+  const autosave=createDraftAutosave({
+    unlocked:()=>true,
+    current:()=>({draftId:"d",ownerId:"u",revision,values:{test:"v"}}),
+    async persist(){writes++;await gate;return {revision:1};},
+    setTimer:()=>1,clearTimer:()=>{},
+    onSaved:r=>{revision=r;},
+  });
+  autosave.changed();
+  const a=autosave.flush(),b=autosave.flush();
+  assert.equal(a,b);
+  await Promise.resolve();assert.equal(writes,1);
+  release();
+  assert.deepEqual(await a,{ok:true,revision:1});
+  assert.deepEqual(await b,{ok:true,revision:1});
+  assert.equal(writes,1);
+});
+
+test("default debounce is within approved 1–2 seconds",()=>assert.equal(DEFAULT_AUTOSAVE_DELAY_MS,1500));
