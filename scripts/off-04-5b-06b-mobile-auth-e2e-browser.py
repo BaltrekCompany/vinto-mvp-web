@@ -363,6 +363,12 @@ with tempfile.TemporaryDirectory(prefix="vinto-off06b-") as tmp, sync_playwright
         report("10_readiness_only_snapshot_rejected_by_the_server_nothing_persisted")
 
         # ---- 11 two simultaneous tabs: one logical capture, one POST ----
+        # Prior cases advance only this tab's synthetic clock. Reload before the
+        # multitab race so both instances compare the durable IndexedDB lease
+        # with the same real-time baseline. No client storage is erased.
+        page.reload()
+        unlock(page)
+        wait_say(page, "Laboratorio desbloqueado (perfil original)")
         tab2 = open_lab(ctx)
         unlock(tab2)
         wait_say(tab2, "Laboratorio desbloqueado (perfil original)")
