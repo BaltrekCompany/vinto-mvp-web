@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import {webcrypto} from "node:crypto";
 import {createOperationalCaptureBindings} from "../lib/vinto/offline-operational-capture-bindings.ts";
+import {createOperationalCaptureEditor} from "../lib/vinto/offline-operational-editor-integration.ts";
 import {operationalCaptureId} from "../lib/vinto/offline-operational-id.ts";
 import {decideOperationalFreeze,nextOperationalDraft} from "../lib/vinto/offline-operational-model.ts";
 import {openLocalDraft} from "../lib/vinto/offline-vault.ts";
@@ -18,6 +19,7 @@ async function fixture(){
  const key=await cryptoApi.subtle.generateKey({name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
  let draft, pending, queue, active=true;
  const store={
+  sync:{async get(id){return queue?.capture_id===id?queue:null;}},
   async getDraft(id){return id===draftId?(draft??null):null;},
   async saveDraft(row,expected){draft=nextOperationalDraft(draft,row,expected);},
   async confirm(revision,cipher,p,q){
@@ -31,7 +33,7 @@ async function fixture(){
   async assertCaptureScope(){if(!active)throw Error("capture_scope_missing");},
   validateComplete(v){if(!v.medida)throw Error("incomplete");},
  });
- return {bindings,store,key, revoke(){active=false;}, get draft(){return draft;},
+ return {bindings,store,key,context,identity, revoke(){active=false;}, get draft(){return draft;},
   get pending(){return pending;},get queue(){return queue;}};
 }
 test("two autosaves persist exact last revision without sending",async()=>{
@@ -85,4 +87,33 @@ test("operational ID uses a different domain than synthetic QA and is stable",as
  const id=await operationalCaptureId(ownerId,deviceKey,draftId);
  assert.equal(id,await operationalCaptureId(ownerId,deviceKey,draftId));
  assert.match(id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("one-click editor adapter atomically queues real encrypted values without bridge button",async()=>{
+ const f=await fixture();
+ let revision=null,locked=false;
+ let values={medida:"21.4"};
+ const history=[];
+ const editor=createOperationalCaptureEditor({
+   key:f.key,store:f.store,context:f.context,identity:f.identity,
+   now:()=>Date.UTC(2026,10,20,10),
+   assertCaptureScope:async()=>{},
+   validateComplete:v=>{if(!v.medida)throw Error("incomplete");},
+ },{
+   current:()=>({draftId,ownerId,revision,values}),
+   unlocked:()=>true,
+   setEditorLocked:v=>{locked=v;},
+   setTimer:()=>1,clearTimer:()=>{},
+   onDraftSaved:r=>{revision=r;},
+   notifySync:()=>history.push("wake"),
+ });
+ editor.onFieldEdited();
+ const first=await editor.onGuardarCaptura();
+ assert.equal(first.status,"queued");
+ assert.equal(locked,true);
+ assert.equal(f.pending.capture_id,f.queue.capture_id);
+ assert.deepEqual(history,["wake"]);
+ const opened=await openLocalDraft(f.key,{...identity,id:first.captureId,
+  contextId:scopeSnapshotId,formCode:context.formCode,formVersion:context.formVersion},f.queue.sealed);
+ assert.deepEqual(opened,{synthetic:false,payload:{medida:"21.4"}});
 });
