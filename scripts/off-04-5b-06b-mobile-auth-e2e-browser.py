@@ -379,8 +379,19 @@ with tempfile.TemporaryDirectory(prefix="vinto-off06b-") as tmp, sync_playwright
         iid = capture_id(page, i)
         page.locator("#e2e-sync-now").click(no_wait_after=True)
         tab2.locator("#e2e-sync-now").click(no_wait_after=True)
-        wait_stage(page, i, "synced")
+        # Either tab may win the IndexedDB lease. Wait for the winner to
+        # finalize BEFORE reloading either tab: reloading the winner while it
+        # owns a lease would itself simulate a crash, not the intended race.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if stage(page, i) == "synced" or stage(tab2, i) == "synced":
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("neither tab finalized the shared capture")
+        page.reload(); unlock(page)
         tab2.reload(); unlock(tab2)
+        wait_stage(page, i, "synced")
         wait_stage(tab2, i, "synced")
         # Keep strict single-POST invariant; print only event metadata when broken.
         if srv.deliveries(iid) != 1:
