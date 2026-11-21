@@ -64,7 +64,7 @@ test("existing durable draft needs no new typing to confirm",async()=>{
  assert.equal(locked,true);
  assert.deepEqual(events,["freeze:5","queue:cap-saved","wake"]);
 });
-test("storage conflict keeps editor editable and does not enqueue",async()=>{
+test("Save Capture locks fields during async save and prevents a late edit",async()=>{
  const f=fixture();
  f.type("changed");f.setSlow();
  const pending=f.flow.onGuardarCaptura();
