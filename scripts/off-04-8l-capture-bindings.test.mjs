@@ -69,13 +69,14 @@ test("incomplete or stale draft cannot become a pending",async()=>{
  await assert.rejects(f.bindings.freeze(2),/CONFLICT/);
  assert.equal(f.pending,undefined);
 });
-test("revoked capture scope prevents saving and freezing, keeping existing draft",async()=>{
+test("expired capture scope preserves autosave but blocks operational freeze",async()=>{
  const f=await fixture();
  await f.bindings.persist({draftId,ownerId,revision:null,values:{medida:"12.3"}});
  f.revoke();
- await assert.rejects(f.bindings.freeze(1),/capture_scope_missing/);
+ await f.bindings.persist({draftId,ownerId,revision:1,values:{medida:"12.4"}});
+ await assert.rejects(f.bindings.freeze(2),/capture_scope_missing/);
  assert.equal(f.pending,undefined);
- assert.deepEqual((await f.bindings.resume()).values,{medida:"12.3"});
+ assert.deepEqual((await f.bindings.resume()).values,{medida:"12.4"});
 });
 test("wrong owner and stale CAS are not silently accepted",async()=>{
  const f=await fixture();
