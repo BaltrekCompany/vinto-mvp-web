@@ -125,9 +125,13 @@ jobs:
         run: |
           pnpm build
           test ! -e public/offline-e2e-lab.html
+          test ! -e public/off048i-indexeddb.html
           OFFLINE_DRAFT_LAB=1 node scripts/build-offline-boot.mjs
           test -s public/offline-e2e-lab.html
+          test -s public/off048i-indexeddb.html
+          test -s public/off048i-indexeddb.js
           node --check public/offline-e2e-lab.js
+          node --check public/off048i-indexeddb.js
           node scripts/build-offline-boot.mjs
           test ! -e public/offline-e2e-lab.html
 
@@ -169,6 +173,10 @@ jobs:
         env:
           OFFLINE_DRAFT_LAB: '1'
         run: node scripts/build-offline-boot.mjs
+      - name: OFF-04.8I Chrome E2E - encrypted operational IndexedDB across tabs and restarts
+        env:
+          OFF06B_PUBLIC: ${{ github.workspace }}/public
+        run: python scripts/off-04-8i-operational-indexeddb-browser.py
       - name: Chrome end to end - the ten Quality forms
         env:
           OFF06B_PUBLIC: ${{ github.workspace }}/public
