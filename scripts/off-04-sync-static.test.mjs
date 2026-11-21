@@ -9,7 +9,17 @@ import { payloadHash } from "../lib/vinto/offline-sync-engine.ts";
 const root = resolve(import.meta.dirname, "..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
 const SYNC = ["types", "rules", "engine", "fake-server", "store", "capture", "lab", "http-transport"].map(n => `lib/vinto/offline-sync-${n}.ts`);
-const AUTHORISED = new Set([...SYNC, "lib/vinto/offline-quality-e2e-lab.ts"]);   // OFF-04.5A: the explicit, laboratory-only bridge
+// Candidate operational modules use ONLY pure engine/rules/types/record guards.
+ // These are isolated and NOT an allowlist for operational app routes.
+const OPERATIONAL_CANDIDATES = [
+ "lib/vinto/off048i-indexeddb-browser.ts",
+ "lib/vinto/offline-operational-capture-bindings.ts",
+ "lib/vinto/offline-operational-local-store.ts",
+ "lib/vinto/offline-operational-model.ts",
+ "lib/vinto/offline-operational-sync-runtime.ts",
+ "lib/vinto/offline-queue-record.ts",
+];
+const AUTHORISED = new Set([...SYNC, "lib/vinto/offline-quality-e2e-lab.ts", ...OPERATIONAL_CANDIDATES]);
 const QA_SCRIPT = /^scripts\/(off-04-[A-Za-z0-9.-]+\.(ts|mjs|py)|off04_fixture\.py)$/;
 const SOURCE = /\.(ts|tsx|mjs|js|py)$/;
 const FORBIDDEN = /offline-sync-(types|rules|engine|fake-server|store|capture|lab|http-transport)|vinto-off043|sync_queue|offline-sync-lab/;
@@ -56,6 +66,19 @@ test("nothing operational references the engine laboratory (scan with negative c
     assert.deepEqual(findSyncRefs(Object.keys(fake), f => fake[f]).sort(), ["app/page.tsx", "backend/app/x.py", "lib/vinto/offline-engine-bridge.ts"]);
 });
 
+test("operational candidates cannot import synthetic lab storage or call synthetic network",()=>{
+ for(const file of OPERATIONAL_CANDIDATES){
+  const body=read(file);
+  assert.doesNotMatch(body,/from ["']\\.\\/offline-sync-(store|fake-server|lab|capture|http-transport)\\.ts["']/,
+   "operational code imported a lab-only module: "+file);
+  assert.doesNotMatch(body,/vinto-off043-sync-lab-v1|vinto-off04lab|offline-e2e-lab\.html|offline-sync-lab\.html/,
+   "operational code references a lab database or page: "+file);
+  assert.doesNotMatch(body,/\\bfetch\\s*\\(|XMLHttpRequest|sendBeacon/,
+   "operational candidate sent direct network traffic: "+file);
+ }
+ // Negative controls MUST fail when unsafe code is added to an approved path.
+ assert.match('import "./offline-sync-store.ts"',/offline-sync-(store|fake-server|lab|capture|http-transport)\\.ts/);
+});
 test("no real network access anywhere in the engine laboratory; the only transport is the fake server", () => {
     for (const f of SYNC) {
         const src = read(f);
