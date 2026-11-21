@@ -194,3 +194,14 @@ GitHub Actions del HEAD `416bc98e` pasó de `queued` a `completed`: 31 checks su
 4. OFF-04.6 / chrome-e2e-same-origin: los casos 01–10 pasaron y el caso 11 conservó **UN recibo PostgreSQL**, pero contó **DOS entregas HTTP** para la misma captura. **Aún sin causa raíz resuelta.** La aserción estricta de 1 POST se conserva; si vuelve a fallar, imprime solamente metadatos de eventos (tipo/ID/fecha), nunca payloads ni credenciales, para distinguir una carrera de dos envíos y del comportamiento idempotente. No se ha relajado la condición de QA.
 
 **Estado:** `OFF04_8N=CORRECTIONS_COMMITTED_PENDING_CI`. Estas modificaciones todavía requieren validación en un nuevo HEAD: NO declarar PASS. No merge, despliegue, migración, VPS ni activación de QA.
+
+## OFF-04.8O — verificador web de autorización CAPTURE, independiente de READINESS
+
+**Preflight:** verificado el PR #246 HEAD `3a83367901c544d6b1e4abbe32303215748f3f2f`: todos los workflows del commit devolvieron `completed/success` (captura visual de 38/38 PASS). Esto cierra el bloqueo de CI del incremento OFF-04.8N, NO declara operativo el sistema offline.
+
+**Código aislado añadido:**
+- `offline-operational-capture-scope-verify.ts`: valida en navegador el contrato exacto `vinto.offline.capture_scope.v1` de `backend/app/quality/offline_capture_scope.py`, firma Ed25519 con dominio `VINTO-OFFLINE-CAPTURE-SCOPE-V1\\0`, clave **anclada previamente en el enrolamiento autenticado HTTPS** (no acepta la clave de firma únicamente del envelope), tiempo de vigencia <=24 horas, operador/dispositivo/snapshot concretos, uno de los diez formularios y la operación efectiva por máquina/bobina. Los scopes `readiness_only` son rechazados aunque estén correctamente firmados.
+- `offline-operational-capture-gate.ts`: proporciona el callback `assertCaptureScope()` que el editor aislado exige al momento de `Guardar captura`. La firma se comprueba de nuevo en la confirmación, no se presupone válida por haber abierto un formulario antes. Las mediciones locales siguen cifradas aunque el scope venza; no se elimina el borrador.
+- `off-04-8o-capture-scope-verify.test.mjs`: firma Ed25519 real de pruebas y casos positivos/negativos (readiness-only firmado, identidad, pin, firma alterada, caducidad, formulario y operación, duplicados). Añadido a workflow OFF-04.6.
+
+**Limitaciones (gates no cubiertos):** el issuer `backend/app/quality/offline_capture_authority.py` sigue **sin endpoint montado**, la migración `0033` es solo propuesta y no aplicada, el navegador no obtiene todavía una credencial CAPTURE real ni hay vínculo UI operativo. La firma por sí sola no prueba concesión vigente: el servidor debe revalidar el snapshot original, su revocación, sesión y permisos en la transacción PostgreSQL antes del registro operativo. Pruebas y compilación del nuevo HEAD pendientes, PR Draft; no merge, no VPS, no deploy, OFF-04.7 apagado.
