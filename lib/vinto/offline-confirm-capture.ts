@@ -47,8 +47,8 @@ export function createCaptureConfirmer(deps: CaptureConfirmDeps) {
           frozen = await deps.freeze(flush.revision);
         } catch (error) {
           const code = error instanceof Error
-            ? (typeof (error as {reason?:unknown}).reason === "string"
-                ? (error as {reason:string}).reason : error.message)
+            ? ("reason" in error && typeof error.reason === "string"
+                ? error.reason : error.message)
             : "";
           const reason = (["conflict", "incomplete", "invalid", "context_changed"] as const).find(x => x === code) ?? "storage";
           deps.onBlocked?.(reason);
