@@ -86,7 +86,9 @@ export function decideOperationalFreeze(
     if(current.frozenBy!==pending.capture_id||!validOperationalPending(existingPending)||
       existingPending.sourceDraftId!==current.id||existingPending.sourceRevision!==expectedRevision||
       existingPending.payloadSha256!==pending.payloadSha256||
+      existingPending.ownerId!==pending.ownerId||existingPending.deviceKey!==pending.deviceKey||
       !isSyncRecord(existingQueue)||existingQueue.capture_id!==pending.capture_id||
+      existingQueue.ownerId!==pending.ownerId||existingQueue.deviceKey!==pending.deviceKey||
       existingQueue.payloadSha256!==pending.payloadSha256)
       throw new OperationalLocalError("corrupt");
     return {created:false,draft:current,pending:existingPending,queue:existingQueue};
