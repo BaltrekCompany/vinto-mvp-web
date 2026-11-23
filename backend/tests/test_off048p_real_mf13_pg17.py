@@ -17,6 +17,7 @@ from app.auth.machine_form_grants import grant_machine_form, revoke_machine_form
 from app.authz.capture_gate import gate_for
 from app.authz.policies import Operation
 from app.authz.errors import AuthorizationDenied, ResourceNotFound
+from app.quality.machine_capture_service import submit_machine_capture
 from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
 from app.offline_capture.contract import CaptureIn, canonical_sha256
 from app.offline_scope.signing import SigningKey, encode_b64
@@ -117,6 +118,21 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
             gate_for(who, "enforce", "offline-mf13-revoked", Operation.QUALITY_MACHINE_CAPTURE).check_new(
                 db, machine_id, MACHINE, FORM,
             )
+
+    # Exercise the real online machine-capture service (not a stand-in).
+    # It MUST deny at the live MF-13 enforce gate before resolving a device,
+    # validating fields, or writing operational rows.
+    denied_id = uuid4()
+    with pytest.raises((AuthorizationDenied, ResourceNotFound)):
+        submit_machine_capture(
+            db, actor_id=user, machine_code=MACHINE, capture_id=denied_id,
+            form_code=FORM, device_key=device, values={},
+            sectors=who.sectors,
+            gate=gate_for(who, "enforce", "off048p-real-service-revoked", Operation.QUALITY_MACHINE_CAPTURE),
+        )
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (denied_id,),
+    ).fetchone()[0] == 0
 
     with pytest.raises(CaptureScopeDenied):
         issue_capture_scope(db, who, device_key=device, machine_codes=[MACHINE], signer=signer)
