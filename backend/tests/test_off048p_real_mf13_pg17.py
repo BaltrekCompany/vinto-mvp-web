@@ -32,6 +32,7 @@ from types import SimpleNamespace
 from app.offline_capture.store import PgOfflineCaptureStore
 from app.offline_capture.service import AuthzDecision, ContextVerdict, receive_capture
 from app.quality.offline_operational_binding import registered_scope_promoter
+from app.quality.offline_capture_authorizer import RegisteredCaptureAuthorizer
 from app.offline_capture.contract import CaptureIn, canonical_sha256
 from app.offline_scope.signing import SigningKey, encode_b64
 from app.quality.offline_capture_authority import (
@@ -305,9 +306,10 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
         payload_sha256=canonical_sha256(body), payload=body,
     )
 
-    class Authorized:
-        def authorize(self, principal, capture):
-            return AuthzDecision(True)
+    authorizer = RegisteredCaptureAuthorizer(
+        lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False),
+        trusted_public_key_b64url=public,
+    )
 
     class SameContext:
         def evaluate(self, capture):
@@ -327,7 +329,7 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
 
     def send():
         return receive_capture(
-            store, user, incoming, authorizer=Authorized(),
+            store, user, incoming, authorizer=authorizer,
             context=SameContext(), validator=Validator(), promoter=promoter,
         )
 
@@ -547,9 +549,10 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
         payload_sha256=canonical_sha256(payload), payload=payload,
     )
 
-    class Authorizer:
-        def authorize(self, principal, capture):
-            return AuthzDecision(True)
+    authorizer = RegisteredCaptureAuthorizer(
+        lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False),
+        trusted_public_key_b64url=pub,
+    )
     class Context:
         def evaluate(self, capture):
             return ContextVerdict("same")
@@ -566,7 +569,7 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
     promoter = registered_scope_promoter(trusted_public_key_b64url=pub)
     def send():
         return receive_capture(
-            store, who, incoming, authorizer=Authorizer(), context=Context(),
+            store, who, incoming, authorizer=authorizer, context=Context(),
             validator=Validator(), promoter=promoter,
         )
     prior_release = db.execute(
