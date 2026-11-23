@@ -369,8 +369,12 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
     ).fetchone()[0] == previous_releases
 
 
-def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db):
-    """F3 -> signed Quality scope -> OFF receiver -> REAL P1-19 submit.
+@pytest.mark.parametrize("form_code", (
+    "VINTO-P1-19", "VINTO-P1-20", "VINTO-P1-21",
+    "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28",
+))
+def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
+    """F3 -> signed Quality scope -> OFF receiver -> REAL Quality submit.
 
     The F3 context is created by existing online HTTP services in an ephemeral
     PostgreSQL database, not by hand-inserting rows into operational tables.
@@ -442,7 +446,7 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db):
         must_change=False, sectors=frozenset({"BOBINAS"}),
     )
     from app.authz.policies import Operation
-    form = "VINTO-P1-19"
+    form = form_code
     grant_machine_form(
         db, user_id=calidad.user_id, machine_code="MP1", form_code=form,
         actor_id=admin.user_id,
@@ -463,8 +467,52 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db):
     historical = bobbin_context.load_by_id(db, bobbin_id, who.sectors)
     assert historical is not None and historical["machine_code"] == "MP1"
 
+    # Values are taken from the published form definitions. No automatic or
+    # calculated field is supplied by the offline client.
+    bobbin_code = historical["bobbin_code"]
+    bobbin_values = {
+        "VINTO-P1-19": dict(P119_VALUES),
+        "VINTO-P1-20": {
+            "crepado": "1.20", "gramaje": "20.50",
+            **{f"resistencia_{axis}_{position}": "2.50"
+               for axis in ("longitudinal", "transversal")
+               for position in ("centro", "medio", "extremo")},
+            **{f"espesor_{position}": "0.25"
+               for position in ("centro", "medio", "extremo")},
+        },
+        "VINTO-P1-21": {
+            "gramaje_01": "20.50", "peso_seco_01": "18.50",
+            "humedad_01": "6.50",
+        },
+        "VINTO-P1-24": {
+            "crepado": "1.20", "gramaje": "20.50",
+            **{f"resistencia_{axis}_humeda_{position}": "2.50"
+               for axis in ("longitudinal", "transversal")
+               for position in ("centro", "medio", "extremo")},
+            "tiempo_de_curado_condicion": "5.00",
+        },
+        "VINTO-P1-25": {
+            "crepado": "1.20", "curado_min": "5",
+            **{f"resistencia_longitudinal_{position}_kgf": "2.50"
+               for position in ("centro", "medio", "extremo")},
+            **{f"resistencia_longitudinal_humeda_{position}_kgf": "2.20"
+               for position in ("centro", "medio", "extremo")},
+            "elongacion_media_longitudinal": "1.20",
+            "elongacion_media_transversal": "1.10",
+            "n_cortes": 2,
+        },
+        "VINTO-P1-28": {
+            "numero_de_bobina": bobbin_code,
+            "producto": "Papel de prueba",
+            "detalle_motivo_de_rechazo": "Ficha documental ficticia QA",
+            "accion_correctiva": "Revisión documental de prueba",
+            "peso_rechazado": "1.50",
+            "estado_disposicion_final": "Pendiente de revisión",
+        },
+    }
+    values = bobbin_values[form_code]
     payload = {
-        "synthetic": False, "payload": dict(P119_VALUES),
+        "synthetic": False, "payload": values,
         "bobbin": {
             "bobbin_id": str(bobbin_id),
             "context_digest": historical["context_digest"],
