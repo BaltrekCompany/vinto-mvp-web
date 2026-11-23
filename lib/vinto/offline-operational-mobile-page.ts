@@ -14,7 +14,7 @@ import {readQualityPackage,storeQualityPackage} from "./offline-quality-store.ts
 import {MACHINE_QUALITY_FORMS,BOBBIN_QUALITY_FORMS} from "./offline-operational-quality-validation.ts";
 import {type VerifiedQualityDefinition,type QualityField} from "./offline-quality-verify.ts";
 import {listBobbinContexts,storeBobbinContext} from "./offline-bobbin-store.ts";
-import type {BobbinContext} from "./offline-draft-schema.ts";
+import {bobbinContextVersion,type BobbinContext} from "./offline-draft-schema.ts";
 import {createOperationalLocalStore} from "./offline-operational-local-store.ts";
 import {createOperationalQualityEditor} from "./offline-operational-quality-editor.ts";
 import {createOperationalSyncRuntime} from "./offline-operational-sync-runtime.ts";
@@ -222,7 +222,6 @@ function drawFields(pkg:VerifiedQualityDefinition){
   }
   control.dataset.field=field.key;
   if(control instanceof HTMLInputElement&&control.type==="checkbox"){
-   control.checked===true;
    control.checked=values[field.key]===true;
   }else control.value=String(values[field.key]??"");
   control.addEventListener("input",()=>{
@@ -234,11 +233,13 @@ function drawFields(pkg:VerifiedQualityDefinition){
  }
 }
 async function createEditor(pkg:VerifiedQualityDefinition,draftId:string,bobbin?:BobbinContext,
-  oldRevision:number|null=null,oldValues:Record<string,string|boolean>={}){
+  oldRevision:number|null=null,oldValues:Record<string,string|boolean>={},requiredSnapshot?:string){
  const ctx=requireUnlocked();
  activeEditor?.stop();
  activeDraftId=draftId;revision=oldRevision;values={...oldValues};
- const authority=await signedFor(pkg);
+ const authority=requiredSnapshot
+  ? await readCaptureAuthority(ctx.key,ctx.identity,target(pkg,requiredSnapshot),ctx.readiness.trustedPublicKey)
+  : await signedFor(pkg);
  const snapshot=authority.payload.snapshot_id;
  const form={
   draftId,machineCode:pkg.envelope.payload.machine_code,
@@ -283,12 +284,19 @@ async function openExisting(id:string){
  }
  // A historical draft can only be resumed with its OWN snapshot; do not
  // silently substitute a newer signed CAPTURE grant.
- const signed=await readCaptureAuthority(ctx.key,ctx.identity,target(pkg,draft.scopeSnapshotId),ctx.readiness.trustedPublicKey);
- const bobbin=undefined; // Machine drafts only until F3 context is explicitly restored.
- if(BOBBIN_QUALITY_FORMS.has(draft.formCode))
-  throw Error("Reapertura de borrador por bobina requiere su contexto histórico; no se reescribe automáticamente.");
- await createEditor(pkg,id,bobbin,draft.revision,original);
- if(signed.payload.snapshot_id!==draft.scopeSnapshotId)throw Error("Contexto de autorización distinto");
+ let bobbin:BobbinContext|undefined;
+ if(BOBBIN_QUALITY_FORMS.has(draft.formCode)){
+  const candidates=await listBobbinContexts(ctx.key,ctx.identity,
+    ctx.readiness.envelope.payload.snapshot_id,draft.machineCode);
+  for(const candidate of candidates.contexts){
+   if(await bobbinContextVersion(draft.scopeSnapshotId,
+     candidate.bobbin_id,candidate.context_digest)===draft.contextVersion){
+     bobbin=candidate;break;
+   }
+  }
+  if(!bobbin)throw Error("No se encuentra el contexto histórico cifrado de esta bobina");
+ }
+ await createEditor(pkg,id,bobbin,draft.revision,original,draft.scopeSnapshotId);
 }
 async function newDraft(){
  const pkg=packages[Number(el<HTMLSelectElement>("form").value)];
