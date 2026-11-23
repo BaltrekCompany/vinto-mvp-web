@@ -22,7 +22,7 @@ import {createOperationalHttpTransport} from "./offline-operational-http.ts";
 import {storeCaptureAuthority,readCaptureAuthority,listCaptureAuthoritySnapshots} from "./offline-operational-authority-store.ts";
 import type {CaptureScopeEnvelope,CaptureScopeTarget} from "./offline-operational-capture-scope-verify.ts";
 
-const el=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
+const el=<T extends Element>(id:string)=>document.getElementById(id) as unknown as T;
 const show=(id:string,enabled:boolean)=>{el(id).hidden=!enabled;};
 const message=(text:string)=>{el("status").textContent=text;};
 const FORM=/^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/;
@@ -264,7 +264,7 @@ async function createEditor(pkg:VerifiedQualityDefinition,draftId:string,bobbin?
    notifySync:()=>syncRuntime?.notifyReady(),
   },
  });
- el("editor-title").textContent=pkg.envelope.payload.form_name+" · "+pkg.envelope.payload.machine_code;
+ el("editor-title").textContent=pkg.envelope.payload.definition.form_name+" · "+pkg.envelope.payload.machine_code;
  drawFields(pkg);show("workspace",false);show("editor",true);
 }
 async function openExisting(id:string){
