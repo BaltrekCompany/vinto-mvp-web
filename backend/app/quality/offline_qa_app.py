@@ -15,8 +15,11 @@ from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.auth.router import router as auth_router
+from app.auth.router import router as auth_router, cookie_options
+from app.auth.sessions import revoke_session
 from app.database import get_connection, get_identity_connection
+from fastapi import Depends
+from fastapi.responses import Response
 from app.offline_scope.router import router as readiness_router
 from app.offline_scope.signing import SigningKey
 from app.quality.offline_operational_router import create_operational_quality_router
@@ -82,17 +85,37 @@ def create_offline_qa_app(
         return await call_next(request)
 
     if issue_enabled or receive_enabled:
-        def checked_qa_connection():
-            with open_connection() as connection:
+        def checked_open():
+            connection = open_connection()
+            try:
                 name = connection.execute("SELECT current_database()").fetchone()[0]
                 if name != QA_DATABASE:
                     raise OfflineQaConfigurationError("qa_database_identity_mismatch")
+                return connection
+            except BaseException:
+                connection.close()
+                raise
+
+        def checked_qa_connection():
+            with checked_open() as connection:
                 yield connection
         # Route dependencies must use the same isolated QA DB as the
         # operational promoter; otherwise login or scope issuance could
         # silently run against a different configured database.
         app.dependency_overrides[get_connection] = checked_qa_connection
         app.dependency_overrides[get_identity_connection] = checked_qa_connection
+
+    # The shared auth router has a legacy logout function opening its OWN
+    # identity connection (outside FastAPI injection). Shadow this one path
+    # FIRST with a QA-only logout using the checked QA connection.
+    @app.post("/api/auth/logout", status_code=204)
+    def qa_logout(request: Request, connection=Depends(get_identity_connection)):
+        token = request.cookies.get(__import__("app.config", fromlist=["settings"]).settings.auth_cookie_name)
+        if token:
+            revoke_session(connection, token, request_id=None)
+        reply = Response(status_code=204, headers={"Cache-Control":"no-store"})
+        reply.delete_cookie(**cookie_options())
+        return reply
 
     app.include_router(auth_router)
     app.include_router(readiness_router)
@@ -103,7 +126,7 @@ def create_offline_qa_app(
         ))
     if receive_enabled:
         app.include_router(create_operational_quality_router(
-            enabled=True, open_connection=open_connection,
+            enabled=True, open_connection=checked_open,
             trusted_public_key_b64url=trusted_public_key_b64url,
         ))
     return app
