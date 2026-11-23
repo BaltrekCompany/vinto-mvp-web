@@ -18,7 +18,12 @@ from app.authz.capture_gate import gate_for
 from app.authz.policies import Operation
 from app.authz.errors import AuthorizationDenied, ResourceNotFound
 from app.quality.machine_capture_service import submit_machine_capture
-from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database
+from app.ephemeral_db import build_reference_template, connect, copy_database, drop_database, database_url
+import psycopg
+from types import SimpleNamespace
+from app.offline_capture.store import PgOfflineCaptureStore
+from app.offline_capture.service import AuthzDecision, ContextVerdict, receive_capture
+from app.quality.offline_operational_binding import registered_scope_promoter
 from app.offline_capture.contract import CaptureIn, canonical_sha256
 from app.offline_scope.signing import SigningKey, encode_b64
 from app.quality.offline_capture_authority import (
@@ -133,6 +138,53 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
     assert db.execute(
         "SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (denied_id,),
     ).fetchone()[0] == 0
+
+    # End-to-end NEGATIVE: a real receiver and PostgreSQL receipt use the
+    # genuine machine service and MF-13 enforce gate after revocation.
+    # This is not a successful vinto_txn.capture writing test.
+    class Authorizer:
+        def authorize(self, principal, capture):
+            return AuthzDecision(True)
+
+    class SameContext:
+        def evaluate(self, capture):
+            return ContextVerdict("same")
+
+    class CentralValidator:
+        def validate(self, principal, capture):
+            return SimpleNamespace(
+                ok=True, errors=[], calculated={}, context_kind="same",
+                version_mismatch=False,
+            )
+
+    store = PgOfflineCaptureStore(
+        lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
+    )
+    actual = receive_capture(
+        store, who, incoming, authorizer=Authorizer(),
+        context=SameContext(), validator=CentralValidator(),
+        promoter=registered_scope_promoter(trusted_public_key_b64url=public),
+    )
+    assert actual.status == 202
+    assert actual.body["operational_registered"] is False
+    assert actual.body["reason"] == "operational_not_authorized"
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (incoming.capture_id,),
+    ).fetchone()[0] == 0
+    assert db.execute(
+        "SELECT count(*) FROM vinto_offline.capture_receipt WHERE capture_id=%s",
+        (incoming.capture_id,),
+    ).fetchone()[0] == 1
+    replay = receive_capture(
+        store, who, incoming, authorizer=Authorizer(),
+        context=SameContext(), validator=CentralValidator(),
+        promoter=registered_scope_promoter(trusted_public_key_b64url=public),
+    )
+    assert replay.status == 202 and replay.body == actual.body
+    assert db.execute(
+        "SELECT count(*) FROM vinto_offline.capture_receipt WHERE capture_id=%s",
+        (incoming.capture_id,),
+    ).fetchone()[0] == 1
 
     with pytest.raises(CaptureScopeDenied):
         issue_capture_scope(db, who, device_key=device, machine_codes=[MACHINE], signer=signer)
