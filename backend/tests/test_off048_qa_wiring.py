@@ -6,6 +6,7 @@ Database-backed positive scenarios remain in test_off048p_real_mf13_pg17.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from app.offline_scope.signing import encode_b64
 from unittest.mock import Mock
 
 import pytest
@@ -34,14 +35,14 @@ class FakeDb:
 
 @dataclass(frozen=True)
 class FakeSigner:
-    public_b64url: str = "pinned-test-public-key"
+    public_b64url: str = encode_b64(bytes(range(32)))
 
 
 def opts(**overrides):
     baseline = dict(
         app_env="qa", database_name=QA_DATABASE,
         issue_enabled=True, receive_enabled=False,
-        signer=FakeSigner(), trusted_public_key_b64url="pinned-test-public-key",
+        signer=FakeSigner(), trusted_public_key_b64url=encode_b64(bytes(range(32))),
         open_connection=lambda: FakeDb(),
         allowed_origin="https://qa.example.test",
     )
@@ -55,8 +56,8 @@ def test_default_qa_app_has_no_operational_capture_or_issue_routes():
     assert client.post("/api/offline/capture-scope", json={}).status_code == 403
     assert client.post("/api/offline/captures", json={}).status_code == 403
     assert client.get("/api/offline/captures/11111111-1111-4111-8111-111111111111").status_code == 404
-    assert all(not route.path.endswith("/capture-scope") for route in app.routes)
-    assert all(not route.path.endswith("/captures") for route in app.routes)
+    assert all(not getattr(route, 'path', '').endswith("/capture-scope") for route in app.routes)
+    assert all(not getattr(route, 'path', '').endswith("/captures") for route in app.routes)
 
 
 @pytest.mark.parametrize("overrides", (
@@ -93,7 +94,7 @@ def test_issue_only_does_not_expose_receiver_and_requires_exact_origin():
 def test_receiver_only_does_not_issue_capture_capable_scope():
     app = create_offline_qa_app(**opts(issue_enabled=False, receive_enabled=True))
     assert all(not route.path.endswith("/capture-scope") for route in app.routes)
-    assert any(route.path.endswith("/captures") for route in app.routes)
+    assert any(getattr(route, 'path', '').endswith("/captures") for route in app.routes)
 
 
 def test_qa_capture_endpoint_factory_is_disabled_by_default():
