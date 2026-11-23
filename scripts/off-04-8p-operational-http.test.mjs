@@ -61,6 +61,5 @@ test("no cross origin URLs, redirects, HTML login pages or unrelated endpoint",a
  const html=createOperationalHttpTransport({origin:ORIGIN,fetcher:async()=>({
   status:200,headers:new Headers({"content-type":"text/html"}),json:async()=>({}),
  })});
- const answer=await html.send(request,{signal:new AbortController().signal});
- assert.notEqual(answer.status,201);
+ await assert.rejects(html.send(request,{signal:new AbortController().signal}),/SYNC_TRANSPORT_NETWORK/);
 });
