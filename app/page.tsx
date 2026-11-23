@@ -338,7 +338,7 @@ function Execution({ front, machine, machines, setMachine, forms, select, canCap
     const deny = () => { toast.error("Tu perfil no tiene permiso para capturar en este frente"); };
     const notice = !canCapture && <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Tu perfil puede consultar este frente, pero no capturar en él.</div>;
     // INT-02A: sin conexión no se puede registrar; NO se guarda nada en el navegador (no hay captura offline aprobada por VINTO).
-    const offline = !online && <div role="status" className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="offline">Sin conexión: no es posible registrar capturas. Nada se guarda en este navegador; reintenta cuando vuelva la conexión.</div>;
+    const offline = !online && <div role="status" className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="offline">{front === "Calidad" && process.env.NEXT_PUBLIC_OFFLINE_QUALITY_CAPTURE_ENABLED === "1" ? "Sin conexión: utilice Calidad offline si preparó previamente su dispositivo; los controles centrales requieren internet." : "Sin conexión: no es posible registrar capturas. Nada se guarda en este navegador; reintenta cuando vuelva la conexión."}</div>;
     if (front === "Calidad")
         return <div className="space-y-5">
             {process.env.NEXT_PUBLIC_OFFLINE_QUALITY_CAPTURE_ENABLED === "1" && canCapture &&
