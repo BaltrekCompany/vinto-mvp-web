@@ -22,7 +22,7 @@ import {createOperationalHttpTransport} from "./offline-operational-http.ts";
 import {storeCaptureAuthority,readCaptureAuthority,listCaptureAuthoritySnapshots} from "./offline-operational-authority-store.ts";
 import type {CaptureScopeEnvelope,CaptureScopeTarget} from "./offline-operational-capture-scope-verify.ts";
 
-const el=<T extends Element>(id:string)=>document.getElementById(id) as unknown as T;
+const el=<T>(id:string)=>document.getElementById(id) as unknown as T;
 const show=(id:string,enabled:boolean)=>{el(id).hidden=!enabled;};
 const message=(text:string)=>{el("status").textContent=text;};
 const FORM=/^VINTO-P1-(18|19|20|21|22|24|25|26|27|28)$/;
