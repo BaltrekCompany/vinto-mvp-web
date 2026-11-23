@@ -385,6 +385,13 @@ function report(e:unknown){
 async function start(){
  assertOrigin();
  if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
+ // Only PUBLIC static shell files, never authenticated pages, API responses,
+ // CAPTURE scopes or field values. Ensures offline reload after the FIRST visit.
+ if(navigator.onLine&&"caches" in window){
+  void caches.open("vinto-off048-quality-static-v1")
+   .then(cache=>cache.addAll(["/offline-calidad.html","/offline-calidad.js"]))
+   .catch(()=>message("La pantalla todavía no está disponible sin conexión; vuelva a abrirla online."));
+ }
  const profile=await readLocalProfile().catch(()=>null);
  show("unlock-panel",!!profile);
  user=await onlineUser();
