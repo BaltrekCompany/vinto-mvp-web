@@ -223,7 +223,7 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
     (
         "VINTO-P1-26",
         {
-            "punto_de_muestreo": "MP1",
+            "punto_de_muestreo": "Fieltro I",
             "masa_humeda": "12.50",
             "masa_seca": "2.75",
             "absorcion_de_humedad": "0.50",
