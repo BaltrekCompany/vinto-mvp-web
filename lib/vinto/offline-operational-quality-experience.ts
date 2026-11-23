@@ -6,8 +6,9 @@
  * route is mounted by importing this file. Activation belongs to an explicitly
  * authorized QA integration surface.
  */
-import {createOperationalQualityEditor, type OperationalQualityEditorDeps, type OperationalEditorUi}
+import {createOperationalQualityEditor, type OperationalQualityEditorDeps}
  from "./offline-operational-quality-editor.ts";
+import type {OperationalEditorUi} from "./offline-operational-editor-integration.ts";
 import {createOperationalSyncRuntime, type OperationalSyncRuntimeDeps}
  from "./offline-operational-sync-runtime.ts";
 import {createOperationalHttpTransport, type OperationalHttpDeps}
