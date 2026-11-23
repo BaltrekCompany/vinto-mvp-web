@@ -357,6 +357,11 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
     assert first.status == 201, first.body
     assert first.body["operational_registered"] is True, first.body
     assert first.body["operational_capture_id"] == str(incoming.capture_id)
+    reconciled = client.get(f"/api/offline/captures/{incoming.capture_id}")
+    assert reconciled.status_code == 200, reconciled.text
+    assert reconciled.json()["found"] is True
+    assert reconciled.json()["operational_registered"] is True
+    assert reconciled.json()["operational_capture_id"] == str(incoming.capture_id)
     stored = db.execute(
         """SELECT c.id, c.status, c.created_by, c.bobbin_id, c.assignment_id,
                   fv.version_number, f.code
@@ -601,6 +606,10 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
     first = send()
     assert first.status == 201, first.body
     assert first.body["operational_registered"] is True, first.body
+    reconciled = client.get(f"/api/offline/captures/{incoming.capture_id}")
+    assert reconciled.status_code == 200, reconciled.text
+    assert reconciled.json()["found"] is True
+    assert reconciled.json()["operational_registered"] is True
     row = db.execute(
         "SELECT id, bobbin_id, status, created_by FROM vinto_txn.capture WHERE id=%s",
         (incoming.capture_id,),
