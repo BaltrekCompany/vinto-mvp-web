@@ -33,6 +33,8 @@ from app.offline_capture.store import PgOfflineCaptureStore
 from app.offline_capture.service import AuthzDecision, ContextVerdict, receive_capture
 from app.quality.offline_operational_binding import registered_scope_promoter
 from app.quality.offline_capture_authorizer import RegisteredCaptureAuthorizer
+from app.quality.offline_capture_context import RegisteredQualityContext
+from app.offline_quality.central import QualityPayloadValidator
 from app.offline_capture.contract import CaptureIn, canonical_sha256
 from app.offline_scope.signing import SigningKey, encode_b64
 from app.quality.offline_capture_authority import (
@@ -311,16 +313,11 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
         trusted_public_key_b64url=public,
     )
 
-    class SameContext:
-        def evaluate(self, capture):
-            return ContextVerdict("same")
-
-    class Validator:
-        def validate(self, principal, capture):
-            return SimpleNamespace(
-                ok=True, errors=[], calculated={}, context_kind="same",
-                version_mismatch=False,
-            )
+    connect_actual = lambda: psycopg.connect(
+        database_url(db.info.dbname), autocommit=False
+    )
+    context = RegisteredQualityContext(connect_actual, sectors=user.sectors)
+    validator = QualityPayloadValidator(connect_actual, evaluate_bobbin_context=True)
 
     store = PgOfflineCaptureStore(
         lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
@@ -338,7 +335,7 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
     def send():
         return receive_capture(
             store, user, incoming, authorizer=authorizer,
-            context=SameContext(), validator=Validator(), promoter=promoter,
+            context=context, validator=validator, promoter=promoter,
         )
 
     previous_releases = db.execute(
@@ -561,15 +558,11 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
         lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False),
         trusted_public_key_b64url=pub,
     )
-    class Context:
-        def evaluate(self, capture):
-            return ContextVerdict("same")
-    class Validator:
-        def validate(self, principal, capture):
-            return SimpleNamespace(
-                ok=True, errors=[], calculated={}, context_kind="same",
-                version_mismatch=False,
-            )
+    connect_actual = lambda: psycopg.connect(
+        database_url(db.info.dbname), autocommit=False
+    )
+    context = RegisteredQualityContext(connect_actual, sectors=who.sectors)
+    validator = QualityPayloadValidator(connect_actual, evaluate_bobbin_context=True)
 
     store = PgOfflineCaptureStore(
         lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
@@ -581,8 +574,8 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
     assert authorizer.authorize(who, incoming).allowed is True
     def send():
         return receive_capture(
-            store, who, incoming, authorizer=authorizer, context=Context(),
-            validator=Validator(), promoter=promoter,
+            store, who, incoming, authorizer=authorizer, context=context,
+            validator=validator, promoter=promoter,
         )
     prior_release = db.execute(
         "SELECT status FROM vinto_txn.quality_release WHERE bobbin_id=%s",
