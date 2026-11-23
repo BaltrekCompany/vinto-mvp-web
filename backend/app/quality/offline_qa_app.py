@@ -12,14 +12,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from app.config import settings
 
 from app.auth.router import router as auth_router, cookie_options
 from app.auth.sessions import revoke_session
 from app.database import get_connection, get_identity_connection
-from fastapi import Depends
-from fastapi.responses import Response
 from app.offline_scope.router import router as readiness_router
 from app.offline_scope.signing import SigningKey
 from app.quality.offline_operational_router import create_operational_quality_router
@@ -84,6 +83,10 @@ def create_offline_qa_app(
                 return JSONResponse(status_code=403, content={"detail":"Origen no autorizado"})
         return await call_next(request)
 
+    if not (issue_enabled or receive_enabled):
+        # An OFF application must expose no auth, scope, or capture routes.
+        return app
+
     if issue_enabled or receive_enabled:
         def checked_open():
             connection = open_connection()
@@ -110,7 +113,7 @@ def create_offline_qa_app(
     # FIRST with a QA-only logout using the checked QA connection.
     @app.post("/api/auth/logout", status_code=204)
     def qa_logout(request: Request, connection=Depends(get_identity_connection)):
-        token = request.cookies.get(__import__("app.config", fromlist=["settings"]).settings.auth_cookie_name)
+        token = request.cookies.get(settings.auth_cookie_name)
         if token:
             revoke_session(connection, token, request_id=None)
         reply = Response(status_code=204, headers={"Cache-Control":"no-store"})
