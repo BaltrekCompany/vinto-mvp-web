@@ -195,3 +195,117 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
         assert not verify_registered_capture_scope(
             db, principal=who, capture=incoming, trusted_public_key_b64url=public,
         )
+
+
+def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db):
+    """Positive PG17 bridge: actual machine service writes vinto_txn.capture.
+
+    The receiver's context/validation adapters are test doubles; the authority
+    registry, signature verification, online MF-13 gate, machine service, SQL
+    writes and idempotent receipt are NOT mocked.
+    """
+    admin = create_user(
+        db, username=f"offp.admin.{uuid4().hex[:10]}", display_name="OFF QA Admin",
+        profile_code="DATA_BALTREK", password="pw-" + uuid4().hex, sectors=("BOBINAS",),
+    ).user_id
+    quality = create_user(
+        db, username=f"offp.quality.{uuid4().hex[:10]}", display_name="OFF QA Quality",
+        profile_code="CALIDAD", password="pw-" + uuid4().hex, sectors=("BOBINAS",),
+    ).user_id
+    user = AuthenticatedUser(
+        user_id=quality, username="offp.quality", display_name="Quality QA",
+        profile_codes=("CALIDAD",), permissions=frozenset({QUALITY_CAPTURE}),
+        must_change=False, sectors=frozenset({"BOBINAS"}),
+    )
+    grant_machine_form(db, user_id=quality, machine_code=MACHINE, form_code=FORM, actor_id=admin)
+    private = Ed25519PrivateKey.generate()
+    public_bytes = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    public = encode_b64(public_bytes)
+    signer = SigningKey(private, public, "ed25519-" + hashlib.sha256(public_bytes).hexdigest()[:20])
+    device = uuid4()
+    envelope = issue_capture_scope(db, user, device_key=device, machine_codes=[MACHINE], signer=signer)
+    pair = next(x for x in envelope["payload"]["form_scopes"] if x["form_code"] == FORM)
+    snapshot = UUID(envelope["payload"]["snapshot_id"])
+
+    # Required fields are grounded in the published P1-18 reference definition.
+    # The online service, not this test, validates and normalizes them.
+    values = {
+        "producto": "Papel QA offline",
+        "numero_de_cuba": "CUBA-TEST",
+        "hora_del_ensayo": "08:30",
+        "masa_humeda_g": "12.50",
+        "masa_seca_g": "2.75",
+        "papel_filtro_g": "1.20",
+        "papel_muestra_g": "4.30",
+        "peso_muestra_g": "3.10",
+    }
+    body = {"synthetic": False, "payload": values}
+    incoming = CaptureIn(
+        capture_id=uuid4(), author_user_id=quality, device_key=device,
+        form_code=FORM, form_version=pair["form_version"], machine_code=MACHINE,
+        scope_snapshot_id=snapshot, context_version=str(snapshot),
+        payload_sha256=canonical_sha256(body), payload=body,
+    )
+
+    class Authorized:
+        def authorize(self, principal, capture):
+            return AuthzDecision(True)
+
+    class SameContext:
+        def evaluate(self, capture):
+            return ContextVerdict("same")
+
+    class Validator:
+        def validate(self, principal, capture):
+            return SimpleNamespace(
+                ok=True, errors=[], calculated={}, context_kind="same",
+                version_mismatch=False,
+            )
+
+    store = PgOfflineCaptureStore(
+        lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
+    )
+    promoter = registered_scope_promoter(trusted_public_key_b64url=public)
+
+    def send():
+        return receive_capture(
+            store, user, incoming, authorizer=Authorized(),
+            context=SameContext(), validator=Validator(), promoter=promoter,
+        )
+
+    previous_releases = db.execute(
+        "SELECT count(*) FROM vinto_txn.quality_release"
+    ).fetchone()[0]
+    first = send()
+    assert first.status == 201, first.body
+    assert first.body["operational_registered"] is True, first.body
+    assert first.body["operational_capture_id"] == str(incoming.capture_id)
+    stored = db.execute(
+        """SELECT c.id, c.status, c.created_by, c.bobbin_id, c.assignment_id,
+                  fv.version_number, f.code
+           FROM vinto_txn.capture c
+           JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
+           JOIN vinto_config.form f ON f.id = fv.form_id
+           WHERE c.id=%s""",
+        (incoming.capture_id,),
+    ).fetchone()
+    assert stored == (incoming.capture_id, "submitted", quality, None, None,
+                      pair["form_version"], FORM)
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id=%s",
+        (incoming.capture_id,),
+    ).fetchone()[0] >= len(values)
+
+    retry = send()
+    assert retry.status == 200 and retry.body["outcome"] == "duplicate"
+    assert retry.body["operational_registered"] is True
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (incoming.capture_id,),
+    ).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT count(*) FROM vinto_offline.capture_receipt WHERE capture_id=%s",
+        (incoming.capture_id,),
+    ).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.quality_release"
+    ).fetchone()[0] == previous_releases
