@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.auth.router import router as auth_router
+from app.database import get_connection, get_identity_connection
 from app.offline_scope.router import router as readiness_router
 from app.offline_scope.signing import SigningKey
 from app.quality.offline_operational_router import create_operational_quality_router
@@ -79,6 +80,19 @@ def create_offline_qa_app(
             if request.headers.get("origin") != allowed_origin:
                 return JSONResponse(status_code=403, content={"detail":"Origen no autorizado"})
         return await call_next(request)
+
+    if issue_enabled or receive_enabled:
+        def checked_qa_connection():
+            with open_connection() as connection:
+                name = connection.execute("SELECT current_database()").fetchone()[0]
+                if name != QA_DATABASE:
+                    raise OfflineQaConfigurationError("qa_database_identity_mismatch")
+                yield connection
+        # Route dependencies must use the same isolated QA DB as the
+        # operational promoter; otherwise login or scope issuance could
+        # silently run against a different configured database.
+        app.dependency_overrides[get_connection] = checked_qa_connection
+        app.dependency_overrides[get_identity_connection] = checked_qa_connection
 
     app.include_router(auth_router)
     app.include_router(readiness_router)
