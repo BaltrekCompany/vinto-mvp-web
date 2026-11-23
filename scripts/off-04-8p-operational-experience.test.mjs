@@ -61,3 +61,98 @@ test("Quality capture composition is opt-in; encrypted save queues without sendi
  assert.equal(listeners.size,0);
  assert.equal(fetchCount,0);
 });
+
+test("offline capture survives locked interval and syncs only with original author and operational ACK",async()=>{
+ const {applyClaim,applyFinalize}=await import("../lib/vinto/offline-sync-rules.ts");
+ const key=await cryptoApi.subtle.generateKey({name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+ const identity={ownerId:OWNER,deviceKey:DEVICE};
+ let draftRow=null,pending=null,queue=null,revision=null,online=false,sessionUser=DEVICE,fetchCount=0;
+ const store={
+  getDraft:async()=>draftRow,
+  saveDraft:async row=>{draftRow=row;},
+  async confirm(expected,cipher,p,q){
+   assert.equal(pending,null);
+   pending=p;queue=q;
+   return {captureId:p.capture_id,created:true};
+  },
+  listPending:async(owner,device)=>owner===OWNER&&device===DEVICE&&pending?[pending]:[],
+  sync:{
+   get:async id=>queue?.capture_id===id?queue:null,
+   list:async(owner,device)=>owner===OWNER&&device===DEVICE&&queue?[queue]:[],
+   claim:async(id,tab,now,leaseMs)=>{
+    if(!queue||queue.capture_id!==id)return null;
+    const next=applyClaim(queue,tab,now,leaseMs);
+    if(next)queue=next.record;
+    return next;
+   },
+   finalize:async(id,tab,patch,now)=>{
+    if(queue?.capture_id!==id)return false;
+    const next=applyFinalize(queue,tab,patch,now);
+    if(!next)return false;
+    queue=next;return true;
+   },
+  },
+ };
+ const experience=await createOperationalQualityExperience({
+  editor:{
+   key,identity,store,
+   definition:{envelope:{payload:{form_code:"VINTO-P1-22",form_version:1,machine_code:"MP1",
+     definition:{form_code:"VINTO-P1-22",form_version:1,
+      fields:[{key:"medida",source:"manual",value_type:"decimal",required:true,options:[],display_order:1}]}}}},
+   form:{draftId:DRAFT,machineCode:"MP1",formCode:"VINTO-P1-22",
+      formVersion:1,captureScopeSnapshotId:SCOPE},
+   assertCaptureScope:async()=>{},
+   ui:{
+    current:()=>({draftId:DRAFT,ownerId:OWNER,revision,values:{medida:"2.50"}}),
+    unlocked:()=>true,setEditorLocked:()=>{},setTimer:()=>1,clearTimer:()=>{},
+    onDraftSaved:v=>{revision=v;},
+   },
+  },
+  http:{
+   origin:"https://qa.example.test/",
+   fetcher:async(url,options)=>{
+    fetchCount++;
+    assert.equal(options.credentials,"include");
+    assert.equal(options.mode,"same-origin");
+    assert.equal(options.redirect,"error");
+    assert.equal(options.method,"POST");
+    assert.equal(url,"https://qa.example.test/api/offline/captures");
+    const body=JSON.parse(options.body);
+    assert.equal(body.author_user_id,OWNER);
+    assert.equal(body.capture_id,pending.capture_id);
+    assert.equal(body.payload_sha256,pending.payloadSha256);
+    assert.deepEqual(body.payload,{synthetic:false,payload:{medida:"2.50"}});
+    return {status:201,headers:new Headers({"content-type":"application/json"}),
+      json:async()=>({capture_id:body.capture_id,payload_sha256:body.payload_sha256,
+       server_id:"srv-77",outcome:"created",technical_acceptance:true,
+       industrial_approval:false,operational_registered:true,operational_capture_id:body.capture_id})};
+   },
+  },
+  sync:{
+   tabId:"integration-test",unlockedKey:()=>key,online:()=>online,
+   onlineSession:async()=>({userId:sessionUser}),
+   subscribe:()=>()=>{},setTimer:()=>1,clearTimer:()=>{},
+  },
+ });
+ experience.editor.onFieldEdited();
+ assert.equal((await experience.editor.onGuardarCaptura()).status,"queued");
+ assert.equal(queue.state,"queued");
+ assert.equal(pending.synthetic,false);
+ assert.equal(fetchCount,0);
+ await assert.rejects(experience.syncNow(),/offline/);
+ assert.equal(queue.state,"queued");
+ online=true;
+ let outcome=await experience.syncNow();
+ assert.equal(outcome.paused,"different_user");
+ assert.equal(fetchCount,0);
+ assert.equal(queue.state,"queued");
+ sessionUser=OWNER;
+ outcome=await experience.syncNow();
+ assert.equal(outcome.paused,null);
+ assert.equal(fetchCount,1);
+ assert.equal(queue.state,"synced");
+ assert.equal(queue.serverRef,"srv-77");
+ await experience.syncNow();
+ assert.equal(fetchCount,1,"retries cannot duplicate an acknowledged capture");
+ experience.stop();
+});
