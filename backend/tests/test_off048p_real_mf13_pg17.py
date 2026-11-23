@@ -197,7 +197,31 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
         )
 
 
-def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db):
+@pytest.mark.parametrize("form_code,values", [
+    (
+        "VINTO-P1-18",
+        {
+            "producto": "Papel QA offline",
+            "numero_de_cuba": "CUBA-TEST",
+            "hora_del_ensayo": "08:30",
+            "masa_humeda_g": "12.50",
+            "masa_seca_g": "2.75",
+            "papel_filtro_g": "1.20",
+            "papel_muestra_g": "4.30",
+            "peso_muestra_g": "3.10",
+        },
+    ),
+    (
+        "VINTO-P1-22",
+        {
+            "numero_de_cuba": "CUBA-TEST",
+            "masa_humeda": "12.50",
+            "grado_de_refinacion_sr": "23.40",
+            "amperaje": "2.10",
+        },
+    ),
+])
+def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_code, values):
     """Positive PG17 bridge: actual machine service writes vinto_txn.capture.
 
     The receiver's context/validation adapters are test doubles; the authority
@@ -217,32 +241,22 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db):
         profile_codes=("CALIDAD",), permissions=frozenset({QUALITY_CAPTURE}),
         must_change=False, sectors=frozenset({"BOBINAS"}),
     )
-    grant_machine_form(db, user_id=quality, machine_code=MACHINE, form_code=FORM, actor_id=admin)
+    grant_machine_form(db, user_id=quality, machine_code=MACHINE, form_code=form_code, actor_id=admin)
     private = Ed25519PrivateKey.generate()
     public_bytes = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     public = encode_b64(public_bytes)
     signer = SigningKey(private, public, "ed25519-" + hashlib.sha256(public_bytes).hexdigest()[:20])
     device = uuid4()
     envelope = issue_capture_scope(db, user, device_key=device, machine_codes=[MACHINE], signer=signer)
-    pair = next(x for x in envelope["payload"]["form_scopes"] if x["form_code"] == FORM)
+    pair = next(x for x in envelope["payload"]["form_scopes"] if x["form_code"] == form_code)
     snapshot = UUID(envelope["payload"]["snapshot_id"])
 
-    # Required fields are grounded in the published P1-18 reference definition.
-    # The online service, not this test, validates and normalizes them.
-    values = {
-        "producto": "Papel QA offline",
-        "numero_de_cuba": "CUBA-TEST",
-        "hora_del_ensayo": "08:30",
-        "masa_humeda_g": "12.50",
-        "masa_seca_g": "2.75",
-        "papel_filtro_g": "1.20",
-        "papel_muestra_g": "4.30",
-        "peso_muestra_g": "3.10",
-    }
+    # Form-specific valid values come from each published form's reference definition.
+    # The online service owns final normalization and industrial validation.
     body = {"synthetic": False, "payload": values}
     incoming = CaptureIn(
         capture_id=uuid4(), author_user_id=quality, device_key=device,
-        form_code=FORM, form_version=pair["form_version"], machine_code=MACHINE,
+        form_code=form_code, form_version=pair["form_version"], machine_code=MACHINE,
         scope_snapshot_id=snapshot, context_version=str(snapshot),
         payload_sha256=canonical_sha256(body), payload=body,
     )
@@ -290,7 +304,7 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db):
         (incoming.capture_id,),
     ).fetchone()
     assert stored == (incoming.capture_id, "submitted", quality, None, None,
-                      pair["form_version"], FORM)
+                      pair["form_version"], form_code)
     assert db.execute(
         "SELECT count(*) FROM vinto_txn.capture_detail WHERE capture_id=%s",
         (incoming.capture_id,),
