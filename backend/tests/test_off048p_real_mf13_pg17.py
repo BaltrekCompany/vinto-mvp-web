@@ -3,6 +3,7 @@
 This deliberately does not assert that operational vinto_txn.capture E2E is complete.
 No MF-13 authorization functions are mocked.
 """
+import hashlib
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -64,7 +65,7 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
     device = uuid4()
     key = Ed25519PrivateKey.generate()
     public = encode_b64(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw))
-    signer = SigningKey(key, public, "test-key")
+    signer = SigningKey(key, public, "ed25519-" + hashlib.sha256(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).hexdigest()[:20])
 
     with pytest.raises(CaptureScopeDenied):
         issue_capture_scope(db, who, device_key=device, machine_codes=[MACHINE], signer=signer)
