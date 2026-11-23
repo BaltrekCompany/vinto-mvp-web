@@ -219,7 +219,8 @@ def test_real_mf13_grant_and_signed_authority_fail_closed(db):
             "grado_de_refinacion_sr": "23.40",
             "amperaje": "2.10",
         },
-    ),    (
+    ),
+    (
         "VINTO-P1-26",
         {
             "punto_de_muestreo": "MP1",
