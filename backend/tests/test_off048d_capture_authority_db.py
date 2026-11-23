@@ -243,7 +243,7 @@ def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope
 
     interrupted = capture(snapshot)
     monkeypatch.setattr(operational.machine_service, "submit_machine_capture", fail_after_candidate_insert)
-    with pytest.raises(StoreUnavailable, match="operational_registration_unavailable"):
+    with pytest.raises(StoreUnavailable, match="injected_failure_after_operational_insert"):
         submit(interrupted)
     with db.transaction() as tx:
         assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 1
