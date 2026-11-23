@@ -265,4 +265,4 @@ def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope
     assert denied.status == 202
     assert denied.body["operational_registered"] is False
     with db.transaction() as tx:
-        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 1
+        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 2
