@@ -105,4 +105,4 @@ def test_qa_capture_endpoint_factory_is_disabled_by_default():
         "/api/offline/capture-scope",
         json={"device_key": "33333333-3333-4333-8333-333333333333", "machine_codes":["MP1"]},
     )
-    assert response.status_code in (401, 404)
+    assert response.status_code == 403
