@@ -137,6 +137,15 @@ jobs:
           node --check public/off048i-indexeddb.js
           node scripts/build-offline-boot.mjs
           test ! -e public/offline-e2e-lab.html
+          test ! -e public/offline-calidad.html
+          test ! -e public/offline-calidad.js
+          OFFLINE_OPERATIONAL_CAPTURE=1 node scripts/build-offline-boot.mjs
+          test -s public/offline-calidad.html
+          test -s public/offline-calidad.js
+          node --check public/offline-calidad.js
+          node scripts/build-offline-boot.mjs
+          test ! -e public/offline-calidad.html
+          test ! -e public/offline-calidad.js
 
   chrome-e2e-same-origin:
     runs-on: ubuntu-24.04
