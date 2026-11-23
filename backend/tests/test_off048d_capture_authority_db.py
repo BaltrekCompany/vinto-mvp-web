@@ -235,6 +235,27 @@ def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope
         assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 1
         assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 1
 
+    # A crash AFTER a candidate operational insert must roll back that insert
+    # AND its technical receipt together. A retry must retain its capture_id.
+    def fail_after_candidate_insert(connection, **kwargs):
+        simulated_online_service(connection, **kwargs)
+        raise StoreUnavailable("injected_failure_after_operational_insert")
+
+    interrupted = capture(snapshot)
+    monkeypatch.setattr(operational.machine_service, "submit_machine_capture", fail_after_candidate_insert)
+    with pytest.raises(StoreUnavailable, match="injected_failure"):
+        submit(interrupted)
+    with db.transaction() as tx:
+        assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 1
+        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 1
+    monkeypatch.setattr(operational.machine_service, "submit_machine_capture", simulated_online_service)
+    recovered = submit(interrupted)
+    assert recovered.status == 201 and recovered.body["operational_registered"] is True
+    assert recovered.body["operational_capture_id"] == str(interrupted.capture_id)
+    with db.transaction() as tx:
+        assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 2
+        assert tx.c.execute("SELECT count(*) FROM off048p_operational_proof").fetchone()[0] == 2
+
     # A revoked authority cannot register another capture even with a valid session.
     with db.transaction() as tx:
         assert authority.revoke_capture_scope(
