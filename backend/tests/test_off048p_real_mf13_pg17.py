@@ -326,6 +326,14 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
         lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
     )
     promoter = registered_scope_promoter(trusted_public_key_b64url=public)
+    # A registered signature is bound to the original device and snapshot.
+    assert authorizer.authorize(
+        user, incoming.model_copy(update={"device_key": uuid4()})
+    ).allowed is False
+    assert authorizer.authorize(
+        user, incoming.model_copy(update={"scope_snapshot_id": None})
+    ).allowed is False
+    assert authorizer.authorize(user, incoming).allowed is True
 
     def send():
         return receive_capture(
@@ -567,6 +575,10 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
         lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
     )
     promoter = registered_scope_promoter(trusted_public_key_b64url=pub)
+    assert authorizer.authorize(
+        who, incoming.model_copy(update={"device_key": uuid4()})
+    ).allowed is False
+    assert authorizer.authorize(who, incoming).allowed is True
     def send():
         return receive_capture(
             store, who, incoming, authorizer=authorizer, context=Context(),
