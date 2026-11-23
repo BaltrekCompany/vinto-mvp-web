@@ -94,7 +94,12 @@ def test_issue_only_does_not_expose_receiver_and_requires_exact_origin():
 def test_receiver_only_does_not_issue_capture_capable_scope():
     app = create_offline_qa_app(**opts(issue_enabled=False, receive_enabled=True))
     assert all(not getattr(route, 'path', '').endswith("/capture-scope") for route in app.routes)
-    assert any(getattr(route, 'path', '').endswith("/captures") for route in app.routes)
+    response = TestClient(app).post(
+        "/api/offline/captures", headers={"origin": "https://qa.example.test"}, json={}
+    )
+    # The receiver's Pydantic contract rejects an empty body (422), proving
+    # that the route was mounted without permitting a database write.
+    assert response.status_code == 422
 
 
 def test_qa_capture_endpoint_factory_is_disabled_by_default():
