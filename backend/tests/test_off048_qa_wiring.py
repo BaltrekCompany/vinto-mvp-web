@@ -97,9 +97,8 @@ def test_receiver_only_does_not_issue_capture_capable_scope():
     response = TestClient(app).post(
         "/api/offline/captures", headers={"origin": "https://qa.example.test"}, json={}
     )
-    # The receiver's Pydantic contract rejects an empty body (422), proving
-    # that the route was mounted without permitting a database write.
-    assert response.status_code == 422
+    # The mounted receiver checks authentication first (401), before any write.
+    assert response.status_code == 401
 
 
 def test_qa_capture_endpoint_factory_is_disabled_by_default():
