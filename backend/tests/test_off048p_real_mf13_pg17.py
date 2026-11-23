@@ -4,6 +4,14 @@ This deliberately does not assert that operational vinto_txn.capture E2E is comp
 No MF-13 authorization functions are mocked.
 """
 import hashlib
+import asyncio
+from unittest.mock import patch
+from pydantic import SecretStr
+from app.config import settings
+from app.offline_quality import bobbin_context
+from tests.test_assignments_api import call, order_body
+from tests.test_f3_bobbins_api import VALUES as F3_VALUES
+from tests.test_quality_capture_api import P119_VALUES
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -359,3 +367,164 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
     assert db.execute(
         "SELECT count(*) FROM vinto_txn.quality_release"
     ).fetchone()[0] == previous_releases
+
+
+def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db):
+    """F3 -> signed Quality scope -> OFF receiver -> REAL P1-19 submit.
+
+    The F3 context is created by existing online HTTP services in an ephemeral
+    PostgreSQL database, not by hand-inserting rows into operational tables.
+    """
+    password = "offp-" + uuid4().hex
+    def user(profile):
+        return create_user(
+            db, username=f"offp.f3.{profile.lower()}.{uuid4().hex[:8]}",
+            display_name=f"OFF F3 {profile}", profile_code=profile,
+            password=password, sectors=("BOBINAS",),
+        )
+    jefatura, supervision, operacion, calidad, admin = [
+        user(p) for p in ("JEFATURA", "SUPERVISION", "OPERACION", "CALIDAD", "DATA_BALTREK")
+    ]
+
+    async def create_f3():
+        async def login(account):
+            reply = await call(
+                "POST", "/api/auth/login",
+                json_body={"username": account.username, "password": password},
+            )
+            assert reply.status == 200, (account.username, reply.text)
+            return reply.set_cookie_value()
+
+        j_cookie = await login(jefatura)
+        s_cookie = await login(supervision)
+        o_cookie = await login(operacion)
+        work = await call(
+            "POST", "/api/work-orders",
+            json_body=order_body("MP1"), cookie=j_cookie,
+        )
+        assert work.status == 201, work.text
+        published = await call(
+            "POST", f"/api/work-orders/{work.json()['id']}/publish",
+            cookie=j_cookie,
+        )
+        assert published.status == 200, published.text
+        order = published.json()
+        assigned = await call(
+            "POST", "/api/assignments/activate",
+            cookie=s_cookie,
+            json_body={
+                "work_order_id": order["id"],
+                "baseline_line_id": order["baseline"]["lines"][0]["id"],
+            },
+        )
+        assert assigned.status == 201, assigned.text
+        assignment = assigned.json()["assignment"]
+        f3 = await call(
+            "POST", "/api/bobbins",
+            cookie=o_cookie,
+            json_body={
+                "capture_id": str(uuid4()), "assignment_id": assignment["id"],
+                "device_key": str(uuid4()), "values": dict(F3_VALUES),
+            },
+        )
+        assert f3.status == 201, f3.text
+        return UUID(f3.json()["bobbin"]["id"])
+
+    # Patching only the app database address is necessary for existing online
+    # HTTP creation of the F3 fixture; never mounts an offline route.
+    with patch.object(settings, "database_url", SecretStr(database_url(db.info.dbname))):
+        bobbin_id = asyncio.run(create_f3())
+
+    who = AuthenticatedUser(
+        user_id=calidad.user_id, username=calidad.username,
+        display_name=calidad.display_name,
+        profile_codes=("CALIDAD",), permissions=frozenset({QUALITY_CAPTURE}),
+        must_change=False, sectors=frozenset({"BOBINAS"}),
+    )
+    from app.authz.policies import Operation
+    form = "VINTO-P1-19"
+    grant_machine_form(
+        db, user_id=calidad.user_id, machine_code="MP1", form_code=form,
+        actor_id=admin.user_id,
+    )
+    private = Ed25519PrivateKey.generate()
+    pub_bytes = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    pub = encode_b64(pub_bytes)
+    signer = SigningKey(
+        private, pub, "ed25519-" + hashlib.sha256(pub_bytes).hexdigest()[:20],
+    )
+    device = uuid4()
+    envelope = issue_capture_scope(
+        db, who, device_key=device, machine_codes=["MP1"], signer=signer,
+    )
+    scope = next(e for e in envelope["payload"]["form_scopes"] if e["form_code"] == form)
+    assert scope["operation"] == Operation.QUALITY_BOBBIN_CAPTURE.value
+    snapshot = UUID(envelope["payload"]["snapshot_id"])
+    historical = bobbin_context.load_by_id(db, bobbin_id, who.sectors)
+    assert historical is not None and historical["machine_code"] == "MP1"
+
+    payload = {
+        "synthetic": False, "payload": dict(P119_VALUES),
+        "bobbin": {
+            "bobbin_id": str(bobbin_id),
+            "context_digest": historical["context_digest"],
+        },
+    }
+    incoming = CaptureIn(
+        capture_id=uuid4(), author_user_id=calidad.user_id,
+        device_key=device, form_code=form,
+        form_version=scope["form_version"], machine_code="MP1",
+        scope_snapshot_id=snapshot,
+        context_version=bobbin_context.context_version(
+            str(snapshot), str(bobbin_id), historical["context_digest"],
+        ),
+        payload_sha256=canonical_sha256(payload), payload=payload,
+    )
+
+    class Authorizer:
+        def authorize(self, principal, capture):
+            return AuthzDecision(True)
+    class Context:
+        def evaluate(self, capture):
+            return ContextVerdict("same")
+    class Validator:
+        def validate(self, principal, capture):
+            return SimpleNamespace(
+                ok=True, errors=[], calculated={}, context_kind="same",
+                version_mismatch=False,
+            )
+
+    store = PgOfflineCaptureStore(
+        lambda: psycopg.connect(database_url(db.info.dbname), autocommit=False)
+    )
+    promoter = registered_scope_promoter(trusted_public_key_b64url=pub)
+    def send():
+        return receive_capture(
+            store, who, incoming, authorizer=Authorizer(), context=Context(),
+            validator=Validator(), promoter=promoter,
+        )
+    prior_release = db.execute(
+        "SELECT status FROM vinto_txn.quality_release WHERE bobbin_id=%s",
+        (bobbin_id,),
+    ).fetchone()
+    first = send()
+    assert first.status == 201, first.body
+    assert first.body["operational_registered"] is True, first.body
+    row = db.execute(
+        "SELECT id, bobbin_id, status, created_by FROM vinto_txn.capture WHERE id=%s",
+        (incoming.capture_id,),
+    ).fetchone()
+    assert row == (incoming.capture_id, bobbin_id, "submitted", calidad.user_id)
+    replay = send()
+    assert replay.status == 200 and replay.body["operational_registered"] is True
+    assert db.execute(
+        "SELECT count(*) FROM vinto_txn.capture WHERE id=%s", (incoming.capture_id,),
+    ).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT count(*) FROM vinto_offline.capture_receipt WHERE capture_id=%s",
+        (incoming.capture_id,),
+    ).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT status FROM vinto_txn.quality_release WHERE bobbin_id=%s",
+        (bobbin_id,),
+    ).fetchone() == prior_release
