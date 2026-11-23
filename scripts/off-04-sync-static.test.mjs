@@ -77,7 +77,7 @@ test("operational HTTP only shares PURE sync types, never imports the lab transp
  assert.match(src,/mode: "same-origin"/);
  assert.match(src,/redirect: "error"/);
  assert.match(src,/operational_registered/);
- assert.doesNotMatch(src,/\\bfetch\\s*\\(|XMLHttpRequest|sendBeacon/);
+ assert.doesNotMatch(src,/\bfetch\s*\(|XMLHttpRequest|sendBeacon/);
  // Negative control: importing laboratory transport must remain detectable.
  assert.match('from "./offline-sync-http-transport.ts"',/offline-sync-(store|fake-server|lab|capture|http-transport)/);
 });
