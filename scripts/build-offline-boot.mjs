@@ -73,8 +73,28 @@ export async function buildOfflineDraftLab() {
   return true;
 }
 
+/** Operational Quality mobile entrypoint: only when explicitly enabled for
+ * a QA/production build. Never ship automatically from an unreviewed PR. */
+export async function buildOperationalQualityMobile() {
+  const files=["public/offline-calidad.html","public/offline-calidad.js"];
+  if(process.env.OFFLINE_OPERATIONAL_CAPTURE!=="1"){
+    for(const file of files)rmSync(file,{force:true});
+    return false;
+  }
+  await build({
+    configFile:false,publicDir:false,logLevel:"error",
+    build:{outDir:"public",emptyOutDir:false,copyPublicDir:false,minify:true,
+      lib:{entry:"lib/vinto/offline-operational-mobile-page.ts",
+        name:"VINTOOfflineQualityMobile",formats:["iife"],
+        fileName:()=>"offline-calidad.js"}},
+  });
+  copyFileSync("lab/offline-calidad.html","public/offline-calidad.html");
+  return true;
+}
+
 export async function buildOfflineBoot() {
   await buildOfflineDraftLab();
+  await buildOperationalQualityMobile();
   await build({
     configFile: false,
     publicDir: false,
