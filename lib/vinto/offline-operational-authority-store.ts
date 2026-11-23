@@ -83,3 +83,19 @@ export async function readCaptureAuthority(
  if(opened.trustedPublicKey!==trustedPublicKey)throw Error("CAPTURE_AUTH_PIN_MISMATCH");
  return verifyOperationalCaptureScope(opened.envelope,trustedPublicKey,identity,target,Date.now());
 }
+
+/** Enumerate only authority snapshot identifiers belonging to this device.
+ * The caller must decrypt AND verify each envelope before trusting it.
+ */
+export async function listCaptureAuthoritySnapshots(identity:OfflineVaultIdentity):Promise<string[]>{
+ const handle=await db();
+ try{return await new Promise((resolve,reject)=>{
+  const req=handle.transaction(TABLE,"readonly").objectStore(TABLE).getAll();
+  req.onsuccess=()=>{
+   const rows=req.result as AuthorityRow[];
+   resolve(rows.filter(row=>row.ownerId===identity.ownerId.toLowerCase()&&
+    row.deviceKey===identity.deviceKey.toLowerCase()).map(row=>row.snapshotId));
+  };
+  req.onerror=()=>reject(Error("CAPTURE_AUTH_STORAGE_UNAVAILABLE"));
+ });}finally{handle.close();}
+}
