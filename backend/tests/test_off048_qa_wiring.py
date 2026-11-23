@@ -88,18 +88,18 @@ def test_issue_only_does_not_expose_receiver_and_requires_exact_origin():
     response = client.post("/api/offline/capture-scope", headers={"origin":"https://qa.example.test"}, json={})
     # The pydantic contract rejects malformed data before database effects.
     assert response.status_code in (401, 422)
-    assert all(not route.path.endswith("/captures") for route in app.routes)
+    assert all(not getattr(route, 'path', '').endswith("/captures") for route in app.routes)
 
 
 def test_receiver_only_does_not_issue_capture_capable_scope():
     app = create_offline_qa_app(**opts(issue_enabled=False, receive_enabled=True))
-    assert all(not route.path.endswith("/capture-scope") for route in app.routes)
+    assert all(not getattr(route, 'path', '').endswith("/capture-scope") for route in app.routes)
     assert any(getattr(route, 'path', '').endswith("/captures") for route in app.routes)
 
 
 def test_qa_capture_endpoint_factory_is_disabled_by_default():
     app = create_offline_qa_app()
-    assert all(not route.path.endswith("/capture-scope") for route in app.routes)
+    assert all(not getattr(route, 'path', '').endswith("/capture-scope") for route in app.routes)
     router = create_qa_capture_scope_router()
     app.include_router(router)
     response = TestClient(app).post(
