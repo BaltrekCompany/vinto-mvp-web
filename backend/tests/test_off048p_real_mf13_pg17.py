@@ -5,6 +5,10 @@ No MF-13 authorization functions are mocked.
 """
 import hashlib
 import asyncio
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from app.auth.dependencies import current_user
+from app.quality.offline_operational_router import create_operational_quality_router
 from unittest.mock import patch
 from pydantic import SecretStr
 from app.config import settings
@@ -332,11 +336,19 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
     ).allowed is False
     assert authorizer.authorize(user, incoming).allowed is True
 
+    # Exercise the FULL HTTP router used by the browser's transport.
+    # The only substitution is FastAPI's authenticated principal dependency;
+    # signer, MF-13, central validator, F3 and all PostgreSQL writes are real.
+    isolated = FastAPI()
+    isolated.include_router(create_operational_quality_router(
+        open_connection=connect_actual,
+        trusted_public_key_b64url=public, enabled=True,
+    ))
+    isolated.dependency_overrides[current_user] = lambda: user
+    client = TestClient(isolated)
     def send():
-        return receive_capture(
-            store, user, incoming, authorizer=authorizer,
-            context=context, validator=validator, promoter=promoter,
-        )
+        response = client.post("/api/offline/captures", json=incoming.model_dump(mode="json"))
+        return SimpleNamespace(status=response.status_code, body=response.json())
 
     previous_releases = db.execute(
         "SELECT count(*) FROM vinto_txn.quality_release"
@@ -572,11 +584,16 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
         who, incoming.model_copy(update={"device_key": uuid4()})
     ).allowed is False
     assert authorizer.authorize(who, incoming).allowed is True
+    isolated = FastAPI()
+    isolated.include_router(create_operational_quality_router(
+        open_connection=connect_actual,
+        trusted_public_key_b64url=pub, enabled=True,
+    ))
+    isolated.dependency_overrides[current_user] = lambda: who
+    client = TestClient(isolated)
     def send():
-        return receive_capture(
-            store, who, incoming, authorizer=authorizer, context=context,
-            validator=validator, promoter=promoter,
-        )
+        response = client.post("/api/offline/captures", json=incoming.model_dump(mode="json"))
+        return SimpleNamespace(status=response.status_code, body=response.json())
     prior_release = db.execute(
         "SELECT status FROM vinto_txn.quality_release WHERE bobbin_id=%s",
         (bobbin_id,),
