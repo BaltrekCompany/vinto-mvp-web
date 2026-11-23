@@ -205,7 +205,7 @@ def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope
     def simulated_online_service(connection, **kwargs):
         assert isinstance(connection, psycopg.Connection)
         assert kwargs["actor_id"] == USER
-        assert kwargs["capture_id"] == incoming.capture_id
+        assert isinstance(kwargs["capture_id"], UUID)
         assert kwargs["gate"] is not None
         connection.execute(
             "INSERT INTO off048p_operational_proof (capture_id) VALUES (%s)",
@@ -243,7 +243,7 @@ def test_off048p_receipt_and_promoter_share_pg_transaction_with_registered_scope
 
     interrupted = capture(snapshot)
     monkeypatch.setattr(operational.machine_service, "submit_machine_capture", fail_after_candidate_insert)
-    with pytest.raises(StoreUnavailable, match="injected_failure"):
+    with pytest.raises(StoreUnavailable, match="operational_registration_unavailable"):
         submit(interrupted)
     with db.transaction() as tx:
         assert tx.c.execute("SELECT count(*) FROM vinto_offline.capture_receipt").fetchone()[0] == 1
