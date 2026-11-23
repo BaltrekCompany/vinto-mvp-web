@@ -17,6 +17,7 @@ const OPERATIONAL_CANDIDATES = [
  "lib/vinto/offline-operational-local-store.ts",
  "lib/vinto/offline-operational-model.ts",
  "lib/vinto/offline-operational-sync-runtime.ts",
+ "lib/vinto/offline-operational-http.ts",
  "lib/vinto/offline-queue-record.ts",
 ];
 const AUTHORISED = new Set([...SYNC, "lib/vinto/offline-quality-e2e-lab.ts", ...OPERATIONAL_CANDIDATES]);
@@ -64,6 +65,21 @@ test("nothing operational references the engine laboratory (scan with negative c
     const fake = { "lib/vinto/offline-engine-bridge.ts": 'import "./offline-sync-engine.ts"', "app/page.tsx": 'indexedDB.open("vinto-off043-sync-lab-v1")',
         "backend/app/x.py": "t = 'sync_queue'", "lib/vinto/offline-sync-lab.ts": "offline-sync-engine", "scripts/off-04-new.py": "sync_queue", "lib/vinto/ok.ts": "x" };
     assert.deepEqual(findSyncRefs(Object.keys(fake), f => fake[f]).sort(), ["app/page.tsx", "backend/app/x.py", "lib/vinto/offline-engine-bridge.ts"]);
+});
+
+test("operational HTTP only shares PURE sync types, never imports the lab transport",()=>{
+ const file="lib/vinto/offline-operational-http.ts";
+ const src=read(file);
+ const imports=[...src.matchAll(/from ["']([^"']+)["']/g)].map(m=>m[1]);
+ assert.deepEqual(imports,["./offline-sync-types.ts"]);
+ assert.doesNotMatch(src,/offline-sync-(store|fake-server|lab|capture|http-transport)|vinto-off043|offline-e2e-lab|offline-sync-lab|sync_queue/);
+ assert.match(src,/credentials: "include"/);
+ assert.match(src,/mode: "same-origin"/);
+ assert.match(src,/redirect: "error"/);
+ assert.match(src,/operational_registered/);
+ assert.doesNotMatch(src,/\\bfetch\\s*\\(|XMLHttpRequest|sendBeacon/);
+ // Negative control: importing laboratory transport must remain detectable.
+ assert.match('from "./offline-sync-http-transport.ts"',/offline-sync-(store|fake-server|lab|capture|http-transport)/);
 });
 
 test("operational candidates cannot import synthetic lab storage or call synthetic network",()=>{
