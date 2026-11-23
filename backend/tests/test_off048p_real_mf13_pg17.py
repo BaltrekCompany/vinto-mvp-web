@@ -354,6 +354,24 @@ def test_offline_receipt_registers_real_machine_capture_once_with_mf13(db, form_
         (incoming.capture_id,),
     ).fetchone()[0] >= len(values)
 
+    # OFFLINE must send manual fields only. Calculated fields are persisted
+    # by the existing ONLINE Quality service, and never trusted from a device.
+    expected_computed = {
+        "VINTO-P1-26": {"porcentaje_cantidad_de_seco": "22.00"},
+    }
+    if form_code in expected_computed:
+        calculated_rows = dict(db.execute(
+            """SELECT fd.key, d.value_decimal::text
+               FROM vinto_txn.capture_detail d
+               JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
+               WHERE d.capture_id=%s AND fd.source='calculated'""",
+            (incoming.capture_id,),
+        ).fetchall())
+        from decimal import Decimal
+        assert {k: Decimal(v) for k, v in calculated_rows.items()} == {
+            k: Decimal(v) for k, v in expected_computed[form_code].items()
+        }
+
     retry = send()
     assert retry.status == 200 and retry.body["outcome"] == "duplicate"
     assert retry.body["operational_registered"] is True
@@ -563,6 +581,44 @@ def test_offline_receipt_registers_real_f3_bobbin_quality_p119(db, form_code):
         (incoming.capture_id,),
     ).fetchone()
     assert row == (incoming.capture_id, bobbin_id, "submitted", calidad.user_id)
+    # Server-side calculated results must match online formulas exactly;
+    # no computed value is supplied in the offline manual capture payload.
+    computed = {
+        "VINTO-P1-21": {
+            "promedio_gramaje": "20.50", "promedio_peso_seco": "18.50",
+            "promedio_humedad": "6.50",
+        },
+        "VINTO-P1-24": {
+            "promedio_longitudinal_humedo": "2.50",
+            "promedio_transversal_humedo": "2.50",
+        },
+        "VINTO-P1-25": {
+            "promedio_resistencia_longitudinal_kgf": "2.50",
+            "promedio_resistencia_longitudinal_humeda_kgf": "2.20",
+        },
+    }
+    if form_code in computed:
+        from decimal import Decimal
+        actual_calculated = dict(db.execute(
+            """SELECT fd.key, d.value_decimal::text
+               FROM vinto_txn.capture_detail d
+               JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
+               WHERE d.capture_id=%s AND fd.source='calculated'
+                 AND d.value_decimal IS NOT NULL""",
+            (incoming.capture_id,),
+        ).fetchall())
+        assert {k: Decimal(v) for k, v in actual_calculated.items()} == {
+            k: Decimal(v) for k, v in computed[form_code].items()
+        }
+    if form_code == "VINTO-P1-21":
+        position_count = db.execute(
+            """SELECT d.value_integer FROM vinto_txn.capture_detail d
+               JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
+               WHERE d.capture_id=%s AND fd.key='posiciones_utilizadas'""",
+            (incoming.capture_id,),
+        ).fetchone()
+        assert position_count == (1,)
+
     replay = send()
     assert replay.status == 200 and replay.body["operational_registered"] is True
     assert db.execute(
