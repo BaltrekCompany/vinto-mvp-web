@@ -434,7 +434,7 @@ async function unlock(passphrase:string){
  show("login-panel",!user);show("prepare-panel",!!user&&!key);show("unlock-panel",false);
  show("workspace",true);el("owner").textContent="Capturas del usuario: "+id.ownerId.slice(0,8);
  await offlineReadyStatus();
- if(missingAuthority&&user)void autoPrepare();
+ // The unlock handler starts renewal once, avoiding duplicate issuance.
 }
 async function lock(){
  try{await activeEditor?.flushDraft();}catch{
@@ -474,9 +474,11 @@ async function start(){
    const r=await api("POST","/api/auth/login",{username,password});
    const answer=interpretLogin(r.status,r.json);
    if(answer.status!=="ok")throw Error("No se pudo iniciar sesión");
-   user=answer.user;show("login-panel",false);show("prepare-panel",!key);
+   user=answer.user;show("login-panel",false);
+   const storedProfile=await readLocalProfile();
+   show("prepare-panel",!storedProfile);show("unlock-panel",!!storedProfile&&!key);
    el("identity").textContent="Usuario: "+user.display_name;
-  if(key)await autoPrepare();
+   if(key)await autoPrepare();
   })().catch(report);
  });
  el<HTMLFormElement>("prepare").addEventListener("submit",event=>{
