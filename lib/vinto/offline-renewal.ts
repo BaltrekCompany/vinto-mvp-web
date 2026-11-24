@@ -29,7 +29,7 @@ import {
     clearUnrecordedRevocation, noteUnrecordedRevocation, unrecordedRevocationAt,
 } from "./offline-revocation-fallback.ts";
 import {
-    assertPackageProgression, readQualityPackage, readRawPackage, sealPackageRecord,
+    assertPackageTransition, readQualityPackage, readRawPackage, sealPackageRecord,
     validPackageRecord, type StoredPackage,
 } from "./offline-quality-store.ts";
 
@@ -43,7 +43,7 @@ export const DISCARD_CONFIRMATION = "DISCARD_SUPERSEDED_PACKAGES" as const;
 
 export type RenewalPair = Readonly<{ machine_code: string; form_code: string }>;
 export type RenewalReason =
-    | "network" | "auth" | "revoked" | "revoked_unrecorded" | "server_unavailable" | "invalid" | "rollback"
+    | "network" | "auth" | "revoked" | "revoked_unrecorded" | "server_unavailable" | "invalid" | "rollback_scope" | "rollback_package"
     | "identity_mismatch" | "pin_mismatch" | "incompatible" | "needs_recovery" | "conflict"
     | "storage" | "commit_failed" | "no_local_scope";
 
@@ -368,7 +368,7 @@ export async function renewOfflineBundle(
 
     if (previous) {
         const order = compareScopeFreshness(next, previous.envelope);
-        if (order !== "newer" && order !== "identical") throw new RenewalError("rollback");
+        if (order !== "newer" && order !== "identical") throw new RenewalError("rollback_scope");
     }
 
     const existing = previous ? await enumerateExisting(key, identity, previous) : [];
@@ -397,8 +397,8 @@ export async function renewOfflineBundle(
         if (p.machine_code !== pair.machine_code || p.form_code !== pair.form_code) throw new RenewalError("invalid");
         const old = existing.find(e => pairKey(e.pair) === pairKey(pair))?.verified;
         if (old) {
-            try { assertPackageProgression(old.envelope.payload, p); }
-            catch { throw new RenewalError("rollback"); }
+            try { assertPackageTransition(old.envelope.payload, p); }   // strict progression + the single known OFF-04.7 pilot-synthetic -> real exception
+            catch { throw new RenewalError("rollback_package"); }
         }
         verifiedNew.push(verified);
     }

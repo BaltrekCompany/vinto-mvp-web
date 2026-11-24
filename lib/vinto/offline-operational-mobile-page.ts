@@ -10,7 +10,7 @@ import {getDeviceKey} from "./device";
 import {createLocalVault,unlockLocalVault,openLocalDraft,type OfflineVaultIdentity,type OfflineVaultRecord} from "./offline-vault.ts";
 import {readLocalProfile,storeLocalProfile} from "./offline-profile-store.ts";
 import {readOfflineScope,storeOfflineScope,readRawScope,type VerifiedLocalScope} from "./offline-scope-store.ts";
-import {renewOfflineBundle} from "./offline-renewal.ts";
+import {renewOfflineBundle,RenewalError} from "./offline-renewal.ts";
 import {readQualityPackage,storeQualityPackage} from "./offline-quality-store.ts";
 import {MACHINE_QUALITY_FORMS,BOBBIN_QUALITY_FORMS} from "./offline-operational-quality-validation.ts";
 import {type VerifiedQualityDefinition,type QualityField} from "./offline-quality-verify.ts";
@@ -382,6 +382,17 @@ async function enroll(machine:string,passphrase:string|null){
  show("workspace",true);await refreshDrafts();
  await offlineReadyStatus();
 }
+const RENEWAL_TEXT:Record<string,string>={
+ rollback_scope:"El servidor devolvió un alcance anterior al guardado en este celular (OFFLINE_RENEWAL_ROLLBACK_SCOPE). No se cambió nada.",
+ rollback_package:"Un formulario descargado no puede reemplazar al guardado con la misma versión (OFFLINE_RENEWAL_ROLLBACK_PACKAGE). No se cambió nada; avise a soporte.",
+ auth:"Su sesión expiró. Inicie sesión de nuevo.",network:"Sin conexión segura con el servidor.",
+ revoked:"El servidor ya no concede este acceso.",revoked_unrecorded:"El servidor ya no concede este acceso.",
+ identity_mismatch:"El perfil de este celular pertenece a otro usuario o dispositivo.",pin_mismatch:"La clave de firma del servidor no coincide con la guardada.",
+};
+function renewalText(e:unknown):string{
+ if(e instanceof RenewalError)return RENEWAL_TEXT[e.reason]??("No se pudo actualizar ("+e.message+").");
+ return e instanceof Error?e.message:"Reintente la actualización.";
+}
 let preparationBusy=false;
 async function offlineReadyStatus(){
  const ctx=requireUnlocked();
@@ -414,8 +425,7 @@ async function autoPrepare(){
  try{await enroll(el<HTMLInputElement>("machine").value.trim(),null);}
  catch(e){
   // Keep the encrypted local set; no silent deletion or permission escalation.
-  message("No se descargaron todos los formularios. Vaya a una zona con internet. "+
-   (e instanceof Error?e.message:"Reintente la actualización."));
+  message("No se descargaron todos los formularios. "+renewalText(e));
   show("offline-retry",true);
  }finally{preparationBusy=false;}
 }
@@ -459,7 +469,7 @@ async function start(){
  // Only PUBLIC static shell files, never authenticated pages, API responses,
  // CAPTURE scopes or field values. Ensures offline reload after the FIRST visit.
  if(navigator.onLine&&"caches" in window){
-  void caches.open("vinto-off048-quality-static-v4")
+  void caches.open("vinto-off048-quality-static-v5")
    .then(cache=>cache.addAll(["/offline-calidad.html","/offline-calidad.js"]))
    .catch(()=>message("La pantalla todavía no está disponible sin conexión; vuelva a abrirla online."));
  }

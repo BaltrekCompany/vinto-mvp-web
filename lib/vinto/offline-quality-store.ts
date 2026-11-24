@@ -4,6 +4,7 @@
  * historical metadata never grants offline capture authority.
  */
 import { openProfileDb, PACKAGE_STORE_NAME } from "./offline-profile-store.ts";
+import { isSyntheticPilotToRealTransition } from "./offline-synthetic-pilot.ts";
 import { readOfflineScope, type VerifiedLocalScope } from "./offline-scope-store.ts";
 import { openLocalDraft, sealLocalDraft, type OfflineVaultIdentity } from "./offline-vault.ts";
 import type { SealedValues } from "./offline-store";
@@ -85,6 +86,14 @@ export function assertPackageProgression(old:QualityPayload,next:QualityPayload)
   if(old.form_version>next.form_version ||
      (old.form_version===next.form_version&&old.content_sha256!==next.content_sha256))
      throw new QualityPackageError("invalid");
+}
+/**
+ * Renewal rule: strict progression, plus the single OFF-04.8 exception (known OFF-04.7 pilot-synthetic package -> real package,
+ * same form/machine/version/source checksum). Both packages must ALREADY be verified by the caller (signature, pin, identity, digest).
+ */
+export function assertPackageTransition(old:QualityPayload,next:QualityPayload):void{
+  try{assertPackageProgression(old,next);}
+  catch(error){if(isSyntheticPilotToRealTransition(old,next))return;throw error;}
 }
 /** Encrypt an ALREADY VERIFIED package into its storage record without touching IndexedDB. */
 export async function sealPackageRecord(key:CryptoKey,identity:OfflineVaultIdentity,
