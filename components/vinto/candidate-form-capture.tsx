@@ -80,13 +80,14 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     }, [palletMode, context?.assignmentId]);
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
+    const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
     const busy = useRef(false);
-    const locked = sending || attempt !== null || saved !== null;
+    const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null;
     const set = (key: string) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
-        if (busy.current || saved) return; // evita el doble clic
+        if (busy.current || saved || offlineQueuedId) return; // evita el doble clic
         if (!online) {
             // This port is absent by default. No assignment/Production offline write.
             if (!offlineQuality || form.context === "assignment" || attempt) return void setNotice(SUBMIT_MESSAGES.offline);
@@ -99,7 +100,9 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             busy.current = true; setSending(true); setNotice(null);
             try {
                 const queued = await offlineQuality.queue(prepared.value);
+                if (!queued.captureId || typeof queued.captureId !== "string") throw new Error("offline_capture_id_missing");
                 if (!live()) return;
+                setOfflineQueuedId(queued.captureId);
                 setNotice("Captura guardada de forma segura en este dispositivo. Pendiente de sincronización.");
                 onOfflineQueued?.(queued.captureId);
             } catch {
@@ -242,6 +245,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             <p className="mt-1">Captura {saved.capture.id} · revisión {saved.capture.revision} · {saved.capture.bobbin ? `Bobina ${saved.capture.bobbin.code} · ` : ""}{saved.capture.machine.code} · {saved.capture.work_order ? `OT ${saved.capture.work_order.number}` : `Turno ${saved.capture.shift.name} · fecha operativa ${saved.capture.operating_date}`}</p>
             <p className="mt-1" data-readback={saved.readBack.state}>{saved.readBack.state === "reading" ? "Consultando la captura en la API central…" : saved.readBack.state === "ok" ? "Verificada con una consulta posterior por id en la API central." : saved.readBack.state === "mismatch" ? "La consulta posterior no coincide con lo enviado; revisa el registro." : "No se pudo verificar con una consulta posterior; el envío ya fue confirmado por el servidor."}</p>
         </div>}
-        {!saved && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}
+        {!saved && !offlineQueuedId && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}
+        {offlineQueuedId && <p role="status" className="border-t bg-amber-50 px-5 py-3 text-sm text-amber-950">Captura local confirmada · pendiente de sincronización. No vuelvas a enviarla.</p>}
     </CaptureShell>;
 }
