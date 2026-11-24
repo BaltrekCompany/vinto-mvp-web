@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getDeviceKey } from "@/lib/vinto/device";
 import { getQualityCapture, submitQualityCapture } from "@/lib/vinto/quality-captures-api";
 import {
-    EMPTY_HUMIDITY_DRAFT, HUMIDITY_MESSAGES, POSITIONS, POSITION_LABELS, WEIGHT_LABELS, bobbinToShow, computeHumidity, createHumidityAttempt, formatHumidity, pendingNotice,
+    Q19_FORM_CODE, EMPTY_HUMIDITY_DRAFT, HUMIDITY_MESSAGES, POSITIONS, POSITION_LABELS, WEIGHT_LABELS, bobbinToShow, computeHumidity, createHumidityAttempt, formatHumidity, pendingNotice,
     submitHumidityAttempt, type HumidityDraft, type PendingHumidityAttempt, type Position, type WeightKey,
 } from "@/lib/vinto/quality-captures";
 import { grammageLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
