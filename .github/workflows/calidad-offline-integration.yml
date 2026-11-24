@@ -7,6 +7,7 @@ on:
       - 'components/vinto/quality-humidity-capture.tsx'
       - 'components/vinto/quality-physical-capture.tsx'
       - 'lib/vinto/quality-offline-*.ts'
+      - 'lib/vinto/offline-*.ts'
       - 'scripts/quality-offline-*.test.mjs'
       - '.github/workflows/calidad-offline-integration.yml'
   workflow_dispatch:
