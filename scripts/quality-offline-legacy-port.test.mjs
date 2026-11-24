@@ -9,7 +9,7 @@ test("P1-19 and P1-20 keep their existing validators", () => {
   assert.match(bridge, /normalizeHumidityDraft\(form\.draft\)/);
   assert.match(bridge, /normalizePhysicalDraft\(form\.draft\)/);
   assert.match(bridge, /authority_context_missing/);
-  assert.match(bridge, /bobbin_context/);
+  assert.match(bridge, /bobbinContextDigest/);
 });
 for (const [code, path] of [
   ["Q19_FORM_CODE", "components/vinto/quality-humidity-capture.tsx"],
