@@ -20,7 +20,7 @@ test("fresh profiles retain signed enrollment and never bypass CAPTURE validatio
  const enroll=mobile.slice(mobile.indexOf("async function enroll("),mobile.indexOf("async function unlock("));
  assert.match(enroll,/else\{\s*await storeOfflineScope\(opened,identityNow/);
  assert.match(enroll,/await storeCaptureAuthority\(opened,identityNow,signed/);
- assert.match(renewal,/const expectedScopeSnapshotId/);
+ assert.match(renewal,/expectedScopeSnapshotId: rawScope.snapshotId/);
  assert.match(renewal,/await commit\(\{/);
  assert.match(renewal,/db\.transaction\(\["profiles", SCOPE_STORE_NAME, PACKAGE_STORE_NAME\], "readwrite"\)/);
 });
