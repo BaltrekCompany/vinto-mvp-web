@@ -9,7 +9,8 @@ import {interpretSession,interpretLogin,type AuthUser} from "./auth.ts";
 import {getDeviceKey} from "./device";
 import {createLocalVault,unlockLocalVault,openLocalDraft,type OfflineVaultIdentity,type OfflineVaultRecord} from "./offline-vault.ts";
 import {readLocalProfile,storeLocalProfile} from "./offline-profile-store.ts";
-import {readOfflineScope,storeOfflineScope,type VerifiedLocalScope} from "./offline-scope-store.ts";
+import {readOfflineScope,storeOfflineScope,readRawScope,type VerifiedLocalScope} from "./offline-scope-store.ts";
+import {renewOfflineBundle} from "./offline-renewal.ts";
 import {readQualityPackage,storeQualityPackage} from "./offline-quality-store.ts";
 import {MACHINE_QUALITY_FORMS,BOBBIN_QUALITY_FORMS} from "./offline-operational-quality-validation.ts";
 import {type VerifiedQualityDefinition,type QualityField} from "./offline-quality-verify.ts";
@@ -319,8 +320,42 @@ async function enroll(machine:string,passphrase:string){
   device_key:identityNow.deviceKey,machine_codes:[machine],
  });
  if(readinessResponse.status!==200)throw Error("No se pudo emitir el alcance de lectura");
- const envelope=readinessResponse.json as {public_key_b64url:string};
- await storeOfflineScope(opened,identityNow,envelope,envelope.public_key_b64url);
+ const envelope=readinessResponse.json as {public_key_b64url:string;payload?:{form_scopes?:Array<{machine_code:string;form_code:string}>}};
+ const existingScope=await readRawScope(identityNow);
+ let count=0;
+ if(existingScope){
+  // OFF-03C.4: never overwrite a signed scope while encrypted packages
+  // still refer to its old snapshot. Renew both in ONE IndexedDB transaction.
+  const extras=(envelope.payload?.form_scopes??[])
+   .filter(p=>p.machine_code===machine&&FORM.test(p.form_code))
+   .map(p=>({machine_code:p.machine_code,form_code:p.form_code}));
+  const renewed=await renewOfflineBundle(opened,identityNow,{
+   fetchScope:async()=>envelope,
+   fetchPackage:async(machineCode,formCode,scope)=>{
+    const result=await api("POST","/api/offline/quality-package",{
+     device_key:identityNow.deviceKey,machine_code:machineCode,
+     form_code:formCode,signed_scope:scope,
+    });
+    if(result.status!==200)throw Object.assign(Error("No se pudo renovar "+formCode),{status:result.status});
+    return result.json;
+   },
+  },{machineCodes:[machine],extraPairs:extras});
+  count=renewed.renewedPackages.filter(p=>p.machine_code===machine).length;
+ }else{
+  await storeOfflineScope(opened,identityNow,envelope,envelope.public_key_b64url);
+  // New device: signed scope must be persisted before individual packages.
+  const firstScope=await readOfflineScope(opened,identityNow);
+  if(!firstScope)throw Error("Alcance firmado inválido");
+  for(const pair of firstScope.envelope.payload.form_scopes){
+   if(pair.machine_code!==machine||!FORM.test(pair.form_code))continue;
+   const result=await api("POST","/api/offline/quality-package",{
+    device_key:identityNow.deviceKey,machine_code:machine,
+    form_code:pair.form_code,signed_scope:firstScope.envelope,
+   });
+   if(result.status!==200)throw Error("No se pudo preparar "+pair.form_code);
+   await storeQualityPackage(opened,identityNow,result.json);count++;
+  }
+ }
  const verifiedReadiness=await readOfflineScope(opened,identityNow);
  if(!verifiedReadiness)throw Error("Alcance firmado inválido");
  const captureResponse=await api("POST","/api/offline/capture-scope",{
@@ -336,18 +371,6 @@ async function enroll(machine:string,passphrase:string){
   scopeSnapshotId:signed.payload.snapshot_id,machineCode:first.machine_code,
   formCode:first.form_code,formVersion:first.form_version,
  });
- let count=0;
- for(const pair of verifiedReadiness.envelope.payload.form_scopes){
-  if(pair.machine_code!==machine||!FORM.test(pair.form_code)||
-    !signed.payload.form_scopes.some(s=>s.machine_code===machine&&s.form_code===pair.form_code&&s.form_version===pair.form_version))
-    continue;
-  const pkg=await api("POST","/api/offline/quality-package",{
-   device_key:identityNow.deviceKey,machine_code:machine,form_code:pair.form_code,
-   signed_scope:verifiedReadiness.envelope,
-  });
-  if(pkg.status!==200)throw Error("No se pudo preparar "+pair.form_code);
-  await storeQualityPackage(opened,identityNow,pkg.json);count++;
- }
  if(!count)throw Error("No se encontró ningún formulario publicado");
  user=current;key=opened;identity=identityNow;readiness=verifiedReadiness;issuer=signed;
  await loadPackages();startSync();show("prepare-panel",false);show("unlock-panel",false);
