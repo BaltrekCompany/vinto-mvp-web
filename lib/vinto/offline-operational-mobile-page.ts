@@ -305,17 +305,22 @@ async function newDraft(){
  const bobbin=await getBobbin(pkg);
  await createEditor(pkg,crypto.randomUUID(),bobbin);
 }
-async function enroll(machine:string,passphrase:string){
+async function enroll(machine:string,passphrase:string|null){
  if(!MACHINE.test(machine))throw Error("Máquina inválida");
  const current=await onlineUser();
  if(!current||!current.permissions.includes("quality.capture")||current.must_change)
   throw Error("Se requiere sesión online con permiso de Calidad");
  const identityNow={ownerId:current.id.toLowerCase(),deviceKey:getDeviceKey().toLowerCase()};
  let profile=await readLocalProfile();
- if(!profile){profile=(await createLocalVault(identityNow,passphrase)).record;await storeLocalProfile(profile);}
+ if(!profile){
+  if(passphrase===null)throw Error("Configure una frase local para activar el modo sin conexión en este celular");
+  profile=(await createLocalVault(identityNow,passphrase)).record;await storeLocalProfile(profile);
+ }
  if(profile.ownerId!==identityNow.ownerId||profile.deviceKey!==identityNow.deviceKey)
   throw Error("Dispositivo registrado para otro usuario");
- const opened=await unlockLocalVault(profile,passphrase);
+ const opened=passphrase===null&&key&&identity?.ownerId===identityNow.ownerId&&identity.deviceKey===identityNow.deviceKey
+  ?key:passphrase!==null?await unlockLocalVault(profile,passphrase):null;
+ if(!opened)throw Error("Desbloquee los datos locales para actualizar formularios");
  const readinessResponse=await api("POST","/api/offline/scope",{
   device_key:identityNow.deviceKey,machine_codes:[machine],
  });
@@ -375,7 +380,40 @@ async function enroll(machine:string,passphrase:string){
  user=current;key=opened;identity=identityNow;readiness=verifiedReadiness;issuer=signed;
  await loadPackages();startSync();show("prepare-panel",false);show("unlock-panel",false);
  show("workspace",true);await refreshDrafts();
- message(count+" formularios preparados y protegidos. Ya puede capturar sin internet.");
+ await offlineReadyStatus();
+}
+let preparationBusy=false;
+async function offlineReadyStatus(){
+ const ctx=requireUnlocked();
+ const allowed=ctx.readiness.envelope.payload.form_scopes
+  .filter(p=>FORM.test(p.form_code)&&
+    (MACHINE_QUALITY_FORMS.has(p.form_code)||BOBBIN_QUALITY_FORMS.has(p.form_code)));
+ let valid=0;
+ for(const pkg of packages){
+  try{await signedFor(pkg);valid++;}catch{/* A downloaded form without CAPTURE is not offline-ready. */}
+ }
+ const expected=allowed.length;
+ if(expected>0&&valid===expected){
+  message("Formularios disponibles sin conexión ("+valid+" de "+expected+").");
+  show("offline-retry",false);
+ }else{
+  message("No se descargaron todos los formularios. Vaya a una zona con internet. "+
+   valid+" de "+expected+" disponibles para captura offline.");
+  show("offline-retry",true);
+ }
+}
+async function autoPrepare(){
+ if(preparationBusy||!navigator.onLine||!user||!key||!identity||identity.ownerId!==user.id.toLowerCase())return;
+ preparationBusy=true;
+ show("offline-retry",false);
+ message("Actualizando formularios y permisos…");
+ try{await enroll(el<HTMLInputElement>("machine").value.trim(),null);}
+ catch(e){
+  // Keep the encrypted local set; no silent deletion or permission escalation.
+  message("No se descargaron todos los formularios. Vaya a una zona con internet. "+
+   (e instanceof Error?e.message:"Reintente la actualización."));
+  show("offline-retry",true);
+ }finally{preparationBusy=false;}
 }
 async function unlock(passphrase:string){
  const profile=await readLocalProfile();
@@ -393,11 +431,10 @@ async function unlock(passphrase:string){
  const missingAuthority=await Promise.all(packages.map(async pkg=>{
   try{await signedFor(pkg);return false;}catch{return true;}
  })).then(states=>states.some(Boolean));
- show("login-panel",!user);show("prepare-panel",!!user);show("unlock-panel",false);
+ show("login-panel",!user);show("prepare-panel",!!user&&!key);show("unlock-panel",false);
  show("workspace",true);el("owner").textContent="Capturas del usuario: "+id.ownerId.slice(0,8);
- message(missingAuthority
-  ?"Falta autorización CAPTURE para uno o más formularios. Conéctese, inicie sesión si es necesario y prepare nuevamente el dispositivo. Sus borradores cifrados se conservan."
-  :"Borradores restaurados. Solo el autor original puede sincronizar.");
+ await offlineReadyStatus();
+ if(missingAuthority&&user)void autoPrepare();
 }
 async function lock(){
  try{await activeEditor?.flushDraft();}catch{
@@ -426,7 +463,7 @@ async function start(){
  show("unlock-panel",!!profile);
  user=await onlineUser();
  show("login-panel",!user);
- show("prepare-panel",!!user);
+ show("prepare-panel",!!user&&!profile);
  if(user)el("identity").textContent="Usuario: "+user.display_name;
  el<HTMLFormElement>("login").addEventListener("submit",event=>{
   event.preventDefault();
@@ -437,8 +474,9 @@ async function start(){
    const r=await api("POST","/api/auth/login",{username,password});
    const answer=interpretLogin(r.status,r.json);
    if(answer.status!=="ok")throw Error("No se pudo iniciar sesión");
-   user=answer.user;show("login-panel",false);show("prepare-panel",true);
+   user=answer.user;show("login-panel",false);show("prepare-panel",!key);
    el("identity").textContent="Usuario: "+user.display_name;
+  if(key)await autoPrepare();
   })().catch(report);
  });
  el<HTMLFormElement>("prepare").addEventListener("submit",event=>{
@@ -450,7 +488,7 @@ async function start(){
  el<HTMLFormElement>("unlock").addEventListener("submit",event=>{
   event.preventDefault();const pass=el<HTMLInputElement>("unlock-secret").value;
   el<HTMLInputElement>("unlock-secret").value="";
-  void unlock(pass).catch(report);
+  void unlock(pass).then(()=>autoPrepare()).catch(report);
  });
  el<HTMLSelectElement>("form").addEventListener("change",()=>{void refreshBobbins().catch(report);});
  el<HTMLFormElement>("prepare-bobbin").addEventListener("submit",event=>{
@@ -458,6 +496,7 @@ async function start(){
   const code=el<HTMLInputElement>("bobbin-code").value.trim();
   void prepareBobbin(code).then(()=>message("Bobina preparada y cifrada")).catch(report);
  });
+ el("offline-retry").addEventListener("click",()=>{void autoPrepare().catch(report);});
  el("new").addEventListener("click",()=>{void newDraft().catch(report);});
  el("sync").addEventListener("click",()=>{
   void syncRuntime?.syncOnce().then(async result=>{
