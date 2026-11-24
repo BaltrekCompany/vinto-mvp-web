@@ -110,7 +110,7 @@ test("legacy standalone paths cannot orphan packages or accept a rollback", () =
 
 test("public cache rotated for the new offline runtime and API is still never cached", () => {
     const sw = read("public/sw.js");
-    assert.match(sw, /vinto-off048-quality-static-v2/);
+    assert.match(sw, /vinto-off048-quality-static-v3/);
     assert.match(sw, /name\.startsWith\("vinto-off03c3-"\)/);
     assert.match(sw, /url\.pathname\.startsWith\("\/api\/"\)/);
     assert.match(sw, /if \(request\.method !== "GET"\) return;/);
