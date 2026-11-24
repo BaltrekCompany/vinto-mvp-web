@@ -153,6 +153,11 @@ async function prepareBobbin(code:string){
   await storeBobbinContext(ctx.key,ctx.identity,result.snapshot_id,bobbin);
  await refreshBobbins();
 }
+function syncStatusText(paused:string|null|undefined):string{
+ if(paused==="session_invalid")return "Inicia sesión con el mismo usuario para sincronizar tus capturas pendientes.";
+ if(paused==="different_user")return "Inicia sesión con el usuario que creó estas capturas para sincronizarlas.";
+ return paused?"Pausado: "+paused:"Sincronización comprobada";
+}
 function startSync(){
  const ctx=requireUnlocked();
  syncRuntime?.stop();
@@ -176,7 +181,7 @@ function startSync(){
   onError:()=>{el("sync-status").textContent="Sincronización pendiente. Compruebe sesión y conexión.";},
   // v6.1: redraw "Borradores y pendientes" after EVERY pass, so an automatic ACK is visible without pressing "Sincronizar ahora".
   onRunComplete:result=>{
-   el("sync-status").textContent=result.paused?"Pausado: "+result.paused:"Sincronización comprobada";
+   el("sync-status").textContent=syncStatusText(result.paused);
    void refreshDrafts().catch(()=>{/* locked or storage busy: the next pass redraws */});
   },
  });
@@ -556,7 +561,7 @@ async function start(){
  el("new").addEventListener("click",()=>{void newDraft().catch(report);});
  el("sync").addEventListener("click",()=>{
   void syncRuntime?.syncOnce().then(async result=>{
-   el("sync-status").textContent=result?.paused?"Pausado: "+result.paused:"Sincronización comprobada";
+   el("sync-status").textContent=syncStatusText(result?.paused);
    await refreshDrafts();
   }).catch(report);
  });
