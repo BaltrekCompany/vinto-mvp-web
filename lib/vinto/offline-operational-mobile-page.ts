@@ -418,7 +418,7 @@ async function start(){
  // Only PUBLIC static shell files, never authenticated pages, API responses,
  // CAPTURE scopes or field values. Ensures offline reload after the FIRST visit.
  if(navigator.onLine&&"caches" in window){
-  void caches.open("vinto-off048-quality-static-v2")
+  void caches.open("vinto-off048-quality-static-v3")
    .then(cache=>cache.addAll(["/offline-calidad.html","/offline-calidad.js"]))
    .catch(()=>message("La pantalla todavía no está disponible sin conexión; vuelva a abrirla online."));
  }
