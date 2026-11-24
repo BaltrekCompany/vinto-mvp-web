@@ -26,6 +26,25 @@ export function createQualityOfflineDraftLifecycle(deps: QualityOfflineDraftLife
     async recover(): Promise<QualityOfflineDraftState | null> {
       return deps.bindings.resume();
     },
+    /**
+     * Save an edit by compare-and-swap. The caller supplies the revision it
+     * actually displayed: stale tabs and frozen captures must fail closed.
+     * Incomplete measurements may be saved for later completion.
+     */
+    async save(values: Values, expectedRevision: number): Promise<QualityOfflineDraftState> {
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+        throw new Error("offline_draft_revision_invalid");
+      const current = await deps.bindings.resume();
+      if (!current || current.frozen || current.revision !== expectedRevision)
+        throw new Error("offline_draft_conflict");
+      const result = await deps.bindings.persist({
+        draftId: deps.draftId,
+        ownerId: deps.identity.ownerId,
+        revision: expectedRevision,
+        values,
+      });
+      return { revision: result.revision, frozen: false, values };
+    },
     async prepare(initialValues: Values): Promise<QualityOfflineDraftState> {
       const existing = await deps.bindings.resume();
       if (existing) return existing;
