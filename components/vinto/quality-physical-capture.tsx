@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getDeviceKey } from "@/lib/vinto/device";
 import { grammageLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import {
-    EMPTY_PHYSICAL_DRAFT, PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_MESSAGES, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, createPhysicalAttempt,
+    Q20_FORM_CODE, EMPTY_PHYSICAL_DRAFT, PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_MESSAGES, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, createPhysicalAttempt,
     physicalAverages, physicalBobbinToShow, physicalPendingNotice, submitPhysicalAttempt, type PendingPhysicalAttempt, type PhysicalDraft, type PhysicalKey,
 } from "@/lib/vinto/quality-physical";
 import { getPhysicalCapture, submitPhysicalCapture } from "@/lib/vinto/quality-physical-api";
