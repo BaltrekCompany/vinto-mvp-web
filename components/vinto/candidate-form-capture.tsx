@@ -6,6 +6,7 @@ import { CaptureNotice, CaptureSection, CaptureShell, ChoiceField, ContextStrip,
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
+import { prepareCurrentQualityOfflineInput, type PreparedQualityOfflineInput } from "@/lib/vinto/quality-offline-current-form-bridge";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { Input } from "@/components/ui/input";
@@ -33,11 +34,16 @@ type Props = {
     onSessionLost: () => void;
     user?: { display_name: string } | null; // usuario autenticado, solo informativo: NO es una firma
     deps?: CandidateSubmitDeps; // inyectable para pruebas; por defecto la API central
+    offlineQuality?: {
+        prepared: { formVersion: number; scopeSnapshotId: string; contextVersion: string; bobbinContextDigest?: string };
+        queue: (input: PreparedQualityOfflineInput) => Promise<{ captureId: string }>;
+    };
+    onOfflineQueued?: (captureId: string) => void;
 };
 
 type ReadBack = { state: "reading" } | { state: "ok" } | { state: "mismatch" } | { state: "error" };
 
-export function CandidateFormCapture({ candidate, context, machine, bobbin, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps }: Props) {
+export function CandidateFormCapture({ candidate, context, machine, bobbin, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps, offlineQuality, onOfflineQueued }: Props) {
     const { form, api } = candidate;
     const palletMode = candidate.code === "VINTO-P1-12";
     const contextId = form.context === "machine" ? machine?.code : form.context === "bobbin" ? bobbin?.bobbin.id : context?.assignmentId; // assignment_id, código de máquina o id de bobina, según el formulario
@@ -81,7 +87,26 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
         if (busy.current || saved) return; // evita el doble clic
-        if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
+        if (!online) {
+            // This port is absent by default. No assignment/Production offline write.
+            if (!offlineQuality || form.context === "assignment" || attempt) return void setNotice(SUBMIT_MESSAGES.offline);
+            const prepared = prepareCurrentQualityOfflineInput({
+                form, draft, machineCode: machine?.code ?? bobbin?.bobbin.machine.code ?? "",
+                bobbinId: bobbin?.bobbin.id,
+                ...offlineQuality.prepared,
+            });
+            if (!prepared.ok) return void setNotice("No se puede guardar sin conexión: falta preparar o validar este formulario.");
+            busy.current = true; setSending(true); setNotice(null);
+            try {
+                const queued = await offlineQuality.queue(prepared.value);
+                if (!live()) return;
+                setNotice("Captura guardada de forma segura en este dispositivo. Pendiente de sincronización.");
+                onOfflineQueued?.(queued.captureId);
+            } catch {
+                if (live()) setNotice("No se confirmó el guardado local. Los datos siguen en pantalla; verifica antes de reintentar.");
+            } finally { busy.current = false; setSending(false); }
+            return;
+        }
         if (palletMode && !attempt && (!palletPreview || !palletPreview.weight_available)) return void setNotice("No se puede registrar: falta peso nominal válido del artículo programado.");
         let current = attempt;
         if (!current) {
