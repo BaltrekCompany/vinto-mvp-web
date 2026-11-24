@@ -1,5 +1,5 @@
 /* VINTO OFF-02: public, versioned app-shell assets only. NEVER cache auth/API/user data. */
-const STATIC_CACHE = "vinto-off048-quality-static-v5";
+const STATIC_CACHE = "vinto-off048-quality-static-v6";
 const PUBLIC_ASSETS = ["/offline.html", "/offline-probe.js", "/offline-boot.js", "/offline-device-qa.js", "/manifest.webmanifest", "/favicon.svg"];
 const PUBLIC_PATHS = new Set(PUBLIC_ASSETS);
 // OFF-04.1 laboratory (exists only in lab builds). Never precached here; the lab page caches itself.

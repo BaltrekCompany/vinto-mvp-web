@@ -16,7 +16,7 @@ test("unlock preserves draft state and exposes renewal when no CAPTURE authority
  assert.match(unlock,/await signedFor\(pkg\)/);
  assert.match(unlock,/show\("login-panel",!user\);show\("prepare-panel",!!user&&!key\)/);
  assert.match(unlock,/await offlineReadyStatus\(\)/);
- assert.match(mobile,/async function autoPrepare\(\)/);
+ assert.match(mobile,/function autoPrepare\(opts/);
  assert.match(mobile,/await renewOfflineBundle\(opened,identityNow,/);
  assert.match(mobile,/No se descargaron todos los formularios/);
  assert.doesNotMatch(unlock,/show\("login-panel",false\)/);

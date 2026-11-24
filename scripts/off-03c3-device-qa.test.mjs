@@ -20,7 +20,7 @@ test("shell loads local QA only as public precached asset and retains no-capture
   assert.match(shell,/id="offline-qa-checks"/);
   assert.match(shell,/src="\/offline-device-qa\.js" defer/);
   assert.match(shell,/captura de datos reales.*aún no están habilitados/);
-  assert.match(worker,/vinto-off048-quality-static-v5/);
+  assert.match(worker,/vinto-off048-quality-static-v6/);
   assert.match(worker,/"\/offline-device-qa\.js"/);
   assert.doesNotMatch(worker,/fetch.*\/api\/offline\/quality-package/);
 });
@@ -39,7 +39,7 @@ function testRuntime({ready=true, persistent=true, noEnumeration=false}={}){
     document:{getElementById(id){return nodes[id]},createElement(){return el()}},
     window:{isSecureContext:true},
     navigator:{serviceWorker:{controller:{}},storage:{persisted:async()=>persistent}},
-    caches:{keys:async()=>["vinto-off048-quality-static-v5"],
+    caches:{keys:async()=>["vinto-off048-quality-static-v6"],
        match:async()=>({status:200})},
     indexedDB:{databases: noEnumeration?undefined:async()=>ready?
         [{name:"vinto-off03a-profiles-v1",version:3}]:[],

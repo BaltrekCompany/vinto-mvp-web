@@ -22,6 +22,7 @@ import {createOperationalSyncRuntime} from "./offline-operational-sync-runtime.t
 import {createOperationalHttpTransport} from "./offline-operational-http.ts";
 import {storeCaptureAuthority,readCaptureAuthority,listCaptureAuthoritySnapshots} from "./offline-operational-authority-store.ts";
 import type {CaptureScopeEnvelope,CaptureScopeTarget} from "./offline-operational-capture-scope-verify.ts";
+import {resolveCaptureAuthority,shouldSkipAutomatic,type FreshPair,type PreparedMark} from "./offline-capture-reuse.ts";
 
 const el=<T = HTMLElement>(id:string):T=>document.getElementById(id) as unknown as T;
 const show=(id:string,enabled:boolean)=>{el(id).hidden=!enabled;};
@@ -35,6 +36,7 @@ let key:CryptoKey|null=null,identity:OfflineVaultIdentity|null=null;
 let readiness:VerifiedLocalScope|null=null,user:AuthUser|null=null;
 let packages:VerifiedQualityDefinition[]=[];
 let issuer:CaptureScopeEnvelope|null=null;
+let lastPrepared:PreparedMark|null=null;     // v6: set only when a preparation COMPLETED; cleared on lock and on any failure of a later one
 let syncRuntime:ReturnType<typeof createOperationalSyncRuntime>|null=null;
 let activeEditor:Awaited<ReturnType<typeof createOperationalQualityEditor>>|null=null;
 let activeDraftId:string|null=null,revision:number|null=null;
@@ -51,7 +53,8 @@ async function api(method:"GET"|"POST",path:string,body?:unknown){
   headers:{"Accept":"application/json",...(body!==undefined?{"Content-Type":"application/json"}:{})},
   ...(body!==undefined?{body:JSON.stringify(body)}:{})});
  const json=await response.json().catch(()=>null);
- return {status:response.status,json};
+ const serverMs=Date.parse(response.headers.get("Date")??"");
+ return {status:response.status,json,serverMs:Number.isFinite(serverMs)?serverMs:null};
 }
 async function onlineUser():Promise<AuthUser|null>{
  try{
@@ -363,21 +366,39 @@ async function enroll(machine:string,passphrase:string|null){
  }
  const verifiedReadiness=await readOfflineScope(opened,identityNow);
  if(!verifiedReadiness)throw Error("Alcance firmado inválido");
- const captureResponse=await api("POST","/api/offline/capture-scope",{
-  device_key:identityNow.deviceKey,machine_codes:[machine],
+ // v6: reuse a stored CAPTURE authority ONLY if it is verified and equals the FRESH scope exactly (see offline-capture-reuse.ts); otherwise issue a new one as before.
+ const freshPairs:FreshPair[]=verifiedReadiness.envelope.payload.form_scopes
+  .filter(p=>p.machine_code===machine&&FORM.test(p.form_code)&&(MACHINE_QUALITY_FORMS.has(p.form_code)||BOBBIN_QUALITY_FORMS.has(p.form_code)))
+  .map(p=>({machine_code:p.machine_code,form_code:p.form_code,form_version:p.form_version,operation:p.operation,grant_id:p.grant_id}));
+ if(!freshPairs.length)throw Error("No hay formularios de Calidad autorizados");
+ const anchor=freshPairs[0];
+ const resolved=await resolveCaptureAuthority({
+  fresh:freshPairs,nowMs:Math.max(Date.now(),readinessResponse.serverMs??0),
+  listSnapshots:()=>listCaptureAuthoritySnapshots(identityNow),
+  readVerified:snapshotId=>readCaptureAuthority(opened,identityNow,
+   {scopeSnapshotId:snapshotId,machineCode:anchor.machine_code,formCode:anchor.form_code,formVersion:anchor.form_version},
+   verifiedReadiness.trustedPublicKey),
+  issue:async()=>{
+   const captureResponse=await api("POST","/api/offline/capture-scope",{
+    device_key:identityNow.deviceKey,machine_codes:[machine],
+   });
+   if(captureResponse.status!==200)throw Error("No se pudo emitir CAPTURE para este usuario");
+   const signed=captureResponse.json as CaptureScopeEnvelope;
+   if(!signed||signed.public_key_b64url!==verifiedReadiness.trustedPublicKey)
+    throw Error("Firma CAPTURE incompatible con la firma de confianza");
+   const first=signed.payload?.form_scopes.find(p=>p.machine_code===machine&&FORM.test(p.form_code));
+   if(!first)throw Error("No hay formularios de Calidad autorizados");
+   await storeCaptureAuthority(opened,identityNow,signed,verifiedReadiness.trustedPublicKey,{
+    scopeSnapshotId:signed.payload.snapshot_id,machineCode:first.machine_code,
+    formCode:first.form_code,formVersion:first.form_version,
+   });
+   return signed;
+  },
  });
- if(captureResponse.status!==200)throw Error("No se pudo emitir CAPTURE para este usuario");
- const signed=captureResponse.json as CaptureScopeEnvelope;
- if(!signed||signed.public_key_b64url!==verifiedReadiness.trustedPublicKey)
-  throw Error("Firma CAPTURE incompatible con la firma de confianza");
- const first=signed.payload?.form_scopes.find(p=>p.machine_code===machine&&FORM.test(p.form_code));
- if(!first)throw Error("No hay formularios de Calidad autorizados");
- await storeCaptureAuthority(opened,identityNow,signed,verifiedReadiness.trustedPublicKey,{
-  scopeSnapshotId:signed.payload.snapshot_id,machineCode:first.machine_code,
-  formCode:first.form_code,formVersion:first.form_version,
- });
+ const signed=resolved.envelope;
  if(!count)throw Error("No se encontró ningún formulario publicado");
  user=current;key=opened;identity=identityNow;readiness=verifiedReadiness;issuer=signed;
+ lastPrepared={at:Date.now(),ownerId:identityNow.ownerId,deviceKey:identityNow.deviceKey,machine,authorityExpiresMs:Date.parse(signed.payload.expires_at)};
  await loadPackages();startSync();show("prepare-panel",false);show("unlock-panel",false);
  show("workspace",true);await refreshDrafts();
  await offlineReadyStatus();
@@ -393,7 +414,8 @@ function renewalText(e:unknown):string{
  if(e instanceof RenewalError)return RENEWAL_TEXT[e.reason]??("No se pudo actualizar ("+e.message+").");
  return e instanceof Error?e.message:"Reintente la actualización.";
 }
-let preparationBusy=false;
+// v6: ONE preparation in flight; every trigger that arrives meanwhile joins it instead of starting (or dropping) another.
+let inflight:Promise<void>|null=null;
 async function offlineReadyStatus(){
  const ctx=requireUnlocked();
  const allowed=ctx.readiness.envelope.payload.form_scopes
@@ -413,21 +435,29 @@ async function offlineReadyStatus(){
   show("offline-retry",true);
  }
 }
-async function autoPrepare(){
+function autoPrepare(opts:{manual?:boolean}={}):Promise<void>{
+ if(inflight)return inflight;
+ const run=runPrepare(opts.manual===true).finally(()=>{inflight=null;});
+ inflight=run;return run;
+}
+async function runPrepare(manual:boolean){
  if(!navigator.onLine){
   message("No se descargaron todos los formularios. Vaya a una zona con internet.");
   show("offline-retry",true);return;
  }
- if(preparationBusy||!user||!key||!identity||identity.ownerId!==user.id.toLowerCase())return;
- preparationBusy=true;
+ if(!user||!key||!identity||identity.ownerId!==user.id.toLowerCase())return;
+ const machine=el<HTMLInputElement>("machine").value.trim();
+ // Automatic triggers (login/unlock/online) skip a preparation that completed <10 min ago with a still comfortably valid CAPTURE authority. The manual retry never skips.
+ if(!manual&&shouldSkipAutomatic(lastPrepared,{nowMs:Date.now(),ownerId:identity.ownerId,deviceKey:identity.deviceKey,machine}))return;
  show("offline-retry",false);
  message("Actualizando formularios y permisos…");
- try{await enroll(el<HTMLInputElement>("machine").value.trim(),null);}
+ try{await enroll(machine,null);}
  catch(e){
   // Keep the encrypted local set; no silent deletion or permission escalation.
+  lastPrepared=null;
   message("No se descargaron todos los formularios. "+renewalText(e));
   show("offline-retry",true);
- }finally{preparationBusy=false;}
+ }
 }
 async function unlock(passphrase:string){
  const profile=await readLocalProfile();
@@ -455,7 +485,7 @@ async function lock(){
   message("No se pudo guardar el borrador. No se ha bloqueado todavía.");return;
  }
  activeEditor?.stop();activeEditor=null;activeDraftId=null;
- syncRuntime?.stop();syncRuntime=null;key=null;identity=null;readiness=null;issuer=null;
+ syncRuntime?.stop();syncRuntime=null;key=null;identity=null;readiness=null;issuer=null;lastPrepared=null;
  packages=[];values={};revision=null;
  show("editor",false);show("workspace",false);show("unlock-panel",true);
  message("Protección local activada. Los pendientes cifrados se conservan.");
@@ -469,7 +499,7 @@ async function start(){
  // Only PUBLIC static shell files, never authenticated pages, API responses,
  // CAPTURE scopes or field values. Ensures offline reload after the FIRST visit.
  if(navigator.onLine&&"caches" in window){
-  void caches.open("vinto-off048-quality-static-v5")
+  void caches.open("vinto-off048-quality-static-v6")
    .then(cache=>cache.addAll(["/offline-calidad.html","/offline-calidad.js"]))
    .catch(()=>message("La pantalla todavía no está disponible sin conexión; vuelva a abrirla online."));
  }
@@ -512,7 +542,7 @@ async function start(){
   const code=el<HTMLInputElement>("bobbin-code").value.trim();
   void prepareBobbin(code).then(()=>message("Bobina preparada y cifrada")).catch(report);
  });
- el("offline-retry").addEventListener("click",()=>{void autoPrepare().catch(report);});
+ el("offline-retry").addEventListener("click",()=>{void autoPrepare({manual:true}).catch(report);});
  window.addEventListener("online",()=>{if(key&&user)void autoPrepare().catch(report);});
  el("new").addEventListener("click",()=>{void newDraft().catch(report);});
  el("sync").addEventListener("click",()=>{

@@ -8,12 +8,13 @@ const html=read("lab/offline-calidad.html");
 test("offline mobile prepares after authenticated unlock, no permanent manual preparation",()=>{
  assert.match(mobile,/void unlock\(pass\)\.then\(\(\)=>autoPrepare\(\)\)/);
  assert.match(mobile,/if\(key\)await autoPrepare\(\)/);
- assert.match(mobile,/async function autoPrepare\(\)/);
+ assert.match(mobile,/function autoPrepare\(opts/);
  assert.match(mobile,/if\(!navigator\.onLine\)/);
- assert.match(mobile,/preparationBusy\|\|!user\|\|!key/);
+ assert.match(mobile,/if\(inflight\)return inflight/);
+ assert.match(mobile,/!user\|\|!key\|\|!identity/);
  assert.match(mobile,/window\.addEventListener\("online"/);
  assert.match(mobile,/identity\.ownerId!==user\.id\.toLowerCase\(\)/);
- assert.match(mobile,/preparationBusy=true/);
+ assert.match(mobile,/inflight=run/);
  assert.match(html,/Configurar almacenamiento offline \(primera vez\)/);
 });
 

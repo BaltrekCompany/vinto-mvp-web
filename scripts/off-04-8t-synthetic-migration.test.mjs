@@ -119,5 +119,5 @@ test("7-9) renewal stays atomic; first-time storage stays strict; drafts untouch
   assert.match(enroll,/storeCaptureAuthority\(opened,identityNow,signed/);
   assert.ok(enroll.indexOf("renewOfflineBundle(")<enroll.indexOf("capture-scope"));                       // CAPTURE is issued AFTER, by the server, independently
   assert.doesNotMatch(enroll,/indexedDB\.deleteDatabase|caches\.delete|localStorage\.clear|discardSupersededPackages/);
-  assert.match(m,/quality-static-v5/);
+  assert.match(m,/quality-static-v6/);
 });
