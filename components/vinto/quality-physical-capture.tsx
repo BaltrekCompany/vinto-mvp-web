@@ -68,8 +68,8 @@ export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back
             busy.current = true; setSending(true); setNotice(null);
             try {
                 const queued = await offlineQuality.queue(prepared.value);
-                if (!queued.captureId) throw new Error("offline_capture_id_missing");
                 if (!live()) return;
+                if (!queued.captureId) throw new Error("offline_capture_id_missing");
                 setOfflineQueuedId(queued.captureId);
                 setNotice("Captura guardada en este dispositivo. Pendiente de sincronización.");
                 onOfflineQueued?.(queued.captureId);
