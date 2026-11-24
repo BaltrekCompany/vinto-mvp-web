@@ -403,7 +403,11 @@ async function offlineReadyStatus(){
  }
 }
 async function autoPrepare(){
- if(preparationBusy||!navigator.onLine||!user||!key||!identity||identity.ownerId!==user.id.toLowerCase())return;
+ if(!navigator.onLine){
+  message("No se descargaron todos los formularios. Vaya a una zona con internet.");
+  show("offline-retry",true);return;
+ }
+ if(preparationBusy||!user||!key||!identity||identity.ownerId!==user.id.toLowerCase())return;
  preparationBusy=true;
  show("offline-retry",false);
  message("Actualizando formularios y permisos…");
@@ -499,6 +503,7 @@ async function start(){
   void prepareBobbin(code).then(()=>message("Bobina preparada y cifrada")).catch(report);
  });
  el("offline-retry").addEventListener("click",()=>{void autoPrepare().catch(report);});
+ window.addEventListener("online",()=>{if(key&&user)void autoPrepare().catch(report);});
  el("new").addEventListener("click",()=>{void newDraft().catch(report);});
  el("sync").addEventListener("click",()=>{
   void syncRuntime?.syncOnce().then(async result=>{
