@@ -365,9 +365,16 @@ async function unlock(passphrase:string){
  if(device.toLowerCase()!==id.deviceKey.toLowerCase())throw Error("Dispositivo distinto");
  key=localKey;identity=id;readiness=scope;
  await loadPackages();startSync();await refreshDrafts();
- show("login-panel",false);show("prepare-panel",false);show("unlock-panel",false);
+ // A legacy readiness profile may contain forms but no CAPTURE authority.
+ // Unlocking must not hide the online login and renewal route.
+ const missingAuthority=await Promise.all(packages.map(async pkg=>{
+  try{await signedFor(pkg);return false;}catch{return true;}
+ })).then(states=>states.some(Boolean));
+ show("login-panel",!user);show("prepare-panel",!!user);show("unlock-panel",false);
  show("workspace",true);el("owner").textContent="Capturas del usuario: "+id.ownerId.slice(0,8);
- message("Borradores restaurados. Solo el autor original puede sincronizar.");
+ message(missingAuthority
+  ?"Falta autorización CAPTURE para uno o más formularios. Conéctese, inicie sesión si es necesario y prepare nuevamente el dispositivo. Sus borradores cifrados se conservan."
+  :"Borradores restaurados. Solo el autor original puede sincronizar.");
 }
 async function lock(){
  try{await activeEditor?.flushDraft();}catch{
@@ -395,7 +402,7 @@ async function start(){
  const profile=await readLocalProfile().catch(()=>null);
  show("unlock-panel",!!profile);
  user=await onlineUser();
- show("login-panel",!user&&!profile);
+ show("login-panel",!user);
  show("prepare-panel",!!user);
  if(user)el("identity").textContent="Usuario: "+user.display_name;
  el<HTMLFormElement>("login").addEventListener("submit",event=>{
