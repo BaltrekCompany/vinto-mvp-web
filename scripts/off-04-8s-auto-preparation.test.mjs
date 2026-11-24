@@ -9,7 +9,9 @@ test("offline mobile prepares after authenticated unlock, no permanent manual pr
  assert.match(mobile,/void unlock\(pass\)\.then\(\(\)=>autoPrepare\(\)\)/);
  assert.match(mobile,/if\(key\)await autoPrepare\(\)/);
  assert.match(mobile,/async function autoPrepare\(\)/);
- assert.match(mobile,/!navigator\.onLine\|\|!user\|\|!key/);
+ assert.match(mobile,/if\(!navigator\.onLine\)/);
+ assert.match(mobile,/preparationBusy\|\|!user\|\|!key/);
+ assert.match(mobile,/window\.addEventListener\("online"/);
  assert.match(mobile,/identity\.ownerId!==user\.id\.toLowerCase\(\)/);
  assert.match(mobile,/preparationBusy=true/);
  assert.match(html,/Configurar almacenamiento offline \(primera vez\)/);
