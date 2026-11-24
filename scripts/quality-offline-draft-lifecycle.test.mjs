@@ -16,3 +16,11 @@ test("new draft requires verified authority and prepared owner+draft identity",(
   assert.match(src,/revision: null/);
   assert.doesNotMatch(src,/\b(fetch|localStorage|indexedDB)\s*\(/);
 });
+
+test("save requires the current revision and refuses frozen or stale drafts",()=>{
+  assert.match(src,/Number\.isSafeInteger\(expectedRevision\)/);
+  assert.match(src,/current\.frozen \|\| current\.revision !== expectedRevision/);
+  assert.match(src,/await deps\.bindings\.persist\(\{/);
+  assert.match(src,/revision: expectedRevision/);
+  assert.match(src,/offline_draft_conflict/);
+});
