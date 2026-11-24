@@ -365,7 +365,7 @@ test("the form: decimal text inputs, locked while pending, double-click guard, d
   assert.match(component, /type="text" inputMode="decimal"/);
   assert.match(component, /disabled=\{locked\}/);
   assert.match(component, /const locked = sending \|\| attempt !== null \|\| offlineQueuedId !== null;/);
-  assert.match(component, /if \(busy\.current \|\| !shown\) return;/);
+  assert.match(component, /if \(busy\.current \|\| !shown \|\| offlineQueuedId\) return;/);
   assert.match(component, /createPhysicalAttempt\(draft, shown, getDeviceKey\(\)\)/);
   assert.match(component, /setAttempt\(current\);/);
   assert.match(component, /physicalBobbinToShow\(attempt, item\)/);
