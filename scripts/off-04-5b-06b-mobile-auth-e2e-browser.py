@@ -363,6 +363,12 @@ with tempfile.TemporaryDirectory(prefix="vinto-off06b-") as tmp, sync_playwright
         report("10_readiness_only_snapshot_rejected_by_the_server_nothing_persisted")
 
         # ---- 11 two simultaneous tabs: one logical capture, one POST ----
+        # Prior cases advance only this tab's synthetic clock. Reload before the
+        # multitab race so both instances compare the durable IndexedDB lease
+        # with the same real-time baseline. No client storage is erased.
+        page.reload()
+        unlock(page)
+        wait_say(page, "Laboratorio desbloqueado (perfil original)")
         tab2 = open_lab(ctx)
         unlock(tab2)
         wait_say(tab2, "Laboratorio desbloqueado (perfil original)")
@@ -373,9 +379,25 @@ with tempfile.TemporaryDirectory(prefix="vinto-off06b-") as tmp, sync_playwright
         iid = capture_id(page, i)
         page.locator("#e2e-sync-now").click(no_wait_after=True)
         tab2.locator("#e2e-sync-now").click(no_wait_after=True)
-        wait_stage(page, i, "synced")
+        # Either tab may win the IndexedDB lease. Wait for the winner to
+        # finalize BEFORE reloading either tab: reloading the winner while it
+        # owns a lease would itself simulate a crash, not the intended race.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if stage(page, i) == "synced" or stage(tab2, i) == "synced":
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("neither tab finalized the shared capture")
+        page.reload(); unlock(page)
         tab2.reload(); unlock(tab2)
+        wait_stage(page, i, "synced")
         wait_stage(tab2, i, "synced")
+        # Keep strict single-POST invariant; print only event metadata when broken.
+        if srv.deliveries(iid) != 1:
+            events = [{"kind": e.get("kind"), "capture_id": e.get("capture_id"), "at": e.get("at")}
+                      for e in srv.get("/__test__/events") if e.get("capture_id") == iid]
+            print("OFF06B_MULTITAB_EVENT_DIAG=" + json.dumps(events), flush=True)
         assert len(receipts_for({iid})) == 1 and srv.deliveries(iid) == 1, (srv.deliveries(iid), receipts_for({iid}))
         tab2.close()
         report("11_two_simultaneous_tabs_send_once_and_register_once")

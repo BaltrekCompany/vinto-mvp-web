@@ -83,7 +83,9 @@ class MigrationShapeTests(unittest.TestCase):
         # MF-13-01C.1: la vista administrativa de solo lectura; MF-13-01C.2: el único módulo que llama a conceder/revocar es la API administrativa (grants_write.py).
         # Sigue sin estar conectada a capturas, disponibilidad ni a la autorización efectiva.
         # MF-13-01D.1: el motor de autorización (app/authz) y su informe de preparación SOLO LEEN la tabla y siguen sin estar conectados a ningún endpoint (lo fija test_authz_engine).
-        self.assertEqual(sorted(consumers), sorted(["app/admin/grants_read.py", "app/admin/grants_write.py", "app/authz/engine.py", "app/authz/readiness.py", "app/authz/visibility.py", "app/offline_scope/service.py"]))  # OFF-03B/OFF-04: the signed offline scope reads the grants (read-only) to list what a device may prepare
+        # Candidate offline authority reads effective grants under transaction locks, but is unmounted.
+        self.assertNotIn("offline_capture_authority", (BACKEND / "app/main.py").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(consumers), sorted(["app/admin/grants_read.py", "app/admin/grants_write.py", "app/authz/engine.py", "app/authz/readiness.py", "app/authz/visibility.py", "app/offline_scope/service.py", "app/quality/offline_capture_authority.py"]))  # OFF-03B/OFF-04: the signed offline scope reads the grants (read-only) to list what a device may prepare
 
     def test_the_rbac_matrix_is_untouched(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)

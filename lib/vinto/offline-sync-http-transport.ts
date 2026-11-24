@@ -38,7 +38,11 @@ export function createHttpSyncTransport(http: HttpCall, basePath = "/api/offline
             if (r.status === 200 || r.status === 201 || r.status === 202) {
                 if (!verified(j, request.capture_id, request.payload_sha256)) return UNVERIFIABLE;
                 if ((r.status === 202) !== (j.outcome === "review")) return UNVERIFIABLE;
-                return { status: r.status, body: { outcome: j.outcome as never, server_id: j.server_id as string, warnings: (j.warnings as string[]) ?? [], reason: (j.reason as string) ?? undefined } };
+                if (j.operational_registered !== undefined && typeof j.operational_registered !== "boolean") return UNVERIFIABLE;
+                if (j.operational_registered === true && j.operational_capture_id !== request.capture_id) return UNVERIFIABLE;
+                return { status: r.status, body: { outcome: j.outcome as never, server_id: j.server_id as string, warnings: (j.warnings as string[]) ?? [], reason: (j.reason as string) ?? undefined,
+                    ...(typeof j.operational_registered === "boolean" ? { operational_registered: j.operational_registered } : {}),
+                    ...(j.operational_registered === true ? { operational_capture_id: request.capture_id } : {}) } };
             }
             return { status: r.status, body: { outcome: (j.outcome as never) ?? "error", reason: (j.reason as string) ?? undefined } };
         },
@@ -47,7 +51,11 @@ export function createHttpSyncTransport(http: HttpCall, basePath = "/api/offline
             if (r.status === 404 && r.json.found === false) return { found: false };
             if (r.status === 200 && r.json.found === true && r.json.capture_id === captureId && typeof r.json.server_id === "string" && r.json.industrial_approval === false &&
                 ["accepted", "accepted_warning", "review", "conflict"].includes(r.json.outcome as string)) {
-                return { found: true, outcome: r.json.outcome as never, server_id: r.json.server_id, warnings: (r.json.warnings as string[]) ?? [], reason: (r.json.reason as string) ?? undefined };
+                if (r.json.operational_registered !== undefined && typeof r.json.operational_registered !== "boolean") throw new SyncTransportError("network");
+                if (r.json.operational_registered === true && r.json.operational_capture_id !== captureId) throw new SyncTransportError("network");
+                return { found: true, outcome: r.json.outcome as never, server_id: r.json.server_id, warnings: (r.json.warnings as string[]) ?? [], reason: (r.json.reason as string) ?? undefined,
+                    ...(typeof r.json.operational_registered === "boolean" ? { operational_registered: r.json.operational_registered } : {}),
+                    ...(r.json.operational_registered === true ? { operational_capture_id: captureId } : {}) };
             }
             throw new SyncTransportError("network");          // not a definitive answer (401, 5xx, malformed): never assume found or not found
         },

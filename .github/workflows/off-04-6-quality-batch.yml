@@ -15,8 +15,10 @@ on:
       - 'lib/vinto/offline-*.ts'
       - 'lab/**'
       - 'scripts/off-04-*'
+      - 'scripts/off048t_fixture.py'
       - 'scripts/build-offline-boot.mjs'
       - 'docs/OFF-04-6-*.md'
+      - 'docs/OFF-04-8*.md'
       - '.github/workflows/off-04-6-quality-batch.yml'
   workflow_dispatch:
 
@@ -67,6 +69,12 @@ jobs:
       - name: The ten forms - contracts, batch receiver, bobbin context (throwaway PostgreSQL 17)
         working-directory: backend
         run: python -m pytest tests/test_off046_form_contracts.py tests/test_off046_batch_receiver.py tests/test_off046_bobbin_context_db.py -v
+      - name: OFF-04.8A operational bridge must fail closed (no live DB)
+        working-directory: backend
+        run: python -m pytest tests/test_off048a_operational_contract.py tests/test_off048b_promotion_contract.py tests/test_off048b_pg_atomicity.py tests/test_off048c_capture_scope.py tests/test_off048d_capture_authority_db.py tests/test_off048p_binding.py -v
+      - name: OFF-04.8P real MF-13 signed authority - ephemeral migrated PostgreSQL 17
+        working-directory: backend
+        run: python -m pytest tests/test_off048_qa_wiring.py tests/test_off048p_real_mf13_pg17.py -v
       - name: Offline regressions (receiver, bootstrap, pilot, authentication, signing)
         working-directory: backend
         run: python -m pytest tests/test_off044_receiver.py tests/test_off045b03_qa_bootstrap.py tests/test_off045b_qa_pilot.py tests/test_off045b06b_mobile_auth.py tests/test_off03c1_unit.py tests/test_off03b2_signing.py tests/test_off03b2_pg17.py tests/test_off03c1_pg17.py -q
@@ -104,12 +112,19 @@ jobs:
           OFF03C4_FIXTURE_JSON: ${{ runner.temp }}/off03c4.json
           OFF03B3_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
           OFF03C2_FIXTURE_JSON: ${{ runner.temp }}/off03b3.json
+          OFF048T_FIXTURE_JSON: ${{ runner.temp }}/off048t.json
+          OFF048V_FIXTURE_JSON: ${{ runner.temp }}/off048v.json
           OFF044_PYTHON: python
         run: |
           (cd backend && python -m tests.off046_fixture "$OFF046_FIXTURE_JSON")
           python scripts/off04_fixture.py
           python scripts/off03c4_fixture.py
           python scripts/off03b3_fixture.py
+          python scripts/off048t_fixture.py
+          python scripts/off048v_fixture.py
+          node --experimental-strip-types --test scripts/off-04-8v-capture-reuse.test.mjs scripts/off-04-8w-second-capture.test.mjs
+          node --experimental-strip-types --test scripts/off-04-8t-synthetic-migration.test.mjs
+          node --experimental-strip-types --test scripts/off-04-8a-auto-sync.test.mjs scripts/off-04-8b-operational-ack.test.mjs scripts/off-04-8e-coverage.test.mjs scripts/off-04-8e-draft-autosave.test.mjs scripts/off-04-8e-renewal.test.mjs scripts/off-04-8f-confirm-capture.test.mjs scripts/off-04-8f-frozen-bridge.test.mjs scripts/off-04-8g-editor-workflow.test.mjs scripts/off-04-8h-operational-store.test.mjs scripts/off-04-8k-operational-sync.test.mjs scripts/off-04-8k-operational-sync-integration.test.mjs scripts/off-04-8l-capture-bindings.test.mjs scripts/off-04-8m-quality-validation.test.mjs scripts/off-04-8m-quality-editor.test.mjs scripts/off-04-8o-capture-scope-verify.test.mjs scripts/off-04-8p-operational-http.test.mjs scripts/off-04-8p-operational-experience.test.mjs scripts/off-04-8q-legacy-profile-renewal.test.mjs scripts/off-04-8r-atomic-renewal-mobile.test.mjs scripts/off-04-8s-auto-preparation.test.mjs
           node --experimental-strip-types --test scripts/off-04-6-quality-batch.test.mjs scripts/off-04-5b-06b-mobile-auth-static.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
           node --experimental-strip-types --test scripts/off-03c2-package.test.mjs scripts/off-03b3-signature.test.mjs scripts/off-03b-contract.test.mjs scripts/off-03a-vault.test.mjs
       - name: TypeScript and ESLint
@@ -120,11 +135,24 @@ jobs:
         run: |
           pnpm build
           test ! -e public/offline-e2e-lab.html
+          test ! -e public/off048i-indexeddb.html
           OFFLINE_DRAFT_LAB=1 node scripts/build-offline-boot.mjs
           test -s public/offline-e2e-lab.html
+          test -s public/off048i-indexeddb.html
+          test -s public/off048i-indexeddb.js
           node --check public/offline-e2e-lab.js
+          node --check public/off048i-indexeddb.js
           node scripts/build-offline-boot.mjs
           test ! -e public/offline-e2e-lab.html
+          test ! -e public/offline-calidad.html
+          test ! -e public/offline-calidad.js
+          OFFLINE_OPERATIONAL_CAPTURE=1 node scripts/build-offline-boot.mjs
+          test -s public/offline-calidad.html
+          test -s public/offline-calidad.js
+          node --check public/offline-calidad.js
+          node scripts/build-offline-boot.mjs
+          test ! -e public/offline-calidad.html
+          test ! -e public/offline-calidad.js
 
   chrome-e2e-same-origin:
     runs-on: ubuntu-24.04
@@ -147,6 +175,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
@@ -164,6 +193,10 @@ jobs:
         env:
           OFFLINE_DRAFT_LAB: '1'
         run: node scripts/build-offline-boot.mjs
+      - name: OFF-04.8I Chrome E2E - encrypted operational IndexedDB across tabs and restarts
+        env:
+          OFF06B_PUBLIC: ${{ github.workspace }}/public
+        run: python scripts/off-04-8i-operational-indexeddb-browser.py
       - name: Chrome end to end - the ten Quality forms
         env:
           OFF06B_PUBLIC: ${{ github.workspace }}/public
@@ -176,3 +209,18 @@ jobs:
         run: |
           cd scripts
           PYTHONPATH=. python off-04-5b-06b-mobile-auth-e2e-browser.py
+      - name: OFF-04.8 v6 Chrome - CAPTURE reuse, coalescing, v5 to v6 upgrade without data loss
+        run: |
+          # v5 (the commit this increment starts from) and v6 (this commit) operational builds, as the phone would see them
+          git worktree add ../v5src 83a1c0e7b009d7a64431de96b33bc2107bd43b31
+          ln -s "$PWD/node_modules" ../v5src/node_modules
+          (cd ../v5src && OFFLINE_OPERATIONAL_CAPTURE=1 node scripts/build-offline-boot.mjs)
+          OFFLINE_OPERATIONAL_CAPTURE=1 node scripts/build-offline-boot.mjs
+          mkdir -p "$RUNNER_TEMP/v6pub"
+          for f in favicon.svg manifest.webmanifest offline-boot.js offline-calidad.html offline-calidad.js offline-device-qa.js offline-probe.js offline.html sw.js; do cp "public/$f" "$RUNNER_TEMP/v6pub/$f"; done
+          cd scripts
+          OFF06B_PUBLIC="$RUNNER_TEMP/v6pub" OFF048V_V5_PUBLIC="${{ github.workspace }}/../v5src/public" PYTHONPATH=. python off-04-8v-reuse-browser.py
+      - name: OFF-04.8 v6.1 Chrome - second capture, visible state after automatic sync, restart (Issue #249)
+        run: |
+          cd scripts
+          OFF048W_EXPECT=fixed OFF06B_PUBLIC="$RUNNER_TEMP/v6pub" PYTHONPATH=. python off-04-8w-second-capture-browser.py

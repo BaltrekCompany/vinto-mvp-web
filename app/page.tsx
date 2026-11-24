@@ -338,9 +338,19 @@ function Execution({ front, machine, machines, setMachine, forms, select, canCap
     const deny = () => { toast.error("Tu perfil no tiene permiso para capturar en este frente"); };
     const notice = !canCapture && <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Tu perfil puede consultar este frente, pero no capturar en él.</div>;
     // INT-02A: sin conexión no se puede registrar; NO se guarda nada en el navegador (no hay captura offline aprobada por VINTO).
-    const offline = !online && <div role="status" className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="offline">Sin conexión: no es posible registrar capturas. Nada se guarda en este navegador; reintenta cuando vuelva la conexión.</div>;
+    const offline = !online && <div role="status" className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-section="offline">{front === "Calidad" && process.env.NEXT_PUBLIC_OFFLINE_QUALITY_CAPTURE_ENABLED === "1" ? "Sin conexión: utilice Calidad offline si preparó previamente su dispositivo; los controles centrales requieren internet." : "Sin conexión: no es posible registrar capturas. Nada se guarda en este navegador; reintenta cuando vuelva la conexión."}</div>;
     if (front === "Calidad")
-        return <div className="space-y-5">{offline}{qualityInbox}{machineControls}{notice}</div>;
+        return <div className="space-y-5">
+            {process.env.NEXT_PUBLIC_OFFLINE_QUALITY_CAPTURE_ENABLED === "1" && canCapture &&
+                <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+                    <p className="font-semibold text-emerald-900">Calidad offline</p>
+                    <p className="text-sm text-emerald-900">Prepare su dispositivo en línea y registre capturas que se sincronizan automáticamente al recuperar su sesión.</p>
+                    <a href="/offline-calidad.html" className="mt-3 inline-block rounded-lg bg-[#146b4f] px-4 py-2 text-sm font-semibold text-white">
+                        Abrir captura offline
+                    </a>
+                </div>}
+            {offline}{qualityInbox}{machineControls}{notice}
+        </div>;
     return <>
         <Panel title="Punto de captura" note="Máquina fija por equipo; OT y producto llegan desde Supervisión (asignación central).">
             <div className="flex flex-wrap gap-2">{machines.map(m => <Button key={m} size="sm" variant={machine === m ? "default" : "outline"} className={machine === m ? "bg-[#146b4f]" : ""} onClick={() => setMachine(m)}>{m}</Button>)}{machines.length === 0 && <p className="text-sm text-slate-700" data-section="no-eligible-machines">No tienes formularios de Bobinas habilitados en este momento.</p>}</div>

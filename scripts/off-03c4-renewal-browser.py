@@ -279,7 +279,7 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c4-") as tmp, sync_playwrigh
     for label, plan, reason in (
             ("version differs from grant", full_plan("new", **{Q18: {"envelope": BAD["incompatible_version"]}}), "incompatible"),
             ("package of previous snapshot", full_plan("new", **{Q18: {"envelope": BAD["wrong_snapshot"]}}), "incompatible"),
-            ("lower version than stored", full_plan("downgrade"), "rollback")):
+            ("lower version than stored", full_plan("downgrade"), "rollback_package")):
         r = s.call("renew", plan)
         assert r["ok"] is False and r["reason"] == reason, (label, r)
         assert_old_intact(s, raw)
@@ -291,11 +291,11 @@ with tempfile.TemporaryDirectory(prefix="vinto-off03c4-") as tmp, sync_playwrigh
     raw = s.call("rawSnapshot")
     for label, plan in (("older", full_plan("older")), ("same second, other snapshot", full_plan("same_second"))):
         r = s.call("renew", plan)
-        assert r["ok"] is False and r["reason"] == "rollback", (label, r)
+        assert r["ok"] is False and r["reason"] == "rollback_scope", (label, r)
         assert_old_intact(s, raw)
     assert s.call("renew", full_plan("new"))["ok"] is True
     r = s.call("renew", full_plan("old"))           # replaying the very first snapshot after a newer one
-    assert r["ok"] is False and r["reason"] == "rollback", r
+    assert r["ok"] is False and r["reason"] == "rollback_scope", r
     assert view(s)["scope"]["snapshotId"] == SC["new"]["payload"]["snapshot_id"]
     report("10_older_or_replayed_snapshot_rejected")
     s.close()

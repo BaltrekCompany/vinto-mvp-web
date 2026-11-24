@@ -56,11 +56,11 @@ export type SyncRequest = Readonly<{
 
 export type SyncReply = Readonly<{
     status: number;
-    body: Readonly<{ outcome?: "created" | "duplicate" | "review" | "conflict" | "error"; server_id?: string; warnings?: readonly string[]; reason?: string }>;
+    body: Readonly<{ outcome?: "created" | "duplicate" | "review" | "conflict" | "error"; server_id?: string; warnings?: readonly string[]; reason?: string; operational_registered?: boolean; operational_capture_id?: string }>;
 }>;
 export type LookupReply = Readonly<
     | { found: false }
-    | { found: true; outcome: "accepted" | "accepted_warning" | "review" | "conflict"; server_id: string; warnings?: readonly string[]; reason?: string }
+    | { found: true; outcome: "accepted" | "accepted_warning" | "review" | "conflict"; server_id: string; warnings?: readonly string[]; reason?: string; operational_registered?: boolean; operational_capture_id?: string }
 >;
 
 export class SyncTransportError extends Error {

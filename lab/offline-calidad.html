@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>VINTO | Captura offline de Calidad</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#123f32;background:#f3f6f4}
+*{box-sizing:border-box}body{margin:0;padding:12px;display:grid;place-items:center}main{width:min(100%,760px)}
+header{background:#123f32;color:white;border-radius:14px;padding:14px 18px;margin-bottom:12px}
+section{background:#fff;border:1px solid #d6e3dc;border-radius:14px;margin:12px 0;padding:16px}
+h1{font-size:1.45rem;margin:0}h2{font-size:1.12rem;margin:0 0 10px}label{display:block;font-weight:600;margin:12px 0 4px}
+input,select{width:100%;padding:11px;font:inherit;border:1px solid #8ba69b;border-radius:9px;background:white}
+input[type=checkbox]{width:auto}button{border:0;border-radius:9px;background:#146b4f;color:white;font:inherit;font-weight:600;padding:11px 15px;margin:10px 8px 0 0;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}button.secondary{background:#e8f1ec;color:#123f32}
+p{line-height:1.5}.muted{color:#47685a;font-size:.91rem}.warning{background:#fff4de;padding:10px;border-radius:9px;color:#674000}
+.error{color:#9e2323}.ok{color:#116240}ul{padding-left:20px}li{margin:9px 0}
+[hidden]{display:none!important}a{color:inherit}
+</style></head><body><main>
+<header><h1>VINTO · Calidad offline</h1><p style="margin:5px 0 0">Captura de mediciones · celular personal</p></header>
+<p id="status" role="status" aria-live="polite">Preparando aplicación…</p>
+<button id="offline-retry" class="secondary" type="button" hidden>Reintentar modo sin conexión</button>
+<section id="login-panel">
+<h2>Acceso online</h2>
+<p class="muted">La preparación requiere internet. Los borradores se guardan cifrados en este dispositivo.</p>
+<form id="login"><label>Usuario<input id="username" autocomplete="username" required></label>
+<label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label>
+<button type="submit">Iniciar sesión</button></form>
+</section>
+<section id="prepare-panel" hidden>
+<h2>Configurar almacenamiento offline (primera vez)</h2>
+<p id="identity" class="muted"></p>
+<form id="prepare"><label>Máquina<input id="machine" value="MP1" pattern="[A-Za-z0-9_.-]{1,48}" required></label>
+<label>Frase local de acceso (mínimo 16 caracteres)<input id="passphrase" type="password" required autocomplete="off"></label>
+<button type="submit">Configurar dispositivo</button></form>
+</section>
+<section id="unlock-panel" hidden>
+<h2>Desbloquear datos locales</h2>
+<form id="unlock"><label>Frase offline<input id="unlock-secret" type="password" required autocomplete="off"></label>
+<button type="submit">Desbloquear</button></form>
+</section>
+<section id="workspace" hidden>
+<h2>Capturas de Calidad</h2>
+<p id="owner" class="muted"></p>
+<p class="warning">Los datos se registran automáticamente al recuperar internet y la sesión del autor original. No se aprueban ni liberan bobinas desde offline.</p>
+<label>Formulario preparado<select id="form"></select></label>
+<div id="bobbin-area" hidden>
+<label>Bobina preparada<select id="bobbin"></select></label>
+<form id="prepare-bobbin"><label>Número de bobina (preparar online)<input id="bobbin-code"></label><button type="submit">Preparar bobina</button></form>
+</div>
+<button id="new" type="button">Nuevo borrador</button>
+<button id="sync" class="secondary" type="button">Sincronizar ahora</button>
+<button id="lock" class="secondary" type="button">Bloquear</button>
+<p class="muted" id="sync-status"></p>
+<h2 style="margin-top:20px">Borradores y pendientes</h2><ul id="drafts"></ul>
+</section>
+<section id="editor" hidden><h2 id="editor-title">Captura</h2>
+<form id="capture"><div id="fields"></div><button id="capture-save" type="submit">Guardar captura</button>
+<button id="back" class="secondary" type="button">Volver sin perder el borrador</button></form></section>
+<p class="muted"><a href="/">Volver a VINTO</a></p>
+<script src="/offline-calidad.js" defer></script>
+</main></body></html>
