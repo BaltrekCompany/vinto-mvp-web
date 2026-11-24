@@ -174,6 +174,11 @@ function startSync(){
   setTimer:(cb,ms)=>window.setTimeout(cb,ms),
   clearTimer:id=>window.clearTimeout(id as number),
   onError:()=>{el("sync-status").textContent="Sincronización pendiente. Compruebe sesión y conexión.";},
+  // v6.1: redraw "Borradores y pendientes" after EVERY pass, so an automatic ACK is visible without pressing "Sincronizar ahora".
+  onRunComplete:result=>{
+   el("sync-status").textContent=result.paused?"Pausado: "+result.paused:"Sincronización comprobada";
+   void refreshDrafts().catch(()=>{/* locked or storage busy: the next pass redraws */});
+  },
  });
  syncRuntime.start();syncRuntime.notifyReady();
 }
@@ -269,7 +274,11 @@ async function createEditor(pkg:VerifiedQualityDefinition,draftId:string,bobbin?
   },
  });
  el("editor-title").textContent=pkg.envelope.payload.definition.form_name+" · "+pkg.envelope.payload.machine_code;
- drawFields(pkg);show("workspace",false);show("editor",true);
+ drawFields(pkg);
+ // v6.1 (Issue #249): the Save button is ONE DOM element shared by every editor. A confirmed capture leaves it disabled (its editor is immutable and stays stopped);
+ // a NEW editor starts unconfirmed and unlocked, so its button must start enabled. The previous, confirmed editor is never unlocked.
+ el<HTMLButtonElement>("capture-save").disabled=false;
+ show("workspace",false);show("editor",true);
 }
 async function openExisting(id:string){
  const ctx=requireUnlocked(),draft=await store.getDraft(id);
@@ -499,7 +508,7 @@ async function start(){
  // Only PUBLIC static shell files, never authenticated pages, API responses,
  // CAPTURE scopes or field values. Ensures offline reload after the FIRST visit.
  if(navigator.onLine&&"caches" in window){
-  void caches.open("vinto-off048-quality-static-v6")
+  void caches.open("vinto-off048-quality-static-v7")
    .then(cache=>cache.addAll(["/offline-calidad.html","/offline-calidad.js"]))
    .catch(()=>message("La pantalla todavía no está disponible sin conexión; vuelva a abrirla online."));
  }

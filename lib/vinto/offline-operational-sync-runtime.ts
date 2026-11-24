@@ -26,6 +26,9 @@ export type OperationalSyncRuntimeDeps = Readonly<{
   setTimer: (callback: () => void, ms: number) => unknown;
   clearTimer: (timer: unknown) => void;
   onError?: (reason: "preparation_failed" | "sync_failed") => void;
+  /** v6.1 (Issue #249): called after EVERY completed pass (automatic or manual) so the UI can redraw the queue. Purely presentational: it never receives the key or a payload,
+   * cannot change the outcome, and an exception inside it is swallowed. */
+  onRunComplete?: (result: SyncRunResult) => void;
   options?: Partial<Omit<SyncOptions, "requireOperationalAck">>;
 }>;
 
@@ -78,7 +81,7 @@ export function createOperationalSyncRuntime(deps: OperationalSyncRuntimeDeps) {
     if (!key) throw Error("vault_locked");
     // Hold the key used for this pass; locking the UI must not make the engine
     // misclassify a pending as permanently corrupt midway through a pass.
-    return syncNow({
+    const result = await syncNow({
       store: deps.store.sync,
       transport: deps.transport,
       identity: deps.identity,
@@ -87,6 +90,8 @@ export function createOperationalSyncRuntime(deps: OperationalSyncRuntimeDeps) {
       openPayload: (rec) => openVerifiedOperationalPayload(deps.store, deps.identity, key, rec),
       options: { ...deps.options, requireOperationalAck: true },
     });
+    try { deps.onRunComplete?.(result); } catch { /* presentation only */ }
+    return result;
   };
   const scheduler = createAutoSyncScheduler({
     online: deps.online,

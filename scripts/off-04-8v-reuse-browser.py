@@ -28,6 +28,8 @@ from app.offline_scope.signing import AUDIENCE as RD_AUD, ISSUER, SCHEMA as RD_S
 PUBLIC = Path(os.environ.get("OFF06B_PUBLIC", str(HERE.parent / "public")))
 V5 = os.environ.get("OFF048V_V5_PUBLIC")
 CHANNEL = os.environ.get("OFF04_CHROME_CHANNEL", "chrome")
+import re as _re
+NEW_CACHE = _re.search(r'STATIC_CACHE = "([^"]+)"', (PUBLIC / "sw.js").read_text()).group(1)   # the cache name of the build under test (v6, v7, ...)
 SECRET = "VINTO OFF048V disposable local passphrase 4471!!"
 BOBBIN = {"VINTO-P1-19", "VINTO-P1-20", "VINTO-P1-21", "VINTO-P1-24", "VINTO-P1-25", "VINTO-P1-28"}
 res = []
@@ -162,13 +164,13 @@ def main():
                 for _ in range(8):
                     q, _ = open_page(); loads += 1; q.evaluate('navigator.serviceWorker.ready.then(() => true)'); q.wait_for_timeout(2000)
                     names = q.evaluate("async () => { const o = {}; for (const n of await caches.keys()) o[n] = (await (await caches.open(n)).keys()).map(r => new URL(r.url).pathname).sort(); return o; }")
-                    cache_ok = "/offline-calidad.js" in names.get("vinto-off048-quality-static-v6", []) and "/offline-calidad.html" in names.get("vinto-off048-quality-static-v6", [])
+                    cache_ok = "/offline-calidad.js" in names.get(NEW_CACHE, []) and "/offline-calidad.html" in names.get(NEW_CACHE, [])
                     print('LOAD', loads, {k: len(v) for k, v in names.items()}, flush=True); q.close()
                     if cache_ok: break
-                rep(f"v5 -> v6: cache v6 holds the shell after {loads} online load(s)", cache_ok and loads <= 8)
+                rep(f"v5 -> NEW: the new cache holds the shell after {loads} online load(s)", cache_ok and loads <= 8)
                 q, r = open_page(offline=True)
                 rep("v6 offline: the page loads from the cache and shows the unlock panel", r is not None and r.status == 200 and q.locator("#unlock-panel").is_visible())
-                after = q.evaluate(IDB_DUMP); rep("v5 -> v6: EVERY IndexedDB database is byte-identical (nothing deleted or rewritten)", before == after, json.dumps(after)[:200]); q.close()
+                after = q.evaluate(IDB_DUMP); rep("v5 -> NEW: EVERY IndexedDB database is byte-identical (nothing deleted or rewritten)", before == after, json.dumps(after)[:200]); q.close()
                 ctx.set_offline(False)
                 n0 = stub.counts["capture-scope"]; p, _ = open_page(); unlock(p); settle(p, 10)
                 rep("v6 after the upgrade: the unlock lists the draft saved by v5", p.locator("#drafts li").count() >= 1)

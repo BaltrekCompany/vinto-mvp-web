@@ -122,7 +122,7 @@ jobs:
           python scripts/off03b3_fixture.py
           python scripts/off048t_fixture.py
           python scripts/off048v_fixture.py
-          node --experimental-strip-types --test scripts/off-04-8v-capture-reuse.test.mjs
+          node --experimental-strip-types --test scripts/off-04-8v-capture-reuse.test.mjs scripts/off-04-8w-second-capture.test.mjs
           node --experimental-strip-types --test scripts/off-04-8t-synthetic-migration.test.mjs
           node --experimental-strip-types --test scripts/off-04-8a-auto-sync.test.mjs scripts/off-04-8b-operational-ack.test.mjs scripts/off-04-8e-coverage.test.mjs scripts/off-04-8e-draft-autosave.test.mjs scripts/off-04-8e-renewal.test.mjs scripts/off-04-8f-confirm-capture.test.mjs scripts/off-04-8f-frozen-bridge.test.mjs scripts/off-04-8g-editor-workflow.test.mjs scripts/off-04-8h-operational-store.test.mjs scripts/off-04-8k-operational-sync.test.mjs scripts/off-04-8k-operational-sync-integration.test.mjs scripts/off-04-8l-capture-bindings.test.mjs scripts/off-04-8m-quality-validation.test.mjs scripts/off-04-8m-quality-editor.test.mjs scripts/off-04-8o-capture-scope-verify.test.mjs scripts/off-04-8p-operational-http.test.mjs scripts/off-04-8p-operational-experience.test.mjs scripts/off-04-8q-legacy-profile-renewal.test.mjs scripts/off-04-8r-atomic-renewal-mobile.test.mjs scripts/off-04-8s-auto-preparation.test.mjs
           node --experimental-strip-types --test scripts/off-04-6-quality-batch.test.mjs scripts/off-04-5b-06b-mobile-auth-static.test.mjs scripts/off-04-sync-static.test.mjs scripts/off-04-sync-engine.test.mjs scripts/off-04-queue.test.mjs scripts/off-04-draft-schema.test.mjs scripts/off-03c4-renewal.test.mjs
@@ -220,3 +220,7 @@ jobs:
           for f in favicon.svg manifest.webmanifest offline-boot.js offline-calidad.html offline-calidad.js offline-device-qa.js offline-probe.js offline.html sw.js; do cp "public/$f" "$RUNNER_TEMP/v6pub/$f"; done
           cd scripts
           OFF06B_PUBLIC="$RUNNER_TEMP/v6pub" OFF048V_V5_PUBLIC="${{ github.workspace }}/../v5src/public" PYTHONPATH=. python off-04-8v-reuse-browser.py
+      - name: OFF-04.8 v6.1 Chrome - second capture, visible state after automatic sync, restart (Issue #249)
+        run: |
+          cd scripts
+          OFF048W_EXPECT=fixed OFF06B_PUBLIC="$RUNNER_TEMP/v6pub" PYTHONPATH=. python off-04-8w-second-capture-browser.py

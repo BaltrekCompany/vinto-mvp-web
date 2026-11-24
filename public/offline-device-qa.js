@@ -6,7 +6,7 @@
   "use strict";
   const DB = "vinto-off03a-profiles-v1";
   const VERSION = 3;
-  const STATIC_CACHE = "vinto-off048-quality-static-v6";
+  const STATIC_CACHE = "vinto-off048-quality-static-v7";
   const ASSETS = ["/offline.html", "/offline-probe.js", "/offline-boot.js",
                   "/offline-device-qa.js", "/manifest.webmanifest", "/favicon.svg"];
   const NAMES = ["profiles", "scopes", "quality_packages"];
