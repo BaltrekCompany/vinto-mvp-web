@@ -15,8 +15,9 @@ p{line-height:1.5}.muted{color:#47685a;font-size:.91rem}.warning{background:#fff
 .error{color:#9e2323}.ok{color:#116240}ul{padding-left:20px}li{margin:9px 0}
 [hidden]{display:none!important}a{color:inherit}
 </style></head><body><main>
-<header><h1>VINTO · Calidad offline</h1><p style="margin:5px 0 0">Captura de mediciones · dispositivos compartidos</p></header>
+<header><h1>VINTO · Calidad offline</h1><p style="margin:5px 0 0">Captura de mediciones · celular personal</p></header>
 <p id="status" role="status" aria-live="polite">Preparando aplicación…</p>
+<button id="offline-retry" class="secondary" type="button" hidden>Reintentar modo sin conexión</button>
 <section id="login-panel">
 <h2>Acceso online</h2>
 <p class="muted">La preparación requiere internet. Los borradores se guardan cifrados en este dispositivo.</p>
@@ -25,11 +26,11 @@ p{line-height:1.5}.muted{color:#47685a;font-size:.91rem}.warning{background:#fff
 <button type="submit">Iniciar sesión</button></form>
 </section>
 <section id="prepare-panel" hidden>
-<h2>Preparar captura offline</h2>
+<h2>Configurar almacenamiento offline (primera vez)</h2>
 <p id="identity" class="muted"></p>
 <form id="prepare"><label>Máquina<input id="machine" value="MP1" pattern="[A-Za-z0-9_.-]{1,48}" required></label>
 <label>Frase local de acceso (mínimo 16 caracteres)<input id="passphrase" type="password" required autocomplete="off"></label>
-<button type="submit">Preparar dispositivo y formularios</button></form>
+<button type="submit">Configurar dispositivo</button></form>
 </section>
 <section id="unlock-panel" hidden>
 <h2>Desbloquear datos locales</h2>
