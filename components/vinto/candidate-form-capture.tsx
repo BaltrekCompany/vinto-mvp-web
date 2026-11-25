@@ -6,6 +6,8 @@ import { CaptureNotice, CaptureSection, CaptureShell, ChoiceField, ContextStrip,
 import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
+import { prepareCurrentQualityOfflineInput, type PreparedQualityOfflineInput } from "@/lib/vinto/quality-offline-current-form-bridge";
+import { useQualityOfflineDraftEditor, type QualityDraftPort } from "@/lib/vinto/use-quality-offline-draft-editor";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { Input } from "@/components/ui/input";
@@ -33,11 +35,19 @@ type Props = {
     onSessionLost: () => void;
     user?: { display_name: string } | null; // usuario autenticado, solo informativo: NO es una firma
     deps?: CandidateSubmitDeps; // inyectable para pruebas; por defecto la API central
+    offlineQuality?: {
+        prepared: { formVersion: number; scopeSnapshotId: string; contextVersion: string; bobbinContextDigest?: string };
+        queue: (input: PreparedQualityOfflineInput) => Promise<{ captureId: string }>;
+        // Inject only after verification of the original operator/device and
+        // the signed CAPTURE scope. The existing production form never supplies it.
+        draft?: QualityDraftPort;
+    };
+    onOfflineQueued?: (captureId: string) => void;
 };
 
 type ReadBack = { state: "reading" } | { state: "ok" } | { state: "mismatch" } | { state: "error" };
 
-export function CandidateFormCapture({ candidate, context, machine, bobbin, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps }: Props) {
+export function CandidateFormCapture({ candidate, context, machine, bobbin, online, attempt, setAttempt, back, onSubmitted, onAssignmentChanged, onSessionLost, user, deps, offlineQuality, onOfflineQueued }: Props) {
     const { form, api } = candidate;
     const palletMode = candidate.code === "VINTO-P1-12";
     const contextId = form.context === "machine" ? machine?.code : form.context === "bobbin" ? bobbin?.bobbin.id : context?.assignmentId; // assignment_id, código de máquina o id de bobina, según el formulario
@@ -74,14 +84,47 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     }, [palletMode, context?.assignmentId]);
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
+    const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
     const busy = useRef(false);
-    const locked = sending || attempt !== null || saved !== null;
+    const persistence = useQualityOfflineDraftEditor(
+        draft, setDraft, offlineQuality?.draft, Boolean(offlineQuality?.draft) && !attempt,
+        Object.keys(form.emptyDraft()),
+    );
+    // Missing or unreadable prepared storage cannot silently become a second capture.
+    const recoveryBlocked = !online && Boolean(offlineQuality) &&
+        (!offlineQuality?.draft || persistence.blocked);
+    const locked = sending || attempt !== null || saved !== null ||
+        offlineQueuedId !== null || recoveryBlocked;
+
     const set = (key: string) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
-        if (busy.current || saved) return; // evita el doble clic
-        if (!online) return void setNotice(SUBMIT_MESSAGES.offline);
+        if (busy.current || saved || offlineQueuedId || recoveryBlocked) return; // evita el doble clic
+        if (!online) {
+            // This port is absent by default. No assignment/Production offline write.
+            if (!offlineQuality || form.context === "assignment" || attempt) return void setNotice(SUBMIT_MESSAGES.offline);
+            const prepared = prepareCurrentQualityOfflineInput({
+                form, draft, machineCode: machine?.code ?? bobbin?.bobbin.machine.code ?? "",
+                bobbinId: bobbin?.bobbin.id,
+                ...offlineQuality.prepared,
+            });
+            if (!prepared.ok) return void setNotice("No se puede guardar sin conexión: falta preparar o validar este formulario.");
+            busy.current = true; setSending(true); setNotice(null);
+            try {
+                if (!await persistence.flush(draft)) throw new Error("offline_draft_not_persisted");
+                if (!live()) return;
+                const queued = await offlineQuality.queue(prepared.value);
+                if (!live()) return;
+                if (!queued.captureId || typeof queued.captureId !== "string") throw new Error("offline_capture_id_missing");
+                setOfflineQueuedId(queued.captureId);
+                setNotice("Captura guardada de forma segura en este dispositivo. Pendiente de sincronización.");
+                onOfflineQueued?.(queued.captureId);
+            } catch {
+                if (live()) setNotice("No se confirmó el guardado local. Los datos siguen en pantalla; verifica antes de reintentar.");
+            } finally { busy.current = false; setSending(false); }
+            return;
+        }
         if (palletMode && !attempt && (!palletPreview || !palletPreview.weight_available)) return void setNotice("No se puede registrar: falta peso nominal válido del artículo programado.");
         let current = attempt;
         if (!current) {
@@ -217,6 +260,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             <p className="mt-1">Captura {saved.capture.id} · revisión {saved.capture.revision} · {saved.capture.bobbin ? `Bobina ${saved.capture.bobbin.code} · ` : ""}{saved.capture.machine.code} · {saved.capture.work_order ? `OT ${saved.capture.work_order.number}` : `Turno ${saved.capture.shift.name} · fecha operativa ${saved.capture.operating_date}`}</p>
             <p className="mt-1" data-readback={saved.readBack.state}>{saved.readBack.state === "reading" ? "Consultando la captura en la API central…" : saved.readBack.state === "ok" ? "Verificada con una consulta posterior por id en la API central." : saved.readBack.state === "mismatch" ? "La consulta posterior no coincide con lo enviado; revisa el registro." : "No se pudo verificar con una consulta posterior; el envío ya fue confirmado por el servidor."}</p>
         </div>}
-        {!saved && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}
+        {!saved && !offlineQueuedId && <SubmitBar onSend={send} sending={sending} retry={attempt !== null}/>}
+        {offlineQueuedId && <p role="status" className="border-t bg-amber-50 px-5 py-3 text-sm text-amber-950">Captura local confirmada · pendiente de sincronización. No vuelvas a enviarla.</p>}
     </CaptureShell>;
 }

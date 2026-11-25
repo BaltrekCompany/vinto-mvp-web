@@ -10,11 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { getDeviceKey } from "@/lib/vinto/device";
 import { getQualityCapture, submitQualityCapture } from "@/lib/vinto/quality-captures-api";
 import {
-    EMPTY_HUMIDITY_DRAFT, HUMIDITY_MESSAGES, POSITIONS, POSITION_LABELS, WEIGHT_LABELS, bobbinToShow, computeHumidity, createHumidityAttempt, formatHumidity, pendingNotice,
+    Q19_FORM_CODE, EMPTY_HUMIDITY_DRAFT, HUMIDITY_MESSAGES, POSITIONS, POSITION_LABELS, WEIGHT_LABELS, bobbinToShow, computeHumidity, createHumidityAttempt, formatHumidity, pendingNotice,
     submitHumidityAttempt, type HumidityDraft, type PendingHumidityAttempt, type Position, type WeightKey,
 } from "@/lib/vinto/quality-captures";
 import { grammageLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
+import { prepareLegacyQualityOfflineCapture, type LegacyQualityOfflineContext, type LegacyQualityOfflinePayload } from "@/lib/vinto/quality-offline-legacy-bridge";
+import { useQualityOfflineDraftEditor, type QualityDraftPort } from "@/lib/vinto/use-quality-offline-draft-editor";
 
 // VINTO-P1-19 · Control de humedad de UNA Bobina física: se envía SOLO a POST /api/quality/bobbins/{id}/captures (PostgreSQL). Nunca escribe en
 // vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El encabezado sale del item del inbox (la Bobina seleccionada
@@ -29,6 +31,12 @@ type Props = {
     back: () => void;
     onSubmitted: () => void; // éxito: el padre cierra el formulario y refresca el inbox (la Bobina sigue pendiente)
     onSessionLost: () => void;
+    offlineQuality?: {
+        context: LegacyQualityOfflineContext;
+        queue: (input: LegacyQualityOfflinePayload) => Promise<{captureId: string}>;
+        draft?: QualityDraftPort;
+    };
+    onOfflineQueued?: (captureId: string) => void;
 };
 
 function Auto({ label, value }: { label: string; value: string }) {
@@ -39,20 +47,47 @@ function Derived({ label, value }: { label: string; value: string }) {
     return <div className="rounded-lg border bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-1 text-lg font-black">{value} %</p></div>;
 }
 
-export function QualityHumidityCapture({ item, online, attempt, setAttempt, back, onSubmitted, onSessionLost }: Props) {
+export function QualityHumidityCapture({ item, online, attempt, setAttempt, back, onSubmitted, onSessionLost, offlineQuality, onOfflineQueued }: Props) {
     const [draft, setDraft] = useState<HumidityDraft>(attempt ? { ...attempt.draft } : EMPTY_HUMIDITY_DRAFT);
     const [sending, setSending] = useState(false);
     const [notice, setNotice] = useState<string | null>(attempt ? HUMIDITY_MESSAGES.uncertain : null);
     const busy = useRef(false);
-    const locked = sending || attempt !== null;
+    const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
+    const persistence = useQualityOfflineDraftEditor(
+        draft, setDraft, offlineQuality?.draft, Boolean(offlineQuality?.draft) && !attempt,
+        Object.keys(EMPTY_HUMIDITY_DRAFT),
+    );
+    const recoveryBlocked = !online && Boolean(offlineQuality) &&
+        (!offlineQuality?.draft || persistence.blocked);
+    const locked = sending || attempt !== null || offlineQueuedId !== null || recoveryBlocked;
     const shown = bobbinToShow(attempt, item);
     const humidity = computeHumidity(draft);
     const set = (key: keyof HumidityDraft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
-        if (busy.current || !shown) return; // evita el doble clic
-        if (!online) return void setNotice(HUMIDITY_MESSAGES.offline);
+        if (busy.current || !shown || offlineQueuedId || recoveryBlocked) return; // evita el doble clic
+        if (!online) {
+            if (!offlineQuality || attempt) return void setNotice(HUMIDITY_MESSAGES.offline);
+            const prepared = prepareLegacyQualityOfflineCapture({formCode: Q19_FORM_CODE, draft}, offlineQuality.context);
+            if (!prepared.ok || prepared.value.target.bobbinId !== shown.bobbin.id ||
+                prepared.value.target.machineCode !== shown.bobbin.machine.code)
+                return void setNotice("No se puede guardar sin conexión: verifica la preparación de la bobina.");
+            busy.current = true; setSending(true); setNotice(null);
+            try {
+                if (!await persistence.flush(draft)) throw new Error("offline_draft_not_persisted");
+                if (!live()) return;
+                const queued = await offlineQuality.queue(prepared.value);
+                if (!live()) return;
+                if (!queued.captureId) throw new Error("offline_capture_id_missing");
+                setOfflineQueuedId(queued.captureId);
+                setNotice("Captura guardada en este dispositivo. Pendiente de sincronización.");
+                onOfflineQueued?.(queued.captureId);
+            } catch {
+                if (live()) setNotice("No se confirmó el guardado local. Conserva los datos y verifica antes de reintentar.");
+            } finally { busy.current = false; setSending(false); }
+            return;
+        }
         let current = attempt;
         if (!current) {
             const created = createHumidityAttempt(draft, shown, getDeviceKey());
@@ -91,7 +126,7 @@ export function QualityHumidityCapture({ item, online, attempt, setAttempt, back
                 {POSITIONS.map((p: Position) => <Derived key={p} label={`Humedad · ${POSITION_LABELS[p]}`} value={formatHumidity(humidity[p])}/>)}<Derived label="Promedio humedad" value={formatHumidity(humidity.promedio)}/></div></div>
             {notice && <div role="alert" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{notice}</div>}
             <div className="flex flex-wrap justify-end gap-2 border-t p-5">
-                <Button className="bg-[#146b4f]" disabled={sending} onClick={send}><Send className="mr-2 h-4 w-4"/>{sending ? "Enviando…" : attempt ? "Reintentar envío" : "Registrar control de humedad"}</Button>
+                <Button className="bg-[#146b4f]" disabled={locked} onClick={send}><Send className="mr-2 h-4 w-4"/>{sending ? "Enviando…" : attempt ? "Reintentar envío" : "Registrar control de humedad"}</Button>
             </div>
         </div></section></main>;
 }

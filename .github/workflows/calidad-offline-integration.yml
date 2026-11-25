@@ -1,0 +1,57 @@
+name: VINTO Calidad Offline Integration (existing UI)
+
+on:
+  pull_request:
+    paths:
+      - 'app/page.tsx'
+      - 'components/vinto/quality-offline-workspace.tsx'
+      - 'public/vinto-quality-offline-sw.js'
+      - 'backend/app/quality/offline_*.py'
+      - 'backend/tests/test_quality_offline_*.py'
+      - 'backend/requirements.txt'
+      - 'components/vinto/candidate-form-capture.tsx'
+      - 'components/vinto/quality-humidity-capture.tsx'
+      - 'components/vinto/quality-physical-capture.tsx'
+      - 'lib/vinto/quality-offline-*.ts'
+      - 'lib/vinto/offline-*.ts'
+      - 'scripts/quality-offline-*.test.mjs'
+      - '.github/workflows/calidad-offline-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-existing-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.25.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Offline bridge contracts (existing UI)
+        run: node --test scripts/quality-offline-*.test.mjs
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: Lint integrated Quality Offline UI
+        run: pnpm exec eslint components/vinto/quality-offline-workspace.tsx lib/vinto/quality-offline-*.ts lib/vinto/quality-offline-shell.ts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated Quality backend test dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Offline operational backend contracts (no production writes)
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_quality_offline_*.py' -v
+      - name: Validate isolation of existing production route
+        run: |
+          ! grep -q 'offlineQuality=' app/page.tsx
+          ! grep -q 'offline-operational-mobile-page' app/page.tsx

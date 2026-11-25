@@ -364,8 +364,8 @@ test("the pure module has type-only imports and no network, storage or Number co
 test("the form: decimal text inputs, locked while pending, double-click guard, device key, snapshot bobbin, averages only displayed", () => {
   assert.match(component, /type="text" inputMode="decimal"/);
   assert.match(component, /disabled=\{locked\}/);
-  assert.match(component, /const locked = sending \|\| attempt !== null;/);
-  assert.match(component, /if \(busy\.current \|\| !shown\) return;/);
+  assert.match(component, /const locked = sending \|\| attempt !== null \|\| offlineQueuedId !== null \|\| recoveryBlocked;/);
+  assert.match(component, /if \(busy\.current \|\| !shown \|\| offlineQueuedId \|\| recoveryBlocked\) return;/);
   assert.match(component, /createPhysicalAttempt\(draft, shown, getDeviceKey\(\)\)/);
   assert.match(component, /setAttempt\(current\);/);
   assert.match(component, /physicalBobbinToShow\(attempt, item\)/);

@@ -10,11 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { getDeviceKey } from "@/lib/vinto/device";
 import { grammageLabel, type QualityBobbinInboxItem } from "@/lib/vinto/quality-bobbins";
 import {
-    EMPTY_PHYSICAL_DRAFT, PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_MESSAGES, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, createPhysicalAttempt,
+    Q20_FORM_CODE, EMPTY_PHYSICAL_DRAFT, PHYSICAL_GROUPS, PHYSICAL_LABELS, PHYSICAL_MESSAGES, PHYSICAL_SERIES, PHYSICAL_UNITS, SERIES_LABELS, averageLabel, createPhysicalAttempt,
     physicalAverages, physicalBobbinToShow, physicalPendingNotice, submitPhysicalAttempt, type PendingPhysicalAttempt, type PhysicalDraft, type PhysicalKey,
 } from "@/lib/vinto/quality-physical";
 import { getPhysicalCapture, submitPhysicalCapture } from "@/lib/vinto/quality-physical-api";
 import { beginSessionOperation } from "@/lib/vinto/session-epoch";
+import { prepareLegacyQualityOfflineCapture, type LegacyQualityOfflineContext, type LegacyQualityOfflinePayload } from "@/lib/vinto/quality-offline-legacy-bridge";
+import { useQualityOfflineDraftEditor, type QualityDraftPort } from "@/lib/vinto/use-quality-offline-draft-editor";
 
 // VINTO-P1-20 · Propiedades físicas de UNA Bobina física: se envía SOLO a POST /api/quality/bobbins/{id}/captures (PostgreSQL). Nunca escribe en
 // vinto-p1-records ni en localStorage (salvo la clave técnica vinto-device-key). El encabezado sale del item del inbox (o del snapshot del intento
@@ -29,6 +31,12 @@ type Props = {
     back: () => void;
     onSubmitted: () => void; // éxito: el padre cierra el formulario y refresca el inbox (la Bobina sigue pendiente)
     onSessionLost: () => void;
+    offlineQuality?: {
+        context: LegacyQualityOfflineContext;
+        queue: (input: LegacyQualityOfflinePayload) => Promise<{captureId: string}>;
+        draft?: QualityDraftPort;
+    };
+    onOfflineQueued?: (captureId: string) => void;
 };
 
 function Auto({ label, value }: { label: string; value: string }) {
@@ -39,20 +47,47 @@ function Average({ label, value }: { label: string; value: string }) {
     return <div className="rounded-lg border bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-1 break-words text-lg font-black tabular-nums">{value}</p></div>;
 }
 
-export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back, onSubmitted, onSessionLost }: Props) {
+export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back, onSubmitted, onSessionLost, offlineQuality, onOfflineQueued }: Props) {
     const [draft, setDraft] = useState<PhysicalDraft>(attempt ? { ...attempt.draft } : EMPTY_PHYSICAL_DRAFT);
     const [sending, setSending] = useState(false);
     const [notice, setNotice] = useState<string | null>(attempt ? PHYSICAL_MESSAGES.uncertain : null);
     const busy = useRef(false);
-    const locked = sending || attempt !== null;
+    const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
+    const persistence = useQualityOfflineDraftEditor(
+        draft, setDraft, offlineQuality?.draft, Boolean(offlineQuality?.draft) && !attempt,
+        Object.keys(EMPTY_PHYSICAL_DRAFT),
+    );
+    const recoveryBlocked = !online && Boolean(offlineQuality) &&
+        (!offlineQuality?.draft || persistence.blocked);
+    const locked = sending || attempt !== null || offlineQueuedId !== null || recoveryBlocked;
     const shown = physicalBobbinToShow(attempt, item);
     const averages = physicalAverages(draft);
     const set = (key: keyof PhysicalDraft) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
-        if (busy.current || !shown) return; // evita el doble clic y las solicitudes simultáneas
-        if (!online) return void setNotice(PHYSICAL_MESSAGES.offline);
+        if (busy.current || !shown || offlineQueuedId || recoveryBlocked) return; // evita el doble clic y las solicitudes simultáneas
+        if (!online) {
+            if (!offlineQuality || attempt) return void setNotice(PHYSICAL_MESSAGES.offline);
+            const prepared = prepareLegacyQualityOfflineCapture({formCode: Q20_FORM_CODE, draft}, offlineQuality.context);
+            if (!prepared.ok || prepared.value.target.bobbinId !== shown.bobbin.id ||
+                prepared.value.target.machineCode !== shown.bobbin.machine.code)
+                return void setNotice("No se puede guardar sin conexión: verifica la preparación de la bobina.");
+            busy.current = true; setSending(true); setNotice(null);
+            try {
+                if (!await persistence.flush(draft)) throw new Error("offline_draft_not_persisted");
+                if (!live()) return;
+                const queued = await offlineQuality.queue(prepared.value);
+                if (!live()) return;
+                if (!queued.captureId) throw new Error("offline_capture_id_missing");
+                setOfflineQueuedId(queued.captureId);
+                setNotice("Captura guardada en este dispositivo. Pendiente de sincronización.");
+                onOfflineQueued?.(queued.captureId);
+            } catch {
+                if (live()) setNotice("No se confirmó el guardado local. Conserva los datos y verifica antes de reintentar.");
+            } finally { busy.current = false; setSending(false); }
+            return;
+        }
         let current = attempt;
         if (!current) {
             const created = createPhysicalAttempt(draft, shown, getDeviceKey());
@@ -98,7 +133,7 @@ export function QualityPhysicalCapture({ item, online, attempt, setAttempt, back
                 <p className="mt-2 text-xs text-slate-600">Media aritmética provisional de Comando, Medio y Extremo; «—» mientras falte una posición; «≈» indica un valor aproximado con dos decimales más que las mediciones. No se guarda ni decide la liberación.</p></div>
             {notice && <div role="alert" className="border-b border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{notice}</div>}
             <div className="flex flex-wrap justify-end gap-2 border-t p-5">
-                <Button className="bg-[#146b4f]" disabled={sending} onClick={send}><Send className="mr-2 h-4 w-4"/>{sending ? "Enviando…" : attempt ? "Reintentar envío" : "Registrar propiedades físicas"}</Button>
+                <Button className="bg-[#146b4f]" disabled={locked} onClick={send}><Send className="mr-2 h-4 w-4"/>{sending ? "Enviando…" : attempt ? "Reintentar envío" : "Registrar propiedades físicas"}</Button>
             </div>
         </div></section></main>;
 }
