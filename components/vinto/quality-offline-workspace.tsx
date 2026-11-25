@@ -27,7 +27,7 @@ import {createOperationalLocalStore} from "@/lib/vinto/offline-operational-local
 import {createOperationalCaptureBindings,type OperationalFormContext} from "@/lib/vinto/offline-operational-capture-bindings";
 import {createQualityOfflineDraftLifecycle} from "@/lib/vinto/quality-offline-draft-lifecycle";
 import {createOperationalCaptureGate} from "@/lib/vinto/offline-operational-capture-gate";
-import {verifyOperationalCaptureScope,type CaptureScopeEnvelope} from "@/lib/vinto/offline-operational-capture-scope-verify";
+import type {CaptureScopeEnvelope} from "@/lib/vinto/offline-operational-capture-scope-verify";
 import {createQualityOfflineQueuePort} from "@/lib/vinto/quality-offline-queue-port";
 import {prepareQualityDevice} from "@/lib/vinto/quality-offline-device-preparation";
 import {requirePersistedQualityDevice} from "@/lib/vinto/quality-offline-device-identity";
@@ -127,11 +127,13 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
   }
   setPreps(data);
   const queue=await store.sync.list(state.identity.ownerId,state.identity.deviceKey);
-  setQueueInfo(queue.length?queue.reduce((acc,x)=>{
-   acc[x.state]=(acc[x.state]??0)+1;return acc;
-  },{} as Record<string,number>)&&
-   queue.map(x=>x.state).reduce((a,x)=>(a[x]=(a[x]??0)+1,a),{} as Record<string,number>)
-     ?Object.entries(queue.map(x=>x.state).reduce((a,x)=>(a[x]=(a[x]??0)+1,a),{} as Record<string,number>)).map(([k,v])=>k+": "+v).join(" · "):"" :"Sin capturas en cola");
+  const counts=queue.reduce<Record<string,number>>((acc,item)=>{
+   acc[item.state]=(acc[item.state]??0)+1;
+   return acc;
+  },{});
+  setQueueInfo(queue.length
+   ?Object.entries(counts).map(([state,count])=>state+": "+count).join(" · ")
+   :"Sin capturas en cola");
  };
  const unlock=async()=>{
   if(busy||!passphrase)return;
