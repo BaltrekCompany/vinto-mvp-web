@@ -378,6 +378,16 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         if gate is not None:
             machine_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (context.machine_id,)).fetchone()[0]
             authorized_machine = gate.check_new(connection, context.machine_id, machine_code, form_code)  # antes del dispositivo y de cualquier escritura
+        device_id = cs._resolve_device(connection, device_key, context.machine_id)
+        if gate is not None:  # con los bloqueos ya tomados, la bobina y su máquina definitivas deben ser las autorizadas
+            gate.confirm_context(authorized_machine, _bobbin_context(connection, bobbin_id, sectors).machine_id)
+        form_version_id = (_published_mother_form_version(connection, form_code, context.machine_id)
+                           if context.is_mother else
+                           cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA))
+        fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
+        _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
+        _check_minimums(form_code, clean)
+
         # Operational rule: a physical bobbin has only ONE submitted capture
         # per Quality form, regardless of the author, device or online/offline
         # transport. Keep all historical rows untouched.
@@ -397,15 +407,6 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         if already is not None:
             raise QualityBobbinFormAlreadySubmittedError()
 
-        device_id = cs._resolve_device(connection, device_key, context.machine_id)
-        if gate is not None:  # con los bloqueos ya tomados, la bobina y su máquina definitivas deben ser las autorizadas
-            gate.confirm_context(authorized_machine, _bobbin_context(connection, bobbin_id, sectors).machine_id)
-        form_version_id = (_published_mother_form_version(connection, form_code, context.machine_id)
-                           if context.is_mother else
-                           cs.published_form_version(connection, form_code, context.machine_id, area=QUALITY_AREA))
-        fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
-        _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
-        _check_minimums(form_code, clean)
 
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)
         cs._insert_details(connection, capture_id, form_version_id, fields, clean)
