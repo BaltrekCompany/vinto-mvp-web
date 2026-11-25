@@ -71,7 +71,7 @@ const normalize=(code:string,values:Readonly<Record<string,string|boolean>>):Rea
   code==="VINTO-P1-20"?normalizePhysicalDraft(draft as typeof EMPTY_PHYSICAL_DRAFT):
   formFor(code)?.normalizeDraft(draft);
  if(!check||!check.ok)throw new Error("offline_quality_fields_invalid");
- return check.values;
+ return check.values as Readonly<Record<string,string>>;
 };
 const validPrep=(x:unknown):x is Prepared=>{
  if(!obj(x)||!obj(x.context)||!obj(x.envelope))return false;
