@@ -253,6 +253,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
        throw new Error("Selecciona un formulario autorizado con conexión.");
      const bobbin=pickedOffer.kind==="bobbin"?activeBobbin:null;
      if(bobbin){
+      if(onlineCompleted.has(onlineCompletionKey(bobbin.bobbin.id,pickedOffer.formCode)))
+       throw new Error("Formulario realizado en VINTO Online para esta bobina.");
       const matched=controls.find(c=>c.item.formCode===pickedOffer.formCode&&
        c.item.machineCode===pickedOffer.machineCode&&c.item.bobbinId===bobbin.bobbin.id);
       if(matched){
@@ -467,7 +469,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
       </select>}
      <button disabled={busy||!pickedOffer||(pickedOffer.kind==="bobbin"&&!activeBobbin)||
       Boolean(pickedOffer&&activeBobbin&&isBobbinControlLocked(controls,{
-       id:"",formCode:pickedOffer.formCode,machineCode:pickedOffer.machineCode,bobbinId:activeBobbin.bobbin.id}))}
+       id:"",formCode:pickedOffer.formCode,machineCode:pickedOffer.machineCode,bobbinId:activeBobbin.bobbin.id})||
+       onlineCompleted.has(onlineCompletionKey(activeBobbin.bobbin.id,pickedOffer.formCode)))}
        className="bg-[#146b4f] text-white rounded p-2 disabled:opacity-50"
        onClick={()=>void prepare()}>Preparar formulario offline</button>
     </div>}
