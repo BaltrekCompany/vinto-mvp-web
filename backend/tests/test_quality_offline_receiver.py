@@ -75,11 +75,13 @@ class OfflineOperationalReceiverTests(unittest.TestCase):
                 return SimpleNamespace(fetchone=lambda: row)
 
         authorized=SimpleNamespace(allowed=True,effective_version=body.form_version)
-        with patch("app.quality.offline_sync_router.settings.offline_quality_capture_enabled",True), \\
-             patch("app.quality.offline_sync_router.authorize",return_value=authorized), \\
-             patch("app.quality.offline_sync_router.gate_for",return_value=object()), \\
-             patch("app.quality.offline_sync_router.machine_capture_service.submit_machine_capture",
-                   return_value=SimpleNamespace(created=True)):
+        with (
+            patch("app.quality.offline_sync_router.settings.offline_quality_capture_enabled", True),
+            patch("app.quality.offline_sync_router.authorize", return_value=authorized),
+            patch("app.quality.offline_sync_router.gate_for", return_value=object()),
+            patch("app.quality.offline_sync_router.machine_capture_service.submit_machine_capture",
+                  return_value=SimpleNamespace(created=True)),
+        ):
             response=Response()
             ack=send_offline_capture(body,response,FakeUser(),Connection())
         self.assertEqual(response.status_code,201)
