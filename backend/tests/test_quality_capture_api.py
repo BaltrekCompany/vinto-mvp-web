@@ -230,13 +230,16 @@ class CaptureTests(QualityCaptureCase):
         self.assertEqual(self.scalar("SELECT assignment_id FROM vinto_txn.capture WHERE id=%s", (c["id"],)), self.scalar(
             "SELECT s.assignment_id FROM vinto_txn.bobbin b JOIN vinto_txn.capture s ON s.id=b.source_capture_id WHERE b.id=%s", (first["bobbin"]["id"],)))
 
-    async def test_several_captures_of_the_same_bobbin_are_allowed(self):
+    async def test_second_capture_of_same_form_and_bobbin_is_rejected_but_history_remains(self):
         _, created = await self.bobbin()
-        for _ in range(2):
-            self.assertEqual((await self.submit(created["bobbin"]["id"], self.body())).status, 201)
-        listed = await call("GET", f"/api/quality/bobbins/{created['bobbin']['id']}/captures", cookie=await self.cookie("CALIDAD"))
-        self.assertEqual((listed.status, len(listed.json())), (200, 2))
-        self.assertEqual({c["bobbin"]["id"] for c in listed.json()}, {created["bobbin"]["id"]})
+        bobbin_id = created["bobbin"]["id"]
+        self.assertEqual((await self.submit(bobbin_id, self.body())).status, 201)
+        second = await self.submit(bobbin_id, self.body())
+        self.assertEqual((second.status, second.json()["code"]),
+                         (409, "QUALITY_BOBBIN_FORM_ALREADY_SUBMITTED"))
+        listed = await call("GET", f"/api/quality/bobbins/{bobbin_id}/captures", cookie=await self.cookie("CALIDAD"))
+        self.assertEqual((listed.status, len(listed.json())), (200, 1))
+        self.assertEqual(listed.json()[0]["bobbin"]["id"], bobbin_id)
 
     async def test_quality_release_stays_pending_and_untouched(self):
         _, created = await self.bobbin()
