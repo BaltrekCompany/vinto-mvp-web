@@ -81,7 +81,7 @@ export async function prepareAuthorizedQualityForm(
  await saveOfflinePreparation(deps.state.identity,deps.state.key,{
    draftId:context.draftId,scopeSnapshotId:context.scopeSnapshotId,
    formCode:context.formCode,formVersion:context.formVersion,
-   machineCode:context.machineCode,payload,
+   machineCode:context.machineCode,payload:{context,envelope,bobbin,clock},
  });
  return payload;
 }
