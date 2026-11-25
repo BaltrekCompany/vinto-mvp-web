@@ -16,6 +16,9 @@ SCOPE = uuid.UUID("9807c5a8-2552-44fc-a856-e7d816487f87")
 
 class FakeUser:
     user_id = USER
+    # AuthenticatedUser exposes a server-verified sector scope. Keep the
+    # isolated test fixture aligned with the production permission boundary.
+    sectors = ("CALIDAD",)
 
 
 def make_request(**changes):
