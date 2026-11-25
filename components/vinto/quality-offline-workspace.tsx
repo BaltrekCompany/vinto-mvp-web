@@ -468,9 +468,9 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
         <option key={x.bobbin.id} value={x.bobbin.id}>{x.bobbin.code} · {x.quality.status}</option>)}
       </select>}
      <button disabled={busy||!pickedOffer||(pickedOffer.kind==="bobbin"&&!activeBobbin)||
-      Boolean(pickedOffer&&activeBobbin&&isBobbinControlLocked(controls,{
+      Boolean(pickedOffer&&activeBobbin&&(isBobbinControlLocked(controls,{
        id:"",formCode:pickedOffer.formCode,machineCode:pickedOffer.machineCode,bobbinId:activeBobbin.bobbin.id})||
-       onlineCompleted.has(onlineCompletionKey(activeBobbin.bobbin.id,pickedOffer.formCode)))}
+       onlineCompleted.has(onlineCompletionKey(activeBobbin.bobbin.id,pickedOffer.formCode))))}
        className="bg-[#146b4f] text-white rounded p-2 disabled:opacity-50"
        onClick={()=>void prepare()}>Preparar formulario offline</button>
     </div>}
