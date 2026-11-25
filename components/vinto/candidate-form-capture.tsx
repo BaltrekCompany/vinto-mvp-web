@@ -90,18 +90,21 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
         !online && offlineQuality?.draft && !attempt ? "loading" : "ready"
     );
     const [offlineFrozen, setOfflineFrozen] = useState(false);
+    const [offlineHydrated, setOfflineHydrated] = useState(false);
     const busy = useRef(false);
     // A stale/unreadable encrypted draft is never overwritten by a new editor.
-    const recoveryBlocked = !online && Boolean(offlineQuality?.draft) && (offlineRecovery !== "ready" || offlineFrozen);
+    const recoveryBlocked = offlineFrozen || (!online && Boolean(offlineQuality?.draft) && (!offlineHydrated || offlineRecovery !== "ready"));
     const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null || recoveryBlocked;
     useEffect(() => {
         if (online || !offlineQuality?.draft || attempt) {
             setOfflineRecovery("ready");
+            setOfflineHydrated(false);
             return;
         }
         let cancelled = false;
         const live = beginSessionOperation();
         setOfflineRecovery("loading");
+        setOfflineHydrated(false);
         offlineQuality.draft.recover().then(savedDraft => {
             if (cancelled || !live()) return;
             if (savedDraft) {
@@ -114,15 +117,17 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
                 } else {
                     setDraft({ ...initialDraft(), ...savedDraft.values } as CandidateDraft);
                     setOfflineFrozen(false);
+                    setOfflineHydrated(true);
                 }
             } else {
                 // No draft prepared: a separate verified preparation flow must initialize it.
-                setOfflineFrozen(true);
+                setOfflineHydrated(false);
                 setNotice("Prepara este formulario con internet antes de utilizarlo sin conexión.");
             }
             setOfflineRecovery("ready");
         }).catch(() => {
             if (cancelled || !live()) return;
+            setOfflineHydrated(false);
             setOfflineRecovery("error");
             setNotice("No se pudo recuperar el borrador cifrado. No crees otra captura hasta revisar el almacenamiento.");
         });
