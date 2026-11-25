@@ -24,6 +24,7 @@ from app.config import settings
 from app.database import get_connection
 from app.quality import capture_service, machine_capture_service
 from app.quality.offline_capture_scope import FORM_OPERATION, _canonical
+from app.quality.offline_bobbin_context import quality_bobbin_context_digest
 
 router = APIRouter(prefix="/api/offline/captures", tags=["Calidad offline"])
 UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
@@ -103,6 +104,26 @@ def send_offline_capture(
     _enabled()
     values,bobbin_id = _validate_capture(body,user)
     op = Operation(FORM_OPERATION[body.form_code])
+    if bobbin_id is not None:
+        current_digest = quality_bobbin_context_digest(
+            connection, bobbin_id, body.machine_code, user.sectors)
+        if current_digest is None:
+            raise HTTPException(status_code=403, detail="Bobina fuera de alcance")
+        if current_digest != body.payload["bobbin"]["context_digest"] or (
+            body.context_version != current_digest):
+            # Context changed since enrollment. No business record is created,
+            # and a technical receipt is never misrepresented as operational.
+            response.status_code = 202
+            return {
+                "capture_id":str(body.capture_id),
+                "payload_sha256":body.payload_sha256,
+                "server_id":str(body.capture_id),
+                "outcome":"review",
+                "reason":"bobbin_context_changed",
+                "technical_acceptance":True,
+                "operational_registered":False,
+                "warnings":["La bobina cambió desde la preparación offline."],
+            }
     # This is an operational write. Never reuse observe/off mode even when
     # the online legacy endpoint is configured to be permissive.
     decision = authorize(connection, user, op, body.machine_code, body.form_code, lock=False)
