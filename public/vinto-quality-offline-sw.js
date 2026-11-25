@@ -68,5 +68,7 @@ self.addEventListener("message",event=>{
    const result=await fetch(req);
    if(result.ok&&result.type==="basic")await cache.put("/",result);
   }catch{/* During network loss, previously cached root is preserved. */}
+  const root=await cache.match("/");
+  event.ports[0]?.postMessage({ready:Boolean(root)});
  })());
 });
