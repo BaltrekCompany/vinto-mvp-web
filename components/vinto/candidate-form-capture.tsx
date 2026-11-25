@@ -7,6 +7,7 @@ import { SUBMIT_MESSAGES, submitMessage } from "@/lib/vinto/capture-core";
 import type { CandidateScreen } from "@/lib/vinto/candidate-screen";
 import type { CandidateAttempt, CandidateCapture, CandidateDraft, CandidateSubmitDeps } from "@/lib/vinto/candidate-form";
 import { prepareCurrentQualityOfflineInput, type PreparedQualityOfflineInput } from "@/lib/vinto/quality-offline-current-form-bridge";
+import { useQualityOfflineDraftEditor, type QualityDraftPort } from "@/lib/vinto/use-quality-offline-draft-editor";
 import { getDeviceKey } from "@/lib/vinto/device";
 import type { CaptureContext } from "@/lib/vinto/orders";
 import { Input } from "@/components/ui/input";
@@ -39,9 +40,7 @@ type Props = {
         queue: (input: PreparedQualityOfflineInput) => Promise<{ captureId: string }>;
         // Inject only after verification of the original operator/device and
         // the signed CAPTURE scope. The existing production form never supplies it.
-        draft?: {
-            recover: () => Promise<{ revision: number; frozen: boolean; values: Readonly<Record<string, string | boolean>> } | null>;
-        };
+        draft?: QualityDraftPort;
     };
     onOfflineQueued?: (captureId: string) => void;
 };
@@ -86,56 +85,17 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
     const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
-    const [offlineRecovery, setOfflineRecovery] = useState<"loading" | "ready" | "error">(
-        !online && offlineQuality?.draft && !attempt ? "loading" : "ready"
-    );
-    const [offlineFrozen, setOfflineFrozen] = useState(false);
-    const [offlineHydrated, setOfflineHydrated] = useState(false);
     const busy = useRef(false);
-    // A stale/unreadable encrypted draft is never overwritten by a new editor.
-    const recoveryBlocked = offlineFrozen || (!online && Boolean(offlineQuality?.draft) && (!offlineHydrated || offlineRecovery !== "ready"));
-    const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null || recoveryBlocked;
-    useEffect(() => {
-        if (online || !offlineQuality?.draft || attempt) return;
-        let cancelled = false;
-        const live = beginSessionOperation();
-        // Start the recovery in a microtask, avoiding synchronous state changes
-        // inside the effect. Editing remains fail-closed until hydration finishes.
-        Promise.resolve().then(() => {
-            if (cancelled || !live()) return null;
-            setOfflineRecovery("loading");
-            setOfflineHydrated(false);
-            return offlineQuality.draft!.recover();
-        }).then(savedDraft => {
-            if (savedDraft === null && (cancelled || !live())) return;
-            if (cancelled || !live()) return;
-            if (savedDraft) {
-                const expectedKeys = Object.keys(initialDraft());
-                if (Object.keys(savedDraft.values).some(key => !expectedKeys.includes(key) ||
-                    typeof savedDraft.values[key] !== "string")) throw Error("offline_draft_fields_invalid");
-                if (savedDraft.frozen) {
-                    setOfflineFrozen(true);
-                    setNotice("La captura local ya fue confirmada. Consulta el estado de sincronización antes de crear otra.");
-                } else {
-                    setDraft({ ...initialDraft(), ...savedDraft.values } as CandidateDraft);
-                    setOfflineFrozen(false);
-                    setOfflineHydrated(true);
-                }
-            } else {
-                // No draft prepared: a separate verified preparation flow must initialize it.
-                setOfflineHydrated(false);
-                setNotice("Prepara este formulario con internet antes de utilizarlo sin conexión.");
-            }
-            setOfflineRecovery("ready");
-        }).catch(() => {
-            if (cancelled || !live()) return;
-            setOfflineHydrated(false);
-            setOfflineRecovery("error");
-            setNotice("No se pudo recuperar el borrador cifrado. No crees otra captura hasta revisar el almacenamiento.");
-        });
-        return () => { cancelled = true; };
-    }, [online, offlineQuality?.draft, attempt, form.code]);
-    
+    const persistence = useQualityOfflineDraftEditor(
+        draft, setDraft, offlineQuality?.draft, Boolean(offlineQuality?.draft) && !attempt,
+        Object.keys(form.emptyDraft()),
+    );
+    // Missing or unreadable prepared storage cannot silently become a second capture.
+    const recoveryBlocked = !online && Boolean(offlineQuality) &&
+        (!offlineQuality?.draft || persistence.blocked);
+    const locked = sending || attempt !== null || saved !== null ||
+        offlineQueuedId !== null || recoveryBlocked;
+
     const set = (key: string) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
@@ -152,6 +112,8 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             if (!prepared.ok) return void setNotice("No se puede guardar sin conexión: falta preparar o validar este formulario.");
             busy.current = true; setSending(true); setNotice(null);
             try {
+                if (!await persistence.flush()) throw new Error("offline_draft_not_persisted");
+                if (!live()) return;
                 const queued = await offlineQuality.queue(prepared.value);
                 if (!live()) return;
                 if (!queued.captureId || typeof queued.captureId !== "string") throw new Error("offline_capture_id_missing");
