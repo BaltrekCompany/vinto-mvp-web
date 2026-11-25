@@ -282,7 +282,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
   const runner=createOperationalSyncRuntime({
    store,identity:unlocked.identity,unlockedKey:()=>unlocked.key,
    online:()=>navigator.onLine,onlineSession:session,
-   transport:createOperationalHttpTransport({origin,fetcher:fetch,
+   transport:createOperationalHttpTransport({origin,fetcher:fetch.bind(window),
     corsApprovedApi:new URL(origin).origin!==window.location.origin}),
    tabId:crypto.randomUUID(),
    subscribe:(event,listener)=>{
