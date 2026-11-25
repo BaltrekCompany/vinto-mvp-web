@@ -112,7 +112,7 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
             if (!prepared.ok) return void setNotice("No se puede guardar sin conexión: falta preparar o validar este formulario.");
             busy.current = true; setSending(true); setNotice(null);
             try {
-                if (!await persistence.flush()) throw new Error("offline_draft_not_persisted");
+                if (!await persistence.flush(draft)) throw new Error("offline_draft_not_persisted");
                 if (!live()) return;
                 const queued = await offlineQuality.queue(prepared.value);
                 if (!live()) return;
