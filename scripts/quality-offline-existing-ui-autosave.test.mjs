@@ -24,7 +24,7 @@ test("encrypted edits use serialized CAS revisions and flush before capture",()=
   assert.match(hook,/next\.revision!==expected\+1/);
   assert.match(hook,/failed\.current=true/);
   assert.match(hook,/await chain\.current/);
-  assert.match(hook,/equal\(lastSaved\.current,current\.current\)/);
+  assert.match(hook,/equal\(lastSaved\.current,current\.current as QualityDraftValues\)/);
 });
 test("no automatic UI mount or plaintext draft storage",()=>{
   const main=read("app/page.tsx");
