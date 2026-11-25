@@ -64,6 +64,29 @@ class OfflineOperationalReceiverTests(unittest.TestCase):
         self.assertEqual(bobbin,str(other))
         self.assertEqual(values["peso_humedo_comando"],"12")
 
+    def test_operational_ack_requires_persisted_original_capture(self):
+        from types import SimpleNamespace
+        body=make_request()
+        row=(body.capture_id, USER, body.form_code, body.form_version,
+             DEVICE, body.machine_code, None, "submitted")
+
+        class Connection:
+            def execute(self, statement, params):
+                return SimpleNamespace(fetchone=lambda: row)
+
+        authorized=SimpleNamespace(allowed=True,effective_version=body.form_version)
+        with patch("app.quality.offline_sync_router.settings.offline_quality_capture_enabled",True), \\
+             patch("app.quality.offline_sync_router.authorize",return_value=authorized), \\
+             patch("app.quality.offline_sync_router.gate_for",return_value=object()), \\
+             patch("app.quality.offline_sync_router.machine_capture_service.submit_machine_capture",
+                   return_value=SimpleNamespace(created=True)):
+            response=Response()
+            ack=send_offline_capture(body,response,FakeUser(),Connection())
+        self.assertEqual(response.status_code,201)
+        self.assertTrue(ack["operational_registered"])
+        self.assertTrue(ack["technical_acceptance"])
+        self.assertEqual(ack["operational_capture_id"],str(body.capture_id))
+
     def test_upload_flag_off_never_accesses_database(self):
         request=make_request()
         with patch("app.quality.offline_sync_router.settings.offline_quality_capture_enabled",False):
