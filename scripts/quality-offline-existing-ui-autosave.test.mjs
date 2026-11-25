@@ -13,7 +13,7 @@ for(const path of [
     const src=read(path);
     assert.match(src,/useQualityOfflineDraftEditor\(/);
     assert.match(src,/offlineQuality\?\.draft/);
-    assert.match(src,/await persistence\.flush\(\)/);
+    assert.match(src,/await persistence\.flush\(draft\)/);
     assert.match(src,/await offlineQuality\.queue\(prepared\.value\)/);
     assert.match(src,/recoveryBlocked/);
   });
