@@ -37,6 +37,11 @@ type Props = {
     offlineQuality?: {
         prepared: { formVersion: number; scopeSnapshotId: string; contextVersion: string; bobbinContextDigest?: string };
         queue: (input: PreparedQualityOfflineInput) => Promise<{ captureId: string }>;
+        // Inject only after verification of the original operator/device and
+        // the signed CAPTURE scope. The existing production form never supplies it.
+        draft?: {
+            recover: () => Promise<{ revision: number; frozen: boolean; values: Readonly<Record<string, string | boolean>> } | null>;
+        };
     };
     onOfflineQueued?: (captureId: string) => void;
 };
@@ -81,13 +86,54 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const [notice, setNotice] = useState<string | null>(attempt ? SUBMIT_MESSAGES.uncertain : null);
     const [saved, setSaved] = useState<{ capture: CandidateCapture; message: string; readBack: ReadBack } | null>(null);
     const [offlineQueuedId, setOfflineQueuedId] = useState<string | null>(null);
+    const [offlineRecovery, setOfflineRecovery] = useState<"loading" | "ready" | "error">(
+        !online && offlineQuality?.draft && !attempt ? "loading" : "ready"
+    );
+    const [offlineFrozen, setOfflineFrozen] = useState(false);
     const busy = useRef(false);
-    const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null;
+    // A stale/unreadable encrypted draft is never overwritten by a new editor.
+    const recoveryBlocked = !online && Boolean(offlineQuality?.draft) && (offlineRecovery !== "ready" || offlineFrozen);
+    const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null || recoveryBlocked;
+    useEffect(() => {
+        if (online || !offlineQuality?.draft || attempt) {
+            setOfflineRecovery("ready");
+            return;
+        }
+        let cancelled = false;
+        const live = beginSessionOperation();
+        setOfflineRecovery("loading");
+        offlineQuality.draft.recover().then(savedDraft => {
+            if (cancelled || !live()) return;
+            if (savedDraft) {
+                const expectedKeys = Object.keys(initialDraft());
+                if (Object.keys(savedDraft.values).some(key => !expectedKeys.includes(key) ||
+                    typeof savedDraft.values[key] !== "string")) throw Error("offline_draft_fields_invalid");
+                if (savedDraft.frozen) {
+                    setOfflineFrozen(true);
+                    setNotice("La captura local ya fue confirmada. Consulta el estado de sincronización antes de crear otra.");
+                } else {
+                    setDraft({ ...initialDraft(), ...savedDraft.values } as CandidateDraft);
+                    setOfflineFrozen(false);
+                }
+            } else {
+                // No draft prepared: a separate verified preparation flow must initialize it.
+                setOfflineFrozen(true);
+                setNotice("Prepara este formulario con internet antes de utilizarlo sin conexión.");
+            }
+            setOfflineRecovery("ready");
+        }).catch(() => {
+            if (cancelled || !live()) return;
+            setOfflineRecovery("error");
+            setNotice("No se pudo recuperar el borrador cifrado. No crees otra captura hasta revisar el almacenamiento.");
+        });
+        return () => { cancelled = true; };
+    }, [online, offlineQuality?.draft, attempt, form.code]);
+    
     const set = (key: string) => (x: string) => setDraft(old => ({ ...old, [key]: x }));
 
     async function send() {
         const live = beginSessionOperation(); // INT-01: guarda de la sesión que origina este envío
-        if (busy.current || saved || offlineQueuedId) return; // evita el doble clic
+        if (busy.current || saved || offlineQueuedId || recoveryBlocked) return; // evita el doble clic
         if (!online) {
             // This port is absent by default. No assignment/Production offline write.
             if (!offlineQuality || form.context === "assignment" || attempt) return void setNotice(SUBMIT_MESSAGES.offline);
