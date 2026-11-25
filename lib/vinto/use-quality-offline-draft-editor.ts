@@ -21,7 +21,7 @@ const equal=(a:QualityDraftValues,b:QualityDraftValues):boolean=>{
 };
 
 /** Rehydrates the real form's existing state and serializes its encrypted saves. */
-export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
+export function useQualityOfflineDraftEditor<T extends object>(
   draft:T, setDraft:Dispatch<SetStateAction<T>>,
   port:QualityDraftPort|undefined, active:boolean,
   allowedKeys:readonly string[],
@@ -67,8 +67,8 @@ export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
       if(snapshot.frozen){setStatus("frozen");return;}
       const restored={...current.current,...snapshot.values} as T;
       revision.current=snapshot.revision;
-      lastSaved.current={...restored};
-      scheduled.current={...restored};
+      lastSaved.current={...restored} as QualityDraftValues;
+      scheduled.current={...restored} as QualityDraftValues;
       hydrated.current=true;
       current.current=restored;
       setDraft(restored);
@@ -114,17 +114,17 @@ export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
   useEffect(()=>{
     current.current=draft;
     if(!active||!port||!hydrated.current||failed.current)return;
-    schedule(draft);
+    schedule(draft as QualityDraftValues);
   // scheduling is intentionally triggered by form edits, not by the queue promise
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[draft,active,port,status]);
 
   const flush=async():Promise<boolean>=>{
     if(!active||!port||!hydrated.current||failed.current||status!=="ready")return false;
-    schedule(current.current);
+    schedule(current.current as QualityDraftValues);
     await chain.current;
     return !failed.current&&hydrated.current&&
-      Boolean(lastSaved.current&&equal(lastSaved.current,current.current));
+      Boolean(lastSaved.current&&equal(lastSaved.current,current.current as QualityDraftValues));
   };
   return {
     flush,status,saving,
