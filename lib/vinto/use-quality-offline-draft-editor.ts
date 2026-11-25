@@ -119,12 +119,15 @@ export function useQualityOfflineDraftEditor<T extends object>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[draft,active,port,status]);
 
-  const flush=async():Promise<boolean>=>{
+  const flush=async(latest:T):Promise<boolean>=>{
     if(!active||!port||!hydrated.current||failed.current||status!=="ready")return false;
-    schedule(current.current as QualityDraftValues);
+    // Pass the exact submit-click snapshot so a pending React effect cannot
+    // cause the previous revision to be frozen instead of the latest values.
+    schedule(latest as QualityDraftValues);
     await chain.current;
     return !failed.current&&hydrated.current&&
-      Boolean(lastSaved.current&&equal(lastSaved.current,current.current as QualityDraftValues));
+      Boolean(lastSaved.current&&equal(lastSaved.current,latest as QualityDraftValues)&&
+        equal(lastSaved.current,current.current as QualityDraftValues));
   };
   return {
     flush,status,saving,
