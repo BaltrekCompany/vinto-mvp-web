@@ -22,6 +22,11 @@ export type QualityOfflineQueueDependencies = Readonly<{
    * draftId for the selected machine, bobbin and form version.
    */
   bindingsFor: (prepared: QualityOfflinePrepared) => Promise<BindingPort>;
+  /** Reuse the ORIGINAL form validator. Raw editable values have empty optional
+   * fields and cannot be compared directly with the normalized upload values.
+   */
+  normalizeDraft: (prepared:QualityOfflinePrepared,
+    editable:Readonly<Record<string,string|boolean>>)=>Readonly<Record<string,string|boolean>>;
   onQueued?: (captureId: string) => void;
 }>;
 
@@ -51,7 +56,8 @@ export function createQualityOfflineQueuePort(deps: QualityOfflineQueueDependenc
     let revision:number;
     if (prior) {
       // Never replace a preserved draft or an immutable capture silently.
-      if (!sameValues(prior.values, values)) throw new Error("offline_draft_conflict");
+      const normalised = deps.normalizeDraft(prepared, prior.values);
+      if (!sameValues(normalised, values)) throw new Error("offline_draft_conflict");
       revision = prior.revision;
     } else {
       // The verified binding controls stable draftId and original owner.
