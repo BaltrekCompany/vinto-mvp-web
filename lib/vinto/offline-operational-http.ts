@@ -14,6 +14,10 @@ export class OperationalHttpUnavailable extends Error {
 export type OperationalHttpDeps = Readonly<{
   origin: string;
   fetcher: typeof fetch;
+  /** The configured VINTO API may run on a separate, CORS-approved origin.
+   * The origin remains exact/pinned; no caller-controlled URL is accepted.
+   */
+  corsApprovedApi?: boolean;
 }>;
 
 type JsonObject = Record<string, unknown>;
@@ -37,7 +41,7 @@ export function createOperationalHttpTransport(deps: OperationalHttpDeps): SyncT
     if (url.origin !== origin.origin) throw new OperationalHttpUnavailable();
     try {
       const result = await deps.fetcher(url.toString(), {
-        method, signal, mode: "same-origin", credentials: "include",
+        method, signal, mode: deps.corsApprovedApi ? "cors" : "same-origin", credentials: "include",
         redirect: "error", cache: "no-store",
         headers: {Accept: "application/json", ...(method === "POST" ? {"Content-Type": "application/json"} : {})},
         ...(method === "POST" ? {body: JSON.stringify(body)} : {}),
