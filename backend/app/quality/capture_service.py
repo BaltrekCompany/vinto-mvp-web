@@ -373,6 +373,11 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
                 return QualityCaptureResult(get_quality_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
 
+        context = _bobbin_context(connection, bobbin_id, sectors)
+        authorized_machine = None
+        if gate is not None:
+            machine_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (context.machine_id,)).fetchone()[0]
+            authorized_machine = gate.check_new(connection, context.machine_id, machine_code, form_code)  # antes del dispositivo y de cualquier escritura
         # Operational rule: a physical bobbin has only ONE submitted capture
         # per Quality form, regardless of the author, device or online/offline
         # transport. Keep all historical rows untouched.
@@ -392,11 +397,6 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         if already is not None:
             raise QualityBobbinFormAlreadySubmittedError()
 
-        context = _bobbin_context(connection, bobbin_id, sectors)
-        authorized_machine = None
-        if gate is not None:
-            machine_code = connection.execute("SELECT code FROM vinto_master.machine WHERE id = %s", (context.machine_id,)).fetchone()[0]
-            authorized_machine = gate.check_new(connection, context.machine_id, machine_code, form_code)  # antes del dispositivo y de cualquier escritura
         device_id = cs._resolve_device(connection, device_key, context.machine_id)
         if gate is not None:  # con los bloqueos ya tomados, la bobina y su máquina definitivas deben ser las autorizadas
             gate.confirm_context(authorized_machine, _bobbin_context(connection, bobbin_id, sectors).machine_id)
