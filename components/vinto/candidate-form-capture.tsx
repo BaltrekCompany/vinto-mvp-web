@@ -96,16 +96,18 @@ export function CandidateFormCapture({ candidate, context, machine, bobbin, onli
     const recoveryBlocked = offlineFrozen || (!online && Boolean(offlineQuality?.draft) && (!offlineHydrated || offlineRecovery !== "ready"));
     const locked = sending || attempt !== null || saved !== null || offlineQueuedId !== null || recoveryBlocked;
     useEffect(() => {
-        if (online || !offlineQuality?.draft || attempt) {
-            setOfflineRecovery("ready");
-            setOfflineHydrated(false);
-            return;
-        }
+        if (online || !offlineQuality?.draft || attempt) return;
         let cancelled = false;
         const live = beginSessionOperation();
-        setOfflineRecovery("loading");
-        setOfflineHydrated(false);
-        offlineQuality.draft.recover().then(savedDraft => {
+        // Start the recovery in a microtask, avoiding synchronous state changes
+        // inside the effect. Editing remains fail-closed until hydration finishes.
+        Promise.resolve().then(() => {
+            if (cancelled || !live()) return null;
+            setOfflineRecovery("loading");
+            setOfflineHydrated(false);
+            return offlineQuality.draft!.recover();
+        }).then(savedDraft => {
+            if (savedDraft === null && (cancelled || !live())) return;
             if (cancelled || !live()) return;
             if (savedDraft) {
                 const expectedKeys = Object.keys(initialDraft());
