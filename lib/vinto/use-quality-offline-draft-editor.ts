@@ -128,6 +128,7 @@ export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
   };
   return {
     flush,status,saving,
-    blocked:active&&(status!=="ready"||saving||!hydrated.current||failed.current),
+    // Edits remain possible during a queued autosave; flush() waits before freeze.
+    blocked:active&&(status!=="ready"||!hydrated.current||failed.current),
   };
 }
