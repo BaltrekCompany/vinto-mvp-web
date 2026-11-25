@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 const source = readFileSync(new URL("../components/vinto/candidate-form-capture.tsx", import.meta.url), "utf8");
 test("existing candidate editor recovers prepared encrypted draft only when offline", () => {
-  assert.match(source, /offlineQuality\?\.draft\.recover\(\)/);
+  assert.match(source, /offlineQuality\.draft!\.recover\(\)/);
   assert.match(source, /setDraft\(\{ \.\.\.initialDraft\(\), \.\.\.savedDraft\.values \}/);
   assert.match(source, /online \|\| !offlineQuality\?\.draft \|\| attempt/);
 });
