@@ -34,7 +34,8 @@ export function projectOfflineControls<T extends BobbinFormRef>(
    state&&pending.has(state)?"pending":
    state==="conflict"||state==="requires_review"?"review":"editable";
   // One visible control per form + bobbin, even if old drafts accumulated.
-  const key=controlKey(item);
+  // Machine measurements may recur by shift/period: retain every machine draft.
+  const key=item.bobbinId===null?controlKey(item)+"|"+item.id:controlKey(item);
   const previous=groups.get(key);
   if(!previous){
    groups.set(key,{item,status,duplicates:0});
