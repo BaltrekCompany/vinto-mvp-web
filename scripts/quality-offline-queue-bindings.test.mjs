@@ -9,7 +9,7 @@ test("existing Quality UI queue port requires a verified initialized draft", () 
   assert.match(source, /await bindings\.resume\(\)/);
   assert.match(source, /offline_draft_not_initialized/);
   assert.match(source, /offline_draft_conflict/);
-  assert.match(source, /sameValues\(prior\.values, values\)/);
+  assert.match(source, /sameValues\(normalised, values\)/);
 });
 test("the only queue operation is atomic freeze with signed authority inside bindings", () => {
   assert.match(source, /await bindings\.freeze\(revision\)/);
