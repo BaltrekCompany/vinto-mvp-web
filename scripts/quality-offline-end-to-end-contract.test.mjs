@@ -50,3 +50,8 @@ test("service worker caches only the existing shell and static chunks, never API
  assert.doesNotMatch(sw,/cache\.put\([^)]*api/);
  assert.doesNotMatch(sw,/indexedDB|localStorage|postMessage\(\{.*key/);
 });
+
+test("operational transport binds window.fetch to avoid Illegal invocation",()=>{
+ assert.match(ui,/fetcher:fetch\.bind\(window\)/);
+ assert.doesNotMatch(ui,/fetcher:fetch\s*[,}]/);
+});
