@@ -37,7 +37,6 @@ export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
   const hydrated=useRef(false);
   const generation=useRef(0);
   const count=useRef(0);
-  current.current=draft;
   const keys=allowedKeys.join("|");
 
   useEffect(()=>{
@@ -113,6 +112,7 @@ export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
   };
 
   useEffect(()=>{
+    current.current=draft;
     if(!active||!port||!hydrated.current||failed.current)return;
     schedule(draft);
   // scheduling is intentionally triggered by form edits, not by the queue promise
