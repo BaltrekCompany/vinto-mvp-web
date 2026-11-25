@@ -38,6 +38,9 @@ import {getOfflineProfile,listOfflineProfiles,saveOfflineProfile,
  saveOfflinePreparation,listOfflinePreparations,readOfflinePreparation,
  type OfflineLocalProfile} from "@/lib/vinto/quality-offline-preparation-store";
 import {groupOfflinePreparedForms,offlineFormTitle} from "@/lib/vinto/quality-offline-navigation";
+import {projectOfflineControls,isBobbinControlLocked} from "@/lib/vinto/quality-offline-single-control";
+import type {SyncRecord} from "@/lib/vinto/offline-sync-types";
+import type {OperationalPendingRow} from "@/lib/vinto/offline-operational-model";
 import {createOperationalHttpTransport} from "@/lib/vinto/offline-operational-http";
 import {prepareQualityOfflineShell} from "@/lib/vinto/quality-offline-shell";
 import {createOperationalSyncRuntime} from "@/lib/vinto/offline-operational-sync-runtime";
@@ -102,6 +105,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [queueInfo,setQueueInfo]=useState("");
+ const [queueRecords,setQueueRecords]=useState<SyncRecord[]>([]);
+ const [pendingRecords,setPendingRecords]=useState<OperationalPendingRow[]>([]);
  const [preparationProgress,setPreparationProgress]=useState("");
  const [preparationErrors,setPreparationErrors]=useState<string[]>([]);
  const store=useMemo(()=>createOperationalLocalStore(),[]);
@@ -109,6 +114,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  const active=preps.find(p=>p.id===activeId)??null;
  const pickedOffer=offers.find(x=>offerChoice===x.machineCode+"|"+x.formCode);
  const activeBobbin=bobbins.find(x=>x.bobbin.id===bobbinChoice)??null;
+ const controls=useMemo(()=>projectOfflineControls(preps.map(p=>({...p,bobbinId:p.data.bobbin?.bobbin.id??null})),pendingRecords,queueRecords),[preps,pendingRecords,queueRecords]);
 
  useEffect(()=>{
   void listOfflineProfiles().then(setProfiles).catch(()=>setMessage("No se pudo abrir el almacenamiento local."));
@@ -135,6 +141,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
   }
   setPreps(data);
   const queue=await store.sync.list(state.identity.ownerId,state.identity.deviceKey);
+  const pending=await store.listPending(state.identity.ownerId,state.identity.deviceKey);
+  setQueueRecords(queue);setPendingRecords(pending);
   const counts=queue.reduce<Record<string,number>>((acc,item)=>{
    acc[item.state]=(acc[item.state]??0)+1;
    return acc;
@@ -224,6 +232,15 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
      if(!user||!online||!pickedOffer)
        throw new Error("Selecciona un formulario autorizado con conexión.");
      const bobbin=pickedOffer.kind==="bobbin"?activeBobbin:null;
+     if(bobbin){
+      const matched=controls.find(c=>c.item.formCode===pickedOffer.formCode&&
+       c.item.machineCode===pickedOffer.machineCode&&c.item.bobbinId===bobbin.bobbin.id);
+      if(matched){
+       if(matched.status!=="editable")throw new Error("Este formulario ya fue registrado o está pendiente de sincronización.");
+       setActiveId(matched.item.id);
+       return;
+      }
+     }
      const result=await prepareAuthorizedQualityForm({
        state:unlocked,store,initialValues,
        validateComplete:(code,values)=>{normalize(code,values);},
@@ -231,6 +248,9 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
      await refresh(unlocked);setActiveId(result.context.draftId);
      setMessage("Formulario preparado. Las mediciones están protegidas localmente.");
      return;
+   }
+   if(reuse.bobbin){
+    throw new Error("Solo se permite una captura por formulario y bobina desde este dispositivo.");
    }
    // New capture while offline is allowed ONLY under the same still-valid
    // signed authority and identical machine/bobbin context.
@@ -347,7 +367,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
   const bobbin=active.data.bobbin;
   const top=<div className="p-3 text-sm bg-amber-50 text-amber-950" role="status">
    Formulario cifrado del operario original. Se guardará localmente y se sincronizará al volver la sesión autorizada.
-   <button className="ml-4 underline" onClick={()=>void prepare(active.data)}>Preparar nueva captura</button>
+   {!current.bobbin&&<button className="ml-4 underline" onClick={()=>void prepare(active.data)}>Preparar nueva captura</button>}
   </div>;
   if(candidateMachine)return <>{top}<CandidateFormCapture
    key={current.draftId} candidate={QUALITY_CANDIDATES[candidateMachine]}
@@ -425,7 +445,9 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
        {bobbins.filter(x=>x.bobbin.machine.code===pickedOffer.machineCode).map(x=>
         <option key={x.bobbin.id} value={x.bobbin.id}>{x.bobbin.code} · {x.quality.status}</option>)}
       </select>}
-     <button disabled={busy||!pickedOffer||(pickedOffer.kind==="bobbin"&&!activeBobbin)}
+     <button disabled={busy||!pickedOffer||(pickedOffer.kind==="bobbin"&&!activeBobbin)||
+      Boolean(pickedOffer&&activeBobbin&&isBobbinControlLocked(controls,{
+       id:"",formCode:pickedOffer.formCode,machineCode:pickedOffer.machineCode,bobbinId:activeBobbin.bobbin.id}))}
        className="bg-[#146b4f] text-white rounded p-2 disabled:opacity-50"
        onClick={()=>void prepare()}>Preparar formulario offline</button>
     </div>}
@@ -438,9 +460,9 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
       </p>
      </div>
      {preps.length===0?<p className="text-sm">Sin formularios preparados para este operario.</p>:
-      groupOfflinePreparedForms(preps.map(p=>({
-       id:p.id,formCode:p.formCode,machineCode:p.machineCode,
-       bobbin:p.data.bobbin,data:p.data,
+      groupOfflinePreparedForms(controls.map(p=>({
+       id:p.item.id,formCode:p.item.formCode,machineCode:p.item.machineCode,
+       bobbin:p.item.data.bobbin,data:{...p.item.data,controlStatus:p.status,duplicates:p.duplicates},
       }))).map(group=><section key={group.key}
        className="rounded-xl border border-slate-200 overflow-hidden" aria-label={group.title}>
        <header className={group.kind==="bobbin"?
@@ -454,14 +476,29 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
          <div>
           <p className="font-semibold">{offlineFormTitle(p.formCode,p.machineCode,offers)}</p>
           <p className="text-xs text-slate-600">
-           Referencia {p.formCode.replace("VINTO-","")} · Borrador cifrado
+           Referencia {p.formCode.replace("VINTO-","")} · {
+             p.data.controlStatus==="completed"?"Sincronizado":
+             p.data.controlStatus==="pending"?"Pendiente de sincronización":
+             p.data.controlStatus==="review"?"Requiere revisión":"Borrador cifrado"}
           </p>
+          {p.data.duplicates>0&&<p className="text-xs text-amber-800">
+           {p.data.duplicates} borrador(es) anterior(es) conservados sin eliminar.
+          </p>}
          </div>
-         <button type="button" className="border rounded-lg px-4 py-2 bg-white
+         {p.data.controlStatus==="completed"?<span className="rounded-lg
+           px-4 py-2 bg-emerald-100 text-emerald-900 font-semibold">
+            Formulario realizado
+          </span>:p.data.controlStatus==="pending"?<span className="rounded-lg
+           px-4 py-2 bg-amber-50 text-amber-900 font-semibold">
+            Pendiente de sincronización
+          </span>:p.data.controlStatus==="review"?<span className="rounded-lg
+           px-4 py-2 bg-amber-50 text-amber-900 font-semibold">
+            Requiere revisión
+          </span>:<button type="button" className="border rounded-lg px-4 py-2 bg-white
            hover:bg-slate-50 min-h-10"
            aria-label={"Abrir "+offlineFormTitle(p.formCode,p.machineCode,offers)+
              " de "+group.title}
-           onClick={()=>setActiveId(p.id)}>Abrir formulario</button>
+           onClick={()=>setActiveId(p.id)}>Abrir formulario</button>}
         </div>)}
        </div>
       </section>)}
