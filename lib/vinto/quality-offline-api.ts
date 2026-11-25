@@ -44,7 +44,7 @@ export async function requestQualityOfflineAuthority(
     typeof value.context.contextVersion!=="string"||
     !(value.context.bobbinContextDigest===null||typeof value.context.bobbinContextDigest==="string"))
    throw new Error("offline_capture_authority_invalid");
- return value as QualityOfflineAuthorityResponse;
+ return value as unknown as QualityOfflineAuthorityResponse;
 }
 type AvailableForm=Readonly<{code:string;name:string;version_number:number;eligible:boolean}>;
 type Machine=Readonly<{code:string;name:string;forms:AvailableForm[];bobbin_forms?:AvailableForm[]}>;
