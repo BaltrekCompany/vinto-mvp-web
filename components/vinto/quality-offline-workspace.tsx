@@ -35,6 +35,7 @@ import {getOfflineProfile,listOfflineProfiles,saveOfflineProfile,
  saveOfflinePreparation,listOfflinePreparations,readOfflinePreparation,
  type OfflineLocalProfile} from "@/lib/vinto/quality-offline-preparation-store";
 import {createOperationalHttpTransport} from "@/lib/vinto/offline-operational-http";
+import {prepareQualityOfflineShell} from "@/lib/vinto/quality-offline-shell";
 import {createOperationalSyncRuntime} from "@/lib/vinto/offline-operational-sync-runtime";
 import type {QualityDraftPort} from "@/lib/vinto/use-quality-offline-draft-editor";
 
@@ -173,6 +174,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
     },localStorage);
     key=await unlockLocalVault(profile.vaultRecord,passphrase);
    }
+   // Do not promise offline reload until the original VINTO shell is cached.
+   if(user&&online)await prepareQualityOfflineShell();
    const state={profile,key,identity};
    setUnlocked(state);setPassphrase("");
    await refresh(state);
