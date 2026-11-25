@@ -37,6 +37,7 @@ export function useQualityOfflineDraftEditor<T extends Record<string, string>>(
   const revision = useRef<number | null>(null);
   const lastSaved = useRef<QualityDraftValues | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
+  const saveCount = useRef(0);
   const failed = useRef(false);
   const ready = useRef(false);
   const current = useRef<T>(values);
@@ -49,6 +50,8 @@ export function useQualityOfflineDraftEditor<T extends Record<string, string>>(
     failed.current = false;
     revision.current = null;
     lastSaved.current = null;
+    queue.current = Promise.resolve();
+    saveCount.current = 0;
     Promise.resolve().then(() => {
       if (cancelled || !live()) return null;
       setPhase("loading");
@@ -85,6 +88,7 @@ export function useQualityOfflineDraftEditor<T extends Record<string, string>>(
     if (!active || !port || !ready.current || failed.current ||
         !lastSaved.current || same(lastSaved.current, values)) return;
     const snapshot = {...values};
+    saveCount.current += 1;
     queue.current = queue.current.then(async () => {
       if (failed.current) return;
       const expected = revision.current;
@@ -98,7 +102,10 @@ export function useQualityOfflineDraftEditor<T extends Record<string, string>>(
       failed.current = true;
       ready.current = false;
       setPhase("error");
-    }).finally(() => setBusy(false));
+    }).finally(() => {
+      saveCount.current -= 1;
+      if (saveCount.current === 0) setBusy(false);
+    });
     // Async effect work is only after the render; the save cannot be skipped
     // when edits occur while an earlier save is in flight.
     Promise.resolve().then(() => setBusy(true));
