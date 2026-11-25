@@ -28,7 +28,7 @@ class OneQualityCapturePerBobbinTests(unittest.TestCase):
             answer.fetchone.return_value=None if len(queries)==1 else (uuid.uuid4(),)
             return answer
         conn.execute.side_effect=execute
-        with patch.object(capture_service,"_context"),patch.object(capture_service.cs,"_lock") as lock:
+        with patch.object(capture_service,"_context"),patch.object(capture_service,"_bobbin_context"),patch.object(capture_service.cs,"_lock") as lock:
             with self.assertRaises(QualityBobbinFormAlreadySubmittedError) as raised:
                 capture_service.submit_quality_capture(
                     conn,actor_id=actor_id,bobbin_id=bobbin_id,
