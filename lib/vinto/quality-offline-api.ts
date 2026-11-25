@@ -15,6 +15,16 @@ async function json(path:string,method:"GET"|"POST",payload?:unknown):Promise<un
  if(!response.ok)throw new Error("offline_online_preparation_unavailable");
  const value=await response.json();
  if(!obj(value))throw new Error("offline_preparation_invalid");
+ // This timestamp is sampled from the authenticated HTTPS response, NOT
+ // from the handset wall clock. A new signed grant is verified separately.
+ if(path==="/api/offline/quality/capture-authority"){
+  const serverDate=response.headers.get("Date");
+  const receivedAt=Date.now();
+  if(!serverDate)throw new Error("offline_server_clock_unavailable");
+  const serverMs=Date.parse(serverDate);
+  if(!Number.isFinite(serverMs))throw new Error("offline_server_clock_invalid");
+  return {...value,serverReceivedAtMs:receivedAt,serverDateMs:serverMs};
+ }
  return value;
 }
 export async function enrollQualityOfflineDevice(deviceKey:string):Promise<string>{
@@ -30,6 +40,9 @@ export type QualityOfflineAuthorityResponse=Readonly<{
   formVersion:number;scopeSnapshotId:string;contextVersion:string;
   bobbinContextDigest:string|null;
  }>;
+ /** HTTPS Date header, sampled when the authorization was received. */
+ serverReceivedAtMs:number;
+ serverDateMs:number;
 }>;
 export async function requestQualityOfflineAuthority(
  deviceKey:string,machineCode:string,formCode:string,bobbinId?:string,
@@ -42,7 +55,8 @@ export async function requestQualityOfflineAuthority(
     !Number.isSafeInteger(value.context.formVersion)||
     typeof value.context.scopeSnapshotId!=="string"||
     typeof value.context.contextVersion!=="string"||
-    !(value.context.bobbinContextDigest===null||typeof value.context.bobbinContextDigest==="string"))
+    !(value.context.bobbinContextDigest===null||typeof value.context.bobbinContextDigest==="string")||
+    !Number.isFinite(value.serverReceivedAtMs)||!Number.isFinite(value.serverDateMs))
    throw new Error("offline_capture_authority_invalid");
  return value as unknown as QualityOfflineAuthorityResponse;
 }
