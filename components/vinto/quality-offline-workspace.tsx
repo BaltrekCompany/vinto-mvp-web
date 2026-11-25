@@ -37,6 +37,7 @@ import {requirePersistedQualityDevice} from "@/lib/vinto/quality-offline-device-
 import {getOfflineProfile,listOfflineProfiles,saveOfflineProfile,
  saveOfflinePreparation,listOfflinePreparations,readOfflinePreparation,
  type OfflineLocalProfile} from "@/lib/vinto/quality-offline-preparation-store";
+import {groupOfflinePreparedForms,offlineFormTitle} from "@/lib/vinto/quality-offline-navigation";
 import {createOperationalHttpTransport} from "@/lib/vinto/offline-operational-http";
 import {prepareQualityOfflineShell} from "@/lib/vinto/quality-offline-shell";
 import {createOperationalSyncRuntime} from "@/lib/vinto/offline-operational-sync-runtime";
@@ -405,7 +406,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
       {preparationErrors.length} formulario(s) sin preparar. Puedes seleccionar una bobina
       específica y volver a preparar, sin perder borradores anteriores.
     </p>}
-    <p className="text-sm">Formularios preparados: {new Set(preps.map(p=>p.formCode+"|"+p.machineCode)).size}
+    <p className="text-sm">Controles preparados: {new Set(preps.map(p=>p.formCode+"|"+p.machineCode)).size}
       {offers.length>0?" de "+offers.length+" autorizados":""}. Cada bobina requiere su contexto propio.</p>
     <button disabled={busy||!online||!user} onClick={()=>void syncManual()}
       className="border rounded p-2 disabled:opacity-50">Sincronizar ahora</button>
@@ -428,13 +429,42 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
        className="bg-[#146b4f] text-white rounded p-2 disabled:opacity-50"
        onClick={()=>void prepare()}>Preparar formulario offline</button>
     </div>}
-    <div className="border-t pt-4 space-y-2">
-     <h2 className="font-semibold">Borradores y capturas preparadas</h2>
+    <div className="border-t pt-4 space-y-4">
+     <div>
+      <h2 className="font-semibold text-lg">Formularios disponibles sin internet</h2>
+      <p className="text-sm text-slate-600">
+       Selecciona una bobina o una máquina para abrir sus controles de Calidad.
+       Los nombres y la OT identifican el trabajo; los códigos P1 quedan como referencia.
+      </p>
+     </div>
      {preps.length===0?<p className="text-sm">Sin formularios preparados para este operario.</p>:
-      preps.map(p=><div key={p.id} className="border rounded p-3 flex justify-between gap-3">
-       <div><b>{p.formCode}</b><p className="text-sm">{p.machineCode} · {p.data.bobbin?.bobbin.code??"Control por máquina"}</p></div>
-       <button className="border rounded px-3" onClick={()=>setActiveId(p.id)}>Abrir formulario</button>
-      </div>)}
+      groupOfflinePreparedForms(preps.map(p=>({
+       id:p.id,formCode:p.formCode,machineCode:p.machineCode,
+       bobbin:p.data.bobbin,data:p.data,
+      }))).map(group=><section key={group.key}
+       className="rounded-xl border border-slate-200 overflow-hidden" aria-label={group.title}>
+       <header className={group.kind==="bobbin"?
+         "bg-emerald-50 px-4 py-3":"bg-slate-100 px-4 py-3"}>
+        <h3 className="font-bold text-base">{group.title}</h3>
+        <p className="text-sm text-slate-700">{group.subtitle}</p>
+       </header>
+       <div className="divide-y divide-slate-200">
+        {group.items.map(p=><div key={p.id}
+         className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+         <div>
+          <p className="font-semibold">{offlineFormTitle(p.formCode,p.machineCode,offers)}</p>
+          <p className="text-xs text-slate-600">
+           Referencia {p.formCode.replace("VINTO-","")} · Borrador cifrado
+          </p>
+         </div>
+         <button type="button" className="border rounded-lg px-4 py-2 bg-white
+           hover:bg-slate-50 min-h-10"
+           aria-label={"Abrir "+offlineFormTitle(p.formCode,p.machineCode,offers)+
+             " de "+group.title}
+           onClick={()=>setActiveId(p.id)}>Abrir formulario</button>
+        </div>)}
+       </div>
+      </section>)}
     </div>
    </div>}
   </section>
