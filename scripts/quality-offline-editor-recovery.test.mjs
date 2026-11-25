@@ -16,5 +16,5 @@ test("unknown, frozen, absent, conflicted or failed stored drafts block writes",
   assert.match(hook,/setStatus\("error"\)/);
   assert.match(source,/offlineQuality\?\.draft \|\| persistence\.blocked/);
   assert.match(source,/busy\.current \|\| saved \|\| offlineQueuedId \|\| recoveryBlocked/);
-  assert.match(source,/await persistence\.flush\(\)/);
+  assert.match(source,/await persistence\.flush\(draft\)/);
 });
