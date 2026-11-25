@@ -75,7 +75,7 @@ export function QualityHumidityCapture({ item, online, attempt, setAttempt, back
                 return void setNotice("No se puede guardar sin conexión: verifica la preparación de la bobina.");
             busy.current = true; setSending(true); setNotice(null);
             try {
-                if (!await persistence.flush()) throw new Error("offline_draft_not_persisted");
+                if (!await persistence.flush(draft)) throw new Error("offline_draft_not_persisted");
                 if (!live()) return;
                 const queued = await offlineQuality.queue(prepared.value);
                 if (!live()) return;
