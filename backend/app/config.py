@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # MF-13-01D.2C.2: ídem para POST /api/quality/machines/{machine_code}/captures (Calidad por máquina, Operation.QUALITY_MACHINE_CAPTURE). Independiente de las otras tres. Variable AUTHZ_QUALITY_MACHINE_CAPTURES_MODE.
     authz_quality_machine_captures_mode: Literal["off", "observe", "enforce"] = "off"
 
+    # VINTO Calidad Offline: emisión de ámbitos CAPTURE firmados, SIEMPRE apagada
+    # hasta registrar el dispositivo y validar las rutas operativas completas.
+    offline_quality_capture_enabled: bool = False
+    # Clave privada Ed25519 en formato hexadecimal de 32 bytes. Se configura
+    # exclusivamente en el servidor; nunca se registra ni sale en la API.
+    offline_quality_signing_seed_hex: SecretStr | None = None
+
     # MF-13-03B PR2: compuerta de servidor para crear/publicar OT con líneas en una máquina distinta de la de cabecera. Variable
     # WORK_ORDERS_MULTI_MACHINE_ENABLED; el cliente HTTP no puede cambiarla. Apagada por defecto: una solicitud multimáquina se RECHAZA
     # (nunca se convierte en silencio a la máquina de cabecera). Depende de PR3 (índice/activación por línea), PR4 (activación masiva) y
