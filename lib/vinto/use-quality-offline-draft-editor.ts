@@ -1,130 +1,133 @@
 "use client";
 
 /**
- * Shared draft handling for the existing Quality forms.
- * Never creates credentials, device enrolment or an offline CAPTURE grant.
- * The port is provided only after verified preparation and vault unlock.
+ * Opt-in encrypted draft bridge for VINTO's existing Quality editors.
+ * No new screens, storage keys, credentials or permissions are created here.
+ * An authenticated preparation flow must supply the unlocked/verified port.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { beginSessionOperation } from "./session-epoch";
 
-export type QualityDraftValues = Readonly<Record<string, string | boolean>>;
-export type QualityDraftSnapshot = Readonly<{
-  revision: number;
-  frozen: boolean;
-  values: QualityDraftValues;
-}>;
+export type QualityDraftValues = Readonly<Record<string,string|boolean>>;
+export type QualityDraftSnapshot = Readonly<{revision:number;frozen:boolean;values:QualityDraftValues}>;
 export type QualityDraftPort = Readonly<{
-  recover: () => Promise<QualityDraftSnapshot | null>;
-  save: (values: QualityDraftValues, expectedRevision: number) => Promise<QualityDraftSnapshot>;
+  recover:()=>Promise<QualityDraftSnapshot|null>;
+  save:(values:QualityDraftValues,expectedRevision:number)=>Promise<QualityDraftSnapshot>;
 }>;
-type Phase = "inactive" | "loading" | "ready" | "frozen" | "missing" | "error";
-
-const same = (a: QualityDraftValues, b: QualityDraftValues): boolean => {
-  const ka = Object.keys(a).sort(), kb = Object.keys(b).sort();
-  return ka.length === kb.length &&
-    ka.every((key, i) => key === kb[i] && a[key] === b[key]);
+type Status = "inactive"|"loading"|"ready"|"missing"|"frozen"|"error";
+const equal=(a:QualityDraftValues,b:QualityDraftValues):boolean=>{
+  const ka=Object.keys(a).sort(),kb=Object.keys(b).sort();
+  return ka.length===kb.length&&ka.every((key,i)=>key===kb[i]&&a[key]===b[key]);
 };
 
-export function useQualityOfflineDraftEditor<T extends Record<string, string>>(
-  initial: () => T,
-  port: QualityDraftPort | undefined,
-  active: boolean,
-) {
-  const [values, setValues] = useState<T>(initial);
-  const [phase, setPhase] = useState<Phase>("inactive");
-  const [busy, setBusy] = useState(false);
-  const revision = useRef<number | null>(null);
-  const lastSaved = useRef<QualityDraftValues | null>(null);
-  const queue = useRef<Promise<void>>(Promise.resolve());
-  const saveCount = useRef(0);
-  const failed = useRef(false);
-  const ready = useRef(false);
-  const current = useRef<T>(values);
+/** Rehydrates the real form's existing state and serializes its encrypted saves. */
+export function useQualityOfflineDraftEditor<T extends Record<string,string>>(
+  draft:T, setDraft:Dispatch<SetStateAction<T>>,
+  port:QualityDraftPort|undefined, active:boolean,
+  allowedKeys:readonly string[],
+){
+  const [status,setStatus]=useState<Status>("inactive");
+  const [saving,setSaving]=useState(false);
+  const revision=useRef<number|null>(null);
+  const lastSaved=useRef<QualityDraftValues|null>(null);
+  const scheduled=useRef<QualityDraftValues|null>(null);
+  const current=useRef<T>(draft);
+  const chain=useRef<Promise<void>>(Promise.resolve());
+  const failed=useRef(false);
+  const hydrated=useRef(false);
+  const generation=useRef(0);
+  const count=useRef(0);
+  current.current=draft;
+  const keys=allowedKeys.join("|");
 
-  useEffect(() => {
-    if (!active || !port) return;
-    let cancelled = false;
-    const live = beginSessionOperation();
-    ready.current = false;
-    failed.current = false;
-    revision.current = null;
-    lastSaved.current = null;
-    queue.current = Promise.resolve();
-    saveCount.current = 0;
-    Promise.resolve().then(() => {
-      if (cancelled || !live()) return null;
-      setPhase("loading");
+  useEffect(()=>{
+    const epoch=++generation.current;
+    hydrated.current=false;
+    failed.current=false;
+    revision.current=null;
+    lastSaved.current=null;
+    scheduled.current=null;
+    chain.current=Promise.resolve();
+    count.current=0;
+    if(!active||!port)return;
+    const live=beginSessionOperation();
+    Promise.resolve().then(()=>{
+      if(generation.current!==epoch||!live())return null;
+      setStatus("loading");
       return port.recover();
-    }).then(snapshot => {
-      if (cancelled || !live()) return;
-      if (!snapshot) { setPhase("missing"); return; }
-      if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 1) {
-        setPhase("error"); return;
+    }).then(snapshot=>{
+      if(generation.current!==epoch||!live())return;
+      if(!snapshot){setStatus("missing");return;}
+      if(!Number.isSafeInteger(snapshot.revision)||snapshot.revision<1){
+        setStatus("error");return;
       }
-      const template = initial();
-      const keys = Object.keys(template);
-      if (Object.entries(snapshot.values).some(([k,v]) =>
-        !keys.includes(k) || typeof v !== "string")) {
-        setPhase("error"); return;
+      const allowed=new Set(keys.split("|"));
+      if(Object.entries(snapshot.values).some(([key,val])=>!allowed.has(key)||typeof val!=="string")){
+        setStatus("error");return;
       }
-      if (snapshot.frozen) { setPhase("frozen"); return; }
-      revision.current = snapshot.revision;
-      const restored = {...template, ...snapshot.values} as T;
-      lastSaved.current = restored;
-      current.current = restored;
-      setValues(restored);
-      ready.current = true;
-      setPhase("ready");
-    }).catch(() => { if (!cancelled && live()) setPhase("error"); });
-    return () => { cancelled = true; ready.current = false; };
-    // A changed port signals an explicitly different prepared identity/context.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [port, active]);
-
-  // Serialize encrypted saves; never store plaintext, lose the CAS revision or
-  // restart from a new draft after an uncertain write.
-  useEffect(() => {
-    if (!active || !port || !ready.current || failed.current ||
-        !lastSaved.current || same(lastSaved.current, values)) return;
-    const snapshot = {...values};
-    saveCount.current += 1;
-    queue.current = queue.current.then(async () => {
-      if (failed.current) return;
-      const expected = revision.current;
-      if (expected === null) throw new Error("offline_revision_missing");
-      const next = await port.save(snapshot, expected);
-      if (next.frozen || !same(next.values, snapshot))
-        throw new Error("offline_draft_conflict");
-      revision.current = next.revision;
-      lastSaved.current = snapshot;
-    }).catch(() => {
-      failed.current = true;
-      ready.current = false;
-      setPhase("error");
-    }).finally(() => {
-      saveCount.current -= 1;
-      if (saveCount.current === 0) setBusy(false);
+      if(snapshot.frozen){setStatus("frozen");return;}
+      const restored={...current.current,...snapshot.values} as T;
+      revision.current=snapshot.revision;
+      lastSaved.current={...restored};
+      scheduled.current={...restored};
+      hydrated.current=true;
+      current.current=restored;
+      setDraft(restored);
+      setStatus("ready");
+    }).catch(()=>{
+      if(generation.current===epoch&&live()){failed.current=true;setStatus("error");}
     });
-    // Async effect work is only after the render; the save cannot be skipped
-    // when edits occur while an earlier save is in flight.
-    Promise.resolve().then(() => setBusy(true));
-  }, [active, port, values]);
+    return ()=>{generation.current+=1;hydrated.current=false;};
+  // key list and trusted port identity may invalidate the previous context
+  },[active,port,keys,setDraft]);
 
-  const change = (updater: (previous: T) => T) => {
-    if (active && (phase !== "ready" || failed.current)) return;
-    const next = updater(current.current);
-    current.current = next;
-    setValues(next);
+  const schedule=(values:QualityDraftValues)=>{
+    if(!active||!port||!hydrated.current||failed.current)return;
+    if(scheduled.current&&equal(scheduled.current,values))return;
+    const snapshot={...values};
+    const epoch=generation.current;
+    scheduled.current=snapshot;
+    count.current+=1;
+    chain.current=chain.current.then(async()=>{
+      if(epoch!==generation.current||failed.current)return;
+      const expected=revision.current;
+      if(expected===null)throw new Error("offline_revision_missing");
+      const next=await port.save(snapshot,expected);
+      if(next.frozen||!equal(next.values,snapshot)||
+          !Number.isSafeInteger(next.revision)||next.revision!==expected+1)
+        throw new Error("offline_draft_conflict");
+      if(epoch!==generation.current)return;
+      revision.current=next.revision;
+      lastSaved.current=snapshot;
+    }).catch(()=>{
+      if(epoch===generation.current){failed.current=true;hydrated.current=false;setStatus("error");}
+    }).finally(()=>{
+      if(epoch===generation.current){
+        count.current-=1;
+        if(count.current===0)setSaving(false);
+      }
+    });
+    Promise.resolve().then(()=>{
+      if(epoch===generation.current&&count.current>0)setSaving(true);
+    });
   };
-  const flush = async (): Promise<boolean> => {
-    if (!active || !port || phase !== "ready" || failed.current) return false;
-    await queue.current;
-    return !failed.current && same(lastSaved.current ?? {}, current.current);
+
+  useEffect(()=>{
+    if(!active||!port||!hydrated.current||failed.current)return;
+    schedule(draft);
+  // scheduling is intentionally triggered by form edits, not by the queue promise
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[draft,active,port,status]);
+
+  const flush=async():Promise<boolean>=>{
+    if(!active||!port||!hydrated.current||failed.current||status!=="ready")return false;
+    schedule(current.current);
+    await chain.current;
+    return !failed.current&&hydrated.current&&
+      Boolean(lastSaved.current&&equal(lastSaved.current,current.current));
   };
   return {
-    values, change, flush,
-    blocked: active && (phase !== "ready" || busy || failed.current),
-    status: phase, busy,
+    flush,status,saving,
+    blocked:active&&(status!=="ready"||saving||!hydrated.current||failed.current),
   };
 }
