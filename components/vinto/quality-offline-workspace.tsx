@@ -18,7 +18,7 @@ import type {QualityBobbinInboxItem} from "@/lib/vinto/quality-bobbins";
 import {QUALITY_SCREEN_BY_FORM,BOBBIN_SCREEN_BY_FORM} from "@/lib/vinto/quality-offers";
 import {EMPTY_HUMIDITY_DRAFT,normalizeHumidityDraft} from "@/lib/vinto/quality-captures";
 import {EMPTY_PHYSICAL_DRAFT,normalizePhysicalDraft} from "@/lib/vinto/quality-physical";
-import {enrollQualityOfflineDevice,requestQualityOfflineAuthority,
+import {enrollQualityOfflineDevice,
  listQualityOfflineOffers,listQualityOfflineBobbins,
  type OfflineFormOffer} from "@/lib/vinto/quality-offline-api";
 import {createLocalVault,unlockLocalVault} from "@/lib/vinto/offline-vault";
@@ -30,6 +30,9 @@ import {createOperationalCaptureGate} from "@/lib/vinto/offline-operational-capt
 import type {CaptureScopeEnvelope} from "@/lib/vinto/offline-operational-capture-scope-verify";
 import {createQualityOfflineQueuePort} from "@/lib/vinto/quality-offline-queue-port";
 import {prepareQualityDevice} from "@/lib/vinto/quality-offline-device-preparation";
+import {qualityScopeNow,validateQualityServerClock,type QualityOfflineClock} from "@/lib/vinto/quality-offline-clock";
+import {autoPrepareQualityForms,prepareAuthorizedQualityForm,
+  type OfflinePreparedForm} from "@/lib/vinto/quality-offline-auto-prepare";
 import {requirePersistedQualityDevice} from "@/lib/vinto/quality-offline-device-identity";
 import {getOfflineProfile,listOfflineProfiles,saveOfflineProfile,
  saveOfflinePreparation,listOfflinePreparations,readOfflinePreparation,
@@ -40,8 +43,7 @@ import {createOperationalSyncRuntime} from "@/lib/vinto/offline-operational-sync
 import type {QualityDraftPort} from "@/lib/vinto/use-quality-offline-draft-editor";
 
 type Props={user:AuthUser|null;online:boolean;onExit:()=>void};
-type Prepared=Readonly<{context:OperationalFormContext;envelope:CaptureScopeEnvelope;
- bobbin:QualityBobbinInboxItem|null}>;
+type Prepared=OfflinePreparedForm;
 type NamedPreparation=Readonly<{id:string;formCode:string;machineCode:string;
  data:Prepared}>;
 type Unlocked=Readonly<{profile:OfflineLocalProfile;key:CryptoKey;identity:OfflineVaultIdentity}>;
@@ -74,7 +76,9 @@ const normalize=(code:string,values:Readonly<Record<string,string|boolean>>):Rea
  return check.values as Readonly<Record<string,string>>;
 };
 const validPrep=(x:unknown):x is Prepared=>{
- if(!obj(x)||!obj(x.context)||!obj(x.envelope))return false;
+ if(!obj(x)||!obj(x.context)||!obj(x.envelope)||!obj(x.clock)||
+    !Number.isFinite(x.clock.serverDateMs)||
+    !Number.isFinite(x.clock.clientReceivedAtMs))return false;
  const c=x.context;
  return typeof c.draftId==="string"&&isUuid(c.draftId)&&
   typeof c.machineCode==="string"&&typeof c.formCode==="string"&&
@@ -97,6 +101,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [queueInfo,setQueueInfo]=useState("");
+ const [preparationProgress,setPreparationProgress]=useState("");
+ const [preparationErrors,setPreparationErrors]=useState<string[]>([]);
  const store=useMemo(()=>createOperationalLocalStore(),[]);
  const runtime=useRef<ReturnType<typeof createOperationalSyncRuntime>|null>(null);
  const active=preps.find(p=>p.id===activeId)??null;
@@ -179,6 +185,32 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    const state={profile,key,identity};
    setUnlocked(state);setPassphrase("");
    await refresh(state);
+   if(user&&online){
+     setPreparationProgress("Preparando formularios autorizados…");
+     const [available,bobbinOptions]=await Promise.all([
+       listQualityOfflineOffers(),listQualityOfflineBobbins(),
+     ]);
+     setOffers(available);setBobbins(bobbinOptions);
+     const rows=await listOfflinePreparations(identity);
+     const prior:OfflinePreparedForm[]=[];
+     for(const row of rows){
+       try{
+         const payload=await readOfflinePreparation(key,row);
+         if(validPrep(payload))prior.push(payload);
+       }catch{/* An unreadable draft must not be deleted or overwritten. */}
+     }
+     const result=await autoPrepareQualityForms({
+       state,store,initialValues,
+       validateComplete:(code,values)=>{normalize(code,values);},
+     },available,bobbinOptions,prior,(done,total)=>
+       setPreparationProgress("Preparando formularios "+done+"/"+total));
+     setPreparationErrors(result.failed);
+     await refresh(state);
+     setPreparationProgress("");
+     setMessage("Formularios preparados: "+(result.prepared+result.skipped)+
+       "/"+available.length+
+       (result.failed.length?" · "+result.failed.length+" requieren revisión":""));
+   }
   }catch(error){
    setMessage(error instanceof Error?error.message:"No se pudo desbloquear el almacenamiento.");
   }finally{setBusy(false);}
@@ -187,57 +219,47 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
   if(!unlocked||busy)return;
   setBusy(true);setMessage("");
   try{
-   let context:OperationalFormContext;
-   let envelope:CaptureScopeEnvelope;
-   let selectedBobbin:QualityBobbinInboxItem|null=null;
-   if(reuse){
-    context={...reuse.context,draftId:crypto.randomUUID()};
-    envelope=reuse.envelope;
-    selectedBobbin=reuse.bobbin;
-   }else{
-    if(!user||!online||!pickedOffer)throw Error("Selecciona un formulario autorizado con conexión.");
-    if(pickedOffer.kind==="bobbin"){
-     if(!activeBobbin||activeBobbin.bobbin.machine.code!==pickedOffer.machineCode)
-      throw Error("Selecciona una bobina de la máquina autorizada.");
-     selectedBobbin=activeBobbin;
-    }
-    const response=await requestQualityOfflineAuthority(
-     unlocked.identity.deviceKey,pickedOffer.machineCode,pickedOffer.formCode,
-     selectedBobbin?.bobbin.id,
-    );
-    if(response.context.formVersion!==pickedOffer.formVersion)
-     throw Error("La versión del formulario cambió; actualiza antes de preparar.");
-    envelope=response.envelope;
-    context={
-     draftId:crypto.randomUUID(),machineCode:pickedOffer.machineCode,
-     formCode:pickedOffer.formCode,formVersion:response.context.formVersion,
-     scopeSnapshotId:response.context.scopeSnapshotId,
-     contextVersion:response.context.contextVersion,
-     ...(selectedBobbin?{bobbin:{bobbin_id:selectedBobbin.bobbin.id,
-      context_digest:response.context.bobbinContextDigest??""}}:{}),
-    };
+   if(!reuse){
+     if(!user||!online||!pickedOffer)
+       throw new Error("Selecciona un formulario autorizado con conexión.");
+     const bobbin=pickedOffer.kind==="bobbin"?activeBobbin:null;
+     const result=await prepareAuthorizedQualityForm({
+       state:unlocked,store,initialValues,
+       validateComplete:(code,values)=>{normalize(code,values);},
+     },pickedOffer,bobbin);
+     await refresh(unlocked);setActiveId(result.context.draftId);
+     setMessage("Formulario preparado. Las mediciones están protegidas localmente.");
+     return;
    }
+   // New capture while offline is allowed ONLY under the same still-valid
+   // signed authority and identical machine/bobbin context.
+   const context={...reuse.context,draftId:crypto.randomUUID()};
+   const envelope=reuse.envelope;
+   const clock=validateQualityServerClock(envelope,reuse.clock);
+   const selectedBobbin=reuse.bobbin;
    const gate={
-    envelope,trustedPublicKeyB64url:unlocked.profile.trustedPublicKeyB64url,
-    identity:unlocked.identity,
-    target:{scopeSnapshotId:context.scopeSnapshotId,machineCode:context.machineCode,
-      formCode:context.formCode,formVersion:context.formVersion},now:Date.now,
+     envelope,trustedPublicKeyB64url:unlocked.profile.trustedPublicKeyB64url,
+     identity:unlocked.identity,
+     target:{scopeSnapshotId:context.scopeSnapshotId,machineCode:context.machineCode,
+       formCode:context.formCode,formVersion:context.formVersion},
+     now:()=>qualityScopeNow(clock),
    };
    const prepared=await prepareQualityDevice({
-    identity:unlocked.identity,key:unlocked.key,context,captureAuthority:gate,
-    validateComplete:values=>{normalize(context.formCode,values);},store,
+     identity:unlocked.identity,key:unlocked.key,context,captureAuthority:gate,
+     validateComplete:values=>{normalize(context.formCode,values);},store,
    });
    await prepared.draft.prepare(initialValues(context.formCode,selectedBobbin));
    await saveOfflinePreparation(unlocked.identity,unlocked.key,{
-    draftId:context.draftId,scopeSnapshotId:context.scopeSnapshotId,
-    formCode:context.formCode,formVersion:context.formVersion,
-    machineCode:context.machineCode,
-    payload:{context,envelope,bobbin:selectedBobbin},
+     draftId:context.draftId,scopeSnapshotId:context.scopeSnapshotId,
+     formCode:context.formCode,formVersion:context.formVersion,
+     machineCode:context.machineCode,
+     payload:{context,envelope,bobbin:selectedBobbin,clock},
    });
    await refresh(unlocked);setActiveId(context.draftId);
-   setMessage("Formulario preparado. Las mediciones se guardarán cifradas en este dispositivo.");
-  }catch(error){setMessage(error instanceof Error?error.message:"No se pudo preparar el formulario.");}
-  finally{setBusy(false);}
+   setMessage("Nueva captura cifrada preparada.");
+  }catch(error){
+    setMessage(error instanceof Error?error.message:"No se pudo preparar el formulario.");
+  }finally{setBusy(false);}
  };
  const port=useMemo(()=>{
   if(!active||!unlocked)return null;
@@ -246,7 +268,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    envelope,trustedPublicKeyB64url:unlocked.profile.trustedPublicKeyB64url,
    identity:unlocked.identity,
    target:{scopeSnapshotId:context.scopeSnapshotId,machineCode:context.machineCode,
-    formCode:context.formCode,formVersion:context.formVersion},now:Date.now,
+    formCode:context.formCode,formVersion:context.formVersion},now:()=>qualityScopeNow(active.data.clock),
   });
   const bindings=createOperationalCaptureBindings({
    identity:unlocked.identity,key:unlocked.key,context,store,
@@ -378,6 +400,13 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    </div>:<div className="rounded-xl bg-white border p-5 space-y-4">
     <p className="font-semibold">Operario: {unlocked.profile.displayName}</p>
     <p role="status" className="text-sm">Cola: {queueInfo}</p>
+    {preparationProgress&&<p role="status" className="text-sm">{preparationProgress}</p>}
+    {preparationErrors.length>0&&<p role="alert" className="text-sm text-amber-800">
+      {preparationErrors.length} formulario(s) sin preparar. Puedes seleccionar una bobina
+      específica y volver a preparar, sin perder borradores anteriores.
+    </p>}
+    <p className="text-sm">Formularios preparados: {new Set(preps.map(p=>p.formCode+"|"+p.machineCode)).size}
+      {offers.length>0?" de "+offers.length+" autorizados":""}. Cada bobina requiere su contexto propio.</p>
     <button disabled={busy||!online||!user} onClick={()=>void syncManual()}
       className="border rounded p-2 disabled:opacity-50">Sincronizar ahora</button>
     {user&&online&&<div className="border-t pt-4 space-y-2">

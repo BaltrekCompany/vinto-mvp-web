@@ -19,7 +19,7 @@ test("existing VINTO login exposes original Quality workspace without replacing 
 });
 test("online preparation has signed scope, original user, vault and explicit shell gate",()=>{
  assert.match(ui,/enrollQualityOfflineDevice/);
- assert.match(ui,/requestQualityOfflineAuthority/);
+ assert.match(read("lib/vinto/quality-offline-auto-prepare.ts"),/requestQualityOfflineAuthority/);
  assert.match(ui,/prepareQualityDevice/);
  assert.match(ui,/prepareQualityOfflineShell/);
  assert.match(ui,/requirePersistedQualityDevice/);
