@@ -31,6 +31,13 @@ class UnsupportedFormError(CaptureError):
     http_status, code, public_message = 422, "UNSUPPORTED_FORM", "Formulario no soportado por este endpoint"
 
 
+class QualityBobbinFormAlreadySubmittedError(CaptureError):
+    http_status, code, public_message = (
+        409, "QUALITY_BOBBIN_FORM_ALREADY_SUBMITTED",
+        "Este formulario de Calidad ya fue registrado para esta bobina",
+    )
+
+
 class CaptureIdempotencyConflictError(CaptureError):
     http_status, code, public_message = 409, "CAPTURE_IDEMPOTENCY_CONFLICT", "Ya existe una captura con ese identificador y contenido distinto"
 

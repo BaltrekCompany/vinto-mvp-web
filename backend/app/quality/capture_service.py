@@ -32,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
-from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError
+from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError, QualityBobbinFormAlreadySubmittedError
 from app.quality.mother_policy import allows_mother_form
 from app.quality.form_availability import available_quality_forms
 from app.sectors import scoped_sector_codes
@@ -387,6 +387,26 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
         fields, manual, clean = _prepare_values(connection, form_version_id, form_code, values)  # manuales sin grupo + calculados por el backend (MF-07); automáticos y grupos -> UNSUPPORTED_FORM_DEFINITION
         _check_declared_bobbin(connection, form_code, bobbin_id, clean, manual)
         _check_minimums(form_code, clean)
+
+        # Operational rule: a physical bobbin has only ONE submitted capture
+        # per Quality form, regardless of the author, device or online/offline
+        # transport. Keep all historical rows untouched.
+        # Serialize separate capture IDs under the same bobbin/form advisory
+        # transaction lock; replays of the SAME capture ID were handled above.
+        cs._lock(connection, f"vinto-quality-bobbin-once:{bobbin_id}:{form_code}")
+        already = connection.execute(
+            """SELECT c.id FROM vinto_txn.capture c
+               JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
+               JOIN vinto_config.form f ON f.id = fv.form_id
+               WHERE c.bobbin_id = %s AND f.code = %s
+                 AND fv.area = 'quality'
+                 AND c.status IN ('submitted', 'closed')
+               LIMIT 1""",
+            (bobbin_id, form_code),
+        ).fetchone()
+        if already is not None:
+            raise QualityBobbinFormAlreadySubmittedError()
+
 
         _insert_capture(connection, capture_id=capture_id, form_version_id=form_version_id, context=context, device_id=device_id)
         cs._insert_details(connection, capture_id, form_version_id, fields, clean)
