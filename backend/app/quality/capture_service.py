@@ -32,7 +32,7 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from app import capture_service as cs
 from app.bobbins.errors import BobbinNotFoundError
-from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError
+from app.capture_errors import CaptureIdempotencyConflictError, CaptureNotFoundError, CaptureValidationError, FormNotAvailableError, UnsupportedFormDefinitionError, UnsupportedFormError, QualityBobbinFormAlreadySubmittedError
 from app.quality.mother_policy import allows_mother_form
 from app.quality.form_availability import available_quality_forms
 from app.sectors import scoped_sector_codes
@@ -372,6 +372,25 @@ def submit_quality_capture(connection, *, actor_id, bobbin_id, capture_id, form_
             if _existing_matches(connection, existing, actor_id=actor_id, bobbin_id=bobbin_id, form_code=form_code, device_key=device_key, values=values):
                 return QualityCaptureResult(get_quality_capture(connection, capture_id, sectors=sectors), created=False, already_submitted=True)
             raise CaptureIdempotencyConflictError()
+
+        # Operational rule: a physical bobbin has only ONE submitted capture
+        # per Quality form, regardless of the author, device or online/offline
+        # transport. Keep all historical rows untouched.
+        # Serialize separate capture IDs under the same bobbin/form advisory
+        # transaction lock; replays of the SAME capture ID were handled above.
+        cs._lock(connection, f"vinto-quality-bobbin-once:{bobbin_id}:{form_code}")
+        already = connection.execute(
+            """SELECT c.id FROM vinto_txn.capture c
+               JOIN vinto_config.form_version fv ON fv.id = c.form_version_id
+               JOIN vinto_config.form f ON f.id = fv.form_id
+               WHERE c.bobbin_id = %s AND f.code = %s
+                 AND fv.area = 'quality'
+                 AND c.status IN ('submitted', 'closed')
+               LIMIT 1""",
+            (bobbin_id, form_code),
+        ).fetchone()
+        if already is not None:
+            raise QualityBobbinFormAlreadySubmittedError()
 
         context = _bobbin_context(connection, bobbin_id, sectors)
         authorized_machine = None
