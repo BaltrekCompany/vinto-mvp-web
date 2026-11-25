@@ -39,6 +39,7 @@ import {getOfflineProfile,listOfflineProfiles,saveOfflineProfile,
  type OfflineLocalProfile} from "@/lib/vinto/quality-offline-preparation-store";
 import {groupOfflinePreparedForms,offlineFormTitle} from "@/lib/vinto/quality-offline-navigation";
 import {projectOfflineControls,isBobbinControlLocked} from "@/lib/vinto/quality-offline-single-control";
+import {listCompletedBobbinForms,onlineCompletionKey} from "@/lib/vinto/quality-offline-online-history";
 import type {SyncRecord} from "@/lib/vinto/offline-sync-types";
 import type {OperationalPendingRow} from "@/lib/vinto/offline-operational-model";
 import {createOperationalHttpTransport} from "@/lib/vinto/offline-operational-http";
@@ -107,6 +108,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  const [queueInfo,setQueueInfo]=useState("");
  const [queueRecords,setQueueRecords]=useState<SyncRecord[]>([]);
  const [pendingRecords,setPendingRecords]=useState<OperationalPendingRow[]>([]);
+ const [onlineCompleted,setOnlineCompleted]=useState<ReadonlySet<string>>(new Set());
  const [preparationProgress,setPreparationProgress]=useState("");
  const [preparationErrors,setPreparationErrors]=useState<string[]>([]);
  const store=useMemo(()=>createOperationalLocalStore(),[]);
@@ -114,7 +116,12 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  const active=preps.find(p=>p.id===activeId)??null;
  const pickedOffer=offers.find(x=>offerChoice===x.machineCode+"|"+x.formCode);
  const activeBobbin=bobbins.find(x=>x.bobbin.id===bobbinChoice)??null;
- const controls=useMemo(()=>projectOfflineControls(preps.map(p=>({...p,bobbinId:p.data.bobbin?.bobbin.id??null})),pendingRecords,queueRecords),[preps,pendingRecords,queueRecords]);
+ const controls=useMemo(()=>{
+  const local=projectOfflineControls(preps.map(p=>({...p,bobbinId:p.data.bobbin?.bobbin.id??null})),pendingRecords,queueRecords);
+  return local.map(c=>c.item.bobbinId!==null&&
+   onlineCompleted.has(onlineCompletionKey(c.item.bobbinId,c.item.formCode))?
+   {...c,status:"completed" as const}:c);
+ },[preps,pendingRecords,queueRecords,onlineCompleted]);
 
  useEffect(()=>{
   void listOfflineProfiles().then(setProfiles).catch(()=>setMessage("No se pudo abrir el almacenamiento local."));
@@ -125,6 +132,19 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    .then(([a,b])=>{setOffers(a);setBobbins(b);})
    .catch(()=>setMessage("No se pudo consultar la preparación de Calidad. Verifica tu conexión y permisos."));
  },[user?.id,online]);
+ useEffect(()=>{
+  if(!unlocked||!user||!online)return;
+  const bobbinIds=[...new Set(preps.map(p=>p.data.bobbin?.bobbin.id).filter((id):id is string=>Boolean(id)))];
+  if(bobbinIds.length===0)return;
+  let cancelled=false;
+  void listCompletedBobbinForms(bobbinIds).then(completed=>{
+   if(!cancelled)setOnlineCompleted(completed);
+  }).catch(()=>{
+   // Keep prior evidence. Backend independently rejects any new duplicate.
+   if(!cancelled)setMessage("No se pudo comprobar el historial online; los registros existentes permanecen protegidos.");
+  });
+  return ()=>{cancelled=true;};
+ },[unlocked,user?.id,online,preps]);
  const refresh=async(state:Unlocked)=>{
   const rows=await listOfflinePreparations(state.identity);
   const data:NamedPreparation[]=[];
