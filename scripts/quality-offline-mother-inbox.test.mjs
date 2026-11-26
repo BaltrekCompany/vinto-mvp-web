@@ -34,8 +34,8 @@ test("pending online child rows yield distinct technical mothers, without child 
   p==="./api"?{apiBaseUrl:()=>"/api-base"}:{},fetch,Map,Set,Promise});
  const out=await exports.listQualityOfflineBobbins();
  assert.equal(out.length,3);
- assert.deepEqual(out.map(x=>x.bobbin.id).sort(),["b4","m25a","m25b"]);
- assert.deepEqual(out.filter(x=>x.bobbin.mother_quality).map(x=>x.bobbin.code),["25","25"]);
+ assert.equal(JSON.stringify(out.map(x=>x.bobbin.id).sort()),JSON.stringify(["b4","m25a","m25b"]));
+ assert.equal(JSON.stringify(out.filter(x=>x.bobbin.mother_quality).map(x=>x.bobbin.code)),JSON.stringify(["25","25"]));
  assert.equal(requests.length,1);
  assert.match(requests[0],/status=pending/);
 });
