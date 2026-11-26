@@ -27,7 +27,7 @@ test("MP3 prepares distinct bobbin 4 and 5, plus any new pending bobbin",()=>{
    bobbin("b2","2","MP1")],
  );
  assert.equal(p.length,4);
- assert.deepEqual([...p.filter(x=>x.offer.machineCode==="MP3").map(x=>x.bobbin.bobbin.id)].sort(),["b4","b5","b6"]);
+ assert.equal(JSON.stringify([...p.filter(x=>x.offer.machineCode==="MP3").map(x=>x.bobbin.bobbin.id)].sort()),JSON.stringify(["b4","b5","b6"]));
 });
 test("all machine forms remain machine-level and no pair is duplicated",()=>{
  const p=auto.enumerateQualityPreparationPairs(
