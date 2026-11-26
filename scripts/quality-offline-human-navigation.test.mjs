@@ -49,3 +49,23 @@ test("new view opens the existing encrypted draft without changing storage or sy
  assert.match(ui,/QualityHumidityCapture/);
  assert.match(ui,/QualityPhysicalCapture/);
 });
+
+test("two COPASA mothers with identical label remain distinguishable and correctly ordered",()=>{
+ const a={id:"m1",formCode:"VINTO-P1-24",machineCode:"COPASA",
+  bobbin:bobbin("4980cfeb-4484-462d-b036-10a200b21dff","25","COPASA","OT-2026-0049"),data:{}};
+ const b={id:"m2",formCode:"VINTO-P1-24",machineCode:"COPASA",
+  bobbin:bobbin("a4a1639c-60d5-4f3a-aca2-6dba0358673d","25","COPASA","OT-2026-0049"),data:{}};
+ const groups=groupOfflinePreparedForms([a,b]);
+ assert.equal(groups.length,2);
+ assert.match(groups[0].title,/ID [a-f0-9]{8}$/);
+ assert.notEqual(groups[0].title,groups[1].title);
+ assert.equal(new Set(groups.map(g=>g.key)).size,2);
+});
+test("ordinary numbered bobbins sort numerically instead of lexically",()=>{
+ const items=["1","10","2"].map(n=>({
+  id:n,formCode:"VINTO-P1-24",machineCode:"MP1",
+  bobbin:bobbin("bobbin-"+n,n,"MP1","OT"),data:{}
+ }));
+ const groups=groupOfflinePreparedForms(items);
+ assert.equal(groups.map(x=>x.title).join(" | "),"Bobina 1 · MP1 | Bobina 2 · MP1 | Bobina 10 · MP1");
+});
