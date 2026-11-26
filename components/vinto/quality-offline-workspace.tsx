@@ -122,6 +122,31 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    onlineCompleted.has(onlineCompletionKey(c.item.bobbinId,c.item.formCode))?
    {...c,status:"completed" as const}:c);
  },[preps,pendingRecords,queueRecords,onlineCompleted]);
+ const displayItems=useMemo(()=>{
+  const out=controls.map(c=>({
+   id:c.item.id,formCode:c.item.formCode,machineCode:c.item.machineCode,
+   bobbin:c.item.data.bobbin,
+   data:{controlStatus:c.status as string,duplicates:c.duplicates},
+  }));
+  const seen=new Set(out.map(item=>item.machineCode+"|"+item.formCode+"|"+
+   (item.bobbin?.bobbin.id??"machine")));
+  for(const bobbin of bobbins){
+   for(const offer of offers){
+    if(offer.kind!=="bobbin"||offer.machineCode!==bobbin.bobbin.machine.code)continue;
+    const key=offer.machineCode+"|"+offer.formCode+"|"+bobbin.bobbin.id;
+    if(seen.has(key))continue;
+    seen.add(key);
+    out.push({
+     id:"inventory|"+key,formCode:offer.formCode,machineCode:offer.machineCode,
+     bobbin,data:{
+      controlStatus:onlineCompleted.has(onlineCompletionKey(bobbin.bobbin.id,offer.formCode))?
+       "completed":"unprepared",duplicates:0,
+     },
+    });
+   }
+  }
+  return out;
+ },[controls,bobbins,offers,onlineCompleted]);
 
  useEffect(()=>{
   void listOfflineProfiles().then(setProfiles).catch(()=>setMessage("No se pudo abrir el almacenamiento local."));
@@ -134,7 +159,10 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
  },[user?.id,online]);
  useEffect(()=>{
   if(!unlocked||!user||!online)return;
-  const bobbinIds=[...new Set(preps.map(p=>p.data.bobbin?.bobbin.id).filter((id):id is string=>Boolean(id)))];
+  const bobbinIds=[...new Set([
+   ...bobbins.map(b=>b.bobbin.id),
+   ...preps.map(p=>p.data.bobbin?.bobbin.id),
+  ].filter((id):id is string=>Boolean(id)))];
   if(bobbinIds.length===0)return;
   let cancelled=false;
   void listCompletedBobbinForms(bobbinIds).then(completed=>{
@@ -144,7 +172,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
    if(!cancelled)setMessage("No se pudo comprobar el historial online; los registros existentes permanecen protegidos.");
   });
   return ()=>{cancelled=true;};
- },[unlocked,user?.id,online,preps]);
+ },[unlocked,user?.id,online,preps,bobbins]);
  const refresh=async(state:Unlocked)=>{
   const rows=await listOfflinePreparations(state.identity);
   const data:NamedPreparation[]=[];
@@ -449,8 +477,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
       {preparationErrors.length} combinación(es) sin preparar: {preparationErrors.slice(0,8).join(" · ")}. Puedes seleccionar una bobina
       específica y volver a preparar, sin perder borradores anteriores.
     </p>}
-    <p className="text-sm">Controles preparados: {new Set(preps.map(p=>p.formCode+"|"+p.machineCode)).size}
-      {offers.length>0?" de "+offers.length+" autorizados":""}. Cada bobina requiere su contexto propio.</p>
+    <p className="text-sm">Controles locales: {controls.length} · Bobinas pendientes conocidas: {bobbins.length}. Cada bobina mantiene su contexto propio.</p>
     <button disabled={busy||!online||!user} onClick={()=>void syncManual()}
       className="border rounded p-2 disabled:opacity-50">Sincronizar ahora</button>
     {user&&online&&<div className="border-t pt-4 space-y-2">
@@ -483,11 +510,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
        Los nombres y la OT identifican el trabajo; los códigos P1 quedan como referencia.
       </p>
      </div>
-     {preps.length===0?<p className="text-sm">Sin formularios preparados para este operario.</p>:
-      groupOfflinePreparedForms(controls.map(p=>({
-       id:p.item.id,formCode:p.item.formCode,machineCode:p.item.machineCode,
-       bobbin:p.item.data.bobbin,data:{...p.item.data,controlStatus:p.status,duplicates:p.duplicates},
-      }))).map(group=><section key={group.key}
+     {displayItems.length===0?<p className="text-sm">Sin formularios preparados ni bobinas pendientes conocidas para este operario.</p>:
+      groupOfflinePreparedForms(displayItems).map(group=><section key={group.key}
        className="rounded-xl border border-slate-200 overflow-hidden" aria-label={group.title}>
        <header className={group.kind==="bobbin"?
          "bg-emerald-50 px-4 py-3":"bg-slate-100 px-4 py-3"}>
@@ -503,7 +527,8 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
            Referencia {p.formCode.replace("VINTO-","")} · {
              p.data.controlStatus==="completed"?"Sincronizado":
              p.data.controlStatus==="pending"?"Pendiente de sincronización":
-             p.data.controlStatus==="review"?"Requiere revisión":"Borrador cifrado"}
+             p.data.controlStatus==="review"?"Requiere revisión":
+             p.data.controlStatus==="unprepared"?"Pendiente de preparar":"Borrador cifrado"}
           </p>
           {p.data.duplicates>0&&<p className="text-xs text-amber-800">
            {p.data.duplicates} borrador(es) anterior(es) conservados sin eliminar.
@@ -518,7 +543,10 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
           </span>:p.data.controlStatus==="review"?<span className="rounded-lg
            px-4 py-2 bg-amber-50 text-amber-900 font-semibold">
             Requiere revisión
-          </span>:<button type="button" className="border rounded-lg px-4 py-2 bg-white
+          </span>:p.data.controlStatus==="unprepared"?<span className="rounded-lg
+             px-4 py-2 bg-slate-100 text-slate-700 font-semibold">
+              No preparado · requiere conexión y autorización
+            </span>:<button type="button" className="border rounded-lg px-4 py-2 bg-white
            hover:bg-slate-50 min-h-10"
            aria-label={"Abrir "+offlineFormTitle(p.formCode,p.machineCode,offers)+
              " de "+group.title}
