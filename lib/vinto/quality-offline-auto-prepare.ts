@@ -13,6 +13,7 @@ import type {OfflineVaultIdentity} from "./offline-vault";
 import type {OperationalLocalStore} from "./offline-operational-local-store";
 import type {OperationalFormContext} from "./offline-operational-capture-bindings";
 import type {CaptureScopeEnvelope} from "./offline-operational-capture-scope-verify";
+import {listCompletedBobbinForms,onlineCompletionKey} from "./quality-offline-online-history";
 
 export type OfflinePreparedForm=Readonly<{
  context:OperationalFormContext;
@@ -86,35 +87,66 @@ export async function prepareAuthorizedQualityForm(
  return payload;
 }
 
-/** Availability is user-grant-specific; never claim 10/10 without 10 grants.
- * Only one starter draft per distinct form/machine/bobbin pair is prepared.
- * Existing encrypted drafts are never edited, cleared or overwritten.
+/** One independent preparation for EVERY eligible pair (form, machine, bobbin).
+ * Mother identities must already have been derived from real child mother UUIDs.
+ * No local encrypted draft is ever deleted or overwritten.
  */
+export const MAX_AUTO_PREPARE_PAIRS=1000;
+export type PreparationSummary=Readonly<{
+ prepared:number;skipped:number;completed:number;omitted:number;total:number;failed:string[];
+}>;
+export function enumerateQualityPreparationPairs(
+ offers:readonly OfflineFormOffer[],bobbins:readonly QualityBobbinInboxItem[],
+):ReadonlyArray<Readonly<{offer:OfflineFormOffer;bobbin:QualityBobbinInboxItem|null}>>{
+ const result:Array<{offer:OfflineFormOffer;bobbin:QualityBobbinInboxItem|null}>=[];
+ const seen=new Set<string>();
+ for(const offer of offers){
+  const targets=offer.kind==="machine"?[null]:
+   bobbins.filter(b=>b.bobbin.machine.code===offer.machineCode);
+  for(const bobbin of targets){
+   const key=offer.machineCode+"|"+offer.formCode+"|"+(bobbin?.bobbin.id??"machine");
+   if(seen.has(key))continue;
+   seen.add(key);result.push({offer,bobbin});
+  }
+ }
+ return result.sort((a,b)=>{
+  const status=x=>x.bobbin?.quality.status==="pending"?0:1;
+  return status(a)-status(b);
+ });
+}
 export async function autoPrepareQualityForms(
  deps:QualityPreparationDeps,offers:readonly OfflineFormOffer[],
  bobbins:readonly QualityBobbinInboxItem[],
  existing:readonly OfflinePreparedForm[],
  onProgress?:(completed:number,total:number)=>void,
-):Promise<{prepared:number;skipped:number;failed:string[]}>{
- const limited=offers.slice(0,40);
- let prepared=0,skipped=0,completed=0;
+):Promise<PreparationSummary>{
+ const pairs=enumerateQualityPreparationPairs(offers,bobbins);
+ const limited=pairs.slice(0,MAX_AUTO_PREPARE_PAIRS);
+ const omitted=pairs.length-limited.length;
+ const targets=[...new Set(limited.map(p=>p.bobbin?.bobbin.id).filter((id):id is string=>Boolean(id)))];
+ // Fail closed if server history is unavailable: a form may be already
+ // completed on another device. Local matching alone is not sufficient.
+ const done=await listCompletedBobbinForms(targets);
+ let prepared=0,skipped=0,completed=0,processed=0;
  const failed:string[]=[];
  const saved=[...existing];
- for(const offer of limited){
-   const bobbin=offer.kind==="bobbin"?
-     bobbins.find(b=>b.bobbin.machine.code===offer.machineCode)??null:null;
-   if(offer.kind==="bobbin"&&!bobbin){failed.push(offer.formCode+": sin bobina autorizada");}
-   else if(matchingQualityPreparation(saved,offer,bobbin)){skipped++;}
-   else{
-     try{
-       const result=await prepareAuthorizedQualityForm(deps,offer,bobbin);
-       saved.push(result);prepared++;
-     }catch(error){
-       failed.push(offer.formCode+": "+(error instanceof Error?error.message:"error de preparación"));
-     }
-   }
+ for(const {offer,bobbin} of limited){
+  const description=offer.machineCode+" "+offer.formCode+
+   (bobbin?" · "+bobbin.bobbin.code+" ("+bobbin.bobbin.id+")":"");
+  if(bobbin&&done.has(onlineCompletionKey(bobbin.bobbin.id,offer.formCode))){
    completed++;
-   onProgress?.(completed,limited.length);
+  }else if(matchingQualityPreparation(saved,offer,bobbin)){
+   skipped++;
+  }else{
+   try{
+    const preparedForm=await prepareAuthorizedQualityForm(deps,offer,bobbin);
+    saved.push(preparedForm);prepared++;
+   }catch(error){
+    failed.push(description+": "+(error instanceof Error?error.message:"preparación fallida"));
+   }
+  }
+  processed++;
+  onProgress?.(processed,pairs.length);
  }
- return {prepared,skipped,failed};
+ return {prepared,skipped,completed,omitted,total:pairs.length,failed};
 }
