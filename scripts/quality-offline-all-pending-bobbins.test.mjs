@@ -55,3 +55,13 @@ test("workspace displays coverage, not obsolete N/22 offer ratio",()=>{
  assert.match(ui,/result\.omitted/);
  assert.doesNotMatch(ui,/available\.length\+\s*\(result\.failed/);
 });
+
+test("pending bobbins with every form already submitted remain visible in the inventory",()=>{
+ const ui=source("components/vinto/quality-offline-workspace.tsx");
+ assert.match(ui,/const displayItems=useMemo/);
+ assert.match(ui,/for\(const bobbin of bobbins\)/);
+ assert.match(ui,/onlineCompleted\.has\(onlineCompletionKey\(bobbin\.bobbin\.id,offer\.formCode\)\)/);
+ assert.match(ui,/groupOfflinePreparedForms\(displayItems\)/);
+ assert.match(ui,/No preparado · requiere conexión y autorización/);
+ assert.match(ui,/displayItems\.length===0/);
+});
