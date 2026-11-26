@@ -23,6 +23,13 @@ export type OfflinePreparedGroup<T>=Readonly<{
 export function groupOfflinePreparedForms<T>(
  items:readonly OfflinePreparedNavItem<T>[],
 ):OfflinePreparedGroup<T>[]{
+ const identities=new Map<string,Set<string>>();
+ for(const item of items){
+  if(!item.bobbin)continue;
+  const k=item.machineCode+"|"+item.bobbin.bobbin.code;
+  if(!identities.has(k))identities.set(k,new Set());
+  identities.get(k)!.add(item.bobbin.bobbin.id);
+ }
  const result=new Map<string,{
    key:string;title:string;subtitle:string;
    kind:"machine"|"bobbin";items:OfflinePreparedNavItem<T>[];
@@ -36,7 +43,9 @@ export function groupOfflinePreparedForms<T>(
    let group=result.get(key);
    if(!group){
      group=kind==="bobbin"?{
-       key,kind,title:"Bobina "+bobbin!.bobbin.code+" · "+item.machineCode,
+       key,kind,title:"Bobina "+bobbin!.bobbin.code+" · "+item.machineCode+
+         ((identities.get(item.machineCode+"|"+bobbin!.bobbin.code)?.size??0)>1?
+          " · ID "+bobbin!.bobbin.id.slice(0,8):""),
        subtitle:"OT "+bobbin!.production.work_order.number+
          " · Línea "+bobbin!.production.line.line_code+
          " · "+(bobbin!.quality.status==="pending"?"Pendiente":
@@ -52,7 +61,7 @@ export function groupOfflinePreparedForms<T>(
    group.items.push(item);
  }
  return [...result.values()].sort((a,b)=>
-   (a.kind===b.kind?a.title.localeCompare(b.title,"es"):
+   (a.kind===b.kind?a.title.localeCompare(b.title,"es",{numeric:true}):
      a.kind==="bobbin"?-1:1));
 }
 

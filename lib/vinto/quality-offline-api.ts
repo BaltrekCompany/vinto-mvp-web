@@ -1,7 +1,7 @@
 /** HTTPS/session-only offline preparation. No browser-side grant generation. */
 import {apiBaseUrl} from "./api";
 import type {CaptureScopeEnvelope} from "./offline-operational-capture-scope-verify";
-import type {QualityBobbinInboxItem} from "./quality-bobbins";
+import {motherQualityItem,type QualityBobbinInboxItem} from "./quality-bobbins";
 
 type Obj=Record<string,unknown>;
 const obj=(x:unknown):x is Obj=>!!x&&typeof x==="object"&&!Array.isArray(x);
@@ -92,21 +92,26 @@ export async function listQualityOfflineOffers():Promise<OfflineFormOffer[]>{
  }
  return out;
 }
+/** Pending physical bobbins from every authorized machine; rebobinado children
+ * are projected to their real technical mother UUID, never by label.
+ * Keep errors visible: returning [] on 401/403 could falsely imply no work.
+ */
 export async function listQualityOfflineBobbins():Promise<QualityBobbinInboxItem[]>{
- // The backend owns the inbox and sector permission; no local guess is used.
- const lists=await Promise.all(["pending","released","rejected"].map(async status=>{
-  try{
-   const r=await fetch(url("/api/quality/bobbins?status="+status),{
-    credentials:"include",cache:"no-store",redirect:"error"});
-   if(!r.ok)throw Error("offline_bobbin_inbox_unavailable");
-   const v=await r.json();if(!Array.isArray(v))throw Error("offline_bobbin_inbox_invalid");
-   return v as QualityBobbinInboxItem[];
-  }catch{return [] as QualityBobbinInboxItem[];}
- }));
- const ids=new Set<string>();
- return lists.flat().filter(item=>{
-  const id=item?.bobbin?.id;
-  if(!id||ids.has(id)||!item.bobbin.machine?.code)return false;
-  ids.add(id);return true;
+ const response=await fetch(url("/api/quality/bobbins?status=pending&include_rewinding_family=true"),{
+   credentials:"include",cache:"no-store",redirect:"error",headers:{Accept:"application/json"},
  });
+ if(!response.ok)throw new Error("offline_bobbin_inbox_http_"+response.status);
+ const raw:unknown=await response.json();
+ if(!Array.isArray(raw))throw new Error("offline_bobbin_inbox_invalid");
+ const byId=new Map<string,QualityBobbinInboxItem>();
+ for(const rawItem of raw){
+  const item=rawItem as QualityBobbinInboxItem;
+  if(!item?.bobbin?.id||!item.bobbin.machine?.code||!item.production?.capture_id)
+   throw new Error("offline_bobbin_inbox_invalid");
+  // A child is not a Quality form target. Deduplicate its mother by UUID.
+  const candidate=item.bobbin.rewinding?motherQualityItem(item):item;
+  if(!candidate)throw new Error("offline_mother_identity_missing");
+  if(!byId.has(candidate.bobbin.id))byId.set(candidate.bobbin.id,candidate);
+ }
+ return [...byId.values()];
 }
