@@ -29,6 +29,9 @@ def quality_bobbin_context_digest(connection, bobbin_id: str, machine_code: str,
     keys = ("bobbin_id", "machine_code", "source_capture_id", "assignment_id",
             "operating_date", "shift_schedule_id", "quality_status", "mother_capture_id",
             "child_position")
-    # Existing F3 digests remain byte-for-byte identical. Mothers have no\n    # quality_release row: quality_status=None is a stable, signed sentinel.\n    # Never accept children: rewind_child_position IS NULL remains mandatory.\n    normalized = {key: str(value) if value is not None else None
+    # Existing F3 digests remain byte-for-byte identical. Mothers have no
+    # quality_release row: quality_status=None is a stable, signed sentinel.
+    # Never accept children: rewind_child_position IS NULL remains mandatory.
+    normalized = {key: str(value) if value is not None else None
                   for key, value in zip(keys, rows)}
     return hashlib.sha256(_canonical(normalized)).hexdigest()
