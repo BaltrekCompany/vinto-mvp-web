@@ -110,7 +110,7 @@ export function enumerateQualityPreparationPairs(
   }
  }
  return result.sort((a,b)=>{
-  const status=x=>x.bobbin?.quality.status==="pending"?0:1;
+  const status=(x:{bobbin:QualityBobbinInboxItem|null})=>x.bobbin?.quality.status==="pending"?0:1;
   return status(a)-status(b);
  });
 }
