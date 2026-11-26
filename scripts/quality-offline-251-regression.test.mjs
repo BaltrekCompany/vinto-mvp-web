@@ -32,7 +32,7 @@ test("authorized form templates are prepared automatically after unlock without 
  assert.match(auto,/saveOfflinePreparation/);
  assert.match(auto,/offer\.kind==="bobbin"&&\(!bobbin/);
  assert.match(auto,/onProgress\?\./);
- assert.match(ui,/Disponibles offline|Formularios preparados/);
+ assert.match(ui,/Formularios disponibles sin internet|Cobertura por bobina y formulario/);
 });
 
 test("original Quality forms, single-author offline vault and actual capture ACK remain intact",()=>{
