@@ -236,9 +236,10 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
      setPreparationErrors(result.failed);
      await refresh(state);
      setPreparationProgress("");
-     setMessage("Formularios preparados: "+(result.prepared+result.skipped)+
-       "/"+available.length+
-       (result.failed.length?" · "+result.failed.length+" requieren revisión":""));
+     setMessage("Cobertura por bobina y formulario: "+result.total+
+       " combinaciones · "+result.prepared+" nuevas · "+result.skipped+
+       " existentes · "+result.completed+" realizadas · "+
+       result.failed.length+" fallidas · "+result.omitted+" por límite.");
    }
   }catch(error){
    setMessage(error instanceof Error?error.message:"No se pudo desbloquear el almacenamiento.");
@@ -445,7 +446,7 @@ export function QualityOfflineWorkspace({user,online,onExit}:Props){
     <p role="status" className="text-sm">Cola: {queueInfo}</p>
     {preparationProgress&&<p role="status" className="text-sm">{preparationProgress}</p>}
     {preparationErrors.length>0&&<p role="alert" className="text-sm text-amber-800">
-      {preparationErrors.length} formulario(s) sin preparar. Puedes seleccionar una bobina
+      {preparationErrors.length} combinación(es) sin preparar: {preparationErrors.slice(0,8).join(" · ")}. Puedes seleccionar una bobina
       específica y volver a preparar, sin perder borradores anteriores.
     </p>}
     <p className="text-sm">Controles preparados: {new Set(preps.map(p=>p.formCode+"|"+p.machineCode)).size}
