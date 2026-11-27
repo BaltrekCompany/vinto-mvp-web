@@ -68,7 +68,7 @@ def test_missing_grant_denied_without_device_write(eligible):
 def test_granted_device_is_enrolled_without_capture_authority():
     key = uuid.uuid4()
     result, response, resolver, context = _enroll(enabled=True, eligible=True, device_key=key)
-    assert result == {"device_key": str(key), "enrolled": True, "preparation_signing_pin": None, "captureEnabled": False}
+    assert result == {"device_key": str(key), "enrolled": True, "preparation_signing_pin": None, "capture_signing_pin": None, "captureEnabled": False}
     assert response.headers["Cache-Control"] == "no-store"
     resolver.assert_called_once_with(resolver.call_args.args[0], str(key), None)
     context.assert_called_once()
