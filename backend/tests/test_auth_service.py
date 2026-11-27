@@ -194,7 +194,7 @@ class PermissionMatrixTests(unittest.TestCase):
             "quality.capture", "quality.release", "catalog.read", "report.read", "catalog.manage", "user.manage"})
 
     def test_data_baltrek_cannot_operate_the_plant(self):
-        for permission in ("work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release"):
+        for permission in ("work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release", "report.read"):
             self.assertFalse(permissions.has_permission(["DATA_BALTREK"], permission), permission)
         self.assertTrue(permissions.has_permission(["DATA_BALTREK"], "user.manage"))
         self.assertTrue(permissions.has_permission(["DATA_BALTREK"], "catalog.manage"))
