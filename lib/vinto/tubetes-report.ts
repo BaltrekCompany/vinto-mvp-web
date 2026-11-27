@@ -53,3 +53,14 @@ export function parseTubetesReport(value: unknown): TubetesReport | null {
     if (!mp1 || !mp3) return null;
     return { generated_at: value.generated_at, source_form: "VINTO-P1-03", date_basis: "operating_date", timezone: "America/La_Paz", machines: [mp1, mp3] };
 }
+
+
+export type TubetesMachineSelection = "all" | "MP1" | "MP3";
+
+export function visibleTubetesMachines(
+    report: TubetesReport,
+    selection: TubetesMachineSelection,
+): MachineTubetes[] {
+    if (selection === "all") return [...report.machines];
+    return report.machines.filter(machine => machine.machine === selection);
+}
