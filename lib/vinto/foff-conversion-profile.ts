@@ -67,3 +67,20 @@ export async function saveConversionOfflineProfile(profile:ConversionOfflineProf
     r.onerror=()=>bad(new Error("foff_conversion_profile_already_enrolled"));
   }));
 }
+
+/** Offline login only lists previously enrolled profiles on this device.
+ * Unlock still requires the local passphrase. This does not restore server
+ * permissions or create a backend session.
+ */
+export async function listConversionOfflineProfiles(deviceKey:string):Promise<ConversionOfflineProfile[]>{
+  if(!UUID.test(deviceKey))fail("identity");
+  return withProfileDb(db=>request(db,"readonly",(store,done,reject)=>{
+    const r=store.getAll();
+    r.onsuccess=()=>{
+      const all=r.result as ConversionOfflineProfile[];
+      if(all.some(profile=>!valid(profile))){reject(new Error("foff_conversion_profile_corrupt"));return;}
+      done(all.filter(profile=>profile.deviceKey===deviceKey.toLowerCase()));
+    };
+    r.onerror=()=>reject(new Error("foff_conversion_profile_storage"));
+  }));
+}
