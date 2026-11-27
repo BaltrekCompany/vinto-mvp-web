@@ -430,6 +430,8 @@ Restricciones y garantías:
 - Solo se permite INSERT/UPDATE mientras el reporte esté en draft. Al pasar a generated, observed o annulled, todos los campos del paquete quedan inmutables.
 - No se permite cambiar id, report_id ni mother_capture_id de una fila existente; para sustituir una madre se retira el paquete y se crea uno nuevo. El cambio de clasificación de la OT no altera source_work_order_classification_id ni el snapshot del paquete ya generado. Mientras el reporte siga en draft, el servicio puede actualizar ese ID a la última clasificación production_confirmed bajo el bloqueo de work_order; al generar, el ID queda congelado.
 
+Un trigger BEFORE INSERT valida que mother_capture_id, work_order_id, work_order_line_id, article_version_id, source_work_order_classification_id y source_operator_user_id correspondan a la misma cadena de origen: capture → assignment → work_order_line → work_order_version → work_order. También verifica que capture.machine_id coincida con report.machine_id/sector_id y que, si mother_bobbin_id no es NULL, su rewind_mother_capture_id sea mother_capture_id. La FK compuesta de clasificación impide asociar una clasificación de otra OT.
+
 La retirada lógica permite conservar la trazabilidad de las ediciones del borrador sin mantener paquetes inactivos en la vista previa ni en el PDF.
 
 ### 8.3 Crías por paquete: rewinding_export_package_child
@@ -453,6 +455,7 @@ Restricciones:
 - FOREIGN KEY (package_id, report_id) REFERENCES rewinding_export_package(id, report_id) ON DELETE RESTRICT: integridad compuesta paquete–reporte.
 - FOREIGN KEY (child_bobbin_id) REFERENCES vinto_txn.bobbin(id) ON DELETE RESTRICT.
 - removed_by REFERENCES vinto_master.user(id) ON DELETE RESTRICT.
+- Un trigger BEFORE INSERT verifica que child_bobbin_id.source_capture_id = package.mother_capture_id y que source_position/weight_kg_snapshot coincidan con rewind_child_position/weight_kg de la bobbin al seleccionar.
 - Slot limitado a A–E; el servicio y una validación diferida comprueban que exista Cría A entre las selecciones activas antes de generar.
 
 No se permite DELETE físico. Una selección se puede retirar lógicamente solo mientras el reporte esté en draft; la fila retirada queda inmutable. Las columnas id, report_id, package_id, child_bobbin_id, package_slot, source_position y weight_kg_snapshot no se actualizan: para sustituir o mover una cría se retira la selección anterior y se crea una fila nueva. Si la misma cría se vuelve a seleccionar en ese borrador, se crea una fila nueva y la unicidad parcial permite el nuevo vínculo activo. Al retirar un paquete, todas sus selecciones activas se retiran en la misma transacción.
@@ -568,13 +571,13 @@ Antes de abrir la transacción se pueden leer IDs sin bloquear para conocer OTs,
 
 1. Para generación, ejecutar la autorización efectiva de Operation.REWINDING_EXPORT_CREATE con require(..., lock=True) dentro de la misma transacción. El motor toma primero sus bloqueos propios: usuario → perfiles activos → máquina y sector → concesión exacta máquina/formulario.
 2. Bloquear las filas work_order involucradas, ordenadas por UUID, con FOR SHARE. La retirada QA usa FOR UPDATE sobre las mismas filas; ambas operaciones se serializan.
-3. Bloquear filas quality_release de todas las crías, ordenadas por bobbin_id.
-4. Bloquear filas bobbin de las crías, ordenadas por UUID.
-5. Bloquear capturas fuente P1-07 de madres, ordenadas por UUID.
+3. Bloquear filas quality_release de todas las crías, ordenadas por bobbin_id con FOR SHARE.
+4. Bloquear filas bobbin de las crías, ordenadas por UUID con FOR SHARE.
+5. Bloquear capturas fuente P1-07 de madres, ordenadas por UUID con FOR SHARE.
 6. Bloquear la fila del reporte con FOR UPDATE.
-7. Bloquear paquetes activos/retirados, ordenados por package_number, id.
-8. Bloquear relaciones paquete–cría, ordenadas por child_bobbin_id, id.
-9. Bloquear reservas existentes, ordenadas por child_bobbin_id, id.
+7. Bloquear paquetes activos/retirados, ordenados por package_number, id con FOR UPDATE.
+8. Bloquear relaciones paquete–cría, ordenadas por child_bobbin_id, id con FOR UPDATE.
+9. Bloquear reservas existentes, ordenadas por child_bobbin_id, id con FOR UPDATE.
 10. Después de cada espera, releer bajo READ COMMITTED el estado de OT/QA, Calidad, relaciones, pertenencia, permisos aplicables, estado del reporte y reservas. La lectura preliminar nunca sustituye esta revalidación.
 
 Ninguna ruta puede invertir el orden: está prohibido bloquear primero el reporte y después work_order o quality_release. Los flujos de Calidad que en el futuro cambien una decisión ya liberada y marquen reportes Observados deben respetar el mismo orden work_order → quality_release → bobbin → capture → report → package/child/reservation. La edición de Borradores puede bloquear report/package, pero después no puede adquirir bloqueos de OT, Calidad, bobbin o captura fuente.
@@ -591,7 +594,7 @@ Ninguna ruta puede invertir el orden: está prohibido bloquear primero el report
    - Misma clave y hash distinto: 409, sin revelar otros reportes ni sus datos.
    - Sin resultado previo: continuar.
 7. Preleer IDs de OTs, paquetes, crías, madres y máquina sin bloquear; aplicar el orden global de bloqueos de §9.1 y revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
-8. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Actualizar en cada paquete draft source_work_order_classification_id al ID vigente, antes de congelarlo. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
+8. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Actualizar en cada paquete draft source_work_order_classification_id al ID vigente, antes de congelarlo. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa. Releer bobbin bajo bloqueo y comparar posición/peso actuales con source_position/weight_kg_snapshot; si difieren, responder 409 y exigir refrescar la selección, sin corregir silenciosamente el snapshot.
 9. Verificar PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
 10. Validar V01–V08 y reglas D01–D09.
 11. Construir snapshot inmutable con valores exactos de origen, source_work_order_classification_id y classification por paquete, entradas manuales, usuario generador, fecha/hora y warnings.
@@ -910,6 +913,8 @@ La descarga no consulta los valores productivos actuales para reconstruir el doc
 - Misma madre en varias líneas.
 - Cría repetida dentro de un paquete o entre paquetes.
 - Cría de otra madre.
+- work_order_line_id que pertenece a otra OT, article_version_id que no corresponde a la línea, clasificación de otra OT, operador distinto de capture.created_by o mother_bobbin_id de otra captura: rechazados por guardas de origen.
+- Cambio de posición/peso de bobbin entre selección y generación: 409, sin modificar el snapshot del borrador.
 - Inserción de package_child con package_id de un reporte y report_id de otro: rechazada por FK compuesta.
 - Destinos diferentes.
 - PV/productos/máquinas diferentes.
@@ -990,7 +995,7 @@ Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 ef�
 - Clasificación de OT: SELECT/INSERT para Jefatura a través de rewinding_export.classify_source; append-only, sin UPDATE/DELETE/TRUNCATE. La secuencia de clasificación se incrementa bajo bloqueo FOR UPDATE de work_order.
 - PDF: exclusivamente SELECT/INSERT para vinto_app; nunca UPDATE/DELETE/TRUNCATE.
 - Eventos: INSERT/SELECT; nunca UPDATE/DELETE/TRUNCATE.
-- Triggers de integridad referencial, transiciones, retirada lógica, auditoría, inmutabilidad de snapshot/PDF y paquetes/crías, coherencia diferible de reservas y sincronización con retirada QA.
+- Triggers de integridad referencial y coherencia de la cadena de origen (madre/OT/línea/artículo/operador/clasificación/cría), transiciones, retirada lógica, auditoría, inmutabilidad de snapshot/PDF y paquetes/crías, coherencia diferible de reservas y sincronización con retirada QA.
 - La retirada QA debe bloquear la fila work_order y comprobar reportes RBE activos antes de archivar/marcar qa_retired; si existen Generados/Observados, debe detenerse hasta su anulación por Jefatura.
 - Antes del rollout, aprobar lista nominativa de usuarios y conceder explícitamente REBOBINADO; no backfill por perfil.
 - Conceder máquina + P1-07 individualmente a los operadores que deban generar; Supervisión/Jefatura no reciben estas concesiones para leer/anular.
