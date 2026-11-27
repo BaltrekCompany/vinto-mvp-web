@@ -16,6 +16,9 @@ on:
       - 'app/page.tsx'
       - 'scripts/auth.test.mjs'
       - 'scripts/tubetes-report.test.mjs'
+      - 'lib/vinto/tubetes-pdf.ts'
+      - 'scripts/tubetes-pdf.test.mjs'
+      - 'docs/VINTO-TUB-04-PDF-IMPLEMENTACION-2026-11-27.md'
       - '.github/workflows/tubetes-report-pg17.yml'
 
 permissions:
@@ -106,8 +109,10 @@ jobs:
         run: node --test scripts/auth.test.mjs
       - name: Tubetes report response contract
         run: node --test scripts/tubetes-report.test.mjs
+      - name: Tubetes PDF layout, continuation and pagination
+        run: node --test scripts/tubetes-pdf.test.mjs
       - name: TypeScript, ESLint and frontend build
         run: |
           pnpm exec tsc --noEmit
-          pnpm exec eslint lib/vinto/auth.ts
+          pnpm exec eslint lib/vinto/auth.ts lib/vinto/tubetes-report.ts lib/vinto/tubetes-pdf.ts components/vinto/tubetes-report.tsx app/page.tsx
           pnpm run build
