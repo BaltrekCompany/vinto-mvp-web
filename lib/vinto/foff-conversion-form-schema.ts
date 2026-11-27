@@ -57,7 +57,7 @@ export function emptyConversionValues(definition:ConversionDefinition):Record<st
  * This validation is a local UX guard only; server validation is mandatory.
  */
 export function normalizeConversionValues(definition:ConversionDefinition,
-  draft:Record<string,unknown>):Record<string,unknown>{
+  draft:Record<string,unknown>, recipeMaterialCodes:readonly string[]=[]):Record<string,unknown>{
   if(!OBJECT(draft))fail();
   const simple=definition.fields.filter(f=>f.group_id===null);
   const byCode=new Map(definition.groups.map(g=>[g.code,g]));
@@ -71,6 +71,8 @@ export function normalizeConversionValues(definition:ConversionDefinition,
     if(!["string","number","boolean"].includes(typeof raw))fail();
     const value=String(raw).trim();
     if(field.options.length>0&&!field.options.includes(value))fail();
+    if(field.key==="tipo_material"&&recipeMaterialCodes.length>0&&
+       !recipeMaterialCodes.includes(value))fail();
     if(field.value_type==="decimal"){
       if(!/^-?[0-9]+(?:\.[0-9]+)?$/.test(value))fail();
       return value;
