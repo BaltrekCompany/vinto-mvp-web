@@ -1,4 +1,4 @@
-name: VINTO Tubetes report TUB-02 (PostgreSQL 17)
+name: VINTO Tubetes reports TUB-02 to TUB-05 (PostgreSQL 17)
 
 on:
   pull_request:
