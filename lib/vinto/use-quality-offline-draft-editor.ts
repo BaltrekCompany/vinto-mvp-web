@@ -132,6 +132,8 @@ export function useQualityOfflineDraftEditor<T extends object>(
   return {
     flush,status,saving,
     // Edits remain possible during a queued autosave; flush() waits before freeze.
-    blocked:active&&(status!=="ready"||!hydrated.current||failed.current),
+    // Hydration sets status="ready" only after updating the ref guards.
+    // Failures transition to "error"; refs remain private to effects/handlers.
+    blocked:active&&status!=="ready",
   };
 }

@@ -2,7 +2,7 @@
  * No capture-authority is issued or validated here. This is NOT an editor gate.
  * Do not use saved metadata to authorize offline submission.
  */
-import { openLocalDraft, sealLocalDraft, type OfflineVaultIdentity, type DraftBinding } from "./offline-vault";
+import { openLocalDraft, sealLocalDraft, type OfflineVaultIdentity, type DraftBinding } from "./offline-vault.ts";
 
 export const PRODUCTION_PREPARATIONS_DB = "vinto-production-offline-preparations-v1";
 const STORE = "preparations";
