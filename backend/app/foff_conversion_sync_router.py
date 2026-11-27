@@ -171,13 +171,15 @@ def _review(connection,body:OfflineConversionIn,user:AuthenticatedUser,context,r
         )
         row=connection.execute(
             """SELECT author_user_id,device_key,assignment_id,form_code,form_version,
-                      machine_code,payload_sha256,reason
+                      machine_code,payload_sha256,reason,original_context
                FROM vinto_txn.offline_conversion_review WHERE capture_id=%s""",
             (body.capture_id,),
         ).fetchone()
         if not row or row[:7]!=(user.user_id,body.device_key,body.assignment_id,
                                  body.form_code,body.form_version,body.machine_code,body.payload_sha256):
             raise HTTPException(409,"Conflicto de idempotencia en revisión")
+        if row[8] != context:
+            raise HTTPException(409,"Contexto de revisión ya registrado")
         return row[7]
 
 
@@ -213,6 +215,17 @@ def receive_conversion_capture(
         response.status_code=200
         return {"capture_id":str(body.capture_id),"outcome":"duplicate",
                 "operational_registered":True,"technical_acceptance":True}
+    # Once a request has a durable technical receipt it is never silently
+    # promoted to a business capture by a later retry with the same capture_id.
+    pending=connection.execute(
+        "SELECT reason FROM vinto_txn.offline_conversion_review WHERE capture_id=%s",
+        (body.capture_id,),
+    ).fetchone()
+    if pending:
+        reason=_review(connection,body,user,context,pending[0])
+        response.status_code=202
+        return {"capture_id":str(body.capture_id),"outcome":"review",
+                "reason":reason,"operational_registered":False,"technical_acceptance":True}
     if expired:
         reason=_review(connection,body,user,context,"preparation_expired")
         response.status_code=202
