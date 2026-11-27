@@ -82,7 +82,16 @@ function transaction<T>(db: IDBDatabase, mode: IDBTransactionMode,
 export async function saveProductionPreparation(identity: OfflineVaultIdentity,key: CryptoKey,
   context: ProductionPreparationContext,payload: ProductionPreparationPayload): Promise<ProductionPreparationRecord> {
   checkIdentity(identity); validateProductionPreparationContext(context); validatePayload(payload);
-  const sealed=await sealLocalDraft(key,binding(identity,context),{...payload});
+  // Bind operational metadata inside authenticated ciphertext too: editing cleartext
+  // assignment/sector/digest later cannot silently retarget a prepared form.
+  const sealed=await sealLocalDraft(key,binding(identity,context),{
+    ...payload,
+    _foffContext: {
+      assignmentId: lower(context.assignmentId), sectorCode: context.sectorCode,
+      machineCode: context.machineCode, contextDigest: context.contextDigest,
+      capturedContextAt: context.capturedContextAt,
+    },
+  });
   const record: ProductionPreparationRecord={...context,id:lower(context.id),assignmentId:lower(context.assignmentId),
     scopeSnapshotId:lower(context.scopeSnapshotId),ownerId:lower(identity.ownerId),deviceKey:lower(identity.deviceKey),sealed};
   // IndexedDB add is atomic and prevents overwriting a prepared context, including concurrent tabs.
@@ -105,6 +114,13 @@ export async function readProductionPreparation(identity: OfflineVaultIdentity,k
   checkIdentity(identity); validateProductionPreparationContext(row);
   if (lower(row.ownerId)!==lower(identity.ownerId) || lower(row.deviceKey)!==lower(identity.deviceKey)) fail("identity_mismatch");
   const values=await openLocalDraft(key,binding(identity,row),row.sealed);
-  validatePayload(values as unknown as ProductionPreparationPayload);
-  return values as unknown as ProductionPreparationPayload;
+  const internal=values._foffContext;
+  if (!internal || typeof internal !== "object" || Array.isArray(internal)) fail("context_tampered");
+  const origin=internal as Record<string,unknown>;
+  if (origin.assignmentId!==lower(row.assignmentId) || origin.sectorCode!==row.sectorCode ||
+      origin.machineCode!==row.machineCode || origin.contextDigest!==row.contextDigest ||
+      origin.capturedContextAt!==row.capturedContextAt) fail("context_tampered");
+  const {_foffContext: _checkedContext, ...payload}=values;
+  validatePayload(payload as unknown as ProductionPreparationPayload);
+  return payload as unknown as ProductionPreparationPayload;
 }
