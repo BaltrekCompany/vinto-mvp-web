@@ -265,6 +265,17 @@ def receive_conversion_capture(
         raise HTTPException(409,"Integridad de captura no verificada")
     context,expired=_verified_preparation(body,user)
     capture_expired=_verified_capture_authority(body,user)
+    # Use the same per-capture advisory lock for BOTH technical reviews
+    # and normal production registration. This prevents a 202 receipt and
+    # a business capture racing under the same capture_id.
+    with connection.transaction():
+        capture_service._lock(connection, f"vinto-capture-id:{body.capture_id}")
+        return _accept_conversion_capture_locked(
+            body,response,user,connection,context,expired,capture_expired,
+        )
+
+
+def _accept_conversion_capture_locked(body,response,user,connection,context,expired,capture_expired):
     decision=authorize(connection,user,Operation.PRODUCTION_CAPTURE,
                        body.machine_code,body.form_code,lock=False)
     if not decision.allowed or decision.effective_version!=body.form_version:
