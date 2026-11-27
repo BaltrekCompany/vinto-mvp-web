@@ -354,7 +354,7 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
                 sectors=user.sectors,
             )
     except OriginalContextChanged:
-        reason=_review(connection,body,user,context,"context_changed")
+        reason=_review(connection,body,user,context,"assignment_stale")
         response.status_code=202
         return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,
                 "outcome":"review","reason":reason,"operational_registered":False,
