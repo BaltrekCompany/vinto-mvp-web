@@ -113,5 +113,5 @@ jobs:
       - name: TypeScript, ESLint and frontend build
         run: |
           pnpm exec tsc --noEmit
-          pnpm exec eslint lib/vinto/auth.ts
+          pnpm exec eslint lib/vinto/auth.ts lib/vinto/tubetes-report.ts lib/vinto/tubetes-pdf.ts components/vinto/tubetes-report.tsx app/page.tsx
           pnpm run build
