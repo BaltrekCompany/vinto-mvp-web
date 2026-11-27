@@ -122,7 +122,7 @@ class TubetesReadOnlyBoundaryTests(unittest.TestCase):
         self.assertIn("f.code = %s", sql)
         self.assertIn("fv.area = 'production'", sql)
         self.assertIn("c.status in ('submitted', 'closed')", sql)
-        self.assertIn("s.code = %s", sql)
+        self.assertIn("s.code = any(%s)", sql)
         self.assertIn("m.code = any(%s)", sql)
         self.assertIn("wo.qa_retired is false", sql)
         self.assertIn("b.sequence_number is not null", sql)
@@ -139,7 +139,7 @@ class TubetesReadOnlyBoundaryTests(unittest.TestCase):
         report = get_tubetes_report(connection, sectors=("BOBINAS",))
         self.assertEqual(connection.statements[0], "SET TRANSACTION READ ONLY")
         self.assertEqual(connection.statements[1], TUBETES_USAGE_SQL)
-        self.assertEqual(connection.params[1], ("codigo_de_tubete", "VINTO-P1-03", "BOBINAS", list(MACHINE_CODES)))
+        self.assertEqual(connection.params[1], ("codigo_de_tubete", "VINTO-P1-03", ["BOBINAS"], list(MACHINE_CODES)))
         self.assertEqual(report.machines[0].usage_total, 1)
 
     def test_service_refuses_missing_sector_before_querying(self):
