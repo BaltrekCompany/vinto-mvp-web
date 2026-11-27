@@ -16,6 +16,8 @@ on:
       - 'app/page.tsx'
       - 'scripts/auth.test.mjs'
       - 'scripts/tubetes-report.test.mjs'
+      - 'lib/vinto/tubetes-pdf.ts'
+      - 'scripts/tubetes-pdf.test.mjs'
       - '.github/workflows/tubetes-report-pg17.yml'
 
 permissions:
@@ -106,6 +108,8 @@ jobs:
         run: node --test scripts/auth.test.mjs
       - name: Tubetes report response contract
         run: node --test scripts/tubetes-report.test.mjs
+      - name: Tubetes PDF layout, continuation and pagination
+        run: node --test scripts/tubetes-pdf.test.mjs
       - name: TypeScript, ESLint and frontend build
         run: |
           pnpm exec tsc --noEmit
