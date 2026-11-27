@@ -361,7 +361,7 @@ Campos conceptuales:
 - annulled_by / annulled_at / annulment_reason.
 - snapshot_version.
 - report_snapshot JSONB inmutable después de generar.
-- idempotency_key asociado al creador.
+- draft_creation_idempotency_key, si se implementa idempotencia de creación de borrador. La clave de generación es independiente y se persiste como generation_idempotency_key en la confirmación.
 
 Los campos manuales camión y orden pueden estar vacíos en un borrador, pero son obligatorios al generar.
 
