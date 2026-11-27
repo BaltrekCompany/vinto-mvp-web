@@ -19,6 +19,7 @@ on:
       - 'scripts/tubetes-report.test.mjs'
       - 'scripts/tubetes-excel.test.mjs'
       - 'scripts/validate-tubetes-excel.py'
+      - 'docs/VINTO-TUB-05-EXCEL-Y-SELECTOR-IMPLEMENTACION-2026-11-27.md'
       - 'lib/vinto/tubetes-pdf.ts'
       - 'scripts/tubetes-pdf.test.mjs'
       - 'docs/VINTO-TUB-04-PDF-IMPLEMENTACION-2026-11-27.md'
