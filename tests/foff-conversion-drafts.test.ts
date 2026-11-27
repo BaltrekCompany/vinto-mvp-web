@@ -52,3 +52,21 @@ test("FOFF-03 refuses invalid capture id before opening any storage",async()=>{
     captureId:"invalid",expectedRevision:0,values:{},
   }),/foff_conversion_draft_invalid/);
 });
+
+test("FOFF-03 P1-11 recipe is constrained to signed article materials",()=>{
+  const d=definition();
+  const raw={peso_kg:"1.0",_groups:{bobinas:[{numero_bobina:"B01"}]}};
+  assert.deepEqual(normalizeConversionValues(d,raw,["PAPEL"]),{
+    peso_kg:"1.0",_groups:{bobinas:[{numero_bobina:"B01"}]},
+  });
+  const withType=parseConversionDefinition({
+    fields:[f("tipo_material","text",true,groupId)],
+    groups:[{id:groupId,code:"bobinas",repeatable:true,min_rows:1,max_rows:3,display_order:1}],
+  });
+  assert.throws(()=>normalizeConversionValues(withType,{
+    _groups:{bobinas:[{tipo_material:"FUERA_DE_RECETA"}]},
+  },["PAPEL"]),/foff_conversion_definition_unsupported/);
+  assert.deepEqual(normalizeConversionValues(withType,{
+    _groups:{bobinas:[{tipo_material:"PAPEL"}]},
+  },["PAPEL"]),{_groups:{bobinas:[{tipo_material:"PAPEL"}]}});
+});
