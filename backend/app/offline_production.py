@@ -11,6 +11,7 @@ from app.auth.permissions import PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.production_access import production_machines
+from app.sectors import SECTOR_CONVERSION, SECTOR_REBOBINADO, SECTOR_BOBINAS
 
 router = APIRouter(prefix="/api/offline/production", tags=["Preparación producción offline"])
 
@@ -25,7 +26,7 @@ def list_offline_production_offers(
     availability = production_machines(connection, user.sectors, user=user)
     offers = []
     for sector in availability.sectors:
-        if sector.code not in ("CONVERSION", "REBOBINADO", "BOBINAS"):
+        if sector.code not in (SECTOR_CONVERSION, SECTOR_REBOBINADO, SECTOR_BOBINAS):
             continue
         for machine in sector.machines:
             for form in [*machine.forms, *(machine.bobbin_forms or [])]:
