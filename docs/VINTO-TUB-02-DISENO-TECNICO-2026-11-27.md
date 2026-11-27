@@ -264,32 +264,71 @@ La muestra productiva auditada es pequeña (13 capturas P1-03); no justifica ant
 
 ## 11. Alcance del PR de implementación TUB-02
 
-El PR futuro debe limitarse a:
+El diseño se implementó en el [PR #258](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258), limitado a:
 
 - Matriz backend de `report.read`.
 - Tipo frontend de permiso para futuras vistas.
 - Router, servicio y esquemas de respuesta de Tubetes.
-- Registro del router.
-- Pruebas sintéticas y automatizadas.
+- Registro del router y respuesta `private, no-store`.
+- Pruebas sintéticas y automatizadas en PostgreSQL 17 efímero.
 
-No incluir:
+No se incluyó:
 - UI final de reportes (TUB-03).
 - PDF ni Excel (TUB-04/TUB-05).
 - Cambios P1-03.
-- Migraciones no justificadas.
+- Migraciones.
 - Cambios de login, sesiones o permisos de captura.
 - Cambios en Calidad Offline, PWA, bóveda, IndexedDB, firmas, grants, cola o sincronización.
-- Datos artificiales en la VPS.
+- Datos artificiales en la VPS ni producción.
 - Despliegue productivo.
 
 ## 12. Puerta de aprobación
 
-Este documento es un diseño técnico, no una autorización de implementación.
+La aprobación de implementación fue otorgada el 27/11/2026. El alcance se ejecutó en el PR #258.
 
-Antes de escribir código se debe aprobar:
-1. Este diseño y su SQL/joins.
-2. La matriz de permisos exacta.
-3. La matriz de pruebas sintéticas PG17.
-4. El alcance cerrado del PR TUB-02.
+El PR #258 está abierto, fuera de Draft y listo para revisión. No se ha fusionado ni desplegado. La autorización de implementación no implica autorización de merge o despliegue.
 
-**Estado final:** `TUB02_DESIGN=PROPOSED`. No se creó código funcional, rama de implementación, migración, captura ficticia en VPS ni despliegue.
+## 13. Resultado de implementación y pruebas (27/11/2026)
+
+**PR:** [#258 — feat(tubetes): implement read-only MP1/MP3 usage report API](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258)  
+**Rama:** `feat/tubetes-utilizados-report`  
+**Base:** `main` en `b84562d9f5b78aab549219e82b4472ad67dadbeb`  
+**HEAD:** `049a563986a0cf384b984d27d91511186c2a89dc`  
+**Estado:** abierto, listo para revisión; no fusionado.
+
+### CI específico TUB-02 — PASS
+
+- 14 pruebas de servicio/API.
+- 7 pruebas de matriz de permisos.
+- 6 pruebas estáticas de alcance sectorial.
+- 17 pruebas de regresión P1-03 y Calidad.
+- 15 pruebas frontend de autenticación/permisos.
+- TypeScript, ESLint y build PASS.
+- PostgreSQL de CI: 17.12.
+
+### Cobertura demostrada
+
+- MP1 y MP3 en una respuesta.
+- Jefatura y Supervisión con permiso y sector BOBINAS.
+- Operación, Calidad, Data Baltrek y Jefatura sin sector: 403.
+- Sin sesión: 401.
+- Estados de Calidad pending, released y rejected incluidos.
+- 23 utilizaciones del mismo código en el mismo día conservadas.
+- Consulta explícitamente READ ONLY.
+- Conteos de capturas, detalles, bobinas, liberaciones y eventos de auditoría sin cambios tras consultar.
+- Respuestas `private, no-store`.
+- Regresión P1-03/Calidad y matriz de permisos aprobadas.
+
+La matriz de workflows de integración disparados por el PR también terminó PASS, incluyendo USR-02/03/04/06 y las regresiones E1-08, E1-10, E2-B, E2-C1, E2-C2 y E2-D2.
+
+### Límites verificados
+
+- Sin migraciones.
+- Sin escrituras en la VPS ni en la base productiva.
+- Sin cambios de login/sesiones.
+- Sin modificaciones a Calidad Offline.
+- Sin cambios de P1-03.
+- Sin UI, PDF ni Excel; permanecen en TUB-03/TUB-04/TUB-05.
+- Sin merge ni despliegue.
+
+**Estado final:** `TUB02_IMPLEMENTATION=PASS_PR_OPEN`.
