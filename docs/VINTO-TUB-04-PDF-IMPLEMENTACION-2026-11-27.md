@@ -1,7 +1,7 @@
 # VINTO — TUB-04: Generación del PDF de Tubetes Utilizados
 
 **Fecha:** 27 de noviembre de 2026  
-**Estado:** implementación en rama; pendiente de CI y revisión.  
+**Estado:** implementación completada; CI PASS; PR #261 listo para revisión, sin merge ni despliegue.  
 **Dependencias:** TUB-02 (#258) y TUB-03 (#259), ambos fusionados.  
 **Alcance:** descarga PDF local desde Bobinas → Seguimiento → Reportes → Tubetes utilizados.
 
@@ -79,6 +79,21 @@ La suite `scripts/tubetes-pdf.test.mjs` cubre:
 - Rechazo de payload inconsistente.
 
 GitHub Actions incorpora las pruebas del generador PDF y lint sobre el componente y módulos modificados, además de TypeScript y build.
+
+### Resultado de CI (27/11/2026)
+
+Workflow: `VINTO Tubetes report TUB-02 (PostgreSQL 17)` — PASS.
+
+- 14/14 pruebas de servicio/API TUB-02.
+- 7/7 pruebas de matriz de permisos.
+- 6/6 pruebas estáticas de alcance sectorial.
+- 17/17 regresiones P1-03 y Calidad.
+- 15/15 regresiones frontend de autenticación/permisos.
+- 6/6 pruebas del contrato frontend del reporte.
+- 8/8 pruebas del generador PDF.
+- TypeScript, ESLint y build PASS.
+
+La primera ejecución detectó la resolución del import en Node y dos reglas React Hooks en el componente. Se corrigieron y la ejecución final del HEAD `131921e98604c9fdb58d66065c7515d0d3b1b934` terminó PASS.
 
 ## 5. Backlog: TUB-05 Excel
 
