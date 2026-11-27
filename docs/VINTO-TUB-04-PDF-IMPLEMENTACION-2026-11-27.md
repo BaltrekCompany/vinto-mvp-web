@@ -12,7 +12,7 @@
 Se utiliza la especificación funcional `Especificacion_funcional_reporte_tubetes_utilizados.pdf`, especialmente:
 
 - Sección 4: agrupación por código, fechas cronológicas y conservación de dos usos el mismo día.
-- Sección 6: Código + Fecha 1 a Fecha 10; fila de continuación `(cont.) cuando un código supera diez usos.
+- Sección 6: Código + Fecha 1 a Fecha 10; fila de continuación `(cont.)` cuando un código supera diez usos.
 - Sección 7: PDF en blanco y negro, cuadrícula compacta, título por máquina, diez columnas de fechas por bloque y paginación automática.
 
 Decisiones aprobadas en TUB-01:
@@ -52,7 +52,7 @@ Cada código se divide en bloques de diez fechas:
 
 La continuación conserva el orden cronológico. Dos fechas iguales permanecen como dos celdas distintas porque representan dos producciones/consumos independientes.
 
-La paginación física se aplica después de expandir los bloques de diez, repite encabezado de máquina y columnas en cada página y mantiene la marca `(cont.) si el bloque continúa en una página posterior.
+La paginación física se aplica después de expandir los bloques de diez, repite encabezado de máquina y columnas en cada página y mantiene la marca `(cont.)` si el bloque continúa en una página posterior.
 
 ## 3. Descarga y almacenamiento
 
