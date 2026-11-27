@@ -413,6 +413,7 @@ Una fila por paquete físico:
 - mother_label_snapshot.
 - source_capture_revision y source_form_version_id.
 - work_order_id y work_order_line_id de la relación de origen.
+- source_work_order_classification_id: UUID de la clasificación production_confirmed vigente al generar.
 - article_version_id exacto de la OT.
 - source_fields_snapshot JSONB con valores P1-07 relevantes.
 - source_operator_user_id y operator_display_name_snapshot.
@@ -422,11 +423,11 @@ Restricciones y garantías:
 
 - UNIQUE(id, report_id), clave referenciada por la FK compuesta de package_child.
 - UNIQUE parcial (report_id, package_number) WHERE removed_at IS NULL.
-- FKs ON DELETE RESTRICT: report_id → rewinding_export_report; mother_capture_id → vinto_txn.capture; mother_bobbin_id → vinto_txn.bobbin (nullable); source_form_version_id → vinto_config.form_version; work_order_id → vinto_txn.work_order; work_order_line_id → vinto_txn.work_order_line; article_version_id → vinto_master.article_version; source_operator_user_id → vinto_master.user (nullable si capture.created_by es NULL); removed_by → vinto_master.user.
+- FKs ON DELETE RESTRICT: report_id → rewinding_export_report; mother_capture_id → vinto_txn.capture; mother_bobbin_id → vinto_txn.bobbin (nullable); source_form_version_id → vinto_config.form_version; work_order_id → vinto_txn.work_order; work_order_line_id → vinto_txn.work_order_line; article_version_id → vinto_master.article_version; source_work_order_classification_id → vinto_txn.rewinding_export_work_order_classification(id, work_order_id) mediante FK compuesta; source_operator_user_id → vinto_master.user (nullable si capture.created_by es NULL); removed_by → vinto_master.user.
 - Una misma mother_capture_id puede repetirse en diferentes paquetes.
 - No se elimina físicamente un paquete. Retirarlo en Borrador fija removed_at/removed_by y conserva sus datos; el evento package_removed se inserta en la misma transacción.
 - Solo se permite INSERT/UPDATE mientras el reporte esté en draft. Al pasar a generated, observed o annulled, todos los campos del paquete quedan inmutables.
-- No se permite cambiar id, report_id ni mother_capture_id de una fila existente; para sustituir una madre se retira el paquete y se crea uno nuevo.
+- No se permite cambiar id, report_id ni mother_capture_id de una fila existente; para sustituir una madre se retira el paquete y se crea uno nuevo. El cambio de clasificación de la OT no altera source_work_order_classification_id ni el snapshot del paquete ya generado.
 
 La retirada lógica permite conservar la trazabilidad de las ediciones del borrador sin mantener paquetes inactivos en la vista previa ni en el PDF.
 
@@ -453,7 +454,7 @@ Restricciones:
 - removed_by REFERENCES vinto_master.user(id) ON DELETE RESTRICT.
 - Slot limitado a A–E; el servicio y una validación diferida comprueban que exista Cría A entre las selecciones activas antes de generar.
 
-No se permite DELETE físico. Una selección se puede retirar lógicamente solo mientras el reporte esté en draft; la fila retirada queda inmutable. Si la misma cría se vuelve a seleccionar en ese borrador, se crea una fila nueva y la unicidad parcial permite el nuevo vínculo activo. Al retirar un paquete, todas sus selecciones activas se retiran en la misma transacción.
+No se permite DELETE físico. Una selección se puede retirar lógicamente solo mientras el reporte esté en draft; la fila retirada queda inmutable. Las columnas id, report_id, package_id, child_bobbin_id, package_slot, source_position y weight_kg_snapshot no se actualizan: para sustituir o mover una cría se retira la selección anterior y se crea una fila nueva. Si la misma cría se vuelve a seleccionar en ese borrador, se crea una fila nueva y la unicidad parcial permite el nuevo vínculo activo. Al retirar un paquete, todas sus selecciones activas se retiran en la misma transacción.
 
 Desde generated, todas las relaciones paquete–cría quedan congeladas. El PDF, snapshot, detalle y reserva se refieren a las selecciones activas exactas que existían al generar.
 
@@ -579,23 +580,24 @@ Ninguna ruta puede invertir el orden: está prohibido bloquear primero el report
 
 ### 9.2 Generación
 
-1. Autenticar usuario y comprobar rewinding_export.create, propietario del borrador y sector.
-2. Validar la clave idempotente y calcular SHA-256 de la solicitud canónica normalizada.
-3. Iniciar transacción READ COMMITTED y tomar un advisory lock transaccional por (actor_id, generation_idempotency_key).
-4. Antes de comprobar que el reporte esté en Borrador, buscar una generación existente por actor + clave:
-   - Misma clave y mismo hash: devolver el mismo report_id, estado actual y PDF original, incluso si el reporte pasó posteriormente a Observado o Anulado.
-   - Misma clave y hash distinto: 409.
+1. Autenticar la sesión y validar sintaxis de report_id, generation_idempotency_key y payload. Leer preliminarmente, sin bloqueos, las madres/OT/máquina del reporte para conocer el contexto de P1-07; esta lectura no autoriza ni reserva.
+2. Calcular SHA-256 de la solicitud canónica normalizada, incluyendo report_id y la selección/orden exactos.
+3. Iniciar transacción READ COMMITTED.
+4. Revalidar la autorización efectiva de Operation.REWINDING_EXPORT_CREATE con require(..., lock=True) dentro de esta misma transacción. El contexto machine/form se obtiene de las capturas fuente persistidas, nunca del cliente. Esto bloquea usuario → perfiles → máquina/sector → concesión P1-07 y hace que una revocación ya confirmada deniegue también un reintento.
+5. Tomar advisory lock transaccional por (actor_id, generation_idempotency_key).
+6. Antes de comprobar que el reporte esté en Borrador, buscar una generación existente por actor + clave:
+   - Misma clave y mismo hash: devolver el mismo report_id, estado actual y PDF original, incluso si el reporte pasó posteriormente a Observado o Anulado. La respuesta solo se entrega si la autorización actual sigue vigente.
+   - Misma clave y hash distinto: 409, sin revelar otros reportes ni sus datos.
    - Sin resultado previo: continuar.
-5. Preleer IDs de OTs, paquetes, crías, madres y máquina sin bloquear; validar estructura básica.
-6. Aplicar el orden global de bloqueos anterior y revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
-7. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
-8. Verificar PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
-9. Validar V01–V08 y reglas D01–D09.
-10. Construir snapshot inmutable con valores exactos de origen, entradas manuales, usuario generador, fecha/hora y warnings.
-11. Renderizar el PDF desde ese snapshot en memoria; comprobar páginas, tamaño y SHA-256.
-12. Cambiar el reporte a Generado, persistiendo snapshot, versión, actor, fecha, generation_idempotency_key y generation_request_sha256.
-13. Insertar la fila PDF y una fila de reserva por cada selección activa paquete–cría.
-14. Insertar evento report_generated y COMMIT. Las restricciones diferibles verifican que PDF y reservas estén completos y coherentes con el estado.
+7. Preleer IDs de OTs, paquetes, crías, madres y máquina sin bloquear; aplicar el orden global de bloqueos de §9.1 y revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
+8. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
+9. Verificar PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
+10. Validar V01–V08 y reglas D01–D09.
+11. Construir snapshot inmutable con valores exactos de origen, source_work_order_classification_id por paquete, entradas manuales, usuario generador, fecha/hora y warnings.
+12. Renderizar el PDF desde ese snapshot en memoria; comprobar páginas, tamaño y SHA-256.
+13. Cambiar el reporte a Generado, persistiendo snapshot, versión, actor, fecha, generation_idempotency_key y generation_request_sha256.
+14. Insertar la fila PDF y una fila de reserva por cada selección activa paquete–cría.
+15. Insertar evento report_generated y COMMIT. Las restricciones diferibles verifican que PDF y reservas estén completos y coherentes con el estado.
 
 Si cualquier paso falla, toda la transacción hace ROLLBACK: no queda PDF parcial, cabecera generada, evento de éxito ni reserva parcial.
 
@@ -632,7 +634,7 @@ La idempotencia de creación de borrador, si se mantiene, tendrá un campo separ
 |---|---|---|---|---|
 | Borrador | Crear reporte parametrizable | Sí, por creador | Ninguna | No definitivo |
 | Generado | Confirmación transaccional | No | Una por cada selección activa | Inmutable |
-| Observado | Corrección autorizada de Calidad o inconsistencia posterior | No | Se mantienen todas | Se conserva |
+| Observado | Evento append-only de una corrección de Calidad autorizada en un flujo separado | No | Se mantienen todas | Se conserva |
 | Anulado | Jefatura anula con motivo | No | Ninguna; reservas históricas liberadas | Se conserva |
 | Descartado | Creador descarta un borrador | No | Ninguna | No existe |
 
@@ -780,7 +782,7 @@ Para historial/detalle/PDF se usará una dependencia que acepte exactamente read
 
 La tabla rewinding_export_work_order_classification conserva decisiones por OT: work_order_id, classification, recorded_by, recorded_at, reason y supersedes_id. Sus FKs usan ON DELETE RESTRICT; no admite UPDATE/DELETE/TRUNCATE. La decisión vigente es la de mayor sequence_no.
 
-La ausencia de fila significa desconocido y deniega la elegibilidad. Solo JEFATURA con rewinding_export.classify_source y alcance REBOBINADO puede registrar una clasificación, con motivo obligatorio. La operación bloquea work_order FOR UPDATE y serializa con generación (FOR SHARE). Cambiar una OT a QA exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos. qa_retired y archived_at siguen siendo denegaciones incluso si la última clasificación dice production_confirmed.
+La ausencia de fila significa desconocido y deniega la elegibilidad. La operación de clasificación revalida dentro de la misma transacción usuario activo FOR SHARE → user_profile/profile activos FOR SHARE → permiso rewinding_export.classify_source y perfil JEFATURA → user_sector REBOBINADO activo/operativo; luego bloquea work_order FOR UPDATE y serializa con generación (FOR SHARE). El bloqueo de user sincroniza con revoke_sector, que toma FOR NO KEY UPDATE sobre esa fila antes de eliminar la concesión. La clasificación no exige concesión máquina/formulario. Cambiar una OT a QA exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos. qa_retired y archived_at siguen siendo denegaciones incluso si la última clasificación dice production_confirmed.
 
 ### 12.5 Aprovisionamiento explícito de REBOBINADO
 
@@ -804,7 +806,7 @@ SUPERVISION y JEFATURA necesitan el permiso funcional correspondiente y la conce
 | V04 | Cría repetida en dos paquetes | 422 |
 | V05 | Cría pending, rejected, sin evaluación o ya reservada | 409 si cambió/disponibilidad; 422 si payload inválido |
 | V06 | Cría no pertenece a la madre del paquete | 422 |
-| V07 | Mezcla de PV, producto, formato, destino o máquina | 422; Formato queda pendiente de D04 |
+| V07 | Mezcla de PV, producto, Formato, Cortes, destino o máquina | 422; Formato/Cortes se comparan por sus valores crudos de origen, sin conversión |
 | V08 | Cambio de estado entre selección y generación | 409 |
 
 ### Validaciones adicionales
@@ -946,7 +948,7 @@ La descarga no consulta los valores productivos actuales para reconstruir el doc
 - Intento de cambiar snapshot después de Generado: rechazado por trigger.
 - PDF y snapshot conservados al pasar a Observado y Anulado.
 - Restauración de backup en entorno aislado y comparación SHA-256 del PDF descargado con el hash original.
-- No se genera con Formato/Corte sin homologación D04.
+- Formato/Cortes se imprimen con la regla literal D04; se prueba que no se agreguen unidades ni códigos derivados.
 
 ### Permisos
 
@@ -1045,14 +1047,14 @@ La clasificación positiva de OTs, la lista de usuarios/sectores y las concesion
 - No modifica Calidad Offline.
 - No despliega ni fusiona código funcional.
 
-**Siguiente acción:** revisar y aprobar el diseño RBE-02 y resolver las preguntas funcionales de la sección 18. Después se autoriza RBE-03/RBE-04 mediante PRs independientes.
+**Siguiente acción:** completar la tercera revisión técnica y, si no quedan observaciones bloqueantes, aprobar RBE-02. Después se separan los PR de implementación RBE-03 (interfaz), RBE-04 (backend, persistencia, reservas y permisos) y RBE-05 (PDF e historial), con puertas independientes y sin despliegue hasta QA.
 
 
 ---
 
-## 20. Registro de revisión técnica — 27/11/2026
+## 20. Registro de revisiones técnicas — 27/11/2026
 
-Se incorporan las siete observaciones de la revisión del PR #274, sin modificar código ni ejecutar migraciones:
+Se incorporaron las siete observaciones de la primera revisión y las cinco correcciones bloqueantes más dos precisiones de la segunda revisión, sin modificar código ni ejecutar migraciones:
 
 | Observación | Resolución documental |
 |---|---|
@@ -1069,6 +1071,6 @@ Se incorporan las siete observaciones de la revisión del PR #274, sin modificar
 - Solo se modifica este documento de diseño.
 - No se modifica código, pruebas, migraciones, permisos ni datos.
 - No se realizan consultas ni cambios en VPS/PostgreSQL.
-- El Issue #275 debe actualizarse con las siete resoluciones de la sección 18.
-- PR #274 permanece Draft y pendiente de nueva revisión del usuario.
+- El Issue #275 fue actualizado con las siete resoluciones de la sección 18.
+- PR #274 permanece Draft hasta completar la tercera revisión y aprobar RBE-02.
 - RBE-03, RBE-04, RBE-05 y RBE-06 no se inician ni se consideran autorizados.
