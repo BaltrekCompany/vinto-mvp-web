@@ -176,8 +176,8 @@ class UsernameTests(unittest.TestCase):
 
 class PermissionMatrixTests(unittest.TestCase):
     EXPECTED = {
-        "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read"},
-        "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read"},
+        "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read", "report.read"},
+        "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read", "report.read"},
         "OPERACION": {"work_order.read", "assignment.read", "production.capture", "catalog.read"},
         "CALIDAD": {"work_order.read", "assignment.read", "quality.capture", "quality.release", "catalog.read"},
         "DATA_BALTREK": {"work_order.read", "assignment.read", "catalog.read", "catalog.manage", "user.manage"},
@@ -191,7 +191,7 @@ class PermissionMatrixTests(unittest.TestCase):
     def test_canonical_permissions(self):
         self.assertEqual(set(permissions.ALL_PERMISSIONS), {
             "work_order.read", "work_order.manage", "assignment.read", "assignment.manage", "production.capture",
-            "quality.capture", "quality.release", "catalog.read", "catalog.manage", "user.manage"})
+            "quality.capture", "quality.release", "catalog.read", "report.read", "catalog.manage", "user.manage"})
 
     def test_data_baltrek_cannot_operate_the_plant(self):
         for permission in ("work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release"):
