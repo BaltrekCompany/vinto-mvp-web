@@ -155,14 +155,14 @@ class IsolatedDatabaseCase(DatabaseCase):
 # ---------------------------------------------------------------------------------------------------
 
 class PermissionMatrixRegressionTests(unittest.TestCase):
-    """G.12-B2 no debe alterar el modelo de permisos existente de los cinco perfiles (sección H.5)."""
+    """Matriz de permisos aprobada: TUB-02 añade report.read solo a Jefatura y Supervisión."""
 
-    def test_profile_permissions_unchanged(self):
+    def test_profile_permissions_match_the_approved_matrix(self):
         self.assertEqual(permissions.PROFILE_PERMISSIONS, {
             permissions.JEFATURA: frozenset({permissions.WORK_ORDER_READ, permissions.WORK_ORDER_MANAGE,
-                                             permissions.ASSIGNMENT_READ, permissions.CATALOG_READ}),
+                                             permissions.ASSIGNMENT_READ, permissions.CATALOG_READ, permissions.REPORT_READ}),
             permissions.SUPERVISION: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
-                                                permissions.ASSIGNMENT_MANAGE, permissions.CATALOG_READ}),
+                                                permissions.ASSIGNMENT_MANAGE, permissions.CATALOG_READ, permissions.REPORT_READ}),
             permissions.OPERACION: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
                                               permissions.PRODUCTION_CAPTURE, permissions.CATALOG_READ}),
             permissions.CALIDAD: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
