@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ConversionOfflinePreparation } from "@/components/vinto/foff-conversion-preparation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,6 +163,12 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
         {!canCapture && <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
             Tu perfil puede consultar este frente, pero no capturar en él.
         </div>}
+        {code === "CONVERSION" && canCapture && state.kind === "check" && state.check.ok &&
+         snapshot !== null && selectedContextAllowed(snapshot,view.status === "ready" ? view.data : {kind:"single",active:{assignment:null,current_shift:null,stale:null}},state.check.context.assignmentId) &&
+         <ConversionOfflinePreparation key={scope+":"+machine.code+":"+state.check.context.assignmentId}
+           assignmentId={state.check.context.assignmentId} machineCode={machine.code}
+           offers={forms.filter(x=>x.form.eligible===true&&x.screen!==null)
+             .map(x=>({code:x.form.code,name:x.form.name,version:x.form.version_number}))}/>}
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{forms.length === 0
             ? <p className="rounded-2xl border bg-white p-5 text-sm text-slate-700 md:col-span-2 xl:col-span-3">
                 El backend no publica formularios centrales para esta máquina.</p>
