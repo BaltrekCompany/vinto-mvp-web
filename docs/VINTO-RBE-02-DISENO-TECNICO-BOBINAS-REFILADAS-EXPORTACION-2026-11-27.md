@@ -2,7 +2,7 @@
 ## Diseño técnico detallado: Bobinas Refiladas para Exportación
 
 **Fecha:** 27 de noviembre de 2026  
-**Estado:** diseño documentado; pendiente de revisión y aprobación.  
+**Estado:** diseño documentado; siete observaciones de revisión técnica incorporadas el 27/11/2026; pendiente de nueva revisión y aprobación.  
 **Tipo de cambio:** solo documentación. No incluye código, migraciones, permisos, escrituras en PostgreSQL ni despliegue.  
 **Base de diseño:** especificación funcional de seis páginas, resultado RBE-01 y decisiones D01–D11 aprobadas por el usuario.
 
@@ -332,7 +332,8 @@ Las rutas son un contrato de diseño, no código ya implementado. Los nombres fi
 - 404: recurso inexistente o fuera del alcance; no revelar UUIDs ajenos.
 - 409: cría reservada, estado de Calidad cambiado, borrador ya generado, conflicto de concurrencia o idempotencia incompatible.
 - 422: campos obligatorios vacíos, paquete inválido, cría repetida, madre/cría no relacionada o contexto inconsistente.
-- 503: base o servicio no disponible.
+- 413: PDF supera el límite técnico de tamaño/páginas.
+- 503: base o servicio no disponible o integridad del PDF no verificable.
 
 Los errores públicos no deben incluir SQL, valores fuente sensibles ni razones internas del motor de autorización.
 
@@ -379,11 +380,13 @@ Una fila por paquete físico:
 - source_fields_snapshot JSONB con valores P1-07 relevantes.
 - source_operator_user_id y operator_display_name_snapshot.
 
-Una misma mother_capture_id puede repetirse en diferentes paquetes.
+Una misma **mother_capture_id** puede repetirse en diferentes paquetes.
+
+La tabla debe declarar **UNIQUE (id, report_id)**. Esta clave compuesta permite que la tabla de crías referencie el par **(package_id, report_id)** y evita que una cría declare un reporte distinto del reporte real de su paquete.
 
 ### 8.3 Crías por paquete: rewinding_export_package_child
 
-Una fila por cría seleccionada:
+Una fila por cría seleccionada dentro de un paquete:
 
 - id UUID.
 - report_id.
@@ -392,35 +395,71 @@ Una fila por cría seleccionada:
 - package_slot A–E.
 - source_position.
 - weight_kg_snapshot.
-- reservation_active.
-- reserved_at.
+
+Restricciones:
+
+- UNIQUE(package_id, package_slot).
+- UNIQUE(report_id, child_bobbin_id): una cría no se repite en dos paquetes del mismo reporte.
+- UNIQUE(id, child_bobbin_id): clave referenciada por la tabla de reservas.
+- FOREIGN KEY (package_id, report_id) REFERENCES rewinding_export_package(id, report_id) ON DELETE RESTRICT: integridad compuesta paquete–reporte.
+- FOREIGN KEY (child_bobbin_id) REFERENCES vinto_txn.bobbin(id) ON DELETE RESTRICT.
+- Slot limitado a A–E; el servicio y una validación diferida comprueban que exista Cría A antes de generar.
+
+La misma madre puede aparecer en varios paquetes. La misma cría no puede repetirse dentro del reporte. Las columnas de reserva no se almacenan aquí: la disponibilidad no se representa mediante un booleano duplicado.
+
+### 8.3.1 Reservas: rewinding_export_reservation
+
+La reserva se modela en una tabla independiente para que exista una sola fuente de verdad y no dependa de mantener sincronizado el estado de la cabecera.
+
+Campos:
+
+- id UUID.
+- package_child_id.
+- child_bobbin_id.
+- reserved_at / reserved_by.
 - released_at / released_by / release_reason.
 
-Restricciones propuestas:
-- UNIQUE(package_id, package_slot).
-- UNIQUE(report_id, child_bobbin_id): una cría no se repite dentro del mismo reporte.
-- UNIQUE parcial global sobre child_bobbin_id WHERE reservation_active = true: una cría no puede estar reservada por dos reportes vigentes.
-- FK a bobbin con ON DELETE RESTRICT.
-- Slot A–E; el servicio valida que A exista antes de generar.
-- La reserva está inactiva durante Borrador y activa solo al confirmar Generado.
+Restricciones y garantías:
+
+- UNIQUE(package_child_id): una fila histórica de reserva por relación paquete–cría.
+- FK compuesta (package_child_id, child_bobbin_id) hacia rewinding_export_package_child(id, child_bobbin_id), ON DELETE RESTRICT.
+- Índice UNIQUE parcial global sobre child_bobbin_id WHERE released_at IS NULL: una cría no puede tener dos reservas activas, aunque los reportes sean distintos.
+- CHECK ((released_at IS NULL) = (released_by IS NULL)).
+- Si existe released_at, released_by y release_reason son obligatorios; el motivo no puede estar vacío.
+- Una reserva se inserta únicamente dentro de la transacción que genera el reporte.
+- La liberación se realiza una sola vez, en la misma transacción que anula el reporte; no se borra la fila.
+- Un trigger impide DELETE/TRUNCATE, cambios de package_child_id, child_bobbin_id, reserved_at o reserved_by, y una segunda modificación de los campos de liberación.
+- Un trigger de restricción diferible verifica al COMMIT la correspondencia entre estado y reservas: Borrador = cero reservas; Generado/Observado = una reserva activa por cada cría del reporte; Anulado = cero reservas activas.
+
+La reserva activa se determina exclusivamente por la existencia de una fila con released_at IS NULL. El índice único parcial es la última barrera ante dos generaciones concurrentes.
 
 ### 8.4 PDF inmutable: rewinding_export_pdf
 
 Una fila por reporte generado:
 
-- report_id.
+- report_id como PK y FK al reporte.
 - file_name.
 - mime_type application/pdf.
 - pdf_bytes BYTEA.
-- sha256 del contenido.
+- sha256 en hexadecimal minúsculo (64 caracteres).
+- size_bytes.
+- page_count.
 - generated_at.
-- tamaño en bytes.
+
+Integridad y límites:
+
+- CHECK (size_bytes = octet_length(pdf_bytes)).
+- CHECK (sha256 ~ '^[0-9a-f]{64}$').
+- El backend calcula SHA-256 sobre los bytes exactos que almacena; antes de entregar una descarga vuelve a calcularlo y compara el resultado con el valor persistido. Una discrepancia impide entregar el archivo y se registra como incidente de integridad.
+- Límites técnicos iniciales propuestos para RBE-05: máximo 25 MiB y 100 páginas por PDF. No son un límite funcional de paquetes ni sustituyen la paginación de veinte paquetes por página de D08. Si se excede un límite, la generación falla explícitamente (413/422), sin truncar el PDF ni dejar cabecera, reservas o eventos parciales. RBE-05 medirá y documentará estos límites antes del rollout.
+- La tabla recibe REVOKE ALL FROM PUBLIC y, si existe vinto_app, únicamente GRANT SELECT, INSERT. No recibe UPDATE ni DELETE; un trigger rechaza UPDATE/DELETE/TRUNCATE incluso ante una concesión accidental. El PDF no se reemplaza ni se sobrescribe.
+- El snapshot de rewinding_export_report se congela al pasar a Generado mediante trigger. El PDF y el snapshot se insertan en la misma transacción que la generación y las reservas.
 
 Se recomienda guardar el PDF binario en PostgreSQL junto con el snapshot. No se encontró un servicio de almacenamiento de documentos existente en el backend; BYTEA evita depender de una ruta local o almacenamiento externo y permite incluir el documento en el backup de la base.
 
 El PDF se genera en backend desde el snapshot validado. El endpoint de descarga devuelve exactamente los bytes guardados; no reconstruye el PDF con datos productivos actuales.
 
-El backend actual no incluye una biblioteca PDF en requirements.txt. RBE-05 deberá seleccionar y fijar una dependencia de renderizado (por ejemplo ReportLab) tras validar compatibilidad, fuentes y salida A4. No se agrega ahora.
+El backend actual no incluye una biblioteca PDF en requirements.txt. RBE-05 deberá seleccionar y fijar una dependencia de renderizado (por ejemplo ReportLab) tras validar compatibilidad, fuentes, límites y salida A4. No se agrega ahora.
 
 ### 8.5 Eventos: rewinding_export_event
 
@@ -444,7 +483,7 @@ Eventos mínimos:
 - report_annulled.
 - draft_discarded.
 
-Los eventos no reemplazan el trigger de auditoría genérico del proyecto; agregan una cronología funcional legible.
+Los eventos no reemplazan el trigger de auditoría genérico del proyecto; agregan una cronología funcional legible. La tabla será append-only: vinto_app tendrá INSERT/SELECT, sin UPDATE/DELETE/TRUNCATE, con trigger de inmutabilidad.
 
 ### 8.6 Índices y reglas de integridad
 
@@ -454,81 +493,117 @@ Los eventos no reemplazan el trigger de auditoría genérico del proyecto; agreg
 - Paquetes por report_id + package_number.
 - Paquetes por mother_capture_id.
 - Crías por report_id.
-- Índice único parcial de reserva activa por child_bobbin_id.
-- Índice único de idempotencia por created_by + idempotency_key.
+- Clave única compuesta (id, report_id) en paquete y FK compuesta (package_id, report_id) desde package_child.
+- Índice único parcial de reservas activas por child_bobbin_id en rewinding_export_reservation.
+- Índice único por package_child_id en la tabla de reservas.
+- Índice único parcial de idempotencia por (generated_by, generation_idempotency_key) cuando la clave no sea NULL.
 - FKs ON DELETE RESTRICT para conservar trazabilidad.
-- Prohibir DELETE/TRUNCATE de reportes generados, PDFs y eventos.
+- Prohibir DELETE/TRUNCATE de reportes, paquetes confirmados, crías de reportes generados, reservas, PDFs y eventos.
 - Snapshot y bytes PDF inmutables después de generar.
+- Restricciones diferibles para comprobar que el estado final del reporte y el conjunto de reservas coincidan al COMMIT.
 
 La migración será aditiva. En el main revisado el último archivo es 0031; el siguiente número se confirmará al sincronizar la rama de implementación, no se fija ahora.
 
----
+## 9. Transacción de generación, orden de bloqueos e idempotencia
 
-## 9. Transacción de generación y concurrencia
+La operación Generate confirma cabecera, paquetes, relación paquete–cría, snapshot, PDF, reservas y eventos en una sola transacción. No puede existir un reporte generado sin PDF íntegro ni reservas completas.
 
-La operación Generate es el punto crítico. Debe confirmar cabecera, paquetes, relación paquete-cría, snapshot, PDF y reservas en una sola transacción.
+### 9.1 Orden global y obligatorio de bloqueos
 
-### Secuencia propuesta
+Antes de abrir la transacción se pueden leer IDs sin bloquear para conocer las crías, madres y máquina involucradas. Esa lectura es preliminar y no autoriza ni reserva nada. La operación definitiva usa PostgreSQL READ COMMITTED y respeta este orden:
 
-1. Autenticar usuario y comprobar permiso de creación.
-2. Verificar que el reporte existe y está en Borrador, pertenece al creador y está dentro del sector/máquina autorizados.
-3. Leer IDs seleccionados y validar estructura: paquete, madre, Cría A, máximo cinco y no repetición.
-4. Iniciar transacción READ COMMITTED.
-5. Resolver y bloquear filas de quality_release de todas las crías en orden estable por bobbin_id; todas deben seguir released.
-6. Bloquear las filas de bobbin correspondientes y verificar identidad, posición, peso, madre y máquina.
-7. Bloquear/leer las capturas madre y relaciones de OT necesarias; verificar PV, artículo, destino, máquina, OT no archivada y no QA.
-8. Bloquear el reporte Borrador.
-9. Releer el estado completo y comprobar que coincide con la selección/snapshot preliminar.
-10. Validar V01–V08 y reglas D01–D09.
-11. Construir snapshot inmutable con valores exactos de origen, entradas manuales, usuario generador, fecha/hora y warnings.
-12. Generar PDF desde ese snapshot dentro de la operación controlada.
-13. Insertar report_snapshot y PDF con SHA-256.
-14. Activar reservation_active para todas las crías seleccionadas.
-15. Cambiar el reporte a Generado, registrar actor/fecha y evento.
-16. COMMIT.
+1. Para generación, ejecutar la autorización efectiva de Operation.REWINDING_EXPORT_CREATE con require(..., lock=True) dentro de la misma transacción. El motor toma primero sus bloqueos propios: usuario → perfiles activos → máquina y sector → concesión exacta máquina/formulario.
+2. Bloquear filas quality_release de todas las crías, ordenadas por bobbin_id.
+3. Bloquear filas bobbin de las crías, ordenadas por UUID.
+4. Bloquear capturas fuente de madres, ordenadas por UUID.
+5. Bloquear la fila del reporte con FOR UPDATE.
+6. Bloquear paquetes, ordenados por package_number, id.
+7. Bloquear relaciones paquete–cría, ordenadas por child_bobbin_id, id.
+8. Bloquear reservas existentes, ordenadas por child_bobbin_id, id.
+9. Después de cada espera, releer bajo READ COMMITTED estado de Calidad, relaciones, pertenencia, permisos aplicables, estado del reporte y reservas. La lectura preliminar nunca sustituye esta revalidación.
 
-Si cualquier paso falla, toda la transacción hace ROLLBACK: no queda PDF parcial, cabecera generada ni reserva parcial.
+Ninguna ruta puede invertir el orden: está prohibido bloquear primero el reporte y después quality_release.
 
-### Protección ante concurrencia
+### 9.2 Generación
 
-- El índice único parcial de reserva activa es la última barrera, independiente del frontend.
-- Los bloqueos de quality_release se toman en orden estable por UUID.
-- Todas las rutas que generen, anulen o actualicen el estado de reservas respetan el mismo orden de bloqueos.
-- Una carrera por la misma cría termina en 409.
-- No se usa solo una consulta previa de disponibilidad como garantía.
-- El endpoint usa idempotency_key; un reintento idéntico devuelve el reporte ya generado y el mismo PDF. Una clave repetida con payload diferente devuelve 409.
+1. Autenticar usuario y comprobar rewinding_export.create, propietario del borrador y sector.
+2. Preleer IDs de paquetes, crías, madres y máquina sin bloquear; validar estructura básica.
+3. Iniciar transacción READ COMMITTED y aplicar el orden global anterior.
+4. Revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
+5. Comprobar que todas las crías siguen released, tienen peso/posición válidos, pertenecen a sus madres y no tienen reserva activa.
+6. Verificar OT, PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
+7. Validar V01–V08 y reglas D01–D09.
+8. Construir snapshot inmutable con valores exactos de origen, entradas manuales, usuario generador, fecha/hora y warnings.
+9. Renderizar el PDF desde ese snapshot en memoria; comprobar páginas, tamaño y SHA-256.
+10. Cambiar el reporte a Generado, persistiendo snapshot, versión, actor, fecha, clave idempotente y hash de solicitud.
+11. Insertar la fila PDF y una fila de reserva por cada relación paquete–cría.
+12. Insertar evento report_generated y COMMIT. Las restricciones diferibles verifican que PDF y reservas estén completos y coherentes con el estado.
 
-Los borradores no reservan crías. Dos borradores pueden mostrar temporalmente la misma cría; el primero que genera la reserva. El segundo recibe 409 y debe refrescar su selección.
+Si cualquier paso falla, toda la transacción hace ROLLBACK: no queda PDF parcial, cabecera generada, evento de éxito ni reserva parcial.
 
----
+### 9.3 Anulación y corrección de Calidad
 
-## 10. Estados y ciclo de vida
+La anulación debe usar el mismo orden de datos: preleer IDs sin bloquear → quality_release ordenadas → bobbin ordenadas → capturas fuente ordenadas → reporte → paquetes → paquete–cría → reservas. Solo después de revalidar el estado se cambia a Anulado y se liberan todas las reservas en esa misma transacción. El motivo y actor de liberación deben coincidir con la anulación registrada.
 
-| Estado | Entrada | Edición | Reserva | PDF |
+Una futura corrección autorizada de Calidad que cambie el estado de una cría debe bloquear primero quality_release, luego bobbin, capturas fuente, reporte y sus relaciones. Marca como Observados los reportes afectados, pero mantiene sus reservas activas y conserva PDF/snapshot. Nunca debe bloquear el reporte antes de la fila de Calidad.
+
+Los endpoints de edición de Borrador pueden bloquear reporte/paquetes para serializar sus propias modificaciones, pero no pueden adquirir después bloqueos de quality_release, bobbin o capturas fuente. La disponibilidad consultada durante un borrador es informativa; la generación hace toda la revalidación con bloqueos.
+
+En cada espera se relee el estado bajo READ COMMITTED. Añadir pruebas de dos conexiones para generate-vs-generate, generate-vs-annul y generate-vs-quality-correction.
+
+### 9.4 Idempotencia persistente de generación
+
+La cabecera conserva:
+
+- generation_idempotency_key: clave opaca/UUID aportada por el cliente para la operación de generación.
+- generation_request_sha256: SHA-256 de la solicitud canónica normalizada.
+
+La huella incluye como mínimo report_id, orden de paquetes, madres, UUIDs de crías y posiciones A–E, camión, orden, observaciones y versión del snapshot. No incluye fecha/hora de servidor ni bytes PDF, que se generan una sola vez.
+
+Se aplica unicidad por (generated_by, generation_idempotency_key):
+
+- Misma clave y misma huella: devolver el mismo report_id y los mismos bytes PDF almacenados; no generar ni reservar otra vez.
+- Misma clave y huella distinta: responder 409.
+- Colisión concurrente de índice único (23505): hacer rollback de la transacción perdedora, consultar el resultado confirmado en una transacción nueva y comparar la huella. Si coincide, devolver el resultado existente; si no, responder 409. Nunca repetir generación ni reservas.
+
+La idempotencia de creación de borrador, si se mantiene, tendrá un campo separado (draft_creation_idempotency_key) y no sustituirá la clave de generación.
+
+## 10. Estados, transiciones y coherencia de reservas
+
+| Estado | Entrada | Edición | Reservas activas | PDF |
 |---|---|---|---|---|
-| Borrador | Crear reporte parametrizable | Sí, por creador | No | No definitivo |
-| Generado | Confirmación transaccional | No | Sí | Inmutable |
-| Observado | Cambio de Calidad o inconsistencia posterior | No | Sí; no reutilizar crías | Se conserva |
-| Anulado | Jefatura anula con motivo | No | Se libera | Se conserva |
+| Borrador | Crear reporte parametrizable | Sí, por creador | Ninguna | No definitivo |
+| Generado | Confirmación transaccional | No | Una por cada cría del reporte | Inmutable |
+| Observado | Cambio autorizado de Calidad o inconsistencia posterior | No | Se mantienen todas | Se conserva |
+| Anulado | Jefatura anula con motivo | No | Ninguna; reservas históricas liberadas | Se conserva |
 
-### Transiciones
+La tabla rewinding_export_reservation es la única fuente de verdad de las reservas. No existe un booleano de reserva duplicado en package_child ni otro campo que pueda divergir del estado del reporte.
 
-- Borrador → Generado: solo mediante la transacción de generación.
-- Borrador → descarte: creador puede descartar su borrador; no hay reservas que liberar.
-- Generado → Observado: evento de sistema cuando una cría vinculada deja de cumplir el estado de Calidad o se detecta una inconsistencia de origen definida como observación.
-- Generado → Anulado: Jefatura con motivo obligatorio.
-- Observado → Anulado: Jefatura con motivo obligatorio.
-- Anulado: estado terminal; no se reactiva ni se modifica el PDF.
+### Transiciones permitidas y guardas de base de datos
+
+- Borrador → Generado: solo en la transacción de generación; exige snapshot, clave/huella idempotente, PDF íntegro y una reserva activa por cada cría al COMMIT.
+- Generado → Observado: solo por el proceso autorizado de observación; conserva snapshot, PDF y todas las reservas activas.
+- Generado → Anulado: Jefatura, motivo obligatorio; libera todas las reservas en la misma transacción.
+- Observado → Anulado: Jefatura, motivo obligatorio; libera todas las reservas en la misma transacción.
+- Anulado: terminal; no se reactiva ni se modifica el PDF.
+
+Un trigger de cabecera valida las transiciones y congela los campos de negocio, report_snapshot, snapshot_version, generated_by y generated_at desde Generado. Otro trigger impide insertar reservas salvo para un reporte Generado, y permite liberar una reserva una sola vez únicamente cuando su reporte está siendo Anulado y el actor/motivo coinciden con la anulación. Las reservas y los eventos no se borran.
+
+Una restricción diferible comprobada al COMMIT impone las invariantes cruzadas:
+
+- Borrador: cero reservas.
+- Generado/Observado: exactamente una reserva activa por cada package_child y un PDF asociado.
+- Anulado: cero reservas activas; cada reserva anterior conserva fecha, actor y motivo de liberación; el PDF permanece asociado.
+
+La generación actualiza estado, snapshot, PDF, reservas y evento en una sola transacción; la anulación actualiza estado, reservas y evento en una sola transacción. Un fallo de cualquier guarda revierte todo.
 
 ### Observado y Calidad
 
 La especificación indica que si una cría pasa a Rechazada el reporte queda Observado y la cría no puede reutilizarse.
 
-La API actual de Calidad solo permite pending → released/rejected y rechaza una segunda decisión. No se encontró una transición ordinaria released → rejected. El diseño propone un trigger de base de datos para capturar una corrección futura autorizada que cambie released a rejected y marcar los reportes vigentes como Observados. La forma autorizada de corregir una decisión ya liberada debe confirmarse con Functional/Calidad antes de implementar ese trigger.
+La API actual de Calidad solo permite pending → released/rejected y rechaza una segunda decisión. No se encontró una transición ordinaria released → rejected. El diseño propone que una corrección futura autorizada bloquee primero las filas de Calidad y, dentro de la misma transacción, marque como Observados los reportes afectados. La forma autorizada de corregir una decisión ya liberada debe confirmarse con Functional/Calidad antes de implementar ese flujo.
 
-Un reporte Observado mantiene las reservas hasta que Jefatura lo anule. La anulación libera la reserva del reporte, pero una cría cuyo estado actual sea rejected continúa excluida por D01.
-
----
+Un reporte Observado mantiene todas sus reservas hasta que Jefatura lo anule. La anulación conserva el PDF/historial y libera la reserva; una cría cuyo estado actual sea rejected continúa excluida por D01.
 
 ## 11. PDF y vista previa
 
@@ -592,32 +667,64 @@ No es una captura nueva. No modifica Producción ni Calidad.
 
 ---
 
-## 12. Permisos y alcance
+## 12. Permisos, motor de autorización y concesiones
 
-No reutilizar el permiso general report.read para ampliar acceso.
+No reutilizar el permiso general report.read para ampliar acceso. Los nombres de permiso deben incorporarse expresamente a ALL_PERMISSIONS y PROFILE_PERMISSIONS en backend/app/auth/permissions.py. Hoy no existen allí; require_permission() lanza ValueError al definir una ruta si recibe un permiso desconocido.
 
-Permisos específicos propuestos:
+### 12.1 Permisos específicos y perfiles
 
-| Permiso | OPERACION | SUPERVISION | JEFATURA |
-|---|---:|---:|---:|
-| rewinding_export.create | Sí | No por defecto | No por defecto |
-| rewinding_export.read_own | Sí | No necesario | No necesario |
-| rewinding_export.read_sector | No | Sí | Sí |
-| rewinding_export.annul | No | No | Sí |
+Permisos nuevos:
 
-Reglas:
-- OPERACION genera y consulta únicamente reportes creados por su usuario.
-- OPERACION necesita sector REBOBINADO y concesión activa para la máquina + formulario P1-07.
-- SUPERVISION consulta historial dentro del sector REBOBINADO.
-- JEFATURA consulta historial del sector y anula reportes con motivo.
-- CALIDAD no genera ni anula; sus decisiones siguen en el módulo de Calidad.
-- DATA_BALTREK no recibe permisos funcionales por ser administrador técnico.
-- Ningún perfil omite el alcance de sector.
-- La autorización se verifica en backend en cada endpoint, no solo ocultando botones.
+- rewinding_export.create.
+- rewinding_export.read_own.
+- rewinding_export.read_sector.
+- rewinding_export.annul.
 
-La implementación debe extender la matriz de permisos y el motor de autorización efectivo con una operación dedicada de exportación. No se concede report.read global ni se amplían permisos de Tubetes.
+Matriz explícita:
 
----
+| Permiso | OPERACION | SUPERVISION | JEFATURA | CALIDAD | DATA_BALTREK |
+|---|---:|---:|---:|---:|---:|
+| rewinding_export.create | Sí | No | No | No | No |
+| rewinding_export.read_own | Sí | No | No | No | No |
+| rewinding_export.read_sector | No | Sí | Sí | No | No |
+| rewinding_export.annul | No | No | Sí | No | No |
+
+No heredar permisos por ser administrador técnico ni ampliar permisos de Calidad, Tubetes o reportes existentes.
+
+### 12.2 Creación: operación dedicada P1-07
+
+Añadir Operation.REWINDING_EXPORT_CREATE y su OperationPolicy específica:
+
+- permiso funcional: rewinding_export.create.
+- área del formulario: production.
+- formulario admitido: exclusivamente VINTO-P1-07.
+- contexto: máquina de la captura madre, resuelta por backend.
+
+P1-07 ya figura en capture_service.CENTRAL_FORM_CODES y sus versiones publicadas se relacionan con las máquinas elegibles. La política nueva no modifica ni amplía las políticas de captura existentes.
+
+Los endpoints de selección de madres/crías consultan la elegibilidad con authorize(..., lock=False) para ocultar opciones que el usuario no puede utilizar. La generación final ejecuta require(..., lock=True) dentro de la misma transacción, antes de bloquear las filas de Calidad y los datos RBE. Debe comprobar perfil activo, sector concedido y operativo, máquina/formulario activos, versión publicada vigente y concesión exacta usuario–máquina–P1-07. Esta operación se exige siempre para RBE; no depende de los modos heredados off/observe/enforce de las compuertas de otras capturas.
+
+Crear/editar un borrador exige rewinding_export.create, propiedad del borrador y alcance sectorial. La selección de madre se filtra por la operación dedicada; la confirmación vuelve a autorizar y revalidar con bloqueos.
+
+### 12.3 Consulta y anulación: permiso + sector, sin concesión máquina/formulario
+
+- read_own: OPERACION consulta únicamente reportes cuyo created_by = user.user_id y que pertenecen al sector REBOBINADO.
+- read_sector: SUPERVISION y JEFATURA consultan el historial del sector REBOBINADO.
+- annul: solo JEFATURA; exige motivo y alcance REBOBINADO.
+
+Historial, detalle y descarga PDF aplican el mismo filtro de propietario/sector en cada endpoint, no solo en el listado. Un UUID fuera de alcance responde como recurso inexistente (404), sin revelar su existencia. La anulación verifica rewinding_export.annul y el sector, pero no exige concesión máquina/formulario P1-07: esa concesión limita la creación de Operación, no la consulta o gestión de Supervisión/Jefatura.
+
+Para historial/detalle/PDF se usará una dependencia que acepte exactamente read_own o read_sector según el perfil, y que aplique el filtro correspondiente en SQL. No se sustituye por report.read.
+
+### 12.4 Aprovisionamiento explícito de REBOBINADO
+
+user_sector es una concesión explícita. Que REBOBINADO esté habilitado en operational_sector_codes() no concede acceso a ningún usuario. La migración 0006 hizo backfill de BOBINAS, no de REBOBINADO; scoped_sector_codes() devuelve alcance vacío cuando falta la concesión.
+
+Antes del rollout debe existir una lista aprobada de usuarios y concederse REBOBINADO de forma individual y auditada mediante el mecanismo existente (grant_sector). No hacer backfill masivo por perfil.
+
+Además, cada operador autorizado necesita una concesión activa exacta en user_machine_form_grant para su usuario, máquina y formulario VINTO-P1-07. Es una concesión independiente, explícita y revocable; no se deriva del perfil ni de la concesión de sector. No concederla masivamente a todos los usuarios OPERACION.
+
+SUPERVISION y JEFATURA necesitan el permiso funcional correspondiente y la concesión de sector REBOBINADO; no necesitan una concesión máquina/formulario. Ningún perfil omite el alcance de sector.
 
 ## 13. Validaciones
 
@@ -675,13 +782,17 @@ No corregir ni reemplazar valores. Functional debe indicar cuáles warnings son 
 
 ## 15. Historial y auditoría
 
-El historial se filtra en backend:
+El historial se filtra en backend en todas las rutas:
 
-- OPERACION: solo sus propios reportes.
-- SUPERVISION: reportes del sector REBOBINADO.
-- JEFATURA: reportes del sector REBOBINADO y acción de anulación.
+- OPERACION: permiso rewinding_export.read_own, created_by = user.user_id y sector REBOBINADO.
+- SUPERVISION: permiso rewinding_export.read_sector y sector REBOBINADO.
+- JEFATURA: permiso rewinding_export.read_sector y sector REBOBINADO; puede anular mediante rewinding_export.annul.
+- CALIDAD y DATA_BALTREK: sin acceso funcional a este reporte.
+
+El filtro se aplica en historial, detalle, descarga PDF y anulación. No basta con ocultar acciones en frontend ni con filtrar solo el listado. Los recursos fuera del alcance se tratan como inexistentes (404).
 
 Cada fila de historial muestra:
+
 - Fecha de generación.
 - PV y producto.
 - Máquina.
@@ -691,18 +802,16 @@ Cada fila de historial muestra:
 - Acciones permitidas según permiso.
 
 El detalle conserva:
+
 - Datos del origen al momento de generar.
 - Paquetes y crías.
 - Snapshot de todos los campos impresos.
-- PDF original y SHA-256.
+- PDF original, tamaño y SHA-256.
 - Usuario generador y fecha/hora.
 - Eventos de borrador, generación, observación y anulación.
+- Historial de reservas y liberaciones con actor, fecha y motivo.
 
-La descarga no consulta los valores productivos actuales para reconstruir el documento. Devuelve los bytes guardados.
-
-Los endpoints de lectura y PDF usan Cache-Control: private, no-store.
-
----
+La descarga no consulta los valores productivos actuales para reconstruir el documento. Devuelve los bytes guardados y verifica su SHA-256 antes de responder. Los endpoints de lectura y PDF usan Cache-Control: private, no-store.
 
 ## 16. Plan de pruebas RBE-03–RBE-06
 
@@ -717,8 +826,12 @@ Los endpoints de lectura y PDF usan Cache-Control: private, no-store.
 - QA no marcado: debe bloquearse hasta criterio formal.
 - Crías released, pending, rejected/reutilizable y sin decisión.
 - Peso, posición, madre y operador original.
+- Operador sin concesión REBOBINADO: sin datos ni acceso.
+- Operador con sector pero sin concesión máquina/P1-07: no puede generar.
+- Supervisión/Jefatura con sector y permiso: pueden consultar sin concesión máquina/formulario.
+- DATA_BALTREK y CALIDAD: denegados.
 
-### Paquetes
+### Paquetes e integridad referencial
 
 - Una cría.
 - Cinco crías.
@@ -727,32 +840,52 @@ Los endpoints de lectura y PDF usan Cache-Control: private, no-store.
 - Misma madre en varias líneas.
 - Cría repetida dentro de un paquete o entre paquetes.
 - Cría de otra madre.
+- Inserción de package_child con package_id de un reporte y report_id de otro: rechazada por FK compuesta.
 - Destinos diferentes.
 - PV/productos/máquinas diferentes.
 - Ayudante vacío.
 - Etiquetas madre duplicadas.
 
-### Concurrencia
+### Reservas, estados y concurrencia
 
+- Borrador sin ninguna reserva.
+- Generado con exactamente una reserva activa por cría.
+- Observado conserva todas las reservas activas.
+- Anulado conserva historial y no deja reservas activas.
+- Intentos de falsear el estado de reserva, liberar sin anular, liberar dos veces o borrar/truncar reservas: rechazados por triggers/permisos.
 - Dos operadores generan simultáneamente con la misma cría: solo uno gana.
 - Reporte con varias crías y una ya reservada: ninguna reserva parcial.
 - Calidad cambia antes de confirmar: 409.
-- Reintento idempotente: mismo report_id y mismo PDF.
-- Anulación concurrente con generación.
+- Dos conexiones para generate-vs-generate, generate-vs-annul y generate-vs-quality-correction; sin deadlock y con revalidación después de esperar.
 - Revocación de permiso o concesión antes de generar.
+- Reintento con misma clave/huella: mismo report_id y PDF.
+- Misma clave con huella distinta: 409.
+- Colisión UNIQUE concurrente 23505: recarga del resultado confirmado, sin repetir reserva.
 
-### PDF e historial
+### PDF, snapshot e historial
 
 - A4 vertical, blanco y negro.
 - Veinte paquetes en una página.
 - Veintiún paquetes en dos páginas.
+- Límite técnico de páginas/tamaño; exceso falla sin truncamiento ni persistencia parcial.
 - Crías A–E en cada paquete.
 - Observaciones una sola vez al final.
 - Re-descarga byte a byte idéntica y SHA-256 coincidente.
-- Snapshot inmutable después de generar.
-- Observado conserva PDF y reservas.
-- Anulado conserva PDF/historial y libera reservas.
+- Intentos de UPDATE/DELETE/TRUNCATE de PDF: rechazados por permisos y trigger.
+- Intento de cambiar snapshot después de Generado: rechazado por trigger.
+- PDF y snapshot conservados al pasar a Observado y Anulado.
+- Restauración de backup en entorno aislado y comparación SHA-256 del PDF descargado con el hash original.
 - No se genera con Formato/Corte sin homologación D04.
+
+### Permisos
+
+- ALL_PERMISSIONS contiene los cuatro permisos y PROFILE_PERMISSIONS asigna exactamente la matriz de D11.
+- Ruta con permiso desconocido falla en pruebas de arranque; rutas RBE usan permisos registrados.
+- Operación solo ve sus reportes propios.
+- Supervisión/Jefatura solo ven REBOBINADO.
+- Jefatura anula con motivo; Operación y Supervisión reciben 403.
+- Consultar detalle/PDF por UUID ajeno no revela existencia.
+- Supervisión/Jefatura no dependen de user_machine_form_grant.
 
 ### Regresión
 
@@ -760,12 +893,10 @@ Los endpoints de lectura y PDF usan Cache-Control: private, no-store.
 - F3 de Bobinas.
 - P1-03 y Tubetes.
 - Conversión.
-- Permisos y concesiones.
+- Permisos y concesiones existentes.
 - Calidad Offline, PWA, IndexedDB, firmas, cola y sincronización.
 
 Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 efímero. No crear datos artificiales en la VPS productiva.
-
----
 
 ## 17. Migración, rollout y seguridad
 
@@ -775,14 +906,22 @@ Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 ef�
 - No asignar crías existentes durante migración.
 - No cambiar decisiones de Calidad.
 - No ampliar report.read.
-- Nuevas tablas con REVOKE ALL FROM PUBLIC y GRANT mínimo explícito a vinto_app según patrón de migraciones.
-- Triggers de integridad y auditoría para reportes, reservas, documentos y eventos.
+- Registrar los cuatro permisos nuevos en ALL_PERMISSIONS y PROFILE_PERMISSIONS antes de definir rutas que los utilicen.
+- Añadir Operation.REWINDING_EXPORT_CREATE y su política P1-07 sin modificar las políticas de captura existentes.
+- Nuevas tablas con REVOKE ALL FROM PUBLIC y GRANT mínimo explícito a vinto_app según el patrón de migraciones.
+- Cabecera, paquetes y package_child: SELECT/INSERT/UPDATE según operaciones de borrador y ciclo de vida; sin DELETE/TRUNCATE. Triggers protegen estado, snapshot e integridad.
+- Reservas: SELECT/INSERT/UPDATE solo para crear y liberar dentro de transacciones autorizadas; sin DELETE/TRUNCATE y con trigger de transición.
+- PDF: exclusivamente SELECT/INSERT para vinto_app; nunca UPDATE/DELETE/TRUNCATE.
+- Eventos: INSERT/SELECT; nunca UPDATE/DELETE/TRUNCATE.
+- Triggers de integridad, transiciones, auditoría, inmutabilidad de snapshot/PDF y coherencia diferible de reservas.
+- Antes del rollout, aprobar lista nominativa de usuarios y conceder explícitamente REBOBINADO; no backfill por perfil.
+- Conceder máquina + P1-07 individualmente a los operadores que deban generar; Supervisión/Jefatura no reciben estas concesiones para leer/anular.
 - No añadir flags que habiliten el sector o formularios por defecto.
 - El rollout se hará en la VPS existente mediante artefacto verificado, backup, restauración aislada, gates D2 y rollback.
 - No modificar Calidad Offline.
 - El número de migración se seleccionará al implementar, sincronizando main; hoy main termina en 0031.
 
----
+Este apartado describe el diseño de seguridad. No aplica concesiones, GRANT, migraciones ni cambios de permisos en esta fase documental.
 
 ## 18. Pendientes de confirmación funcional antes de cerrar RBE-02
 
@@ -823,3 +962,29 @@ Hasta cerrar estos puntos, el diseño de filtros, persistencia, paquetes, permis
 - No despliega ni fusiona código funcional.
 
 **Siguiente acción:** revisar y aprobar el diseño RBE-02 y resolver las preguntas funcionales de la sección 18. Después se autoriza RBE-03/RBE-04 mediante PRs independientes.
+
+
+---
+
+## 20. Registro de revisión técnica — 27/11/2026
+
+Se incorporan las siete observaciones de la revisión del PR #274, sin modificar código ni ejecutar migraciones:
+
+| Observación | Resolución documental |
+|---|---|
+| 1. Integridad paquete–reporte | Clave única compuesta (id, report_id) y FK compuesta desde package_child. |
+| 2. Orden de bloqueos | Orden común para generación, anulación y corrección de Calidad; READ COMMITTED y revalidación después de cada espera. |
+| 3. Transiciones de reservas | Se elimina el booleano duplicado y se separa la tabla de reservas; triggers y restricciones diferibles hacen cumplir las invariantes por estado. |
+| 4. Idempotencia | Clave de generación y SHA-256 persistidos; unicidad por actor; tratamiento seguro de colisión 23505. |
+| 5. PDF/snapshot | PDF INSERT/SELECT, inmutabilidad por permisos y triggers, tamaño/hash, verificación de descarga y restauración de backup. |
+| 6. Sector REBOBINADO | Aprovisionamiento explícito y auditado por usuario; sin backfill masivo por perfil. |
+| 7. Permisos y operación | Permisos registrados en ALL_PERMISSIONS/PROFILE_PERMISSIONS; operación dedicada P1-07 solo para creación; lectura/anulación por permiso y sector, sin concesión máquina/formulario para Supervisión/Jefatura. |
+
+### Alcance de esta revisión
+
+- Solo se modifica este documento de diseño.
+- No se modifica código, pruebas, migraciones, permisos ni datos.
+- No se realizan consultas ni cambios en VPS/PostgreSQL.
+- El Issue #275 conserva las siete confirmaciones funcionales pendientes.
+- PR #274 permanece Draft y pendiente de nueva revisión del usuario.
+- RBE-03, RBE-04, RBE-05 y RBE-06 no se inician ni se consideran autorizados.
