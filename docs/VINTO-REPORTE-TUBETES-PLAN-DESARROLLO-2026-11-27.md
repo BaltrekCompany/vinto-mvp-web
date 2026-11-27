@@ -228,8 +228,10 @@ La documentación de este plan se mantiene en un PR documental independiente. Es
 
 ## 10. Estado y próximo paso
 
-**Estado:** plan de Tubetes aprobado; implementación aún no iniciada.
+**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. El origen de datos P1-03 está confirmado, pero faltan decisiones funcionales y casos de datos para demostrar repeticiones, MP1 con códigos y más de diez usos.
 
-**Siguiente acción:** ejecutar TUB-01 exclusivamente como auditoría de solo lectura en la VPS/entorno de producción, recopilar evidencia sanitizada y presentar las decisiones pendientes (formato real del código, fecha de utilización, permisos y volumen) antes de escribir código.
+**Informe de auditoría:** [VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md](./VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md).
+
+**Siguiente acción:** revisar y confirmar las cinco recomendaciones del apartado 12 del informe TUB-01. Si se necesitan pruebas de repetición, MP1 y más de diez usos, solicitar autorización específica para crear registros ficticios identificables en el entorno productivo y definir su reversión. No iniciar TUB-02 hasta validar el contrato funcional y resolver el método de prueba.
 
 **Fuera de alcance:** cualquier implementación de bobinas refiladas para exportación o de producción para Expertus hasta que se abra una planificación independiente.
