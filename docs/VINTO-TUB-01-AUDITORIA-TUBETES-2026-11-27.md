@@ -337,34 +337,60 @@ No se leyeron secretos, contraseñas, tokens, claves privadas ni datos personale
 | Tipos, zona horaria y comparación de fechas | PASS |
 | Ejemplos de fechas distintas dentro de P1-03 | PENDING |
 | Distribución temporal | PASS |
-| Recomendación de permisos | PASS; aprobación pendiente |
-| Contrato propuesto | PASS; aprobación pendiente |
+| Recomendación de permisos | PASS; aprobada por el responsable |
+| Contrato propuesto | PASS; aprobado por el responsable |
+| Zona horaria operativa | PASS; confirmada como `America/La_Paz` |
 | Datos MP1 con código | PENDING |
+| Casos de reutilización, más de 10 usos y repetición mismo día | PENDING (no existen en la muestra) |
 | Cambios persistentes en base de datos | Ninguno identificado |
 | Bloqueos técnicos | 0 |
 
 **Resultado final:** `TUB01_AUDIT=PARTIAL`.
 
+Las reglas funcionales propuestas quedaron aprobadas el 27/11/2026. El estado permanece PARTIAL porque la muestra de datos no contiene escenarios suficientes para demostrar MP1 con código, reutilizaciones, más de diez usos y repetición en el mismo día. Esto es una limitación de cobertura de datos, no un bloqueo para identificar la fuente P1-03.
+
 ---
 
-## 12. Decisiones solicitadas antes de TUB-02
+## 12. Decisiones funcionales aprobadas el 27/11/2026
 
-Se presentan las recomendaciones para validación del responsable funcional:
+El responsable confirmó la zona horaria y aprobó las cinco recomendaciones de TUB-01. Estas decisiones constituyen el contrato funcional de referencia para el diseño posterior.
 
-1. **Código:** mostrar el entero original (`1`, `50`, `70`), sin prefijo ni ceros agregados. Si el identificador físico requiere letras/ceros, abrir una decisión separada sobre P1-03.
-2. **Fecha y zona horaria:** utilizar `operating_date`; confirmar si la zona horaria operativa correcta de la planta es `America/La_Paz` (actual en el código) o `America/Lima`.
-3. **Consumo:** incluir registros enviados/cerrados aunque la bobina esté rechazada por Calidad; excluir borradores, bloqueados y órdenes `qa_retired`.
-4. **Permiso:** `report.read` para Jefatura y Supervisión, con sector BOBINAS y alcance MP1/MP3.
-5. **Contrato:** una respuesta con ambas máquinas, código como texto original, todas las fechas y duplicados conservados.
+| ID | Decisión aprobada | Regla |
+|---|---|---|
+| **D01 — Código** | Mostrar el entero original almacenado en P1-03, serializado como texto (`1`, `50`, `70`). | No añadir prefijo `TUB-`, ceros ni normalización. P1-03 permanece sin cambios en este entregable. Si Functional posteriormente confirma que el identificador físico requiere letras o ceros significativos, se abrirá una evolución independiente de P1-03. |
+| **D02 — Fecha y zona horaria** | Utilizar `operating_date` con zona horaria operativa `America/La_Paz`. | No convertir `captured_at` directamente a fecha UTC. La fecha operativa representa el día del turno al que se atribuye el consumo. |
+| **D03 — Consumo** | Incluir capturas P1-03 `submitted` o `closed`, cualquiera sea el estado de Calidad de la bobina. | Incluir liberadas, rechazadas y pendientes de Calidad. Excluir borradores, bloqueadas y órdenes `qa_retired`. Incluir órdenes archivadas normales. El reporte mide uso/consumo de tubetes, no aprobación de bobinas. |
+| **D04 — Permiso** | Crear `report.read` para perfiles `JEFATURA` y `SUPERVISION`. | Exigir sector BOBINAS y limitar en el servidor a MP1/MP3. Sin concesión de sector, responder 403. No conceder `production.capture` ni utilizar grants de máquina/formulario como sustituto. |
+| **D05 — Contrato** | Una respuesta de `GET /api/reports/tubetes-used` incluirá MP1 y MP3. | Código original como texto; todas las fechas; duplicados conservados; `usage_count` igual al número de fechas. Orden de códigos numérico; fechas ascendentes, desempate por `captured_at`. La API entrega todas las fechas aunque superen diez. |
 
-No se autoriza todavía TUB-02 por este informe. El responsable debe confirmar las reglas funcionales y, por separado, autorizar la creación de registros ficticios de prueba si se necesitan para cubrir MP1, repeticiones y más de diez usos.
+### Presentación y contrato complementario
+
+- Ambas máquinas estarán presentes en la misma respuesta, aunque una no tenga registros.
+- `records_without_code` podrá mantenerse como dato diagnóstico de la API, sin mostrarlo como fila ni como consumo en el reporte.
+- PDF dividirá las fechas en bloques de diez, con filas de continuación `(cont.)`.
+- Excel conservará todas las fechas en una hoja por máquina.
+- PDF y Excel consumirán la misma respuesta para evitar diferencias.
+- Respuesta HTTP con `Cache-Control: private, no-store`; proteger con 401, 403 y 503 según sesión, permiso o indisponibilidad.
+
+### Decisiones que no quedan implícitamente autorizadas
+
+La aprobación de estas reglas no autoriza:
+- Cambiar el tipo de dato ni el formulario P1-03.
+- Crear registros ficticios adicionales en la base productiva.
+- Aplicar migraciones, cambiar permisos productivos o desplegar.
+- Fusionar el PR documental ni iniciar automáticamente TUB-02.
+
+No se autoriza todavía la implementación de TUB-02 por este informe. Su inicio requiere una autorización de implementación independiente. Si se necesitan casos de prueba con escrituras en la base productiva, deberán acordarse previamente los registros identificables, su alcance y su reversión.
 
 ---
 
 ## 13. Siguiente paso
 
-Revisar las cinco decisiones del apartado 12 y resolver si se autoriza una prueba controlada con escrituras ficticias para cubrir los casos que no existen en la muestra.
+Las cinco decisiones funcionales están aprobadas. El resultado TUB-01 permanece PARTIAL por falta de cobertura de datos para MP1 con código, reutilización, más de diez usos y repetición en el mismo día.
 
-Después de esa validación se podrá cerrar TUB-01 y preparar el diseño/implementación de TUB-02.
+Siguiente puerta de salida:
+1. Definir si esos escenarios se cubrirán con fixtures sintéticos en pruebas automatizadas, o con registros ficticios identificables en la VPS.
+2. Si se elige la VPS, aprobar el conjunto exacto de capturas de prueba y su procedimiento de reversión antes de cualquier escritura.
+3. Preparar el diseño de TUB-02 y solicitar autorización de implementación.
 
-**No se escribió código funcional, no se crearon ramas de implementación, no se crearon PR de código y no se desplegó ningún cambio.**
+**No se escribió código funcional, no se crearon ramas de implementación, no se desplegó ni se modificaron datos productivos en TUB-01.**
