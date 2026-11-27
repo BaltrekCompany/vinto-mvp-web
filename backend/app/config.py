@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     offline_conversion_preparation_enabled: bool = False
     # FOFF-03: operational write OFF until migration, CI and mobile QA PASS.
     offline_conversion_capture_enabled: bool = False
+    offline_conversion_capture_signing_seed_hex: SecretStr | None = None
     offline_conversion_preparation_signing_seed_hex: SecretStr | None = None
 
     # MF-13-03B PR2: compuerta de servidor para crear/publicar OT con líneas en una máquina distinta de la de cabecera. Variable
