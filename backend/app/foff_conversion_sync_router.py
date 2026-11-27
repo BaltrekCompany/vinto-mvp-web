@@ -275,6 +275,18 @@ def receive_conversion_capture(
             str(existing[4])!=str(body.device_key) or existing[5]!=body.machine_code or
             str(existing[6])!=str(body.assignment_id)):
             raise HTTPException(409,"Captura persistida no coincide")
+        # Never claim a duplicate by header alone. The normal production
+        # service compares the persisted *values* under capture_id lock.
+        request_id=str(uuid.uuid4())
+        gate=gate_for(user,"enforce",request_id,Operation.PRODUCTION_CAPTURE)
+        result=capture_service.submit_production_capture(
+            connection,actor_id=user.user_id,capture_id=body.capture_id,
+            form_code=body.form_code,assignment_id=body.assignment_id,
+            device_key=str(body.device_key),values=body.values,request_id=request_id,
+            sectors=user.sectors,gate=gate,
+        )
+        if result.created:
+            raise HTTPException(409,"Captura existente no reconciliable")
         response.status_code=200
         return {"capture_id":str(body.capture_id),"outcome":"duplicate",
                 "operational_registered":True,"technical_acceptance":True}
