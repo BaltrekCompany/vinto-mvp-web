@@ -94,7 +94,7 @@ Workflow: `VINTO Tubetes report TUB-02 (PostgreSQL 17)` — PASS.
 - 8/8 pruebas del generador PDF.
 - TypeScript, ESLint y build PASS.
 
-La primera ejecución detectó la resolución del import en Node y dos reglas React Hooks en el componente. Se corrigieron y la ejecución final del HEAD `131921e98604c9fdb58d66065c7515d0d3b1b934` terminó PASS.
+La primera ejecución detectó la resolución del import en Node y dos reglas React Hooks en el componente; también se incorporó la acción Imprimir. Se corrigieron y la ejecución final del HEAD `2a5a842b058ac72f76004a569069b77fbb4cbd93` terminó PASS (GitHub Actions run `46036066354`).
 
 ## 5. Backlog: TUB-05 Excel
 
