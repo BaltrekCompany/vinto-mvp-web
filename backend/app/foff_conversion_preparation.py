@@ -24,7 +24,7 @@ def sign_conversion_preparation(*, seed_hex: str, user_id: str, device_key: str,
     if not isinstance(context, dict) or set(context) != {
         "assignment_id", "work_order_id", "line_id", "machine_code",
         "form_code", "form_version", "article_code", "shift_code",
-        "operating_date", "context_digest",
+        "operating_date", "reference_sha256", "context_digest",
     }:
         raise ValueError("invalid preparation context")
     if context["form_code"] not in CONVERSION_CODES or not isinstance(context["form_version"], int) or (
@@ -38,6 +38,8 @@ def sign_conversion_preparation(*, seed_hex: str, user_id: str, device_key: str,
     for key in ("article_code", "shift_code", "operating_date"):
         if not isinstance(context[key], str) or not context[key]:
             raise ValueError("invalid context field")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(context["reference_sha256"])):
+        raise ValueError("invalid reference digest")
     if not re.fullmatch(r"[0-9a-f]{64}", str(context["context_digest"])):
         raise ValueError("invalid context digest")
     user_id = str(uuid.UUID(user_id))
