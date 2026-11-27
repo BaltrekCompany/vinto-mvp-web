@@ -48,6 +48,7 @@ function machineWorksheet(machine: MachineTubetes): string {
     const headers = ["Código", ...Array.from({ length: maxDates }, (_, index) => "Fecha " + (index + 1))];
     const lastColumn = columnName(headers.length);
     const lastRow = machine.tubetes.length + 1;
+    const dimensionRef = machine.tubetes.length === 0 && maxDates === 0 ? "A1" : "A1:" + lastColumn + lastRow;
     const rows: string[] = [];
 
     rows.push('<row r="1">' + headers.map((header, index) =>
@@ -73,6 +74,7 @@ function machineWorksheet(machine: MachineTubetes): string {
 
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        + '<dimension ref="' + dimensionRef + '"/>'
         + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
         + '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>'
         + '<sheetFormatPr defaultRowHeight="19"/>'
