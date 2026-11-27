@@ -11,7 +11,7 @@ import {
 const ID = "6f1c9a7e-3b2d-4c5e-8f10-123456789abc";
 const user = (overrides = {}) => ({
   id: ID, username: "dev.jefatura", display_name: "Jefatura DEV", profiles: ["JEFATURA"],
-  permissions: ["assignment.read", "catalog.read", "work_order.manage", "work_order.read"], must_change: false, ...overrides,
+  permissions: ["assignment.read", "catalog.read", "report.read", "work_order.manage", "work_order.read"], must_change: false, ...overrides,
 });
 const envelope = (overrides) => ({ user: user(overrides) });
 
@@ -116,11 +116,13 @@ test("labels", () => {
 test("hasPermission reads the permissions the backend sent and infers nothing", () => {
   const jefatura = user();
   assert.equal(hasPermission(jefatura, "work_order.manage"), true);
+  assert.equal(hasPermission(jefatura, "report.read"), true);
   assert.equal(hasPermission(jefatura, "assignment.manage"), false);
   assert.equal(hasPermission(jefatura, "production.capture"), false);
   // supervision: manages assignments but NOT the base OT
-  const supervision = user({ username: "dev.jefatura", profiles: ["SUPERVISION"], permissions: ["assignment.manage", "assignment.read", "catalog.read", "work_order.read"] });
+  const supervision = user({ username: "dev.jefatura", profiles: ["SUPERVISION"], permissions: ["assignment.manage", "assignment.read", "catalog.read", "report.read", "work_order.read"] });
   assert.equal(hasPermission(supervision, "assignment.manage"), true);
+  assert.equal(hasPermission(supervision, "report.read"), true);
   assert.equal(hasPermission(supervision, "work_order.manage"), false);
   // the username is never used to guess permissions
   assert.equal(hasPermission(user({ username: "jefatura.admin", permissions: [] }), "work_order.manage"), false);
@@ -130,7 +132,7 @@ test("hasPermission reads the permissions the backend sent and infers nothing", 
 
 test("DATA_BALTREK has no plant permissions in the UI", () => {
   const admin = user({ profiles: ["DATA_BALTREK"], permissions: ["assignment.read", "catalog.manage", "catalog.read", "user.manage", "work_order.read"] });
-  for (const permission of ["work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release"]) {
+  for (const permission of ["work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release", "report.read"]) {
     assert.equal(hasPermission(admin, permission), false, permission);
   }
   assert.deepEqual(operationalRolesFromProfiles(admin.profiles), []);

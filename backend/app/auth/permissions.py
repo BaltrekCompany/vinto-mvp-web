@@ -4,7 +4,7 @@ Un perfil desconocido no concede nada. Un nombre de permiso desconocido es un er
 (ValueError) en lugar de una denegación silenciosa.
 
 DATA_BALTREK administra catálogos y usuarios, pero NO recibe permisos funcionales de planta
-(work_order.manage, assignment.manage, production.capture, quality.capture, quality.release): la
+(work_order.manage, assignment.manage, production.capture, quality.capture, quality.release, report.read): la
 administración técnica no debe operar en nombre de la planta.
 """
 
@@ -18,12 +18,13 @@ PRODUCTION_CAPTURE = "production.capture"
 QUALITY_CAPTURE = "quality.capture"
 QUALITY_RELEASE = "quality.release"
 CATALOG_READ = "catalog.read"
+REPORT_READ = "report.read"
 CATALOG_MANAGE = "catalog.manage"
 USER_MANAGE = "user.manage"
 
 ALL_PERMISSIONS = frozenset({
     WORK_ORDER_READ, WORK_ORDER_MANAGE, ASSIGNMENT_READ, ASSIGNMENT_MANAGE, PRODUCTION_CAPTURE,
-    QUALITY_CAPTURE, QUALITY_RELEASE, CATALOG_READ, CATALOG_MANAGE, USER_MANAGE,
+    QUALITY_CAPTURE, QUALITY_RELEASE, CATALOG_READ, REPORT_READ, CATALOG_MANAGE, USER_MANAGE,
 })
 
 JEFATURA = "JEFATURA"
@@ -33,8 +34,8 @@ CALIDAD = "CALIDAD"
 DATA_BALTREK = "DATA_BALTREK"
 
 PROFILE_PERMISSIONS: dict[str, frozenset[str]] = {
-    JEFATURA: frozenset({WORK_ORDER_READ, WORK_ORDER_MANAGE, ASSIGNMENT_READ, CATALOG_READ}),
-    SUPERVISION: frozenset({WORK_ORDER_READ, ASSIGNMENT_READ, ASSIGNMENT_MANAGE, CATALOG_READ}),
+    JEFATURA: frozenset({WORK_ORDER_READ, WORK_ORDER_MANAGE, ASSIGNMENT_READ, CATALOG_READ, REPORT_READ}),
+    SUPERVISION: frozenset({WORK_ORDER_READ, ASSIGNMENT_READ, ASSIGNMENT_MANAGE, CATALOG_READ, REPORT_READ}),
     OPERACION: frozenset({WORK_ORDER_READ, ASSIGNMENT_READ, PRODUCTION_CAPTURE, CATALOG_READ}),
     CALIDAD: frozenset({WORK_ORDER_READ, ASSIGNMENT_READ, QUALITY_CAPTURE, QUALITY_RELEASE, CATALOG_READ}),
     DATA_BALTREK: frozenset({WORK_ORDER_READ, ASSIGNMENT_READ, CATALOG_READ, CATALOG_MANAGE, USER_MANAGE}),

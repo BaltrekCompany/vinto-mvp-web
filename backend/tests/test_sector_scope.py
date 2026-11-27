@@ -1,8 +1,8 @@
-"""M1-A · Alcance por sector: solo BOBINAS es operativo; el resto de sectores sigue bloqueado y habilitarlo no concede permisos.
+"""Alcance por sector: la concesión BOBINAS limita datos y no concede permisos por sí sola.
 
 Tres bloques:
 1. Configuración (`app/sectors.py`): lista cerrada, validación estricta, valor por defecto.
-2. Garantías estáticas: la constante antigua desaparece, ningún módulo repite códigos de sector, los permisos y las migraciones no cambian.
+2. Garantías estáticas: la constante antigua desaparece, ningún módulo repite códigos de sector y la matriz de permisos queda fijada explícitamente (incluido report.read aprobado para TUB-02). Las migraciones no cambian.
 3. Escenario de extremo a extremo en una base EFÍMERA *_test: un sector futuro SINTÉTICO (REBOBINADO + una máquina de prueba, solo en la plantilla de
    test) se opera completo cuando el sector está habilitado (prueba que la operación es válida) y las MISMAS operaciones se rechazan o no se ven cuando
    no lo está (prueba que el rechazo se debe al sector y no a otra causa). Nada toca la base `vinto`, ni existen datos reales de REBOBINADO/CONVERSION.
@@ -32,10 +32,10 @@ APP = Path(__file__).resolve().parent.parent / "app"
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 F6_VALUES = {"cantidad_fardos": 1, "punto_merma": "recorte_maquina", "tipo_producto": "hoja_doble", "peso_kg": "1"}
 
-# Matriz de permisos vigente al cerrar M1-A. Si un cambio la modifica, esta prueba debe fallar y revisarse a propósito.
+# Matriz de permisos vigente tras la decisión TUB-02: report.read solo para JEFATURA y SUPERVISION. Cualquier otro cambio exige revisión explícita.
 PINNED_PROFILE_PERMISSIONS = {
-    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read"},
-    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read"},
+    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read", "report.read"},
+    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read", "report.read"},
     "OPERACION": {"work_order.read", "assignment.read", "production.capture", "catalog.read"},
     "CALIDAD": {"work_order.read", "assignment.read", "quality.capture", "quality.release", "catalog.read"},
     "DATA_BALTREK": {"work_order.read", "assignment.read", "catalog.read", "catalog.manage", "user.manage"},
@@ -150,10 +150,10 @@ class StaticScopeTests(unittest.TestCase):
         self.assertNotRegex(sectors_source, r"(?m)^\s*(from|import)\s+app")
         self.assertEqual([str(p.relative_to(APP)) for p, text in app_sources() if "auth" in p.parts and "app.sectors" in text], [])
 
-    def test_the_permission_matrix_is_unchanged_and_independent_of_sectors(self):
+    def test_the_permission_matrix_is_explicit_and_independent_of_sectors(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)
         self.assertEqual(permissions.ALL_PERMISSIONS, frozenset().union(*PINNED_PROFILE_PERMISSIONS.values()))
-        self.assertEqual(len(permissions.ALL_PERMISSIONS), 10)
+        self.assertEqual(len(permissions.ALL_PERMISSIONS), 11)
         for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
             self.assertEqual(set(permissions.permissions_for_profiles([profile])), expected, profile)
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):  # habilitar un sector no cambia ningún permiso

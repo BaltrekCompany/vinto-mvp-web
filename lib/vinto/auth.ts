@@ -4,7 +4,7 @@
 export type Permission =
     | "work_order.read" | "work_order.manage" | "assignment.read" | "assignment.manage"
     | "production.capture" | "quality.capture" | "quality.release"
-    | "catalog.read" | "catalog.manage" | "user.manage";
+    | "catalog.read" | "report.read" | "catalog.manage" | "user.manage";
 
 export type AuthUser = {
     id: string;
