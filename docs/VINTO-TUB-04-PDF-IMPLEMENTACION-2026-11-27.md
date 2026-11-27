@@ -57,12 +57,13 @@ La paginación física se aplica después de expandir los bloques de diez, repit
 ## 3. Descarga y almacenamiento
 
 - Botón `Descargar PDF`, habilitado cuando el reporte está cargado.
+- Botón `Imprimir`: abre el mismo PDF generado en una nueva pestaña para utilizar la impresión nativa del visor PDF.
 - Nombre: `tubetes-utilizados-AAAA-MM-DD.pdf`, con fecha de generación en `America/La_Paz`.
 - El PDF se crea como Blob en el navegador y se descarga directamente.
 - No se envía el archivo al backend ni se guarda un historial de documentos.
 - No se agrega dependencia externa: el PDF se construye con objetos PDF 1.4 y fuentes estándar, sin alterar `package.json` ni `pnpm-lock.yaml`.
 
-El PDF descargado puede abrirse e imprimirse desde el visor PDF. La exportación Excel no forma parte de TUB-04.
+La descarga y la acción Imprimir generan el mismo documento desde la misma respuesta del API. La acción Imprimir abre el visor PDF del navegador en una nueva pestaña; desde allí se utiliza la impresión nativa. La exportación Excel no forma parte de TUB-04.
 
 ## 4. Pruebas
 
