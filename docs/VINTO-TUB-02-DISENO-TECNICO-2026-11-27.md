@@ -294,7 +294,8 @@ El PR #258 está abierto, fuera de Draft y listo para revisión. No se ha fusion
 **Rama:** `feat/tubetes-utilizados-report`  
 **Base:** `main` en `b84562d9f5b78aab549219e82b4472ad67dadbeb`  
 **HEAD:** `049a563986a0cf384b984d27d91511186c2a89dc`  
-**Estado:** abierto, listo para revisión; no fusionado.
+**Estado:** aprobado y fusionado mediante squash el 27/11/2026.  
+**Commit integrado en main:** `5f66f6001d670b30fff99b44a08aa3286703dd81`.
 
 ### CI específico TUB-02 — PASS
 
@@ -329,6 +330,27 @@ La matriz de workflows de integración disparados por el PR también terminó PA
 - Sin modificaciones a Calidad Offline.
 - Sin cambios de P1-03.
 - Sin UI, PDF ni Excel; permanecen en TUB-03/TUB-04/TUB-05.
-- Sin merge ni despliegue.
+- Sin despliegue.
+- Merge realizado tras aprobación técnica; no se ha desplegado.
 
-**Estado final:** `TUB02_IMPLEMENTATION=PASS_PR_OPEN`.
+**Estado final:** `TUB02_IMPLEMENTATION=PASS_MERGED`.
+
+## 14. TUB-03 — pantalla Seguimiento → Reportes (27/11/2026)
+
+La implementación frontend se inició en un PR independiente:
+- [PR #259 — Tubetes Utilizados en Seguimiento](https://github.com/BaltrekCompany/vinto-mvp-web/pull/259).
+- Rama: `feat/tubetes-report-ui`.
+- Base: commit TUB-02 ya integrado en `main`.
+
+Alcance del incremento:
+- Mostrar el acceso al reporte en Bobinas → Seguimiento → Reportes solo cuando el usuario tenga `report.read`.
+- Consumir `GET /api/reports/tubetes-used` con el cliente HTTP central (cookie HttpOnly, `cache: no-store`).
+- Mostrar MP1 y MP3 por separado, código, cantidad de usos y todas las fechas.
+- Mantener fechas duplicadas del mismo día como usos independientes.
+- Mostrar `operating_date` y zona `America/La_Paz`.
+- Manejar carga, actualización manual, errores de red, 403 y sesión vencida.
+- Validar el contrato de respuesta en el frontend.
+
+PDF y Excel permanecen fuera de TUB-03: se desarrollarán en TUB-04 y TUB-05 con PR separados. No se han añadido cambios a backend, P1-03, Calidad Offline, migraciones, VPS ni producción.
+
+**Estado:** PR #259 abierto en Draft mientras se completan CI y revisión.
