@@ -16,7 +16,7 @@ from app.auth.permissions import PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.production_access import production_machines
-from app.foff_conversion_preparation import sign_conversion_preparation, CONVERSION_CODES
+from app.foff_conversion_preparation import sign_conversion_preparation, conversion_preparation_public_pin, CONVERSION_CODES
 from app.foff_conversion_references import conversion_reference_bundle, ConversionReferencesUnavailable
 from app.assignments import service as assignment_service, execution_read
 from app.authz import visibility
@@ -92,7 +92,13 @@ def enroll_production_device(
     with connection.transaction():
         central_captures._context(connection, user.user_id, str(uuid.uuid4()))
         central_captures._resolve_device(connection, device_key, None)
-    return {"device_key": device_key, "enrolled": True, "captureEnabled": False}
+    # Public pin is delivered only over this authenticated enrollment response.
+    # The client must store/pin it in its own encrypted device profile and
+    # reject an envelope whose embedded key differs from this pin.
+    seed = settings.offline_conversion_preparation_signing_seed_hex
+    pin = conversion_preparation_public_pin(seed.get_secret_value()) if seed else None
+    return {"device_key": device_key, "enrolled": True,
+            "preparation_signing_pin": pin, "captureEnabled": False}
 
 
 class ConversionPreparationIn(BaseModel):
