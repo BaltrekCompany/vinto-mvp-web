@@ -36,18 +36,18 @@ type OpenForm=Readonly<{
 }>;
 type Props=Readonly<{online:boolean;onExit:()=>void;currentUserId?:string|null}>;
 
-function Field({field,value,onChange,disabled=false}:{
-  field:ConversionField;value:unknown;onChange:(value:string)=>void;disabled?:boolean;
+function Field({field,value,onChange,disabled=false,options}:
+  field:ConversionField;value:unknown;onChange:(value:string)=>void;disabled?:boolean;options?:readonly string[];
 }){
   const label=`${title(field.key)}${field.required?" *":""}${field.unit?" ("+field.unit+")":""}`;
   const common={className:"mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900",
     value:value===undefined||value===null?"":String(value),disabled,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.value)};
   return <label className="block text-sm font-medium text-slate-800">{label}
-    {field.options.length>0
+    {(options??field.options).length>0
       ? <select disabled={disabled} className={common.className} value={common.value}
           onChange={e=>onChange(e.target.value)}>
           <option value="">Seleccionar…</option>
-          {field.options.map(option=><option key={option} value={option}>{option}</option>)}
+          {(options??field.options).map(option=><option key={option} value={option}>{option}</option>)}
         </select>
       : field.value_type==="textarea"
         ? <textarea disabled={disabled} className={common.className} rows={3} value={common.value}
@@ -135,7 +135,7 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
       // Historical envelopes remain cryptographically verifiable after expiry.
       // The backend will accept an expired submission as a durable 202 review,
       // never as an operational capture. Client clock is not shift authority.
-      const normalized=normalizeConversionValues(definition,valuesRef.current);
+      const normalized=normalizeConversionValues(definition,valuesRef.current,recipe);
       await save(valuesRef.current);
       await enqueueConversionCapture({
         identity,key,captureId,preparation,captureAuthority:capture,
@@ -157,6 +157,9 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
     finally{setSaving(false);}
   };
   const pending=queue.filter(item=>item.scopeSnapshotId===row.scopeSnapshotId&&item.formCode===row.formCode);
+  const recipe=object(references.references)&&Array.isArray(references.references.recipe_material_codes)?
+    references.references.recipe_material_codes.filter((x:unknown):x is string=>typeof x==="string"):[];
+
   const alreadyQueued=pending.some(x=>x.captureId===captureId);
   const setSimple=(field:string,value:string)=>update({...draft,[field]:value});
   return <section className="space-y-4 rounded-xl border bg-white p-4" data-foff-conversion="editor">
@@ -177,7 +180,7 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
           <h4 className="font-medium">{title(g.code)} · {rows.length} filas</h4>
           {rows.map((line,i)=><div key={i} className="rounded border p-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              {fields.map(f=><Field key={f.key} field={f} disabled={alreadyQueued} value={line[f.key]}
+              {fields.map(f=><Field key={f.key} field={f} disabled={alreadyQueued} options={f.key==="tipo_material"&&recipe.length?recipe:undefined} value={line[f.key]}
                 onChange={v=>editGroup(g.code,rows.map((r,j)=>i===j?{...r,[f.key]:v}:r))}/>)}
             </div>
             <Button size="sm" variant="outline" disabled={alreadyQueued} onClick={()=>editGroup(g.code,rows.filter((_,j)=>j!==i))}>
