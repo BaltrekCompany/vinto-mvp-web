@@ -7,7 +7,7 @@ is read or modified by this test module.
 import secrets
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import SecretStr
 
@@ -200,12 +200,12 @@ class TubetesReportApiTests(unittest.IsolatedAsyncioTestCase):
         await self.decide(rejected["id"], "reject")
 
         statuses = {
-            row[0]: row[1]
+            str(row[0]): row[1]
             for row in self.connection.execute(
                 """SELECT b.id, q.status FROM vinto_txn.bobbin b
                    JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id
                    WHERE b.id = ANY(%s)""",
-                ([pending["id"], released["id"], rejected["id"]],),
+                ([UUID(pending["id"]), UUID(released["id"]), UUID(rejected["id"])],),
             ).fetchall()
         }
         self.assertEqual(statuses, {
