@@ -1,7 +1,7 @@
 # VINTO — Mejora de vista y TUB-05: Exportación Excel de Tubetes Utilizados
 
 **Fecha:** 27 de noviembre de 2026  
-**Estado:** implementación en rama; pendiente de CI y revisión.  
+**Estado:** implementación completada; CI PASS; PR #269 listo para revisión, sin merge ni despliegue.  
 **Base funcional:** especificación funcional para Data — Reporte de Tubetes Utilizados, secciones 4, 5, 6 y 7.  
 **Dependencia:** API `GET /api/reports/tubetes-used`, TUB-02, y pantalla TUB-03/TUB-04.
 
@@ -75,6 +75,23 @@ La implementación genera un paquete OOXML/XLSX con componentes estándar del fo
 - Fila de encabezado congelada y autofiltro.
 - Nombre de archivo en zona `America/La_Paz`.
 - Validación del ZIP, CRC y XML OOXML mediante Node y la biblioteca estándar de Python (`zipfile`, `xml.etree`).
+
+### Resultado CI (27/11/2026)
+
+Workflow [#46044107821](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/46044107821): PASS.
+
+- 15/15 pruebas de autenticación/permisos frontend.
+- 7/7 pruebas de contrato del reporte y selector de máquina.
+- 8/8 pruebas del libro Excel.
+- `TUBETES_XLSX_OOXML=PASS`: ZIP/CRC y todos los XML abiertos y validados con Python estándar.
+- 8/8 pruebas de PDF.
+- 14/14 pruebas de servicio/API en PostgreSQL 17 efímero.
+- 7/7 pruebas de matriz de permisos.
+- 6/6 pruebas estáticas de alcance sectorial.
+- 17/17 regresiones P1-03 y Calidad.
+- TypeScript, ESLint y build PASS.
+
+Total: 82 pruebas automatizadas aprobadas, más validación independiente del paquete OOXML.
 
 ## 6. Límites
 
