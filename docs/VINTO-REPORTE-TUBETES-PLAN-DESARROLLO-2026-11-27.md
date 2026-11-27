@@ -216,28 +216,29 @@ El reporte se considera terminado cuando:
 
 ## 9. GitHub, CI y despliegue
 
-- Trabajar en una rama independiente desde el `main` vigente al iniciar TUB-01.
-- Rama prevista: `feat/tubetes-utilizados-report` (se creará cuando empiece la implementación).
-- Mantener los PR de Tubetes independientes de ramas/PR de Calidad Offline.
-- Los cambios de cada incremento deben ser pequeños y trazables.
-- Ejecutar pruebas específicas y regresión pertinente; revisar GitHub Actions.
-- Abrir PR para revisión; no fusionar automáticamente.
-- Despliegue controlado y validación posterior requieren una autorización separada.
+- TUB-02 se implementó en la rama independiente `feat/tubetes-utilizados-report`, creada desde `main` (`b84562d9`).
+- PR de implementación: [#258](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258), separado del PR documental y de Calidad Offline.
+- La batería TUB-02 y la matriz de regresión de GitHub Actions terminaron PASS.
+- El PR #258 está abierto y listo para revisión; no está fusionado.
+- Los incrementos TUB-03 en adelante mantendrán PR separados.
+- Despliegue controlado y validación posterior requieren autorización independiente.
 
 La documentación de este plan se mantiene en un PR documental independiente. Este PR no incorpora código funcional, migraciones, cambios de VPS ni despliegues.
 
 ## 10. Estado y próximo paso
 
-**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. Las decisiones funcionales D01-D05 y la estrategia D06 de pruebas sintéticas quedaron aprobadas el 27/11/2026. La auditoría permanece PARTIAL porque la muestra productiva no demuestra MP1 con código, reutilizaciones, más de diez usos ni repeticiones en el mismo día.
+**Estado:** TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL` como auditoría de la muestra productiva. Las decisiones funcionales D01-D05 y la estrategia D06 de pruebas sintéticas quedaron aprobadas. La muestra real sigue sin contener MP1 con código, reutilizaciones, más de diez usos ni repeticiones en el mismo día; esos escenarios ya se demostraron con fixtures sintéticos PG17 durante TUB-02.
 
 **Informe de auditoría y decisiones aprobadas:** [VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md](./VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md).
 
-**Diseño técnico de TUB-02:** [VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md](./VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md).
+**Diseño técnico y resultado de implementación TUB-02:** [VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md](./VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md).
+
+**PR de implementación:** [#258 — Backend de Tubetes](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258). Código implementado, CI específico y regresión PASS; abierto y listo para revisión, sin merge ni despliegue.
 
 **Reglas aprobadas:** código entero original sin prefijo/ceros; fecha `operating_date` en `America/La_Paz`; incluir consumos con Calidad liberada, rechazada o pendiente y excluir borradores, bloqueadas y órdenes `qa_retired`; permiso `report.read` para Jefatura/Supervisión con alcance BOBINAS/MP1/MP3; API con ambas máquinas en una respuesta y todas las fechas/repeticiones conservadas.
 
-**Estrategia de pruebas aprobada:** los casos ausentes se cubrirán con fixtures sintéticos en bases PostgreSQL efímeras PG17. No se crearán capturas artificiales ni se harán escrituras de prueba en la VPS.
+**Estrategia de pruebas:** fixtures sintéticos en PostgreSQL efímero PG17, sin capturas artificiales ni escrituras de prueba en la VPS. La matriz de casos de TUB-02 ya pasó.
 
-**Siguiente acción:** revisar el diseño técnico TUB-02 y aprobar su alcance de implementación. La autorización para usar fixtures sintéticos no equivale a autorización para escribir código, cambiar permisos productivos, aplicar migraciones, fusionar PR ni desplegar.
+**Siguiente acción:** revisar el PR #258 y decidir su merge. Después de integrar TUB-02, planificar TUB-03 (interfaz) como incremento independiente. El despliegue productivo requiere autorización separada.
 
 **Fuera de alcance:** cualquier implementación de bobinas refiladas para exportación o de producción para Expertus hasta que se abra una planificación independiente.
