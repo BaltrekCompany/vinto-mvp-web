@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { writeFileSync } from "node:fs";
 import {
   buildTubetesWorkbook,
   tubetesExcelFilename,
@@ -66,6 +67,7 @@ function readStoredZip(bytes) {
 
 test("workbook is a valid ZIP package with two named machine sheets", () => {
   const bytes = buildTubetesWorkbook(base());
+  writeFileSync("/tmp/vinto-tubetes-excel-ci.xlsx", bytes);
   assert.ok(bytes instanceof Uint8Array);
   assert.equal(new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, true), 0x04034b50);
   const files = readStoredZip(bytes);
