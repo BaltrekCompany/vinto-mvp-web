@@ -55,7 +55,7 @@ jobs:
 
   backend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17
@@ -117,8 +117,39 @@ jobs:
       - name: E1-02 existing assignment and multi-machine regression
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_assignment_same_work_order.py' -v
-      - name: Broad backend differential gate (all unittest modules, historical FAIL/ERROR audited)
+      - name: Checkout exact current main for differential reference
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+          path: baseline-main
+          persist-credentials: false
+      - name: Full current-main E1-08 results (not a green bypass)
         working-directory: backend
         env:
           WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
-        run: python -B ../scripts/e1-backend-regression-gate.py
+        run: |
+          python -B ../scripts/e1-backend-regression-gate.py \
+            --backend-dir ../baseline-main/backend \
+            --record-observed ../main-e108-observed.json > ../main-e108-run.log 2>&1 || {
+              grep -E 'Tests=|NEW (FAIL|ERROR)|NO-GO:' ../main-e108-run.log || true
+            }
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          record = json.loads(Path("../main-e108-observed.json").read_text())
+          if not record["valid"]:
+              raise SystemExit("FAIL CLOSED: current-main reference was incomplete/invalid")
+          print("BASELINE_MAIN_VALID=YES; executed=",record["executed"],"skipped=",record["skipped"])
+          PY
+      - name: Broad backend differential gate (all modules vs verified current main)
+        working-directory: backend
+        env:
+          WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+        run: |
+          python -B ../scripts/e1-backend-regression-gate.py \
+            --reference-observed ../main-e108-observed.json
+      - name: Diagnostic comparison summary
+        if: always()
+        run: |
+          echo "Full backend result comparison: exact PR base, not historical whitelist." >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'Tests=|NO-GO:' main-e108-run.log | tail -n 3 >> "$GITHUB_STEP_SUMMARY" || true
