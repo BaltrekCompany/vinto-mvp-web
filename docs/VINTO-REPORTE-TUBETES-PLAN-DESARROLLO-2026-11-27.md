@@ -228,10 +228,12 @@ La documentación de este plan se mantiene en un PR documental independiente. Es
 
 ## 10. Estado y próximo paso
 
-**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. El origen de datos P1-03 está confirmado, pero faltan decisiones funcionales y casos de datos para demostrar repeticiones, MP1 con códigos y más de diez usos.
+**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. Las cinco decisiones funcionales quedaron aprobadas el 27/11/2026. La auditoría permanece PARTIAL porque la muestra actual no demuestra MP1 con código, reutilizaciones, más de diez usos ni repeticiones en el mismo día.
 
-**Informe de auditoría:** [VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md](./VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md).
+**Informe de auditoría y decisiones aprobadas:** [VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md](./VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md).
 
-**Siguiente acción:** revisar y confirmar las cinco recomendaciones del apartado 12 del informe TUB-01. Si se necesitan pruebas de repetición, MP1 y más de diez usos, solicitar autorización específica para crear registros ficticios identificables en el entorno productivo y definir su reversión. No iniciar TUB-02 hasta validar el contrato funcional y resolver el método de prueba.
+**Reglas aprobadas:** código entero original sin prefijo/ceros; fecha `operating_date` en `America/La_Paz`; incluir consumos con Calidad liberada, rechazada o pendiente y excluir borradores, bloqueadas y órdenes `qa_retired`; permiso `report.read` para Jefatura/Supervisión con alcance BOBINAS/MP1/MP3; API con ambas máquinas en una respuesta y todas las fechas/repeticiones conservadas.
+
+**Siguiente acción:** decidir el método de cobertura para los escenarios que no existen en la muestra (fixtures sintéticos automatizados o registros ficticios identificables en VPS con alcance y reversión aprobados). El diseño/implementación de TUB-02 requiere autorización independiente. La aprobación de reglas funcionales no autoriza por sí sola escrituras en la base productiva, cambios de permisos, migraciones, merge ni despliegue.
 
 **Fuera de alcance:** cualquier implementación de bobinas refiladas para exportación o de producción para Expertus hasta que se abra una planificación independiente.
