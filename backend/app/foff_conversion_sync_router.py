@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, UUID4
 
 from app import capture_service
+from app.assignments import service as assignment_service
 from app.auth.dependencies import require_permission
 from app.auth.permissions import PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
@@ -204,6 +205,23 @@ def _verified_capture_authority(body:OfflineConversionIn,user:AuthenticatedUser)
     return datetime.now(timezone.utc)>=expires
 
 
+class OriginalContextChanged(Exception):
+    """The signed OT/line/turn no longer matches the registered context."""
+
+
+def _require_original_context(connection, *, context, assignment_id, sectors):
+    current = assignment_service.get_assignment(connection, assignment_id, sectors=sectors)
+    if (
+        str(current.work_order_id) != context["work_order_id"]
+        or str(current.line.id) != context["line_id"]
+        or current.machine_code != context["machine_code"]
+        or current.line.article_code != context["article_code"]
+        or current.shift_code != context["shift_code"]
+        or current.operating_date.isoformat() != context["operating_date"]
+    ):
+        raise OriginalContextChanged("original_conversion_context_changed")
+
+
 def _stored(connection,capture_id,author):
     return connection.execute(
         """SELECT c.id,c.created_by,f.code,fv.version_number,d.external_key,m.code,c.assignment_id,c.status
@@ -321,12 +339,26 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
     request_id=str(uuid.uuid4())
     gate=gate_for(user,"enforce",request_id,Operation.PRODUCTION_CAPTURE)
     try:
-        result=capture_service.submit_production_capture(
-            connection,actor_id=user.user_id,capture_id=body.capture_id,
-            form_code=body.form_code,assignment_id=body.assignment_id,
-            device_key=str(body.device_key),values=body.values,request_id=request_id,
-            sectors=user.sectors,gate=gate,
-        )
+        # Nested PostgreSQL savepoint: if the server's actual assignment
+        # differs from the signed original, roll back the business capture
+        # (including any pallet), then persist a 202 review in the outer tx.
+        with connection.transaction():
+            result=capture_service.submit_production_capture(
+                connection,actor_id=user.user_id,capture_id=body.capture_id,
+                form_code=body.form_code,assignment_id=body.assignment_id,
+                device_key=str(body.device_key),values=body.values,request_id=request_id,
+                sectors=user.sectors,gate=gate,
+            )
+            _require_original_context(
+                connection,context=context,assignment_id=body.assignment_id,
+                sectors=user.sectors,
+            )
+    except OriginalContextChanged:
+        reason=_review(connection,body,user,context,"context_changed")
+        response.status_code=202
+        return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,
+                "outcome":"review","reason":reason,"operational_registered":False,
+                "technical_acceptance":True}
     except (AssignmentStaleError,AssignmentNotActiveError,LineNotInProductionError) as exc:
         reasons={AssignmentStaleError:"assignment_stale",
                  AssignmentNotActiveError:"assignment_not_active",
