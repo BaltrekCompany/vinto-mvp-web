@@ -18,6 +18,7 @@ from app.database import get_connection
 from app.production_access import production_machines
 from app.foff_conversion_preparation import sign_conversion_preparation, conversion_preparation_public_pin, CONVERSION_CODES
 from app.foff_conversion_references import conversion_reference_bundle, ConversionReferencesUnavailable
+from app.foff_conversion_capture_authority import sign_conversion_capture_authority, public_pin as capture_public_pin
 from app.assignments import service as assignment_service, execution_read
 from app.authz import visibility
 from app.authz.engine import authorize
@@ -97,8 +98,11 @@ def enroll_production_device(
     # reject an envelope whose embedded key differs from this pin.
     seed = settings.offline_conversion_preparation_signing_seed_hex
     pin = conversion_preparation_public_pin(seed.get_secret_value()) if seed else None
+    capture_seed = settings.offline_conversion_capture_signing_seed_hex
+    capture_pin = capture_public_pin(capture_seed.get_secret_value()) if capture_seed else None
     return {"device_key": device_key, "enrolled": True,
-            "preparation_signing_pin": pin, "captureEnabled": False}
+            "preparation_signing_pin": pin, "capture_signing_pin": capture_pin,
+            "captureEnabled": False}
 
 
 class ConversionPreparationIn(BaseModel):
@@ -190,4 +194,22 @@ def prepare_conversion_context(
         seed_hex=seed.get_secret_value(), user_id=str(user.user_id),
         device_key=device_key, context=signed_context,
     )
-    return {"envelope": envelope, "referencePackage": reference_package["bundle"], "captureEnabled": False}
+    capture_authority = None
+    if settings.offline_conversion_capture_enabled:
+        capture_seed = settings.offline_conversion_capture_signing_seed_hex
+        if capture_seed is None:
+            raise HTTPException(503, detail="Autoridad de captura no configurada")
+        try:
+            capture_authority = sign_conversion_capture_authority(
+                seed_hex=capture_seed.get_secret_value(), user_id=str(user.user_id),
+                device_key=device_key, snapshot_id=envelope["payload"]["snapshot_id"],
+                assignment_id=str(a.id), machine_code=a.machine_code,
+                form_code=body.form_code, form_version=decision.effective_version,
+                grant_id=str(decision.grant_id),
+                reference_sha256=reference_package["sha256"],
+            )
+        except ValueError as exc:
+            raise HTTPException(503, detail="Autoridad de captura no disponible") from exc
+    return {"envelope": envelope, "captureAuthority": capture_authority,
+            "referencePackage": reference_package["bundle"],
+            "captureEnabled": capture_authority is not None}
