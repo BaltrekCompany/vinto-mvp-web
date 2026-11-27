@@ -10,8 +10,9 @@ from fastapi import HTTPException, Response
 from pydantic import SecretStr
 
 from app.foff_conversion_preparation import sign_conversion_preparation
+from app.foff_conversion_capture_authority import sign_conversion_capture_authority
 from app.foff_conversion_sync_router import (
-    OfflineConversionIn, _verified_preparation, receive_conversion_capture,
+    OfflineConversionIn, _verified_preparation, _verified_capture_authority, receive_conversion_capture,
 )
 from app.quality.offline_capture_scope import _canonical
 
@@ -92,3 +93,25 @@ def test_disabled_capture_does_not_access_database():
         with pytest.raises(HTTPException) as error:
             receive_conversion_capture(body,Response(),user,connection=object())
     assert error.value.status_code==503
+
+def test_separate_capture_authority_required_and_not_interchangeable():
+    user,body=fixture()
+    with patch("app.foff_conversion_sync_router.settings.offline_conversion_capture_signing_seed_hex",
+               SecretStr("02"*32)):
+        with pytest.raises(HTTPException) as missing:
+            _verified_capture_authority(body,user)
+        assert missing.value.status_code==403
+        context=body.preparation["payload"]["context"]
+        scope=sign_conversion_capture_authority(
+            seed_hex="02"*32,user_id=str(user.user_id),device_key=str(body.device_key),
+            snapshot_id=str(body.scope_snapshot_id),assignment_id=str(body.assignment_id),
+            machine_code=body.machine_code,form_code=body.form_code,
+            form_version=body.form_version,grant_id=str(uuid.uuid4()),
+            reference_sha256=context["reference_sha256"],
+        )
+        body.capture_authority=scope
+        assert _verified_capture_authority(body,user) is False
+        # An attacker cannot promote the preparation_only envelope into CAPTURE.
+        body.capture_authority=body.preparation
+        with pytest.raises(HTTPException):
+            _verified_capture_authority(body,user)
