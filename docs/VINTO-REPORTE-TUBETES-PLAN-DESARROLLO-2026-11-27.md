@@ -83,7 +83,7 @@ Referencias técnicas de partida:
 
 **A. Tipo real del código.** La definición de P1-03 declara el código como entero, mientras que el ejemplo visual de la especificación utiliza valores como `TUB-001`. Se debe consultar el dato persistido y confirmar el formato real. No se añadirá prefijo, padding, conversión ni normalización sin una regla funcional aprobada.
 
-**B. Fecha de utilización.** La especificación dice «fecha del registro de Producción de Bobinas», mientras que el modelo distingue `captured_at` y `operating_date`. TUB-01 debe mostrar ejemplos y confirmar cuál representa la fecha que Functional espera en la hoja física. No se fijará una interpretación por suposición.
+**B. Fecha de utilización y zona horaria.** La especificación dice «fecha del registro de Producción de Bobinas», mientras que el modelo distingue `captured_at` y `operating_date`. La auditoría recomienda `operating_date`, pero el código actual usa `America/La_Paz`; Functional debe confirmar que esa es la zona horaria real de la planta o si corresponde `America/Lima`. No se cambiará la zona horaria por inferencia.
 
 **C. Permisos de consulta.** Se evaluará el acceso de Jefatura y Supervisión al reporte sin concederles permiso de captura. Se propone una autorización de lectura específica y de mínimo privilegio (por ejemplo, `report.read`), limitada al sector y máquinas correspondientes. El nombre, perfiles y alcance final se validarán antes de implementar; no se ampliará `production.capture` como atajo.
 
