@@ -4,6 +4,11 @@
 type Rec = Record<string, unknown>;
 const isRec = (value: unknown): value is Rec => typeof value === "object" && value !== null && !Array.isArray(value);
 const isText = (value: unknown): value is string => typeof value === "string";
+const isIsoDate = (value: unknown): value is string => {
+    if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+    const parsed = new Date(value + "T00:00:00Z");
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const INTEGER_TEXT = /^-?\d+$/;
 
@@ -26,9 +31,9 @@ function parseMachine(value: unknown, expected: "MP1" | "MP3"): MachineTubetes |
     for (const item of value.tubetes) {
         if (!isRec(item) || !isText(item.code) || !INTEGER_TEXT.test(item.code) || !Number.isSafeInteger(item.usage_count)
             || (item.usage_count as number) < 1 || !Array.isArray(item.dates) || item.dates.length !== item.usage_count
-            || !item.dates.every(date => isText(date) && ISO_DATE.test(date))) return null;
+            || !item.dates.every(date => isIsoDate(date))) return null;
         const codeNumber = Number(item.code);
-        if (!Number.isSafeInteger(codeNumber) || codeNumber < previous) return null;
+        if (!Number.isSafeInteger(codeNumber) || String(codeNumber) !== item.code || codeNumber < previous) return null;
         previous = codeNumber;
         const dates = item.dates as string[];
         if (dates.some((date, index) => index > 0 && date < dates[index - 1])) return null;
