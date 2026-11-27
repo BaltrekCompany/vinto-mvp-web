@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # Clave privada Ed25519 en formato hexadecimal de 32 bytes. Se configura
     # exclusivamente en el servidor; nunca se registra ni sale en la API.
     offline_quality_signing_seed_hex: SecretStr | None = None
+    # FOFF-02B.2: enroll de dispositivo de Operación, independiente de Calidad.
+    # OFF por defecto. No concede CAPTURE offline ni firma ámbitos.
+    offline_production_enrollment_enabled: bool = False
 
     # MF-13-03B PR2: compuerta de servidor para crear/publicar OT con líneas en una máquina distinta de la de cabecera. Variable
     # WORK_ORDERS_MULTI_MACHINE_ENABLED; el cliente HTTP no puede cambiarla. Apagada por defecto: una solicitud multimáquina se RECHAZA
