@@ -383,19 +383,23 @@ La aprobación de estas reglas no autoriza:
 
 La estrategia de cobertura quedó aprobada: los escenarios ausentes en la muestra productiva se probarán con fixtures sintéticos en bases PostgreSQL efímeras PG17, nunca creando capturas ficticias en la VPS. Esta decisión permite cubrir MP1 con código, reutilizaciones, más de diez usos, duplicados en un mismo día y estados de Calidad sin escribir en producción.
 
-La estrategia de fixtures no convierte los escenarios en PASS antes de ejecutar las pruebas. El resultado TUB-01 permanece PARTIAL por falta de esos casos en la muestra real; la cobertura sintética se demostrará durante TUB-02 y la regresión final TUB-06.
+La estrategia de fixtures no convierte la muestra productiva en una muestra completa. El resultado TUB-01 permanece PARTIAL como auditoría de datos reales, porque esos escenarios no existen en la muestra de producción. Sin embargo, la cobertura sintética aprobada ya se ejecutó durante TUB-02 en PostgreSQL 17 efímero y terminó PASS: MP1/MP3, reutilizaciones, 23 usos del mismo código en un día, estados de Calidad, permisos, sector y lectura sin escrituras.
 
-La implementación de TUB-02 requiere aprobación independiente. La aprobación de las reglas funcionales y del método de prueba no autoriza por sí sola a escribir código, aplicar migraciones, cambiar permisos productivos, desplegar ni crear datos en la VPS.
+La implementación de TUB-02 fue autorizada y está realizada en el [PR #258](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258), con CI específico y regresión PASS. El PR sigue abierto para revisión; no se ha fusionado ni desplegado. No se crearon datos artificiales en la VPS ni en producción.
 
 ---
 
 ## 13. Siguiente paso
 
-Las cinco decisiones funcionales están aprobadas. El resultado TUB-01 permanece PARTIAL por falta de cobertura de datos para MP1 con código, reutilización, más de diez usos y repetición en el mismo día.
+Las cinco decisiones funcionales y la estrategia de fixtures sintéticos están aprobadas. TUB-01 permanece PARTIAL únicamente como fotografía de la muestra productiva; los escenarios ausentes ya se cubrieron con pruebas sintéticas PG17 durante TUB-02.
+
+- PR de implementación TUB-02: [#258](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258).
+- CI específico TUB-02: PASS.
+- Regresión de permisos, P1-03, Calidad, sectores y frontend: PASS.
+- No se fusionó ni desplegó.
 
 Siguiente puerta de salida:
-1. Ejecutar la matriz de fixtures sintéticos en PostgreSQL efímero PG17 durante TUB-02.
-2. Revisar los resultados de CI y verificar que no se utilizó la base de producción para los escenarios artificiales.
-3. Solicitar autorización independiente antes de implementar TUB-02.
+1. Revisar el PR #258 y autorizar su merge por separado.
+2. Tras integrar TUB-02, preparar TUB-03 (interfaz) como incremento independiente.
 
-**No se escribió código funcional, no se crearon ramas de implementación, no se desplegó ni se modificaron datos productivos en TUB-01.**
+**Durante TUB-01 no se escribió código funcional, no se crearon ramas de implementación, no se desplegó ni se modificaron datos productivos. Los fixtures posteriores se ejecutaron únicamente en PostgreSQL efímero PG17.**
