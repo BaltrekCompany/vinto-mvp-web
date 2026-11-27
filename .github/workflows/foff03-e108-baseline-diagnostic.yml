@@ -1,0 +1,73 @@
+name: FOFF-03 E1-08 main baseline audit (diagnostic only)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/foff03-e108-baseline-diagnostic.yml'
+      - 'backend/app/foff_conversion_sync_router.py'
+      - 'backend/tests/test_foff03_sync_contract.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-main-reference:
+    name: E1-08 independent main baseline (diagnostic)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci-disposable-pg17-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: ci
+      TEST_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_test
+      TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://ci_admin:ci-disposable-pg17-only@127.0.0.1:5432/vinto_ci_unused
+      PYTHONDONTWRITEBYTECODE: '1'
+      WORK_ORDER_LINE_EXECUTION_ENABLED: 'false'
+    steps:
+      - name: Checkout exact PR base (main), not candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pytest==8.4.2
+      - name: Historical E1 full-suite results on current main
+        shell: bash
+        working-directory: backend
+        run: |
+          set +e
+          python -B ../scripts/e1-backend-regression-gate.py > ../main-reference-e108.txt 2>&1
+          code=$?
+          cat ../main-reference-e108.txt
+          {
+            echo "### Current main baseline diagnostic (not a merge gate)"
+            echo "Base SHA: ${{ github.event.pull_request.base.sha }}"
+            echo "Exit code of historical differential checker: $code"
+            echo "This check intentionally reports failures without suppressing candidate gates."
+            grep -E 'Tests=|NEW (FAIL|ERROR) x|NO-GO:|PASS differential' ../main-reference-e108.txt || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foff03-e108-current-main-only
+          path: main-reference-e108.txt
+          retention-days: 7
