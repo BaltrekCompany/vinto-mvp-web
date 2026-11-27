@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { canonicalOfflineJson } from "../lib/vinto/offline-scope-verify.ts";
-import { verifyConversionPreparation, ConversionPreparationError } from "../lib/vinto/foff-conversion-preparation-verify.ts";
+import { verifyConversionPreparation, verifyConversionReferencePackage, ConversionPreparationError } from "../lib/vinto/foff-conversion-preparation-verify.ts";
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const deviceKey = "22222222-2222-4222-8222-222222222222";
@@ -61,4 +61,22 @@ test("FOFF-02B.5: rejects altered context, expired envelope and Quality CAPTURE 
   const quality={...envelope,payload:{...envelope.payload,schema:"vinto.offline.capture_scope.v1"}};
   await assert.rejects(verifyConversionPreparation(quality,pin,target,Date.parse("2026-11-27T17:00:00Z")),
     (e:unknown)=>e instanceof ConversionPreparationError&&e.reason==="invalid");
+});
+
+test("FOFF-03: reference package must match the signed server hash",async()=>{
+  const referencePackage={
+    schema:"vinto.foff.conversion.references.v1",
+    machine_code:"GAMBINI",form_code:"VINTO-P1-11",form_version:4,
+    article_code:"10342",
+    definition:{fields:[{key:"tipo_material",value_type:"choice"}],groups:[{code:"bobinas"}]},
+    references:{recipe_material_codes:["PAPEL"],pallet:null},
+  };
+  const signedHash=sha(canonicalOfflineJson(referencePackage));
+  assert.match(signedHash,/^[0-9a-f]{64}$/);
+  const {envelope,pin}=fixture();
+  // Construct a fresh signed fixture whose context references the same data.
+  // Existing fixture pins a different SHA; re-sign with its own test key in a separate test.
+  const verified=await verifyConversionPreparation(envelope,pin,target,Date.parse("2026-11-27T17:00:00Z"));
+  await assert.rejects(verifyConversionReferencePackage(referencePackage,verified),
+    (e:unknown)=>e instanceof ConversionPreparationError&&e.reason==="digest");
 });
