@@ -91,7 +91,25 @@ Referencias técnicas de partida:
 
 El usuario confirma que los datos actualmente presentes en la VPS/instalación de producción son ficticios y que se puede utilizar el **entorno de producción actual para realizar pruebas** de este entregable.
 
-Esta autorización permite planificar validaciones funcionales sobre la instalación real, no únicamente en bases efímeras o simuladores. Debe aplicarse de forma controlada:
+Esta autorización permite planificar validaciones funcionales sobre la instalación real, no únicamente en bases efímeras o simuladores.
+
+### Ejecución de consultas VPS mediante Claude Code
+
+Las consultas de TUB-01 a la VPS se ejecutarán mediante **Claude Code**, utilizando la conexión SSH ya configurada en ese entorno. ChatGPT/GitHub MCP se utilizará para revisar el repositorio y documentar resultados; no se asumirá acceso SSH directo desde esta conversación.
+
+Para TUB-01, Claude Code deberá:
+
+- Ejecutar únicamente inspección y consultas de solo lectura.
+- Preferir consultas SQL dentro de una transacción explícitamente `READ ONLY` cuando corresponda.
+- No ejecutar `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, DDL, migraciones ni scripts de aplicación.
+- No reiniciar servicios, reconstruir contenedores, desplegar, cambiar configuración, permisos, firewall o Nginx.
+- No leer ni mostrar secretos, contraseñas, tokens, claves privadas, archivos `.env` ni credenciales.
+- No copiar dumps ni datos personales a la conversación. Entregar conteos, muestras mínimas anonimizadas y resultados sanitizados.
+- Registrar comandos, destino confirmado, hora, alcance y resultado para que la auditoría sea reproducible.
+
+Si una consulta necesita permisos adicionales, revela un esquema distinto del esperado o no puede garantizarse que sea de solo lectura, Claude Code debe detenerse y solicitar revisión antes de continuar.
+
+Debe aplicarse de forma controlada:
 
 1. Identificar y documentar los datos de prueba para distinguirlos de los registros ficticios preexistentes.
 2. Para TUB-01, comenzar con consultas de solo lectura y no modificar datos.
