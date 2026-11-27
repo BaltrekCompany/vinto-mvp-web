@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,8 @@ function MachineTable({ report }: { report: TubetesReport["machines"][number] })
 }
 
 export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => void }) {
+    const onSessionLostRef = useRef(onSessionLost);
+    onSessionLostRef.current = onSessionLost;
     const [opened, setOpened] = useState(false);
     const [refresh, setRefresh] = useState(0);
     const [result, setResult] = useState<{ status: "loading" } | { status: "ready"; data: TubetesReport } | { status: "error"; error: ApiFailure }>({ status: "loading" });
@@ -61,14 +63,14 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
             if (reply.ok) setResult({ status: "ready", data: reply.data });
             else {
                 setResult({ status: "error", error: reply });
-                if (reply.kind === "session") onSessionLost();
+                if (reply.kind === "session") onSessionLostRef.current();
             }
         }).catch(error => {
             if (error instanceof DOMException && error.name === "AbortError") return;
             if (!controller.signal.aborted) setResult({ status: "error", error: { ok: false, kind: "unavailable", status: 0 } });
         });
         return () => controller.abort();
-    }, [opened, refresh, onSessionLost]);
+    }, [opened, refresh]);
 
     if (!opened) return <div className="rounded-lg border p-3">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Tubetes utilizados</p><p className="mt-1 text-xs font-normal text-slate-600">Consumo registrado en Producción de Bobinas P1-03 · MP1 y MP3</p></div>
