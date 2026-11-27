@@ -34,8 +34,8 @@ F6_VALUES = {"cantidad_fardos": 1, "punto_merma": "recorte_maquina", "tipo_produ
 
 # Matriz de permisos vigente al cerrar M1-A. Si un cambio la modifica, esta prueba debe fallar y revisarse a propósito.
 PINNED_PROFILE_PERMISSIONS = {
-    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read"},
-    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read"},
+    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read", "report.read"},
+    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read", "report.read"},
     "OPERACION": {"work_order.read", "assignment.read", "production.capture", "catalog.read"},
     "CALIDAD": {"work_order.read", "assignment.read", "quality.capture", "quality.release", "catalog.read"},
     "DATA_BALTREK": {"work_order.read", "assignment.read", "catalog.read", "catalog.manage", "user.manage"},
@@ -153,7 +153,7 @@ class StaticScopeTests(unittest.TestCase):
     def test_the_permission_matrix_is_unchanged_and_independent_of_sectors(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)
         self.assertEqual(permissions.ALL_PERMISSIONS, frozenset().union(*PINNED_PROFILE_PERMISSIONS.values()))
-        self.assertEqual(len(permissions.ALL_PERMISSIONS), 10)
+        self.assertEqual(len(permissions.ALL_PERMISSIONS), 11)
         for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
             self.assertEqual(set(permissions.permissions_for_profiles([profile])), expected, profile)
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):  # habilitar un sector no cambia ningún permiso
