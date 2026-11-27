@@ -32,7 +32,7 @@ function parseMachine(value: unknown, expected: "MP1" | "MP3"): MachineTubetes |
             || (item.usage_count as number) < 1 || !Array.isArray(item.dates) || item.dates.length !== item.usage_count
             || !item.dates.every(date => isIsoDate(date))) return null;
         const codeNumber = Number(item.code);
-        if (!Number.isSafeInteger(codeNumber) || String(codeNumber) !== item.code || codeNumber < previous) return null;
+        if (!Number.isSafeInteger(codeNumber) || String(codeNumber) !== item.code || codeNumber <= previous) return null;
         previous = codeNumber;
         const dates = item.dates as string[];
         if (dates.some((date, index) => index > 0 && date < dates[index - 1])) return null;
