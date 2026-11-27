@@ -18,6 +18,7 @@ on:
       - 'scripts/auth.test.mjs'
       - 'scripts/tubetes-report.test.mjs'
       - 'scripts/tubetes-excel.test.mjs'
+      - 'scripts/validate-tubetes-excel.py'
       - 'lib/vinto/tubetes-pdf.ts'
       - 'scripts/tubetes-pdf.test.mjs'
       - 'docs/VINTO-TUB-04-PDF-IMPLEMENTACION-2026-11-27.md'
