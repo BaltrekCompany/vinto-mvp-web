@@ -92,16 +92,16 @@ Las siguientes decisiones fueron aprobadas por el usuario el 27/11/2026 y se con
 | Decisión | Regla aprobada | Traducción técnica |
 |---|---|---|
 | D01 | Solo released; pending y rejected, incluido reutilizable, excluidos | Elegibilidad exige quality_release.status = released y peso válido |
-| D02 | OT closed permitida si no está archivada ni es QA y tiene crías released sin asignar | No exigir OT abierta; excluir archived_at y qa_retired; exigir al menos una cría elegible |
+| D02 | OT closed permitida si no está archivada ni clasificada QA y tiene crías released sin asignar | No exigir OT abierta; excluir archived_at/qa_retired y exigir clasificación positiva production_confirmed y al menos una cría elegible |
 | D03 | Artículo de OT como producto principal; producto_refilado complemento opcional | La identidad de producto deriva de article/article_version; producto_refilado no es clave |
 | D04 | No inferir unidades ni semántica industrial. Presentar los campos crudos de P1-07: Formato = formato_1 y, si existe, formato_2 unidos por “ + ”; Cortes = formato_3 sin conversión | Conservar decimales originales; no añadir unidades, transformar a códigos como “0-C” ni comparar Cortes con cantidad de crías |
 | D05 | Un destino por reporte; destinos distintos requieren reportes separados | Comparar el destino de cada madre; preservar el texto fuente |
 | D06 | Madre visible por etiqueta, fecha/horas, máquina, PV y artículo; UUID interno | Todas las relaciones usan rewind_mother_capture_id/capture UUID |
 | D07 | Operador desde capture.created_by; ayudante opcional | No sustituir creador original; auxiliar puede ser NULL |
 | D08 | Veinte paquetes por página, con paginación | Veinte filas por página PDF; sin límite global de paquetes |
-| D09 | Advertir inconsistencias sin modificar origen; Functional decide cuáles bloquean | Warnings en vista previa; no autocorregir ni ocultar valores |
+| D09 | Advertir inconsistencias sin modificar origen; los warnings detectados son informativos | Warnings en vista previa y snapshot; no autocorregir ni bloquear por anomalías de origen |
 | D10 | Borrador sin reserva; generación transaccional; anulación libera crías con motivo y autorización | Reserva solo al generar; anulación conserva historial y libera reservas |
-| D11 | Operación genera y consulta propios; Supervisión consulta historial; Jefatura gestiona anulaciones | Permisos dedicados y scope REBOBINADO |
+| D11 | Operación genera y consulta propios; Supervisión consulta historial; Jefatura consulta, anula y clasifica OTs para RBE | Permisos dedicados y scope REBOBINADO; clasificación de OT solo para Jefatura |
 
 D04 queda resuelta como una regla de presentación fiel al origen, no como homologación industrial: formato_1 es el primer componente obligatorio, formato_2 el segundo componente opcional y formato_3 se muestra con su etiqueta de origen “Cortes”. Los valores se imprimen tal como están almacenados, sin unidades ni conversión. El ejemplo “0-C” del mockup no se puede derivar del decimal de formato_3 y no se reproducirá hasta que exista una fuente explícita para ese código.
 
@@ -385,7 +385,7 @@ Tabla append-only vinto_txn.rewinding_export_work_order_classification:
 - work_order_id.
 - sequence_no.
 - classification: production_confirmed o qa.
-- recorded_by / recorded_at / reason.
+- recorded_by / recorded_at / reason (10–300 caracteres).
 - supersedes_id para enlazar la decisión anterior.
 
 Restricciones y garantías:
@@ -395,7 +395,7 @@ Restricciones y garantías:
 - No admite UPDATE/DELETE/TRUNCATE. Una rectificación es una nueva fila que supersedes la anterior.
 - La última decisión por sequence_no es la efectiva. Solo production_confirmed habilita la OT; qa la excluye.
 - La ausencia de una fila significa desconocido y deniega la elegibilidad.
-- La clasificación se realiza con FOR UPDATE sobre work_order, actor JEFATURA, permiso rewinding_export.classify_source, sector REBOBINADO y motivo obligatorio.
+- La clasificación se realiza con FOR UPDATE sobre work_order, actor JEFATURA, permiso rewinding_export.classify_source, sector REBOBINADO y motivo de 10–300 caracteres. La secuencia se asigna dentro de esa transacción y supersedes_id debe apuntar a la decisión efectiva anterior.
 - Cambiar una OT a qa exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos.
 - archived_at IS NOT NULL o qa_retired=true siempre excluyen la OT, incluso si la última clasificación es production_confirmed.
 
