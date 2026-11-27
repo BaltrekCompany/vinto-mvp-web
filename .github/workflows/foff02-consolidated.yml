@@ -51,5 +51,7 @@ jobs:
           PYTHONPATH=. python -c "from app.main import app; assert app is not None"
       - name: FOFF new endpoint and signer unit tests
         run: PYTHONPATH=. pytest -q tests/test_foff*.py
-      - name: Sector-scope static security regression
-        run: PYTHONPATH=tests:. python -m unittest -v test_sector_scope
+      # The sector-scope suite creates a PostgreSQL template and belongs to the
+      # dedicated isolated-PG17 workflows; it cannot run without a database.
+      # This job runs the FOFF units, while the existing Tubetes/PG17 CI covers
+      # that regression separately.
