@@ -83,7 +83,7 @@ export async function enqueueConversionCapture(input:{
      input.machineCode!==preparation.context.machine_code||
      !UUID.test(identity.ownerId)||!UUID4.test(identity.deviceKey))
     fail("scope");
-  let sha:string;
+  let sha="";
   try{sha=hex(new Uint8Array(await crypto.subtle.digest("SHA-256",
     new TextEncoder().encode(canonicalOfflineJson(input.values)))));}
   catch{fail("invalid_values");}
