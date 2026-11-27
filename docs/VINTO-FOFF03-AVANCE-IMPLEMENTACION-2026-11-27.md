@@ -43,3 +43,23 @@ No se abren PRs por subincremento. Todo FOFF-03 permanece en el **mismo PR #273*
 - **No se ha montado ningún editor offline de Conversión**: siguen pendientes adaptar los formularios originales P1-16, P1-11, P1-12 y P1-13 a autoguardado, recuperación, cierre, cola y sync. El botón de preparar solo crea un paquete cifrado cuando los flags estén habilitados, y por defecto permanece bloqueado por el backend.
 - No habilitar ninguna bandera ni declarar FOFF-03 lista hasta superar CI del HEAD más reciente, pruebas integrales PG17 y QA móvil. No hay cambios de VPS ni migración aplicada.
 
+
+## Implementación del editor de capturas y recuperación sin red (27/11, siguiente iteración dentro de FOFF-03)
+
+- **20/20 workflows PASS** comprobados para el commit inicial `3834640d`, antes de los cambios que se describen aquí. **No atribuir ese PASS al HEAD actual.**
+- `lib/vinto/foff-conversion-draft-store.ts`: borradores aislados en IndexedDB con AES-GCM, AAD ligado al usuario/dispositivo/preparación/formulario/versión, `capture_id` UUID v4 estable, incrementos de revisión y compare-and-swap por transacción para impedir sobrescrituras entre pestañas.
+- `lib/vinto/foff-conversion-form-schema.ts`: definición estricta derivada de campos y grupos **publicados en backend**, tipos `text`, `textarea`, `integer`, `decimal`, `date`, `time`, `boolean`; opciones, campos obligatorios y filas repetibles; desconocidos/no manuales se rechazan, sin sustituir validación industrial de servidor.
+- `components/vinto/foff-conversion-workspace.tsx`: recuperación en el móvil por clave local del dispositivo previamente enrolado; visualización de los formularios preparados, firmas Ed25519 y digest de paquete verificados, borrador cifrado, autoguardado diferido, captura en cola inmutable, reintento únicamente en línea con sesión del autor original y estados `pending/synced/requires_review`.
+- `lib/vinto/foff-conversion-profile.ts`: consulta de perfiles preparados del dispositivo; no crea sesión del backend ni concede permisos nuevos.
+- `app/page.tsx`: acceso a **Conversión Offline** sin desplazar Calidad Offline, también cuando falla conexión de sesión. El editor no inventa maquinaria ni asignaciones: todas las preparaciones nacen en la Ejecución original con OT vigente y quedan cifradas.
+- Se admiten paquetes ya vencidos para **recuperar su contenido**, pero su posterior envío corresponde a **revisión 202** del receptor, sin transformar el reloj del dispositivo en autoridad de turno.
+- Se añadieron pruebas de formato, normalización de grupos, cifrado sin fallback y validación local de contexto. El flujo funcional P1-11/P1-12/P1-13/P1-16 con datos de las formas reales del backend requiere ensayo de navegador y dispositivo.
+
+### Bloqueos para autorizar producción
+
+1. El estado de GitHub Actions debe verificarse sobre el **HEAD actual** tras el editor y las modificaciones de `app/page.tsx`; cualquier fallo requiere corrección y nuevo CI.
+2. Pruebas de integración con IndexedDB real y Safari/Chrome móvil: clave correcta/incorrecta, refresco offline, cierre/reapertura, autoguardado, colisión de pestañas, expiración, reconexión, pérdida de ACK, autor distinto.
+3. Receptor y migración 0032 en PostgreSQL 17 aislado: revisiones 202 realmente persistidas, idempotencia de captura y pallet, control de revocación, permisos y cambio de turno.
+4. Auditoría de concurrencia y UX móvil en entornos controlados; si se obtienen pruebas suficientes, actualizar el PR y preparar respaldo, rollback y activación **solo de Conversión**.
+5. No habilitar `offline_conversion_capture_enabled`, `offline_conversion_preparation_enabled` ni `offline_production_enrollment_enabled` mientras existan bloqueos; **ningún despliegue realizado**.
+
