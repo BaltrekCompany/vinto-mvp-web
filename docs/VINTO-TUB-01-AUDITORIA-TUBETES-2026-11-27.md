@@ -132,6 +132,8 @@ Si Functional confirma que el identificador físico real incluye letras o ceros 
 
 La zona horaria operativa identificada en la lógica de turnos es `America/La_Paz`. PostgreSQL registra timestamps en UTC.
 
+**Pendiente funcional importante:** confirmar que `America/La_Paz` corresponde efectivamente a la zona horaria de la planta. No sustituirla por `America/Lima` ni cambiar la configuración por inferencia. Si la planta opera en Perú, Functional debe confirmar explícitamente si la zona horaria correcta es `America/Lima`; la auditoría solo demuestra qué usa actualmente el código.
+
 Turnos de Bobinas identificados:
 - Día: 07:00–19:00.
 - Noche: 19:00–07:00.
@@ -150,6 +152,8 @@ Las horas `hora_inicio` y `hora_fin` no incluyen fecha y en algunos datos de pru
 Utilizar `operating_date` como fecha del reporte, porque atribuye el consumo al día operativo/turno al que pertenece, incluso cuando el registro se completa después de medianoche.
 
 No convertir `captured_at` directamente a fecha UTC.
+
+La zona horaria asociada también debe validarse con Functional: el código actual usa `America/La_Paz`. Confirmar si esa es la zona horaria real de la planta o si debe ser `America/Lima`. No cambiarla como parte de TUB-02 sin una decisión explícita.
 
 Esta recomendación debe ser confirmada funcionalmente antes de TUB-02.
 
@@ -348,7 +352,7 @@ No se leyeron secretos, contraseñas, tokens, claves privadas ni datos personale
 Se presentan las recomendaciones para validación del responsable funcional:
 
 1. **Código:** mostrar el entero original (`1`, `50`, `70`), sin prefijo ni ceros agregados. Si el identificador físico requiere letras/ceros, abrir una decisión separada sobre P1-03.
-2. **Fecha:** utilizar `operating_date` en la zona operativa `America/La_Paz`.
+2. **Fecha y zona horaria:** utilizar `operating_date`; confirmar si la zona horaria operativa correcta de la planta es `America/La_Paz` (actual en el código) o `America/Lima`.
 3. **Consumo:** incluir registros enviados/cerrados aunque la bobina esté rechazada por Calidad; excluir borradores, bloqueados y órdenes `qa_retired`.
 4. **Permiso:** `report.read` para Jefatura y Supervisión, con sector BOBINAS y alcance MP1/MP3.
 5. **Contrato:** una respuesta con ambas máquinas, código como texto original, todas las fechas y duplicados conservados.
