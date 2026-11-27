@@ -94,7 +94,7 @@ Las siguientes decisiones fueron aprobadas por el usuario el 27/11/2026 y se con
 | D01 | Solo released; pending y rejected, incluido reutilizable, excluidos | Elegibilidad exige quality_release.status = released y peso válido |
 | D02 | OT closed permitida si no está archivada ni es QA y tiene crías released sin asignar | No exigir OT abierta; excluir archived_at y qa_retired; exigir al menos una cría elegible |
 | D03 | Artículo de OT como producto principal; producto_refilado complemento opcional | La identidad de producto deriva de article/article_version; producto_refilado no es clave |
-| D04 | No homologar formato_1/2/3 ni Corte hasta confirmación de Functional | Conservar valores crudos en snapshot; no concatenar ni asignar significado |
+| D04 | No inferir unidades ni semántica industrial. Presentar los campos crudos de P1-07: Formato = formato_1 y, si existe, formato_2 unidos por “ + ”; Cortes = formato_3 sin conversión | Conservar decimales originales; no añadir unidades, transformar a códigos como “0-C” ni comparar Cortes con cantidad de crías |
 | D05 | Un destino por reporte; destinos distintos requieren reportes separados | Comparar el destino de cada madre; preservar el texto fuente |
 | D06 | Madre visible por etiqueta, fecha/horas, máquina, PV y artículo; UUID interno | Todas las relaciones usan rewind_mother_capture_id/capture UUID |
 | D07 | Operador desde capture.created_by; ayudante opcional | No sustituir creador original; auxiliar puede ser NULL |
@@ -103,7 +103,7 @@ Las siguientes decisiones fueron aprobadas por el usuario el 27/11/2026 y se con
 | D10 | Borrador sin reserva; generación transaccional; anulación libera crías con motivo y autorización | Reserva solo al generar; anulación conserva historial y libera reservas |
 | D11 | Operación genera y consulta propios; Supervisión consulta historial; Jefatura gestiona anulaciones | Permisos dedicados y scope REBOBINADO |
 
-D04 es una decisión aprobada de no interpretar todavía los campos. No significa que la semántica de Formato/Corte ya esté resuelta.
+D04 queda resuelta como una regla de presentación fiel al origen, no como homologación industrial: formato_1 es el primer componente obligatorio, formato_2 el segundo componente opcional y formato_3 se muestra con su etiqueta de origen “Cortes”. Los valores se imprimen tal como están almacenados, sin unidades ni conversión. El ejemplo “0-C” del mockup no se puede derivar del decimal de formato_3 y no se reproducirá hasta que exista una fuente explícita para ese código.
 
 ---
 
@@ -162,7 +162,7 @@ El servicio debe leer las definiciones de la versión exacta de formulario de ca
 | Peso cría | bobbin.weight_kg | Decimal exacto, solo lectura |
 | PV | work_order_line.pv_reference | Snapshot de origen |
 | Producto | Article y article_version de la OT | Producto principal |
-| Producto refilado | capture_detail.producto_refilado | Complemento opcional, nunca clave |
+| Producto refilado | capture_detail.producto_refilado | Complemento opcional solo en vista previa/snapshot/historial; no se imprime en el PDF porque no aparece en el mockup ni en la estructura aprobada de la página 6 |
 | Máquina | capture.machine_id | Nombre/código del maestro |
 | Destino | capture_detail.destino | Texto de origen |
 | Diámetro | bobbin.diameter_mm y campo P1-07 diametro | Conservar fuente y verificar consistencia |
@@ -195,7 +195,7 @@ Un PV aparece solo si tiene al menos una madre P1-07 v3+ con una cría que cumpl
 
 La OT closed se permite expresamente. La OT draft no se ofrece: no representa una OT publicada para producción.
 
-**Límite de la auditoría:** QA-001 no estaba marcado como QA ni archivado, aunque no tenía crías. No se debe inferir QA por prefijo, nombre del usuario o similitud de datos. Antes de producción funcional debe existir un criterio verificable para que todas las OTs de prueba estén marcadas mediante qa_retired u otro mecanismo formal aprobado. Una OT de QA no marcada no puede incluirse por defecto.
+**Resolución de QA no marcado:** la ausencia de qa_retired no demuestra que una OT sea de producción. RBE exige una clasificación positiva y auditada por OT en rewinding_export_work_order_classification: la última decisión debe ser production_confirmed. Sin clasificación, la OT queda como desconocida y no aparece; classification=qa, archived_at no NULL o qa_retired=true siempre la excluyen. QA-001 no tenía crías elegibles y queda excluida por el filtro de crías, además de requerir clasificación explícita antes de cualquier uso futuro. No se infiere QA por prefijo, nombre de usuario ni similitud de datos.
 
 ### 5.2 Producto dependiente
 
@@ -203,7 +203,7 @@ La OT closed se permite expresamente. La OT draft no se ofrece: no representa un
 - La identidad de producto es el artículo de la línea de OT.
 - producto_refilado no reemplaza el artículo.
 - Se preserva article_version_id exacto por paquete para trazabilidad histórica.
-- Si el mismo article_id aparece con versiones cuya descripción difiere, el backend conserva cada descripción de origen. La composición de una única etiqueta de producto en cabecera requiere resolver esa diferencia antes de generar.
+- Si el mismo article_id aparece con versiones cuya descripción difiere, el encabezado usa el código estable del artículo; solo añade la descripción si todas las versiones de los paquetes coinciden exactamente. Cada package conserva article_version_id y su descripción original en snapshot/historial; nunca se elige arbitrariamente la descripción más reciente.
 
 ### 5.3 Madres elegibles
 
@@ -375,6 +375,30 @@ Restricciones y garantías:
 - El snapshot se congela al pasar a generated. Las transiciones posteriores solo pueden cambiar estado, actor/fecha/motivo y metadatos de observación/anulación; nunca el contenido de negocio ni el snapshot.
 
 Los campos manuales camión y orden pueden estar vacíos en un borrador, pero son obligatorios al generar.
+
+### 8.1.1 Clasificación explícita de OT para RBE
+
+Tabla append-only rewinding_export_work_order_classification:
+
+- id UUID.
+- work_order_id.
+- sequence_no.
+- classification: production_confirmed o qa.
+- recorded_by / recorded_at / reason.
+- supersedes_id para enlazar la decisión anterior.
+
+Restricciones y garantías:
+
+- UNIQUE(work_order_id, sequence_no) y UNIQUE(id, work_order_id).
+- FKs ON DELETE RESTRICT: work_order_id → vinto_txn.work_order; recorded_by → vinto_master.user; (supersedes_id, work_order_id) → (id, work_order_id) de la misma tabla.
+- No admite UPDATE/DELETE/TRUNCATE. Una rectificación es una nueva fila que supersedes la anterior.
+- La última decisión por sequence_no es la efectiva. Solo production_confirmed habilita la OT; qa la excluye.
+- La ausencia de una fila significa desconocido y deniega la elegibilidad.
+- La clasificación se realiza con FOR UPDATE sobre work_order, actor JEFATURA, permiso rewinding_export.classify_source, sector REBOBINADO y motivo obligatorio.
+- Cambiar una OT a qa exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos.
+- archived_at IS NOT NULL o qa_retired=true siempre excluyen la OT, incluso si la última clasificación es production_confirmed.
+
+Esta lista positiva evita depender de prefijos, nombres de usuario o flags incompletos para inferir si una OT es de producción o QA.
 
 ### 8.2 Paquetes: rewinding_export_package
 
@@ -649,7 +673,7 @@ Encabezado:
 - N.° orden.
 - Producto principal del artículo OT.
 - Fecha de generación.
-- Formato (pendiente D04).
+- Formato: formato_1 + formato_2 si el segundo existe; decimales crudos, sin unidades.
 - PV.
 - Destino.
 
@@ -658,7 +682,7 @@ Detalle por paquete:
 - Bobina madre declarada.
 - Crías A–E con número real y peso.
 - Diámetro.
-- Corte (pendiente D04).
+- Cortes: formato_3 en su valor decimal original, sin convertir a un código.
 - Tubete.
 - Ayudante (puede estar vacío).
 - Operador original.
@@ -712,6 +736,7 @@ Permisos nuevos:
 - rewinding_export.read_own.
 - rewinding_export.read_sector.
 - rewinding_export.annul.
+- rewinding_export.classify_source (solo JEFATURA; clasifica una OT como production_confirmed o QA, con motivo y auditoría).
 
 Matriz explícita:
 
@@ -721,6 +746,7 @@ Matriz explícita:
 | rewinding_export.read_own | Sí | No | No | No | No |
 | rewinding_export.read_sector | No | Sí | Sí | No | No |
 | rewinding_export.annul | No | No | Sí | No | No |
+| rewinding_export.classify_source | No | No | Sí | No | No |
 
 No heredar permisos por ser administrador técnico ni ampliar permisos de Calidad, Tubetes o reportes existentes.
 
@@ -749,7 +775,13 @@ Historial, detalle y descarga PDF aplican el mismo filtro de propietario/sector 
 
 Para historial/detalle/PDF se usará una dependencia que acepte exactamente read_own o read_sector según el perfil, y que aplique el filtro correspondiente en SQL. No se sustituye por report.read.
 
-### 12.4 Aprovisionamiento explícito de REBOBINADO
+### 12.4 Clasificación positiva de OT
+
+La tabla rewinding_export_work_order_classification conserva decisiones por OT: work_order_id, classification, recorded_by, recorded_at, reason y supersedes_id. Sus FKs usan ON DELETE RESTRICT; no admite UPDATE/DELETE/TRUNCATE. La decisión vigente es la de mayor sequence_no.
+
+La ausencia de fila significa desconocido y deniega la elegibilidad. Solo JEFATURA con rewinding_export.classify_source y alcance REBOBINADO puede registrar una clasificación, con motivo obligatorio. La operación bloquea work_order FOR UPDATE y serializa con generación (FOR SHARE). Cambiar una OT a QA exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos. qa_retired y archived_at siguen siendo denegaciones incluso si la última clasificación dice production_confirmed.
+
+### 12.5 Aprovisionamiento explícito de REBOBINADO
 
 user_sector es una concesión explícita. Que REBOBINADO esté habilitado en operational_sector_codes() no concede acceso a ningún usuario. La migración 0006 hizo backfill de BOBINAS, no de REBOBINADO; scoped_sector_codes() devuelve alcance vacío cuando falta la concesión.
 
@@ -784,7 +816,8 @@ SUPERVISION y JEFATURA necesitan el permiso funcional correspondiente y la conce
 - Una sola máquina, PV, producto y destino por reporte.
 - Una madre puede repetirse; una cría no.
 - El creador original se resuelve desde capture.created_by.
-- Si el usuario original no existe o no puede resolverse, no inventar un nombre.
+- Si created_by es NULL o no se puede resolver, la generación se bloquea porque Operador es obligatorio; no se inventa un nombre.
+- Si la cuenta es compartida, se muestra exactamente el nombre de esa cuenta y no se atribuye la captura a una persona distinta.
 - Ayudante NULL no bloquea.
 - PDF y snapshot deben tener hash verificable.
 - Un reporte generado no se edita ni se reconstruye.
@@ -809,7 +842,7 @@ D09 establece que el reporte advierte y no modifica los datos fuente. Se propone
 - SOURCE_CUTS_DO_NOT_MATCH_CHILD_COUNT.
 - OPTIONAL_SOURCE_FIELD_MISSING.
 
-No corregir ni reemplazar valores. Functional debe indicar cuáles warnings son informativos y cuáles bloquean la generación. Hasta esa definición no se debe introducir una regla de bloqueo nueva por intuición.
+No corregir ni reemplazar valores. **Los tres warnings de origen (hora invertida, suma de pesos de crías superior al peso de madre y discrepancia de Cortes frente a cantidad de crías) son informativos y no bloquean la generación.** No existe una regla aprobada que relacione Cortes con cantidad de crías ni una regla de balance de masa en este reporte. Los warnings se muestran en vista previa y se congelan en snapshot. V01–V08 y la elegibilidad de OT/crías siguen siendo bloqueantes.
 
 ---
 
@@ -916,7 +949,7 @@ La descarga no consulta los valores productivos actuales para reconstruir el doc
 
 ### Permisos
 
-- ALL_PERMISSIONS contiene los cuatro permisos y PROFILE_PERMISSIONS asigna exactamente la matriz de D11.
+- ALL_PERMISSIONS contiene los cinco permisos RBE y PROFILE_PERMISSIONS asigna exactamente la matriz de D11 más classify_source para JEFATURA.
 - Ruta con permiso desconocido falla en pruebas de arranque; rutas RBE usan permisos registrados.
 - Operación solo ve sus reportes propios.
 - Supervisión/Jefatura solo ven REBOBINADO.
@@ -943,12 +976,13 @@ Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 ef�
 - No asignar crías existentes durante migración.
 - No cambiar decisiones de Calidad.
 - No ampliar report.read.
-- Registrar los cuatro permisos nuevos en ALL_PERMISSIONS y PROFILE_PERMISSIONS antes de definir rutas que los utilicen.
+- Registrar los cinco permisos nuevos en ALL_PERMISSIONS y PROFILE_PERMISSIONS antes de definir rutas que los utilicen.
 - Añadir Operation.REWINDING_EXPORT_CREATE y su política P1-07 sin modificar las políticas de captura existentes.
 - Nuevas tablas con REVOKE ALL FROM PUBLIC y GRANT mínimo explícito a vinto_app según el patrón de migraciones.
 - Cabecera: SELECT/INSERT/UPDATE para transiciones autorizadas; sin DELETE/TRUNCATE. Trigger valida estado, actor, motivo y snapshot.
 - Paquetes y package_child: SELECT/INSERT/UPDATE solo en Borrador; sin DELETE/TRUNCATE. Triggers permiten retirada lógica solo en Borrador y congelan todas las filas desde Generado.
 - Reservas: SELECT/INSERT/UPDATE solo para crear y liberar dentro de transacciones autorizadas; sin DELETE/TRUNCATE y con trigger de transición.
+- Clasificación de OT: SELECT/INSERT para Jefatura a través de rewinding_export.classify_source; append-only, sin UPDATE/DELETE/TRUNCATE.
 - PDF: exclusivamente SELECT/INSERT para vinto_app; nunca UPDATE/DELETE/TRUNCATE.
 - Eventos: INSERT/SELECT; nunca UPDATE/DELETE/TRUNCATE.
 - Triggers de integridad referencial, transiciones, retirada lógica, auditoría, inmutabilidad de snapshot/PDF y paquetes/crías, coherencia diferible de reservas y sincronización con retirada QA.
@@ -962,19 +996,28 @@ Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 ef�
 
 Este apartado describe el diseño de seguridad. No aplica concesiones, GRANT, migraciones ni cambios de permisos en esta fase documental.
 
-## 18. Pendientes de confirmación funcional antes de cerrar RBE-02
+## 18. Resoluciones funcionales incorporadas al diseño — 27/11/2026
 
-Las decisiones D01–D11 están aprobadas. Los siguientes puntos son definiciones adicionales que no se pueden resolver con el código ni los datos actuales:
+Las siguientes reglas resuelven las siete preguntas de Functional con el criterio conservador de preservar exactamente los datos fuente, no inferir semántica industrial y no ampliar el alcance de Calidad.
 
-1. **Formato/Corte (bloqueante para PDF):** significado exacto de formato_1, formato_2 y formato_3. Confirmar cuál alimenta el campo Formato del encabezado y cuál alimenta Corte por paquete.
-2. **QA no marcado:** criterio verificable para identificar OTs/datos QA que no tienen qa_retired ni archived_at. No inferir por prefijo ni por nombre de usuario.
-3. **Warnings bloqueantes:** cuáles de las anomalías de horas, pesos y cortes impiden generar y cuáles son solo informativas.
-4. **Operador original:** las 11 capturas auditadas pertenecen a una sola cuenta OPERACION cuyo nombre empieza por Q. Confirmar si esa cuenta representa al operador real o una cuenta QA compartida; el sistema seguirá mostrando capture.created_by sin sustituirlo.
-5. **Producto refilado:** confirmar si se imprime como complemento en el PDF o se conserva solo en vista previa/snapshot. Nunca reemplaza el artículo de OT.
-6. **Versiones de artículo:** confirmar cómo mostrar una única descripción de producto si varias madres del mismo article_id tienen article_version.description diferente.
-7. **Cambios posteriores de Calidad:** la API actual no permite released → rejected mediante operación normal. Confirmar el proceso autorizado de corrección que deberá activar Observado; el trigger propuesto no habilita una nueva decisión por sí mismo.
+| N.º | Tema | Regla adoptada para RBE |
+|---|---|---|
+| 1 | Formato/Cortes | Formato se presenta como formato_1 y, si existe, formato_2 unidos por “ + ”. Cortes se presenta como formato_3 bajo la etiqueta “Cortes”. Se conservan los decimales exactos, sin unidades ni conversión a códigos como “0-C”. |
+| 2 | OTs QA no marcadas | La ausencia de qa_retired no prueba que una OT sea de producción. Se exige una clasificación positiva y auditada production_confirmed en rewinding_export_work_order_classification. Sin clasificación, la OT queda desconocida y no aparece. QA, archived_at o qa_retired la excluyen siempre. QA-001 no tenía crías elegibles y, por tanto, no aparece. |
+| 3 | Warnings de origen | Hora invertida, suma de pesos de crías superior al peso de madre y discrepancia de Cortes/cantidad de crías son warnings informativos; no bloquean. Se muestran en vista previa y snapshot. V01–V08 y la elegibilidad de OT/crías sí bloquean. |
+| 4 | Operador original | Siempre se muestra capture.created_by. Si falta o no se resuelve, no se genera porque Operador es obligatorio. Si la cuenta es compartida, se muestra el nombre de esa cuenta, sin atribuir la captura a una persona distinta. El informe RBE-01 no demuestra si la cuenta OPERACION cuyo nombre empieza por Q es individual o QA; no se hace esa inferencia. |
+| 5 | Producto refilado | El producto del encabezado es el artículo de la OT. producto_refilado se conserva como complemento en vista previa/snapshot/historial, pero no se imprime en el PDF porque no figura en el mockup ni en la página 6 de la especificación. |
+| 6 | Versiones de artículo | El identificador estable es article_id/código de artículo. El encabezado añade description solo si todas las versiones de los paquetes coinciden exactamente. Si difieren, muestra el código estable; cada descripción histórica permanece asociada a su article_version_id en el detalle/snapshot. |
+| 7 | Corrección posterior de Calidad | RBE no modifica ni corrige decisiones de Calidad. El flujo actual solo permite pending → released/rejected. Una corrección posterior a released queda fuera de RBE y requerirá un flujo separado de Calidad, append-only, con actor/motivo y evento; cuando exista, marcará los reportes afectados como Observados, mantendrá reservas y PDF, y Jefatura podrá anular para liberar crías. No se permite UPDATE directo de la decisión. |
 
-Hasta cerrar estos puntos, el diseño de filtros, persistencia, paquetes, permisos, reserva e historial puede avanzar, pero no debe cerrarse el contrato final del PDF ni activarse generación productiva.
+### Evidencia y límites de estas resoluciones
+
+- La semántica de formato_1/2/3 no se convierte en unidades ni códigos industriales. La regla solo define una presentación literal a partir de los labels y tipos del seed P1-07 v5.
+- El segundo PDF adjunto es un reporte agregado de Producción (fecha/máquina/turno/producto), no es fuente de mapeo para el PDF de exportación.
+- La cuenta OPERACION con nombre iniciado en Q no queda identificada como real ni QA; la aplicación conserva exactamente el creador registrado.
+- La corrección de una decisión released no existe en el producto actual y no se implementará dentro de RBE.
+
+La clasificación positiva de OTs, la lista de usuarios/sectores y las concesiones individuales máquina + P1-07 deberán estar aprobadas antes del rollout. RBE-05 puede construir el PDF con estas reglas; no se autoriza usar OTs sin clasificación production_confirmed ni cambiar datos fuente.
 
 ---
 
@@ -983,8 +1026,8 @@ Hasta cerrar estos puntos, el diseño de filtros, persistencia, paquetes, permis
 | Puerta | Entregable | Estado |
 |---|---|---|
 | RBE-01 | Auditoría de solo lectura | PASS |
-| RBE-02 | Diseño técnico detallado | Documentado; pendiente aprobación |
-| Functional | Confirmaciones pendientes de sección 18 | Pendiente |
+| RBE-02 | Diseño técnico detallado | Correcciones técnicas y siete resoluciones funcionales incorporadas; pendiente tercera revisión y aprobación |
+| Functional | Resoluciones de sección 18 | Incorporadas al diseño; requieren validación final de usuario/Functional |
 | RBE-03 | Interfaz parametrizable | No iniciado |
 | RBE-04 | Backend, migración, reservas y estados | No iniciado |
 | RBE-05 | PDF e historial inmutable | No iniciado |
@@ -1024,6 +1067,6 @@ Se incorporan las siete observaciones de la revisión del PR #274, sin modificar
 - Solo se modifica este documento de diseño.
 - No se modifica código, pruebas, migraciones, permisos ni datos.
 - No se realizan consultas ni cambios en VPS/PostgreSQL.
-- El Issue #275 conserva las siete confirmaciones funcionales pendientes.
+- El Issue #275 debe actualizarse con las siete resoluciones de la sección 18.
 - PR #274 permanece Draft y pendiente de nueva revisión del usuario.
 - RBE-03, RBE-04, RBE-05 y RBE-06 no se inician ni se consideran autorizados.
