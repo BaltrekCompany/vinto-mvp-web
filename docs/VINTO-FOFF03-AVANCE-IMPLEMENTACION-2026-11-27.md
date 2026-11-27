@@ -31,3 +31,15 @@
 ## Metodología
 
 No se abren PRs por subincremento. Todo FOFF-03 permanece en el **mismo PR #273** hasta cerrar backend, interfaz, pruebas, documentación y QA de despliegue. FOFF-04 Rebobinado no empieza antes de la prueba productiva exitosa de Conversión.
+
+
+## Integración de preparación en Ejecución (avance posterior)
+
+- Componente `components/vinto/foff-conversion-preparation.tsx`, montado dentro del `Execution` original del sector Conversión, solo cuando hay una asignación validada por el backend y la línea permite captura.
+- Formulario seleccionado por código/versión de la **disponibilidad autorizada**, sin lista fija de máquinas ni OT elegida manualmente.
+- `lib/vinto/foff-conversion-profile.ts`: perfil local separado de Calidad, con vault AES-GCM, clave de Operación y dos pins Ed25519 que no pueden sobrescribirse silenciosamente, incluido acceso concurrente en pestañas.
+- `lib/vinto/foff-conversion-prepare.ts`: sesión original, enrolamiento autenticado, comparación de pins, firma de preparación, firma CAPTURE, SHA-256 de paquete referencial; guarda envelopes y contexto cifrados en IndexedDB únicamente tras verificar.
+- Tests de perfil, aislamiento, selección inválida y no-fallback sin IndexedDB en `tests/foff-conversion-device-preparation.test.ts`.
+- **No se ha montado ningún editor offline de Conversión**: siguen pendientes adaptar los formularios originales P1-16, P1-11, P1-12 y P1-13 a autoguardado, recuperación, cierre, cola y sync. El botón de preparar solo crea un paquete cifrado cuando los flags estén habilitados, y por defecto permanece bloqueado por el backend.
+- No habilitar ninguna bandera ni declarar FOFF-03 lista hasta superar CI del HEAD más reciente, pruebas integrales PG17 y QA móvil. No hay cambios de VPS ni migración aplicada.
+
