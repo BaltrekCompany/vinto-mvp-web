@@ -299,7 +299,7 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
         if result.created:
             raise HTTPException(409,"Captura existente no reconciliable")
         response.status_code=200
-        return {"capture_id":str(body.capture_id),"outcome":"duplicate",
+        return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,"outcome":"duplicate",
                 "operational_registered":True,"technical_acceptance":True}
     # Once a request has a durable technical receipt it is never silently
     # promoted to a business capture by a later retry with the same capture_id.
@@ -310,13 +310,13 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
     if pending:
         reason=_review(connection,body,user,context,pending[0])
         response.status_code=202
-        return {"capture_id":str(body.capture_id),"outcome":"review",
+        return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,"outcome":"review",
                 "reason":reason,"operational_registered":False,"technical_acceptance":True}
     if expired or capture_expired:
         reason=_review(connection,body,user,context,
                        "preparation_expired" if expired else "capture_scope_expired")
         response.status_code=202
-        return {"capture_id":str(body.capture_id),"outcome":"review",
+        return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,"outcome":"review",
                 "reason":reason,"operational_registered":False,"technical_acceptance":True}
     request_id=str(uuid.uuid4())
     gate=gate_for(user,"enforce",request_id,Operation.PRODUCTION_CAPTURE)
@@ -333,7 +333,7 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
                  LineNotInProductionError:"line_not_in_production"}
         reason=_review(connection,body,user,context,reasons[type(exc)])
         response.status_code=202
-        return {"capture_id":str(body.capture_id),"outcome":"review","reason":reason,
+        return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,"outcome":"review","reason":reason,
                 "operational_registered":False,"technical_acceptance":True}
     row=_stored(connection,body.capture_id,user.user_id)
     if not row or row[2]!=body.form_code or row[3]!=body.form_version or (
@@ -341,7 +341,7 @@ def _accept_conversion_capture_locked(body,response,user,connection,context,expi
         str(row[6])!=str(body.assignment_id)):
         raise HTTPException(409,"Registro operativo no verificable")
     response.status_code=201 if result.created else 200
-    return {"capture_id":str(body.capture_id),"outcome":"created" if result.created else "duplicate",
+    return {"capture_id":str(body.capture_id),"payload_sha256":body.payload_sha256,"outcome":"created" if result.created else "duplicate",
             "operational_registered":True,"technical_acceptance":True,
             "operational_capture_id":str(body.capture_id)}
 
