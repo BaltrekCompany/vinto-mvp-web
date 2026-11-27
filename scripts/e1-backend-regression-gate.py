@@ -7,6 +7,7 @@ Delete allowances as historical failures are repaired; never add new allowances
 without independent pre-E1 evidence and review.
 """
 from collections import Counter
+import argparse
 from pathlib import Path
 import json
 import re
@@ -19,6 +20,11 @@ BASELINE = SCRIPT_DIR / "e1-backend-regression-baseline.json"
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="E1-08 differential full backend discovery")
+    parser.add_argument("--backend-dir", type=Path, default=BACKEND_DIR)
+    parser.add_argument("--record-observed", type=Path)
+    parser.add_argument("--reference-observed", type=Path)
+    args = parser.parse_args()
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
     expected = Counter(
         (item["kind"], item["name"]) for item in baseline["allowed_existing_results"]
@@ -30,7 +36,7 @@ def main() -> int:
     ]
     print("Running full backend discovery; flag OFF and disposable PG17 only.", flush=True)
     process = subprocess.Popen(
-        command, cwd=BACKEND_DIR, stdout=subprocess.PIPE,
+        command, cwd=args.backend_dir, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
         bufsize=1,
     )
@@ -45,6 +51,12 @@ def main() -> int:
 
     rows = re.findall(r"(?m)^(FAIL|ERROR): ([^\r\n]+)", output)
     observed = Counter(rows)
+    reference = None
+    if args.reference_observed:
+        reference = json.loads(args.reference_observed.read_text(encoding="utf-8"))
+        if not reference.get("valid"):
+            raise RuntimeError("Current-main baseline discovery was incomplete or invalid")
+        expected = Counter({(row["kind"],row["name"]): row["count"] for row in reference["observed"]})
     extra = observed - expected
     resolved = expected - observed
     totals = re.findall(r"\bRan (\d+) tests in [0-9.]+s", output)
@@ -63,6 +75,8 @@ def main() -> int:
         problems.append(f"Unexpected runner exit code {exit_code}")
     if executed < baseline["minimum_candidate_tests"]:
         problems.append(f"Incomplete test discovery: {executed} tests")
+    if reference and executed < reference["executed"]:
+        problems.append(f"Candidate discovered fewer tests than main: {executed} < {reference['executed']}")
     # CV-P112 reserves its ACL test for the dedicated workflow, which provisions
     # role vinto_app; E1-08 intentionally does NOT create global PG roles.
     # This permits exactly ONE specifically identified additional skip; every
@@ -72,6 +86,8 @@ def main() -> int:
         and "skipped 'Dedicated CV-P112 workflow provisions vinto_app for ACL coverage'" in line
         for line in output.splitlines()
     )
+    if reference and skipped > reference["skipped"]:
+        problems.append(f"Candidate skipped more tests than main: {skipped} > {reference['skipped']}")
     if skipped > baseline["maximum_candidate_skips"]:
         if skipped == baseline["maximum_candidate_skips"] + 1 and cv_pallet_acl_skip:
             print("AUDITED ISOLATED SKIP: CV-P112 ACL requires its dedicated role-provisioning workflow.", flush=True)
@@ -87,7 +103,17 @@ def main() -> int:
     if exit_code == 0 and observed:
         problems.append("Unittest exit 0 but failures were parsed")
     if extra:
-        problems.append(f"{sum(extra.values())} NEW FAIL/ERROR results beyond pre-E1 main")
+        label = "current main" if reference else "pre-E1 main"
+        problems.append(f"{sum(extra.values())} NEW FAIL/ERROR results beyond {label}")
+    if args.record_observed:
+        # Valid means the entire discovery was trusted; known failures compared
+        # to the old historical baseline do NOT invalidate this measurement.
+        structural = [p for p in problems if "NEW FAIL/ERROR results" not in p]
+        measurement = {"schema": 1, "valid": not structural,
+            "executed": executed, "skipped": skipped,
+            "observed": [{"kind": kind, "name": name, "count": count}
+                for (kind,name),count in sorted(observed.items())]}
+        args.record_observed.write_text(json.dumps(measurement, sort_keys=True, indent=2), encoding="utf-8")
 
     print(
         f"Tests={executed}; historical FAIL={counted_failures}; "
@@ -107,8 +133,9 @@ def main() -> int:
     if problems:
         return 1
     print(
-        "PASS differential only: all historical failures remain visible "
-        "and there are NO additional backend failures.",
+        "PASS differential only: all observed failures remain visible "
+        "and there are NO additional backend failures versus "
+        + ("current main." if reference else "pre-E1 main."),
         flush=True,
     )
     return 0
