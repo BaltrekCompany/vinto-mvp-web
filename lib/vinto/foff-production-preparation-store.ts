@@ -105,6 +105,6 @@ export async function readProductionPreparation(identity: OfflineVaultIdentity,k
   checkIdentity(identity); validateProductionPreparationContext(row);
   if (lower(row.ownerId)!==lower(identity.ownerId) || lower(row.deviceKey)!==lower(identity.deviceKey)) fail("identity_mismatch");
   const values=await openLocalDraft(key,binding(identity,row),row.sealed);
-  validatePayload(values as ProductionPreparationPayload);
-  return values as ProductionPreparationPayload;
+  validatePayload(values as unknown as ProductionPreparationPayload);
+  return values as unknown as ProductionPreparationPayload;
 }
