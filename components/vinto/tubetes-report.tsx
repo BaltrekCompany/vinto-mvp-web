@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, FileSpreadsheet, Printer, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/vinto/panels";
 import { getTubetesReport } from "@/lib/vinto/tubetes-report-api";
-import type { TubetesReport } from "@/lib/vinto/tubetes-report";
+import { visibleTubetesMachines, type TubetesMachineSelection, type TubetesReport } from "@/lib/vinto/tubetes-report";
 import type { ApiFailure } from "@/lib/vinto/central-http";
 import { downloadTubetesPdf, openTubetesPdfForPrint } from "@/lib/vinto/tubetes-pdf";
+import { downloadTubetesExcel } from "@/lib/vinto/tubetes-excel";
 
 function displayDate(value: string): string {
     const [year, month, day] = value.split("-");
@@ -34,14 +35,15 @@ function MachineTable({ report }: { report: TubetesReport["machines"][number] })
             <Badge variant="outline">{report.usage_total} {report.usage_total === 1 ? "uso" : "usos"}</Badge>
         </div>
         {report.tubetes.length === 0 ? <p className="text-sm text-slate-600">No hay utilizaciones con código registradas para esta máquina.</p>
-            : <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm">
+            : <div className="w-full min-w-0"><table className="w-full table-fixed text-left text-xs sm:text-sm">
+                <colgroup><col style={{ width: "22%" }}/><col style={{ width: "15%" }}/><col style={{ width: "63%" }}/></colgroup>
                 <thead className="bg-slate-50 text-xs uppercase text-slate-600"><tr>
-                    <th className="px-3 py-2">Código de tubete</th><th className="px-3 py-2">Cantidad de usos</th><th className="px-3 py-2">Fechas de utilización</th>
+                    <th className="break-words px-2 py-2">Código</th><th className="break-words px-2 py-2">Usos</th><th className="break-words px-2 py-2">Fechas de utilización</th>
                 </tr></thead>
                 <tbody>{report.tubetes.map(item => <tr key={item.code} className="border-t align-top">
-                    <td className="px-3 py-3 font-bold tabular-nums">{item.code}</td>
-                    <td className="px-3 py-3 tabular-nums">{item.usage_count}</td>
-                    <td className="px-3 py-3"><div className="flex flex-wrap gap-1.5">{item.dates.map((date, index) => <span key={date + "-" + index} className="rounded-md bg-slate-100 px-2 py-1 text-xs tabular-nums">{displayDate(date)}</span>)}</div></td>
+                    <td className="break-all px-2 py-3 font-bold tabular-nums">{item.code}</td>
+                    <td className="px-2 py-3 tabular-nums">{item.usage_count}</td>
+                    <td className="px-2 py-3"><div className="flex flex-wrap gap-1.5">{item.dates.map((date, index) => <span key={date + "-" + index} className="whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 text-[11px] tabular-nums">{displayDate(date)}</span>)}</div></td>
                 </tr>)}</tbody>
             </table></div>}
         {report.records_without_code > 0 && <p className="mt-3 text-xs text-slate-500">Registros históricos sin código de tubete: {report.records_without_code}. No se contabilizan como uso.</p>}
@@ -52,7 +54,8 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
     const onSessionLostRef = useRef(onSessionLost);
     const [opened, setOpened] = useState(false);
     const [refresh, setRefresh] = useState(0);
-    const [pdfError, setPdfError] = useState(false);
+    const [exportError, setExportError] = useState(false);
+    const [machineSelection, setMachineSelection] = useState<TubetesMachineSelection>("all");
     const [result, setResult] = useState<{ status: "loading" } | { status: "ready"; data: TubetesReport } | { status: "error"; error: ApiFailure }>({ status: "loading" });
 
     useEffect(() => {
@@ -78,13 +81,13 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
 
     function openReport() {
         setResult({ status: "loading" });
-        setPdfError(false);
+        setExportError(false);
         setOpened(true);
     }
 
     function refreshReport() {
         setResult({ status: "loading" });
-        setPdfError(false);
+        setExportError(false);
         setRefresh(value => value + 1);
     }
 
@@ -92,9 +95,9 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
         if (result.status !== "ready") return;
         try {
             downloadTubetesPdf(result.data);
-            setPdfError(false);
+            setExportError(false);
         } catch {
-            setPdfError(true);
+            setExportError(true);
         }
     }
 
@@ -102,9 +105,21 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
         if (result.status !== "ready") return;
         try {
             openTubetesPdfForPrint(result.data);
-            setPdfError(false);
+            setExportError(false);
         } catch {
-            setPdfError(true);
+            setExportError(true);
+        }
+    }
+
+    function handleDownloadExcel() {
+        if (result.status !== "ready") return;
+        try {
+            // La exportación contiene las dos hojas oficiales: MP1 y MP3,
+            // independientemente de la máquina seleccionada para la vista.
+            downloadTubetesExcel(result.data);
+            setExportError(false);
+        } catch {
+            setExportError(true);
         }
     }
 
@@ -115,12 +130,21 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
 
     return <div className="space-y-4 rounded-xl border bg-slate-50 p-4" data-testid="tubetes-report">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-black">Tubetes utilizados</h3><p className="text-sm text-slate-600">Fuente: VINTO-P1-03 · Fecha operativa · America/La_Paz</p></div>
-            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={result.status !== "ready"}><Download className="h-4 w-4"/>Descargar PDF</Button><Button variant="outline" size="sm" onClick={handlePrintPdf} disabled={result.status !== "ready"}><Printer className="h-4 w-4"/>Imprimir</Button><Button variant="outline" size="sm" onClick={refreshReport} disabled={result.status === "loading"}><RefreshCw className="h-4 w-4"/>Actualizar</Button><Button variant="ghost" size="sm" onClick={() => setOpened(false)}><ArrowLeft className="h-4 w-4"/>Volver</Button></div></div>
-        {pdfError && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">No se pudo generar el PDF. Inténtalo nuevamente.</p>}
+            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={result.status !== "ready"}><Download className="h-4 w-4"/>Descargar PDF</Button><Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={result.status !== "ready"}><FileSpreadsheet className="h-4 w-4"/>Descargar Excel</Button><Button variant="outline" size="sm" onClick={handlePrintPdf} disabled={result.status !== "ready"}><Printer className="h-4 w-4"/>Imprimir</Button><Button variant="outline" size="sm" onClick={refreshReport} disabled={result.status === "loading"}><RefreshCw className="h-4 w-4"/>Actualizar</Button><Button variant="ghost" size="sm" onClick={() => setOpened(false)}><ArrowLeft className="h-4 w-4"/>Volver</Button></div></div>
+        {exportError && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">No se pudo generar el archivo. Inténtalo nuevamente.</p>}
         {result.status === "loading" && <p role="status" className="rounded-lg border bg-white p-4 text-sm text-slate-600">Consultando utilizaciones de tubetes…</p>}
         {result.status === "error" && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{failureLabel(result.error)}<div className="mt-3"><Button size="sm" variant="outline" onClick={refreshReport}>Reintentar</Button></div></div>}
         {result.status === "ready" && <><p className="text-xs text-slate-500">Actualizado: {generatedLabel(result.data.generated_at)} · Las fechas repetidas representan utilizaciones distintas y se conservan.</p>
-            <div className="grid gap-4 xl:grid-cols-2">{result.data.machines.map(machine => <MachineTable key={machine.machine} report={machine}/>)}</div></>}
+            <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Seleccionar máquina para visualizar">
+                    <span className="mr-1 text-sm font-semibold">Ver:</span>
+                    <Button size="sm" variant={machineSelection === "all" ? "default" : "outline"} aria-pressed={machineSelection === "all"} onClick={() => setMachineSelection("all")}>Ambas</Button>
+                    <Button size="sm" variant={machineSelection === "MP1" ? "default" : "outline"} aria-pressed={machineSelection === "MP1"} onClick={() => setMachineSelection("MP1")}>MP1</Button>
+                    <Button size="sm" variant={machineSelection === "MP3" ? "default" : "outline"} aria-pressed={machineSelection === "MP3"} onClick={() => setMachineSelection("MP3")}>MP3</Button>
+                </div>
+                <p className="text-xs text-slate-500">La selección cambia solo la vista. El PDF y el Excel incluyen siempre MP1 y MP3.</p>
+            </div>
+            <div className="flex min-w-0 flex-col gap-4">{visibleTubetesMachines(result.data, machineSelection).map(machine => <MachineTable key={machine.machine} report={machine}/>)}</div></>}
     </div>;
 }
 
