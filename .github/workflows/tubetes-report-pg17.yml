@@ -18,6 +18,7 @@ on:
       - 'scripts/tubetes-report.test.mjs'
       - 'lib/vinto/tubetes-pdf.ts'
       - 'scripts/tubetes-pdf.test.mjs'
+      - 'docs/VINTO-TUB-04-PDF-IMPLEMENTACION-2026-11-27.md'
       - '.github/workflows/tubetes-report-pg17.yml'
 
 permissions:
