@@ -217,3 +217,18 @@ export function downloadTubetesPdf(value: unknown): void {
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
+
+export function openTubetesPdfForPrint(value: unknown): void {
+    const pdf = buildTubetesPdf(value);
+    const blob = new Blob([pdf], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, "_blank");
+    if (!printWindow) {
+        URL.revokeObjectURL(url);
+        throw new Error("El navegador bloqueó la apertura del PDF para imprimir.");
+    }
+    printWindow.opener = null;
+    printWindow.focus();
+    // El visor PDF de la nueva pestaña ofrece la acción nativa de impresión.
+    window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
+}
