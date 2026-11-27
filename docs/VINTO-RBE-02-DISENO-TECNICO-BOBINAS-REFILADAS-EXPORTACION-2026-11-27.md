@@ -390,7 +390,8 @@ Tabla append-only vinto_txn.rewinding_export_work_order_classification:
 
 Restricciones y garantías:
 
-- UNIQUE(work_order_id, sequence_no) y UNIQUE(id, work_order_id).
+- UNIQUE(work_order_id, sequence_no), UNIQUE(id, work_order_id) y UNIQUE(supersedes_id) WHERE supersedes_id IS NOT NULL.
+- CHECK (sequence_no > 0) y CHECK de consistencia entre sequence_no=1/supersedes_id NULL y sequence_no>1/supersedes_id NOT NULL.
 - FKs ON DELETE RESTRICT: work_order_id → vinto_txn.work_order; recorded_by → vinto_master.user; (supersedes_id, work_order_id) → (id, work_order_id) de la misma tabla.
 - No admite UPDATE/DELETE/TRUNCATE. Una rectificación es una nueva fila que supersedes la anterior.
 - La última decisión por sequence_no es la efectiva. Solo production_confirmed habilita la OT; qa la excluye.
@@ -413,7 +414,7 @@ Una fila por paquete físico:
 - mother_label_snapshot.
 - source_capture_revision y source_form_version_id.
 - work_order_id y work_order_line_id de la relación de origen.
-- source_work_order_classification_id: UUID de la clasificación production_confirmed vigente al generar.
+- source_work_order_classification_id NOT NULL: UUID de la clasificación production_confirmed vigente al generar.
 - article_version_id exacto de la OT.
 - source_fields_snapshot JSONB con valores P1-07 relevantes.
 - source_operator_user_id y operator_display_name_snapshot.
@@ -423,11 +424,11 @@ Restricciones y garantías:
 
 - UNIQUE(id, report_id), clave referenciada por la FK compuesta de package_child.
 - UNIQUE parcial (report_id, package_number) WHERE removed_at IS NULL.
-- FKs ON DELETE RESTRICT: report_id → rewinding_export_report; mother_capture_id → vinto_txn.capture; mother_bobbin_id → vinto_txn.bobbin (nullable); source_form_version_id → vinto_config.form_version; work_order_id → vinto_txn.work_order; work_order_line_id → vinto_txn.work_order_line; article_version_id → vinto_master.article_version; source_work_order_classification_id → vinto_txn.rewinding_export_work_order_classification(id, work_order_id) mediante FK compuesta; source_operator_user_id → vinto_master.user (nullable si capture.created_by es NULL); removed_by → vinto_master.user.
+- FKs ON DELETE RESTRICT: report_id → rewinding_export_report; mother_capture_id → vinto_txn.capture; mother_bobbin_id → vinto_txn.bobbin (nullable); source_form_version_id → vinto_config.form_version; work_order_id → vinto_txn.work_order; work_order_line_id → vinto_txn.work_order_line; article_version_id → vinto_master.article_version; source_work_order_classification_id NOT NULL → vinto_txn.rewinding_export_work_order_classification(id, work_order_id) mediante FK compuesta; source_operator_user_id → vinto_master.user (nullable si capture.created_by es NULL); removed_by → vinto_master.user.
 - Una misma mother_capture_id puede repetirse en diferentes paquetes.
 - No se elimina físicamente un paquete. Retirarlo en Borrador fija removed_at/removed_by y conserva sus datos; el evento package_removed se inserta en la misma transacción.
 - Solo se permite INSERT/UPDATE mientras el reporte esté en draft. Al pasar a generated, observed o annulled, todos los campos del paquete quedan inmutables.
-- No se permite cambiar id, report_id ni mother_capture_id de una fila existente; para sustituir una madre se retira el paquete y se crea uno nuevo. El cambio de clasificación de la OT no altera source_work_order_classification_id ni el snapshot del paquete ya generado.
+- No se permite cambiar id, report_id ni mother_capture_id de una fila existente; para sustituir una madre se retira el paquete y se crea uno nuevo. El cambio de clasificación de la OT no altera source_work_order_classification_id ni el snapshot del paquete ya generado. Mientras el reporte siga en draft, el servicio puede actualizar ese ID a la última clasificación production_confirmed bajo el bloqueo de work_order; al generar, el ID queda congelado.
 
 La retirada lógica permite conservar la trazabilidad de las ediciones del borrador sin mantener paquetes inactivos en la vista previa ni en el PDF.
 
@@ -590,10 +591,10 @@ Ninguna ruta puede invertir el orden: está prohibido bloquear primero el report
    - Misma clave y hash distinto: 409, sin revelar otros reportes ni sus datos.
    - Sin resultado previo: continuar.
 7. Preleer IDs de OTs, paquetes, crías, madres y máquina sin bloquear; aplicar el orden global de bloqueos de §9.1 y revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
-8. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
+8. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Actualizar en cada paquete draft source_work_order_classification_id al ID vigente, antes de congelarlo. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
 9. Verificar PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
 10. Validar V01–V08 y reglas D01–D09.
-11. Construir snapshot inmutable con valores exactos de origen, source_work_order_classification_id por paquete, entradas manuales, usuario generador, fecha/hora y warnings.
+11. Construir snapshot inmutable con valores exactos de origen, source_work_order_classification_id y classification por paquete, entradas manuales, usuario generador, fecha/hora y warnings.
 12. Renderizar el PDF desde ese snapshot en memoria; comprobar páginas, tamaño y SHA-256.
 13. Cambiar el reporte a Generado, persistiendo snapshot, versión, actor, fecha, generation_idempotency_key y generation_request_sha256.
 14. Insertar la fila PDF y una fila de reserva por cada selección activa paquete–cría.
@@ -845,7 +846,7 @@ D09 establece que el reporte advierte y no modifica los datos fuente. Se propone
 - SOURCE_CUTS_DO_NOT_MATCH_CHILD_COUNT.
 - OPTIONAL_SOURCE_FIELD_MISSING.
 
-No corregir ni reemplazar valores. **Los tres warnings de origen (hora invertida, suma de pesos de crías superior al peso de madre y discrepancia de Cortes frente a cantidad de crías) son informativos y no bloquean la generación.** No existe una regla aprobada que relacione Cortes con cantidad de crías ni una regla de balance de masa en este reporte. Los warnings se muestran en vista previa y se congelan en snapshot. V01–V08 y la elegibilidad de OT/crías siguen siendo bloqueantes.
+No corregir ni reemplazar valores. **Los cuatro warnings de origen (hora invertida, suma de pesos de crías superior al peso de madre, discrepancia de Cortes frente a cantidad de crías y ausencia de campos fuente opcionales) son informativos y no bloquean la generación.** No existe una regla aprobada que relacione Cortes con cantidad de crías ni una regla de balance de masa en este reporte. Los warnings se muestran en vista previa y se congelan en snapshot. V01–V08 y la elegibilidad de OT/crías siguen siendo bloqueantes.
 
 ---
 
@@ -1008,8 +1009,8 @@ Las siguientes reglas resuelven las siete preguntas de Functional con el criteri
 |---|---|---|
 | 1 | Formato/Cortes | Formato se presenta como formato_1 y, si existe, formato_2 unidos por “ + ”. Cortes se presenta como formato_3 bajo la etiqueta “Cortes”. Se conservan los decimales exactos, sin unidades ni conversión a códigos como “0-C”. |
 | 2 | OTs QA no marcadas | La ausencia de qa_retired no prueba que una OT sea de producción. Se exige una clasificación positiva y auditada production_confirmed en rewinding_export_work_order_classification. Sin clasificación, la OT queda desconocida y no aparece. QA, archived_at o qa_retired la excluyen siempre. QA-001 no tenía crías elegibles y, por tanto, no aparece. |
-| 3 | Warnings de origen | Hora invertida, suma de pesos de crías superior al peso de madre y discrepancia de Cortes/cantidad de crías son warnings informativos; no bloquean. Se muestran en vista previa y snapshot. V01–V08 y la elegibilidad de OT/crías sí bloquean. |
-| 4 | Operador original | Siempre se muestra capture.created_by. Si falta o no se resuelve, no se genera porque Operador es obligatorio. Si la cuenta es compartida, se muestra el nombre de esa cuenta, sin atribuir la captura a una persona distinta. El informe RBE-01 no demuestra si la cuenta OPERACION cuyo nombre empieza por Q es individual o QA; no se hace esa inferencia. |
+| 3 | Warnings de origen | Hora invertida, suma de pesos de crías superior al peso de madre discrepancia de Cortes/cantidad de crías y ausencia de campos fuente opcionales son warnings informativos; no bloquean. Se muestran en vista previa y snapshot. V01–V08 y la elegibilidad de OT/crías sí bloquean. |
+| 4 | Operador original | Siempre se muestra capture.created_by. Si falta o no se resuelve, no se genera porque Operador es obligatorio. Si la cuenta es compartida, se muestra el nombre de esa cuenta, sin atribuir la captura a una persona distinta; para atribución individual, Operación debe usar cuentas personales. El informe RBE-01 no demuestra si la cuenta OPERACION cuyo nombre empieza por Q es individual o QA; no se hace esa inferencia. |
 | 5 | Producto refilado | El producto del encabezado es el artículo de la OT. producto_refilado se conserva como complemento en vista previa/snapshot/historial, pero no se imprime en el PDF porque no figura en el mockup ni en la página 6 de la especificación. |
 | 6 | Versiones de artículo | El identificador estable es article_id/código de artículo. El encabezado añade description solo si todas las versiones de los paquetes coinciden exactamente. Si difieren, muestra el código estable; cada descripción histórica permanece asociada a su article_version_id en el detalle/snapshot. |
 | 7 | Corrección posterior de Calidad | RBE no modifica ni corrige decisiones de Calidad. El flujo actual solo permite pending → released/rejected. Una corrección posterior a released queda fuera de RBE y requerirá un flujo separado de Calidad, append-only, con actor/motivo y evento; cuando exista, marcará los reportes afectados como Observados, mantendrá reservas y PDF, y Jefatura podrá anular para liberar crías. No se permite UPDATE directo de la decisión. |
@@ -1018,7 +1019,7 @@ Las siguientes reglas resuelven las siete preguntas de Functional con el criteri
 
 - La semántica de formato_1/2/3 no se convierte en unidades ni códigos industriales. La regla solo define una presentación literal a partir de los labels y tipos del seed P1-07 v5.
 - El segundo PDF adjunto es un reporte agregado de Producción (fecha/máquina/turno/producto), no es fuente de mapeo para el PDF de exportación.
-- La cuenta OPERACION con nombre iniciado en Q no queda identificada como real ni QA; la aplicación conserva exactamente el creador registrado.
+- La cuenta OPERACION con nombre iniciado en Q no queda identificada como real ni QA; la aplicación conserva exactamente el creador registrado. Si se comparte, la atribución es a la cuenta, no a la persona.
 - La corrección de una decisión released no existe en el producto actual y no se implementará dentro de RBE.
 
 La clasificación positiva de OTs, la lista de usuarios/sectores y las concesiones individuales máquina + P1-07 deberán estar aprobadas antes del rollout. RBE-05 puede construir el PDF con estas reglas; no se autoriza usar OTs sin clasificación production_confirmed ni cambiar datos fuente.
