@@ -5,11 +5,10 @@ type Rec = Record<string, unknown>;
 const isRec = (value: unknown): value is Rec => typeof value === "object" && value !== null && !Array.isArray(value);
 const isText = (value: unknown): value is string => typeof value === "string";
 const isIsoDate = (value: unknown): value is string => {
-    if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+    if (typeof value !== "string" || value.length !== 10 || value[4] !== "-" || value[7] !== "-") return false;
     const parsed = new Date(value + "T00:00:00Z");
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const INTEGER_TEXT = /^-?\d+$/;
 
 export type TubeteUsage = { code: string; usage_count: number; dates: string[] };
