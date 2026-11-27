@@ -323,3 +323,112 @@ No utilizar Docker/superusuario como vía de auditoría. El grupo Docker puede o
 Un DBA/administrador autorizado deberá provisionar una identidad no superusuario, sin `CREATEDB`, `CREATEROLE`, `REPLICATION`, `BYPASSRLS` ni membresía en roles de escritura, con `USAGE` y `SELECT` solo sobre las tablas/vistas necesarias. Preferir vistas de auditoría con datos personales minimizados. La contraseña debe entregarse al entorno de ejecución por canal seguro, nunca por el chat. Los grants SELECT son la barrera real; `default_transaction_read_only=on` y `SET TRANSACTION READ ONLY` son defensas adicionales.
 
 Una vez verificados los grants, repetir las consultas de RBE-01. Hasta entonces, RBE-02 y el desarrollo funcional permanecen sin iniciar.
+
+
+## 15. RBE-01 — Auditoría de datos productivos completada (27/11/2026)
+
+**Resultado reportado: `RBE01_READ_ONLY=PASS`.** Se realizaron 54 consultas SELECT: 53 dentro de transacciones `READ ONLY` terminadas con `ROLLBACK`, y una consulta de roles con lectura por defecto. No se reportaron escrituras, cambios de permisos, servicios ni checkout.
+
+### 15.1 Entorno y configuración real
+
+- Backend activo: `35e64d0d75900d04b1fe11cb8902f6d1b3fd69c2`.
+- PostgreSQL 17.11; 31 migraciones aplicadas, última `0031`.
+- Máquinas activas de REBOBINADO: BELOIT, COPASA, OVER, PERICHUN y TUBETERA.
+- P1-07 v1–v5 publicadas en BELOIT, COPASA y OVER.
+- Concesiones vigentes: BELOIT 4 (4 usuarios), COPASA 4 (4 usuarios; 1 revocada), OVER 3 (3 usuarios).
+- 11 capturas P1-07 en estado `submitted`, del 20/10 al 16/11/2026: v1=1, v2=4, v3=1, v4=4, v5=1.
+- Turnos configurados con `America/La_Paz`; ninguna de las 11 capturas fue corregida.
+
+### 15.2 Madres y crías
+
+Se identificaron 6 madres P1-07 v3+ y 25 crías:
+
+| Estado técnico | Cantidad | Peso agregado |
+|---|---:|---:|
+| `released` | 17 | 2.288,55 kg |
+| `pending` | 3 | 75 kg |
+| `rejected` | 5 | 275 kg |
+
+En las 5 rechazadas: 4 tienen clasificación `rechazado` y 1 `reutilizable`.
+
+- Las posiciones observadas son 1–6; no hay posición 12, duplicados de posición, huérfanos ni discrepancias de peso entre las crías y su fuente.
+- La relación cría → captura → asignación → línea de OT → PV/artículo está completa en 11/11 capturas.
+- Todas las OT asociadas a las crías están `closed`.
+- La etiqueta madre `25` aparece en tres capturas; dos son P1-07 v3+ con igual máquina, PV, artículo, fecha y peso de madre. El UUID de captura es obligatorio como clave; la etiqueta es solo texto visible.
+- La etiqueta de las crías coincide con la etiqueta declarada en su captura.
+
+### 15.3 Campos de salida
+
+Cobertura en las seis capturas v3+:
+
+| Campo | Disponibilidad | Observación |
+|---|---:|---|
+| Etiqueta de madre | 6/6 | 5 etiquetas distintas |
+| Destino | 6/6 | 3 valores |
+| `producto_refilado` | 1/6 | No coincide con el artículo de OT |
+| Ayudante (`auxiliar`) | 4/6 | 3 valores |
+| Tubete | 6/6 | Valores 1, 25, 105 |
+| Metraje | 6/6 | 5 valores |
+| Tensión | 6/6 | Valores 25, 5, 2.1 |
+| `formato_1` | 6/6 | Valores observados entre 1 y 2700 |
+| `formato_2` | 1/6 | No se infiere su semántica |
+| `formato_3` / “Cortes” | 2/6 | No coincide con la cantidad de crías |
+| Diámetro | 6/6 | Coincide con el dato copiado a las crías |
+| Peso madre y horas | 6/6 | Hay una inconsistencia horaria y una de pesos |
+| Observaciones | 0/6 | Sin datos |
+| Crías 1–3 | 6/6 | — |
+| Crías 4–5 | 3/6 | — |
+| Cría 6 | 1/6 | — |
+| Crías 7–22 | 0/6 | — |
+| PV y artículo de OT | 6/6 | Relación completa |
+
+El artículo de la OT no coincide con `producto_refilado`; dos supuestas coincidencias por dígitos en la descripción son casuales y no constituyen equivalencia.
+
+### 15.4 Operador creador
+
+- `capture.created_by` resuelve a un usuario activo con nombre en 11/11 capturas.
+- Las 11 capturas pertenecen a una sola cuenta con perfil `OPERACION`; el nombre empieza por “Q”. Podría ser una cuenta de QA, pero no está confirmado.
+- No hay coincidencia entre creador y ayudante.
+- El reporte deberá conservar el creador original de P1-07, no sustituirlo por el usuario que genera el reporte.
+
+### 15.5 Inconsistencias de origen
+
+1. Captura `58f229d4`: hora de inicio 11:50 y fin 11:25 en turno de día.
+2. Captura `0845b52e`: suma de pesos de crías 33,55 kg frente a peso declarado de madre 25 kg.
+3. Campo “Cortes” = 6 y 0 en dos capturas con tres crías cada una.
+4. OT `QA-001` no está marcada como QA ni archivada; no tiene crías.
+5. La finalidad de la decisión de Calidad está impuesta por API; no se identificó un trigger equivalente en la base.
+
+Estas inconsistencias no deben corregirse ni reinterpretarse desde el reporte. Se mostrarán los datos de origen conforme a un mapeo aprobado y se conservará trazabilidad.
+
+### 15.6 Reserva y concurrencia
+
+No existe una reserva/asignación actual de crías a reportes de exportación.
+
+RBE-04 deberá implementar:
+- Tabla persistente de asignación entre reporte y cría.
+- Restricción única parcial por cría mientras el reporte tenga estado vigente.
+- Revalidación de estado de Calidad y pertenencia en la transacción de generación.
+- Bloqueo en orden estable para evitar carreras.
+- Conflicto HTTP 409 sin reserva parcial cuando una cría ya fue asignada o cambió de estado.
+
+### 15.7 Observación sobre la identidad usada en la auditoría
+
+El informe indica uso de la cuenta `vinto_audit_ro` y, para consultas pendientes, `vinto_mvp_root` con cambio a `pg_read_all_data`. Los nombres no coinciden con los roles previstos en el script de aprovisionamiento (`vinto_rbe_audit` y `vinto_rbe_view_owner`). Antes de reutilizar credenciales o conceder acceso permanente, verificar `session_user`, `current_user`, atributos, membresías y grants efectivos. No inferir que las siete vistas previstas se instalaron si el informe no lo acredita.
+
+### 15.8 Decisiones para RBE-02
+
+1. Homologación de `released` con “Aceptada”; excluir `pending` y `rejected`. Confirmar expresamente si `reutilizable` continúa excluida mientras su estado técnico sea `rejected`.
+2. Definir elegibilidad de PV: todas las OT con crías están `closed`; decidir si una OT cerrada puede seguir siendo elegible cuando tiene crías `released` y sin asignar. Excluir OTs archivadas y QA mediante criterio verificable, no por suposición.
+3. Usar el artículo de la OT como producto principal; decidir si `producto_refilado` se muestra como complemento opcional, ya que no equivale al artículo.
+4. Homologar `formato_1`, `formato_2` y `formato_3` con Functional. No llamar “Corte” a `formato_3` ni combinar formatos hasta confirmar su semántica.
+5. Definir si el destino libre se copia como snapshot de cada madre o debe ser uniforme dentro de un reporte. La regla de consistencia no puede asumir igualdad sin resolver casos reales.
+6. Mantener madre seleccionable por etiqueta + fecha/horas/máquina/PV/artículo; usar siempre UUID como valor interno.
+7. Permitir ayudante vacío, sujeto a la especificación, sin inventar un valor.
+8. Definir tratamiento de inconsistencias históricas: horas invertidas, peso de crías superior al de madre y valores de “Cortes” que no corresponden a cantidad de crías.
+9. Definir criterio de exclusión QA, dado que `QA-001` no tiene flag ni está archivada, aunque no contiene crías.
+10. Confirmar permisos para generar, consultar historial y anular.
+
+### 15.9 Próxima fase
+
+RBE-01 queda completado. RBE-02 será exclusivamente diseño técnico y cierre de decisiones funcionales; no implica aún crear tablas, permisos, API ni código. El desarrollo comenzará solo después de aprobar el diseño.
