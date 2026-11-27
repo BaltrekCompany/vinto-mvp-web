@@ -1,4 +1,4 @@
-name: VINTO Tubetes report TUB-02 (PostgreSQL 17)
+name: VINTO Tubetes reports TUB-02 to TUB-05 (PostgreSQL 17)
 
 on:
   pull_request:
@@ -11,11 +11,15 @@ on:
       - 'backend/tests/test_sector_scope.py'
       - 'lib/vinto/auth.ts'
       - 'lib/vinto/tubetes-report.ts'
+      - 'lib/vinto/tubetes-excel.ts'
       - 'lib/vinto/tubetes-report-api.ts'
       - 'components/vinto/tubetes-report.tsx'
       - 'app/page.tsx'
       - 'scripts/auth.test.mjs'
       - 'scripts/tubetes-report.test.mjs'
+      - 'scripts/tubetes-excel.test.mjs'
+      - 'scripts/validate-tubetes-excel.py'
+      - 'docs/VINTO-TUB-05-EXCEL-Y-SELECTOR-IMPLEMENTACION-2026-11-27.md'
       - 'lib/vinto/tubetes-pdf.ts'
       - 'scripts/tubetes-pdf.test.mjs'
       - 'docs/VINTO-TUB-04-PDF-IMPLEMENTACION-2026-11-27.md'
@@ -101,18 +105,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install locked dependencies
         run: |
           corepack enable
           pnpm install --frozen-lockfile
       - name: Authentication and permission regression
         run: node --test scripts/auth.test.mjs
-      - name: Tubetes report response contract
+      - name: Tubetes report response contract and machine selector
         run: node --test scripts/tubetes-report.test.mjs
+      - name: Tubetes Excel workbook and dynamic date columns
+        run: node --test scripts/tubetes-excel.test.mjs
+      - name: Validate OOXML ZIP and XML package independently
+        run: python scripts/validate-tubetes-excel.py /tmp/vinto-tubetes-excel-ci.xlsx
       - name: Tubetes PDF layout, continuation and pagination
         run: node --test scripts/tubetes-pdf.test.mjs
       - name: TypeScript, ESLint and frontend build
         run: |
           pnpm exec tsc --noEmit
-          pnpm exec eslint lib/vinto/auth.ts lib/vinto/tubetes-report.ts lib/vinto/tubetes-pdf.ts components/vinto/tubetes-report.tsx app/page.tsx
+          pnpm exec eslint lib/vinto/auth.ts lib/vinto/tubetes-report.ts lib/vinto/tubetes-pdf.ts lib/vinto/tubetes-excel.ts components/vinto/tubetes-report.tsx app/page.tsx
           pnpm run build
