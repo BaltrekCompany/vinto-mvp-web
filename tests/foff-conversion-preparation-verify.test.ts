@@ -15,7 +15,7 @@ const context = () => {
     assignment_id:assignmentId, work_order_id:"44444444-4444-4444-8444-444444444444",
     line_id:"55555555-5555-4555-8555-555555555555", machine_code:"GAMBINI",
     form_code:"VINTO-P1-11", form_version:4, article_code:"10342",
-    shift_code:"M", operating_date:"2026-11-27",
+    shift_code:"M", operating_date:"2026-11-27",reference_sha256:"b".repeat(64),
   };
   return {...raw,context_digest:sha(canonicalOfflineJson(raw))};
 };
