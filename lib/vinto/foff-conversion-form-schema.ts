@@ -3,7 +3,7 @@
  * Unknown types, calculated fields, or malformed repeated groups fail closed.
  */
 export type ConversionField=Readonly<{
-  key:string;value_type:"text"|"decimal"|"integer"|"boolean"|"date"|"time";
+  key:string;value_type:"text"|"textarea"|"decimal"|"integer"|"boolean"|"date"|"time";
   source:"manual";required:boolean;group_id:string|null;unit:string|null;
   display_order:number;options:readonly string[];
 }>;
@@ -33,7 +33,7 @@ export function parseConversionDefinition(raw:unknown):ConversionDefinition{
   const ids=new Set(groups.map(x=>x.id));
   const fields:ConversionField[]=raw.fields.map((value:unknown)=>{
     if(!OBJECT(value)||typeof value.key!=="string"||!FIELD.test(value.key)||
-       !["text","decimal","integer","boolean","date","time"].includes(String(value.value_type))||
+       !["text","textarea","decimal","integer","boolean","date","time"].includes(String(value.value_type))||
        value.source!=="manual"||typeof value.required!=="boolean"||
        (value.group_id!==null&&(typeof value.group_id!=="string"||!ids.has(value.group_id)))||
        (value.unit!==null&&typeof value.unit!=="string")||
