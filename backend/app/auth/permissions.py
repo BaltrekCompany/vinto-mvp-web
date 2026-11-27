@@ -4,7 +4,7 @@ Un perfil desconocido no concede nada. Un nombre de permiso desconocido es un er
 (ValueError) en lugar de una denegación silenciosa.
 
 DATA_BALTREK administra catálogos y usuarios, pero NO recibe permisos funcionales de planta
-(work_order.manage, assignment.manage, production.capture, quality.capture, quality.release): la
+(work_order.manage, assignment.manage, production.capture, quality.capture, quality.release, report.read): la
 administración técnica no debe operar en nombre de la planta.
 """
 
