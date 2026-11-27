@@ -275,3 +275,51 @@ Las pruebas de concurrencia y de cambios de estado usarán PostgreSQL 17 efímer
 - No despliega ni fusiona código funcional.
 
 **Siguiente acción:** ejecutar RBE-01, auditoría de solo lectura en la VPS, con la identidad de madre ya confirmada. Las demás decisiones funcionales siguen abiertas y se cerrarán con la evidencia de RBE-01 y Functional antes de implementar.
+
+
+## 14. RBE-01 — Primera pasada de auditoría (27/11/2026)
+
+**Resultado: `RBE01_READ_ONLY=BLOCKED`.** Esta pasada no consultó PostgreSQL. No debe interpretarse como auditoría de datos productivos ni como validación de disponibilidad real.
+
+### Entorno y alcance comprobados
+
+- Host reportado: `vps-14d8e0ce`.
+- Backend en release `35e64d0d75900d04b1fe11cb8902f6d1b3fd69c2`.
+- Backend/frontend activos, sin reinicios reportados; health endpoints 200 y base disponible.
+- PostgreSQL 17.11; contenedor healthy, sin reinicios reportados.
+- `main` de GitHub se encontraba en `64359c4` (FOFF-02), diferente del release productivo. La auditoría de código debe referirse al SHA activo, no asumir equivalencia con `main`.
+- No se encontraron credenciales dedicadas de lectura disponibles para Claude sin elevar privilegios.
+- SQL preparado en scratchpad, no ejecutado ni validado.
+
+### Hallazgos de código solamente
+
+- REBOBINADO figura entre los sectores operativos y P1-07 entre los formularios centrales.
+- La semilla declara P1-07 v5 para BELOIT, OVER y COPASA; no demuestra que esas versiones estén publicadas o vinculadas en producción.
+- P1-07 v3+ genera crías técnicas; v1/v2 no las generan retroactivamente.
+- La etiqueta madre se obtiene de `capture_detail.etiqueta_numero_de_bobina`; la identidad interna es el UUID de la captura.
+- Las posiciones de cría son 1–11 y 13–22.
+- Las crías nacen en `pending`; los estados técnicos son `pending/released/rejected`.
+- `released` se describe como “Liberada por Calidad”; equivalencia con “Aceptada” sigue pendiente de Functional.
+- El creador original se obtiene mediante `capture.created_by`, que admite nulos.
+- No se identificó reserva actual de crías para reportes; el control contra doble asignación se deberá diseñar para RBE-04.
+- PV activo, producto definitivo, composición Formato/Corte y cobertura real de campos requieren consultas de datos.
+
+### Sin ejecución de consultas ni cambios
+
+- Consultas SQL: 0.
+- Tablas consultadas: 0.
+- Registros contabilizados: 0.
+- Sin conexión a PostgreSQL, sin escrituras, migraciones, cambios de permisos, reinicios o despliegues.
+- El checkout quedó limpio según el informe recibido.
+
+### Observación independiente de red
+
+Se reportó que el contenedor `postgres-vinto` publica `6543` en `0.0.0.0`. No se comprobó firewall ni accesibilidad externa y no se modificó configuración. Requiere una revisión separada; no se debe cerrar ni alterar el puerto sin diagnóstico y autorización.
+
+### Condición para desbloquear RBE-01
+
+No utilizar Docker/superusuario como vía de auditoría. El grupo Docker puede otorgar control privilegiado del host y una transacción `READ ONLY` no convierte una sesión superusuario en una identidad con privilegios de solo lectura.
+
+Un DBA/administrador autorizado deberá provisionar una identidad no superusuario, sin `CREATEDB`, `CREATEROLE`, `REPLICATION`, `BYPASSRLS` ni membresía en roles de escritura, con `USAGE` y `SELECT` solo sobre las tablas/vistas necesarias. Preferir vistas de auditoría con datos personales minimizados. La contraseña debe entregarse al entorno de ejecución por canal seguro, nunca por el chat. Los grants SELECT son la barrera real; `default_transaction_read_only=on` y `SET TRANSACTION READ ONLY` son defensas adicionales.
+
+Una vez verificados los grants, repetir las consultas de RBE-01. Hasta entonces, RBE-02 y el desarrollo funcional permanecen sin iniciar.
