@@ -123,7 +123,8 @@ test("more than ten uses expand dynamically without truncation and same-day dupl
   assert.match(mp1, /<c r="A2" s="3" t="inlineStr"><is><t xml:space="preserve">9001<\/t>/);
   const dateCells = mp1.match(/<c r="[B-X]2" s="1"><v>\d+<\/v><\/c>/g) ?? [];
   assert.equal(dateCells.length, 23);
-  assert.equal(new Set(dateCells).size, 1, "all 23 dates are retained even when their value is identical");
+  const serials = dateCells.map(cell => cell.match(/<v>(\\d+)<\\/v>/)?.[1]);
+  assert.equal(new Set(serials).size, 1, "all 23 dates have the same date value but remain separate cells");
 });
 
 test("dynamic columns use the maximum uses for any code on that machine", () => {
