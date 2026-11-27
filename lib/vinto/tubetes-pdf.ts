@@ -1,4 +1,4 @@
-import { parseTubetesReport, type TubetesReport, type MachineTubetes } from "@/lib/vinto/tubetes-report";
+import { parseTubetesReport, type TubetesReport, type MachineTubetes } from "./tubetes-report";
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
