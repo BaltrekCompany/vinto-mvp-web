@@ -228,12 +228,16 @@ La documentación de este plan se mantiene en un PR documental independiente. Es
 
 ## 10. Estado y próximo paso
 
-**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. Las cinco decisiones funcionales quedaron aprobadas el 27/11/2026. La auditoría permanece PARTIAL porque la muestra actual no demuestra MP1 con código, reutilizaciones, más de diez usos ni repeticiones en el mismo día.
+**Estado:** plan documentado; TUB-01 ejecutado el 27 de noviembre de 2026 con resultado `TUB01_AUDIT=PARTIAL`. Las decisiones funcionales D01-D05 y la estrategia D06 de pruebas sintéticas quedaron aprobadas el 27/11/2026. La auditoría permanece PARTIAL porque la muestra productiva no demuestra MP1 con código, reutilizaciones, más de diez usos ni repeticiones en el mismo día.
 
 **Informe de auditoría y decisiones aprobadas:** [VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md](./VINTO-TUB-01-AUDITORIA-TUBETES-2026-11-27.md).
 
+**Diseño técnico de TUB-02:** [VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md](./VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md).
+
 **Reglas aprobadas:** código entero original sin prefijo/ceros; fecha `operating_date` en `America/La_Paz`; incluir consumos con Calidad liberada, rechazada o pendiente y excluir borradores, bloqueadas y órdenes `qa_retired`; permiso `report.read` para Jefatura/Supervisión con alcance BOBINAS/MP1/MP3; API con ambas máquinas en una respuesta y todas las fechas/repeticiones conservadas.
 
-**Siguiente acción:** decidir el método de cobertura para los escenarios que no existen en la muestra (fixtures sintéticos automatizados o registros ficticios identificables en VPS con alcance y reversión aprobados). El diseño/implementación de TUB-02 requiere autorización independiente. La aprobación de reglas funcionales no autoriza por sí sola escrituras en la base productiva, cambios de permisos, migraciones, merge ni despliegue.
+**Estrategia de pruebas aprobada:** los casos ausentes se cubrirán con fixtures sintéticos en bases PostgreSQL efímeras PG17. No se crearán capturas artificiales ni se harán escrituras de prueba en la VPS.
+
+**Siguiente acción:** revisar el diseño técnico TUB-02 y aprobar su alcance de implementación. La autorización para usar fixtures sintéticos no equivale a autorización para escribir código, cambiar permisos productivos, aplicar migraciones, fusionar PR ni desplegar.
 
 **Fuera de alcance:** cualquier implementación de bobinas refiladas para exportación o de producción para Expertus hasta que se abra una planificación independiente.
