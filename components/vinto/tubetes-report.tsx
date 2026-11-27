@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/vinto/panels";
 import { getTubetesReport } from "@/lib/vinto/tubetes-report-api";
 import type { TubetesReport } from "@/lib/vinto/tubetes-report";
 import type { ApiFailure } from "@/lib/vinto/central-http";
+import { downloadTubetesPdf } from "@/lib/vinto/tubetes-pdf";
 
 function displayDate(value: string): string {
     const [year, month, day] = value.split("-");
@@ -52,12 +53,14 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
     onSessionLostRef.current = onSessionLost;
     const [opened, setOpened] = useState(false);
     const [refresh, setRefresh] = useState(0);
+    const [pdfError, setPdfError] = useState(false);
     const [result, setResult] = useState<{ status: "loading" } | { status: "ready"; data: TubetesReport } | { status: "error"; error: ApiFailure }>({ status: "loading" });
 
     useEffect(() => {
         if (!opened) return;
         const controller = new AbortController();
         setResult({ status: "loading" });
+        setPdfError(false);
         void getTubetesReport(controller.signal).then(reply => {
             if (controller.signal.aborted) return;
             if (reply.ok) setResult({ status: "ready", data: reply.data });
@@ -72,6 +75,16 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
         return () => controller.abort();
     }, [opened, refresh]);
 
+    function handleDownloadPdf() {
+        if (result.status !== "ready") return;
+        try {
+            downloadTubetesPdf(result.data);
+            setPdfError(false);
+        } catch {
+            setPdfError(true);
+        }
+    }
+
     if (!opened) return <div className="rounded-lg border p-3">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Tubetes utilizados</p><p className="mt-1 text-xs font-normal text-slate-600">Consumo registrado en Producción de Bobinas P1-03 · MP1 y MP3</p></div>
             <Button size="sm" onClick={() => setOpened(true)}>Abrir reporte</Button></div>
@@ -79,7 +92,8 @@ export function TubetesReportEntry({ onSessionLost }: { onSessionLost: () => voi
 
     return <div className="space-y-4 rounded-xl border bg-slate-50 p-4" data-testid="tubetes-report">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-black">Tubetes utilizados</h3><p className="text-sm text-slate-600">Fuente: VINTO-P1-03 · Fecha operativa · America/La_Paz</p></div>
-            <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setRefresh(value => value + 1)} disabled={result.status === "loading"}><RefreshCw className="h-4 w-4"/>Actualizar</Button><Button variant="ghost" size="sm" onClick={() => setOpened(false)}><ArrowLeft className="h-4 w-4"/>Volver</Button></div></div>
+            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={result.status !== "ready"}><Download className="h-4 w-4"/>Descargar PDF</Button><Button variant="outline" size="sm" onClick={() => setRefresh(value => value + 1)} disabled={result.status === "loading"}><RefreshCw className="h-4 w-4"/>Actualizar</Button><Button variant="ghost" size="sm" onClick={() => setOpened(false)}><ArrowLeft className="h-4 w-4"/>Volver</Button></div></div>
+        {pdfError && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">No se pudo generar el PDF. Inténtalo nuevamente.</p>}
         {result.status === "loading" && <p role="status" className="rounded-lg border bg-white p-4 text-sm text-slate-600">Consultando utilizaciones de tubetes…</p>}
         {result.status === "error" && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{failureLabel(result.error)}<div className="mt-3"><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>Reintentar</Button></div></div>}
         {result.status === "ready" && <><p className="text-xs text-slate-500">Actualizado: {generatedLabel(result.data.generated_at)} · Las fechas repetidas representan utilizaciones distintas y se conservan.</p>
