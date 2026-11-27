@@ -2,7 +2,7 @@
  * The trusted key must be pinned during authenticated HTTPS enrolment, not
  * copied out of the signed envelope. Every subsequent POST is re-authorized.
  */
-import {canonicalOfflineJson} from "./offline-scope-verify";
+import {canonicalOfflineJson} from "./offline-scope-verify.ts";
 
 const DOMAIN = "VINTO-FOFF-CONVERSION-PREPARATION-V1\0";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,8 +36,10 @@ const b64 = (v:string,length:number):Uint8Array => {
 };
 const hex=(bytes:Uint8Array)=>Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
 export class ConversionPreparationError extends Error {
-  constructor(readonly reason:"invalid"|"identity"|"target"|"expired"|"pin"|"signature"|"unavailable"|"digest"){
+  readonly reason:"invalid"|"identity"|"target"|"expired"|"pin"|"signature"|"unavailable"|"digest";
+  constructor(reason:"invalid"|"identity"|"target"|"expired"|"pin"|"signature"|"unavailable"|"digest"){
     super("FOFF_CONVERSION_PREPARATION_"+reason.toUpperCase());
+    this.reason=reason;
   }
 }
 export type ConversionPreparationTarget=Readonly<{
