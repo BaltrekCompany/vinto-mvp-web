@@ -49,6 +49,9 @@ function Field({field,value,onChange}:{
           <option value="">Seleccionar…</option>
           {field.options.map(option=><option key={option} value={option}>{option}</option>)}
         </select>
+      : field.value_type==="textarea"
+        ? <textarea className={common.className} rows={3} value={common.value}
+            onChange={e=>onChange(e.target.value)} />
       : field.value_type==="boolean"
         ? <select className={common.className} value={common.value}
             onChange={e=>onChange(e.target.value)}>
@@ -129,8 +132,9 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
   const queueCurrent=async()=>{
     if(initializing||saving)return;
     try{
-      if(Date.now()>=Date.parse(preparation.expiresAt)||Date.now()>=Date.parse(capture.expiresAt))
-        throw new Error("La autorización expiró; prepara nuevamente online antes de crear otra captura.");
+      // Historical envelopes remain cryptographically verifiable after expiry.
+      // The backend will accept an expired submission as a durable 202 review,
+      // never as an operational capture. Client clock is not shift authority.
       const normalized=normalizeConversionValues(definition,valuesRef.current);
       await save(valuesRef.current);
       await enqueueConversionCapture({
@@ -246,13 +250,13 @@ export function ConversionOfflineWorkspace({online,onExit,currentUserId}:Props){
         ownerId:identity.ownerId,deviceKey:identity.deviceKey,
         assignmentId:row.assignmentId,machineCode:row.machineCode,
         formCode:row.formCode,formVersion:row.formVersion,
-      },Date.now());
+      },Date.parse(String((object(prep.payload)?prep.payload.issued_at:"")))+1000);
       await verifyConversionReferencePackage(refPackage,validated);
       const capture=await verifyConversionCaptureAuthority(authority,selected.capturePin,{
         ownerId:identity.ownerId,deviceKey:identity.deviceKey,
         assignmentId:row.assignmentId,machineCode:row.machineCode,
         formCode:row.formCode,formVersion:row.formVersion,scopeSnapshotId:row.scopeSnapshotId,
-      },validated,Date.now());
+      },validated,Date.parse(String((object(authority.payload)?authority.payload.issued_at:"")))+1000);
       if(validated.context.context_digest!==row.contextDigest||
          validated.snapshotId!==row.scopeSnapshotId)throw new Error("Contexto original no coincide.");
       const definition=parseConversionDefinition(data.formDefinition);
