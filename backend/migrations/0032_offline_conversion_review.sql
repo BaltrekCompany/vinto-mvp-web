@@ -22,4 +22,13 @@ CREATE INDEX offline_conversion_review_author_idx
 CREATE TRIGGER immutable_offline_conversion_review
   BEFORE UPDATE OR DELETE ON vinto_txn.offline_conversion_review
   FOR EACH ROW EXECUTE FUNCTION vinto_audit.reject_mutation();
-GRANT SELECT, INSERT ON vinto_txn.offline_conversion_review TO vinto_app;
+-- CI PG17 creates disposable databases without cluster-level application roles.
+-- Grant explicitly only when the externally-provisioned application role exists.
+-- No role creation, no default privileges and no grant to PUBLIC.
+DO $foff03_grant$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'vinto_app') THEN
+    GRANT SELECT, INSERT ON vinto_txn.offline_conversion_review TO vinto_app;
+  END IF;
+END
+$foff03_grant$;
