@@ -1,7 +1,7 @@
 # VINTO — Mejora de vista y TUB-05: Exportación Excel de Tubetes Utilizados
 
 **Fecha:** 27 de noviembre de 2026  
-**Estado:** implementación completada; CI PASS; PR #269 listo para revisión, sin merge ni despliegue.  
+**Estado:** MERGED, desplegado en producción y QA funcional manual confirmado PASS el 27 de noviembre de 2026.  
 **Base funcional:** especificación funcional para Data — Reporte de Tubetes Utilizados, secciones 4, 5, 6 y 7.  
 **Dependencia:** API `GET /api/reports/tubetes-used`, TUB-02, y pantalla TUB-03/TUB-04.
 
@@ -98,6 +98,48 @@ Total: 82 pruebas automatizadas aprobadas, más validación independiente del pa
 - No modifica backend, endpoint, P1-03, permisos, sesiones ni migraciones.
 - No modifica Calidad Offline, PWA, IndexedDB, bóveda, firmas, grants, cola ni sincronización.
 - No escribe ni crea datos en PostgreSQL/VPS.
-- No despliega ni fusiona automáticamente.
+- La generación de Excel ocurre en el navegador; el archivo no se persiste en el servidor.
 
-**Siguiente puerta:** GitHub Actions PASS, revisión del PR y autorización de merge por separado.
+## 7. Integración y despliegue productivo
+
+- PR #269 fusionado mediante Squash and Merge.
+- Commit integrado y desplegado: `35e64d0d75900d04b1fe11cb8902f6d1b3fd69c2`.
+- Release anterior: `258e3b958964df44df9ddc0e165450656ea8794d`.
+- Activación reportada a las 18:09:44 UTC del 27/11/2026.
+- Workflow E2-D2 [#46046673557](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/46046673557): success sobre el SHA exacto.
+- Artefacto: `vinto-mvp-frontend-e2d2-35e64d0d75900d04b1fe11cb8902f6d1b3fd69c2`.
+- Digest ZIP: `4ddc73c15dfad747d9222f83e391b1dfa0ba540433c10f9e47ca61daae83b5d0`.
+- SHA-256 TAR/manifiesto: `169ea6b7ce0e68507b564bbf00b65a988783f75a005fee54aa0b0b73f6047a91`.
+- Backup: `vinto-mvp-vinto_piloto-20261127-180817-2461791.dump`.
+- SHA-256 backup: `4fa975355594900fde0610ab7b06715ea8ce59c2bbbf6fe40ba04ff6643f4ffa`.
+- Restauración aislada: PASS, 53 tablas comparadas.
+- Gates D2 de activación y rollback: PASS.
+- Backend y frontend saludables; endpoints 200; sin nuevos 5xx en la ventana revisada.
+- Nginx, Docker y PostgreSQL no se reiniciaron.
+- Service worker conserva el mismo SHA-256; rutas Offline de API idénticas y configuración `backend.env` no modificada.
+
+## 8. QA funcional en producción
+
+**Resultado:** PASS, confirmado por el usuario el 27/11/2026.
+
+La confirmación cubre la matriz manual entregada para:
+- Selector Ambas / MP1 / MP3 y regreso a Ambas.
+- Visualización de tablas sin desplazamiento horizontal indebido.
+- Descarga y apertura del Excel con hojas MP1 y MP3.
+- Conservación de las dos hojas Excel aunque la vista esté filtrada a una máquina.
+- Fechas y repeticiones, incluido el código MP3 80 con dos usos el 27/11/2026.
+- PDF que conserva MP1 y MP3 aunque la vista esté filtrada.
+- Apertura del PDF mediante Imprimir y uso del visor nativo.
+- Verificación funcional de Calidad Offline.
+
+### Cobertura de más de diez utilizaciones
+
+Los datos reales disponibles no contienen un código con más de diez usos. La cobertura se verificó sin escribir en PostgreSQL:
+- Excel: 23 fechas en 23 columnas dinámicas.
+- PDF: filas de 10, 10 y 3 utilizaciones con continuación.
+
+Esta limitación de datos reales queda registrada; no se crearon registros artificiales.
+
+## 9. Cierre
+
+TUB-05 queda implementado, fusionado, desplegado y con QA funcional manual confirmado PASS por el usuario. La documentación técnica y el registro de despliegue/QA se conservan en GitHub.
