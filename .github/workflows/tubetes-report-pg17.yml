@@ -103,6 +103,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install locked dependencies
         run: |
           corepack enable
@@ -113,6 +116,8 @@ jobs:
         run: node --test scripts/tubetes-report.test.mjs
       - name: Tubetes Excel workbook and dynamic date columns
         run: node --test scripts/tubetes-excel.test.mjs
+      - name: Validate OOXML ZIP and XML package independently
+        run: python scripts/validate-tubetes-excel.py /tmp/vinto-tubetes-excel-ci.xlsx
       - name: Tubetes PDF layout, continuation and pagination
         run: node --test scripts/tubetes-pdf.test.mjs
       - name: TypeScript, ESLint and frontend build
