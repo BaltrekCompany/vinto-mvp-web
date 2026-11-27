@@ -2,7 +2,7 @@
 // Contrato frontend puro de GET /api/reports/tubetes-used: sin red ni DOM.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseTubetesReport } from "../lib/vinto/tubetes-report.ts";
+import { parseTubetesReport, visibleTubetesMachines } from "../lib/vinto/tubetes-report.ts";
 
 const payload = () => ({
   generated_at: "2026-11-27T15:00:00Z",
@@ -80,4 +80,12 @@ test("requires an explicit offset on generated_at", () => {
   const value = payload();
   value.generated_at = "2026-11-27T15:00:00";
   assert.equal(parseTubetesReport(value), null);
+});
+
+test("machine selector returns both machines or the requested machine only", () => {
+  const report = parseTubetesReport(payload());
+  assert.ok(report);
+  assert.deepEqual(visibleTubetesMachines(report, "all").map(item => item.machine), ["MP1", "MP3"]);
+  assert.deepEqual(visibleTubetesMachines(report, "MP1").map(item => item.machine), ["MP1"]);
+  assert.deepEqual(visibleTubetesMachines(report, "MP3").map(item => item.machine), ["MP3"]);
 });
