@@ -85,7 +85,11 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - run: python -m pip install -r backend/requirements.txt
+      - run: |
+          python -m pip install -r backend/requirements.txt
+          # FOFF tests imported by unittest also use pytest.raises/fixtures.
+          # Keep broad discovery intact; never exclude newly added test modules.
+          python -m pip install pytest==8.4.2
       - name: Authoritative machine grants (MF13) and started lines
         working-directory: backend
         run: python -B -m unittest discover -s tests -p 'test_machine_execution_api.py' -v
