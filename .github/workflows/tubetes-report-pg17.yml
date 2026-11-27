@@ -10,7 +10,12 @@ on:
       - 'backend/tests/test_auth_service.py'
       - 'backend/tests/test_sector_scope.py'
       - 'lib/vinto/auth.ts'
+      - 'lib/vinto/tubetes-report.ts'
+      - 'lib/vinto/tubetes-report-api.ts'
+      - 'components/vinto/tubetes-report.tsx'
+      - 'app/page.tsx'
       - 'scripts/auth.test.mjs'
+      - 'scripts/tubetes-report.test.mjs'
       - '.github/workflows/tubetes-report-pg17.yml'
 
 permissions:
@@ -99,6 +104,8 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Authentication and permission regression
         run: node --test scripts/auth.test.mjs
+      - name: Tubetes report response contract
+        run: node --test scripts/tubetes-report.test.mjs
       - name: TypeScript, ESLint and frontend build
         run: |
           pnpm exec tsc --noEmit
