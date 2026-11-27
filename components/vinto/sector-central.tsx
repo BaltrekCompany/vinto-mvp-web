@@ -163,8 +163,8 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
         {!canCapture && <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
             Tu perfil puede consultar este frente, pero no capturar en él.
         </div>}
-        {code === "CONVERSION" && canCapture && state.kind === "check" && state.check.ok &&
-         snapshot !== null && selectedContextAllowed(snapshot,view.status === "ready" ? view.data : {kind:"single",active:{assignment:null,current_shift:null,stale:null}},state.check.context.assignmentId) &&
+        {code === "CONVERSION" && canCapture && view.status === "ready" && state.kind === "check" && state.check.ok &&
+         snapshot !== null && selectedContextAllowed(snapshot,view.data,state.check.context.assignmentId) &&
          <ConversionOfflinePreparation key={scope+":"+machine.code+":"+state.check.context.assignmentId}
            assignmentId={state.check.context.assignmentId} machineCode={machine.code}
            offers={forms.filter(x=>x.form.eligible===true&&x.screen!==null)
