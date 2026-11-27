@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from app.foff_conversion_preparation import sign_conversion_preparation
 from app.foff_conversion_capture_authority import sign_conversion_capture_authority
 from app.foff_conversion_sync_router import (
-    OfflineConversionIn, _verified_preparation, _verified_capture_authority, receive_conversion_capture,
+    OfflineConversionIn, _verified_preparation, _verified_capture_authority, _require_original_context, OriginalContextChanged, receive_conversion_capture,
 )
 from app.quality.offline_capture_scope import _canonical
 
@@ -115,3 +115,26 @@ def test_separate_capture_authority_required_and_not_interchangeable():
         body.capture_authority=body.preparation
         with pytest.raises(HTTPException):
             _verified_capture_authority(body,user)
+
+def test_original_assignment_snapshot_must_match_signed_OT_line_turn():
+    user,body=fixture()
+    ctx=body.preparation["payload"]["context"]
+    view=SimpleNamespace(
+        work_order_id=uuid.UUID(ctx["work_order_id"]),
+        line=SimpleNamespace(id=uuid.UUID(ctx["line_id"]),article_code=ctx["article_code"]),
+        machine_code=ctx["machine_code"],shift_code=ctx["shift_code"],
+        operating_date=datetime.fromisoformat(ctx["operating_date"]).date(),
+    )
+    with patch("app.foff_conversion_sync_router.assignment_service.get_assignment",return_value=view):
+        _require_original_context(object(),context=ctx,assignment_id=body.assignment_id,
+                                  sectors=("CONVERSION",))
+    for attribute,bad in (
+        ("shift_code","N"),("machine_code","OMET_II"),
+        ("work_order_id",uuid.uuid4()),
+        ("line",SimpleNamespace(id=uuid.uuid4(),article_code=ctx["article_code"])),
+    ):
+        invalid=SimpleNamespace(**{**vars(view),attribute:bad})
+        with patch("app.foff_conversion_sync_router.assignment_service.get_assignment",return_value=invalid):
+            with pytest.raises(OriginalContextChanged):
+                _require_original_context(object(),context=ctx,assignment_id=body.assignment_id,
+                                          sectors=("CONVERSION",))
