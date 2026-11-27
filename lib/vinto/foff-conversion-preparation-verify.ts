@@ -5,7 +5,7 @@
 import {canonicalOfflineJson} from "./offline-scope-verify.ts";
 
 const DOMAIN = "VINTO-FOFF-CONVERSION-PREPARATION-V1\0";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX = /^[0-9a-f]{64}$/;
 const BASE64 = /^[A-Za-z0-9_-]+$/;
