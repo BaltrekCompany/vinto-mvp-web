@@ -90,7 +90,7 @@ test("PDF is a valid indexed PDF 1.4 document with A4 portrait pages and continu
   assert.match(pdf, /\/MediaBox \[0 0 595\.28 841\.89\]/);
   assert.match(pdf, /\(REGISTRO DE TUBETES UTILIZADOS EN MP3\)/);
   assert.match(pdf, /\(FECHA 10\)/);
-  assert.match(pdf, /\(1 \(CONT\.\)\)/);
+  assert.ok(pdf.includes("1 \\(cont.\\)"));
   assert.match(pdf, /\(PAGINA 1 DE 2\)/);
   const startXref = Number(pdf.match(/startxref\n(\d+)\n%%EOF/)?.[1]);
   assert.ok(Number.isInteger(startXref));
