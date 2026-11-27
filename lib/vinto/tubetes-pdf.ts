@@ -137,7 +137,8 @@ function drawPage(page: TubetesPdfPage): string {
                 content += lineCommand(x, top, x, top + ROW_HEIGHT);
             }
             const codeLabel = row.continuation ? row.code + " (cont.)" : row.code;
-            content += textCommand(codeLabel, LEFT + 4, top + 13, 6.5, row.continuation ? "F1" : "F2");
+            const codeFontSize = Math.max(4.5, Math.min(6.5, (CODE_WIDTH - 8) / (codeLabel.length * 0.52)));
+            content += textCommand(codeLabel, LEFT + 4, top + 13, codeFontSize, row.continuation ? "F1" : "F2");
             row.dates.forEach((date, index) => {
                 const center = LEFT + CODE_WIDTH + DATE_WIDTH * (index + 0.5);
                 content += textCommand(displayDate(date), center, top + 13, 6.3, "F1", "center");
