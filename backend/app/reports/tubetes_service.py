@@ -15,7 +15,6 @@ from app.sectors import SECTOR_BOBINAS, scoped_sector_codes
 FORM_CODE = "VINTO-P1-03"
 FIELD_KEY = "codigo_de_tubete"
 MACHINE_CODES = ("MP1", "MP3")
-REPORT_TIMEZONE = "America/La_Paz"
 
 
 class TubetesReportForbiddenError(Exception):
@@ -75,7 +74,7 @@ LEFT JOIN vinto_txn.capture_detail AS d
 WHERE f.code = %s
   AND fv.area = 'production'
   AND c.status IN ('submitted', 'closed')
-  AND s.code = %s
+  AND s.code = ANY(%s)
   AND m.code = ANY(%s)
   AND wo.qa_retired IS FALSE
 ORDER BY
@@ -154,14 +153,16 @@ def get_tubetes_report(connection, *, sectors) -> TubetesReportOut:
     The endpoint never accepts client-provided sectors or machines. The
     authenticated principal's sector grants are checked again at this boundary.
     """
-    if SECTOR_BOBINAS not in scoped_sector_codes(sectors):
+    visible_sectors = scoped_sector_codes(sectors)
+    if SECTOR_BOBINAS not in visible_sectors:
         raise TubetesReportForbiddenError()
+    report_sectors = [code for code in visible_sectors if code == SECTOR_BOBINAS]
 
     with connection.transaction():
         connection.execute("SET TRANSACTION READ ONLY")
         rows = connection.execute(
             TUBETES_USAGE_SQL,
-            (FIELD_KEY, FORM_CODE, SECTOR_BOBINAS, list(MACHINE_CODES)),
+            (FIELD_KEY, FORM_CODE, report_sectors, list(MACHINE_CODES)),
         ).fetchall()
 
     return build_tubetes_report(rows)
