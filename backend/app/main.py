@@ -15,6 +15,7 @@ from app.assignments.router import router as assignments_router
 from app.bobbins.router import router as bobbins_router
 from app.captures import router as captures_router
 from app.production_access import router as production_router
+from app.reports.router import router as reports_router
 from app.quality.machine_router import router as quality_machine_router
 from app.quality.offline_router import router as offline_quality_router
 from app.quality.offline_sync_router import router as offline_quality_sync_router
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(captures_router)
 app.include_router(production_router)
 app.include_router(bobbins_router)
+app.include_router(reports_router)
 app.include_router(quality_router)
 app.include_router(quality_machine_router)
 app.include_router(offline_quality_router)
@@ -42,6 +44,15 @@ app.include_router(auth_router)
 app.include_router(work_orders_router)
 app.include_router(assignments_router)
 app.include_router(admin_router)
+
+@app.middleware("http")
+async def private_tubetes_report_response(request: Request, call_next):
+    """El reporte contiene información operativa y nunca debe almacenarse en cachés compartidas."""
+    response = await call_next(request)
+    if request.url.path == "/api/reports/tubetes-used":
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
 
 UNAVAILABLE = UNAVAILABLE_BODY
 
