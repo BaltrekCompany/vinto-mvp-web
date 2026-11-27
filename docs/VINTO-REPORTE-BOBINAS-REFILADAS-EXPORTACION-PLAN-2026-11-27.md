@@ -105,7 +105,7 @@ El modelo P1-07 vigente no identifica una bobina madre como una bobina F3 real:
 
 Por ello, el reporte puede utilizar la etiqueta declarada para mostrar “Bobina madre” y el UUID de captura como clave interna estable, sin mostrar códigos técnicos `MADRE-...` o `CRIA-...` al operario. No debe presentarse como genealogía física F3 ni validar contra una bobina MP1/MP3, salvo que Functional cambie expresamente la decisión existente.
 
-**Decisión bloqueante:** confirmar que “bobina madre” en este reporte significa la madre declarada de P1-07 identificada por su captura, no una bobina madre F3 numerada.
+**Decisión CONFIRMADA por el usuario (27/11/2026):** “bobina madre” en este reporte significa la madre declarada de P1-07 identificada internamente por el UUID de su captura. No se buscará ni exigirá una bobina F3 real. No se crea genealogía industrial nueva.
 
 ### 5.3 Relaciones de origen
 
@@ -255,14 +255,14 @@ Las pruebas de concurrencia y de cambios de estado usarán PostgreSQL 17 efímer
 
 ## 12. Decisiones que deben cerrarse antes de desarrollar
 
-1. **Identidad de madre:** confirmar uso de etiqueta declarada P1-07 + UUID de captura, no bobina F3.
+1. **Identidad de madre — CONFIRMADA (27/11/2026):** usar etiqueta declarada P1-07 + UUID de captura; no bobina F3.
 2. **Producto:** confirmar si se muestra el artículo de la OT, `producto_refilado` o ambos; definir prioridad si difieren.
 3. **Formato y corte:** confirmar el mapeo de `formato_1`, `formato_2` y `formato_3` al encabezado “Formato” y detalle “Corte”.
 4. **Segundo PDF adjunto:** confirmar si es solo referencia del origen de Producción de Rebobinado; el formato exportación seguirá la página 6 de la especificación salvo decisión distinta.
 5. **Veinte líneas:** máximo total o líneas por página con paginación.
 6. **Permisos e historial:** quién genera, consulta todos/propios y anula.
 7. **Estados y reserva:** cuándo se persiste un borrador, cómo libera crías una anulación y cómo se mantiene Observado.
-8. **Fecha de reporte:** confirmar presentación en hora de planta `America/La_Paz`.
+8. **Fecha de reporte — CONFIRMADA:** utilizar la zona horaria operativa de planta `America/La_Paz`.
 
 ## 13. Límites de este incremento documental
 
@@ -274,4 +274,4 @@ Las pruebas de concurrencia y de cambios de estado usarán PostgreSQL 17 efímer
 - No modifica Calidad Offline, PWA, IndexedDB, firmas, grants, cola ni sincronización.
 - No despliega ni fusiona código funcional.
 
-**Siguiente acción:** revisar y aprobar el plan documental. Después ejecutar RBE-01, auditoría de solo lectura en la VPS, antes de diseñar o programar el primer incremento funcional.
+**Siguiente acción:** ejecutar RBE-01, auditoría de solo lectura en la VPS, con la identidad de madre ya confirmada. Las demás decisiones funcionales siguen abiertas y se cerrarán con la evidencia de RBE-01 y Functional antes de implementar.
