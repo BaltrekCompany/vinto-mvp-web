@@ -22,7 +22,7 @@ function valid(profile:ConversionOfflineProfile):boolean{
     B64.test(profile.preparationPin)&&B64.test(profile.capturePin)&&
     profile.preparationPin!==profile.capturePin);
 }
-async function useDb<T>(run:(db:IDBDatabase)=>Promise<T>):Promise<T>{
+async function withProfileDb<T>(run:(db:IDBDatabase)=>Promise<T>):Promise<T>{
   if(typeof indexedDB==="undefined")return fail("unavailable");
   const db=await new Promise<IDBDatabase>((ok,bad)=>{
     const req=indexedDB.open(CONVERSION_PROFILE_DB,1);
@@ -49,7 +49,7 @@ function request<T>(db:IDBDatabase,mode:IDBTransactionMode,
 }
 export async function getConversionOfflineProfile(identity:OfflineVaultIdentity):Promise<ConversionOfflineProfile|null>{
   if(!UUID.test(identity.ownerId)||!UUID.test(identity.deviceKey))fail("identity");
-  return useDb(db=>request(db,"readonly",(store,ok,bad)=>{
+  return withProfileDb(db=>request(db,"readonly",(store,ok,bad)=>{
     const r=store.get(profileId(identity));
     r.onsuccess=()=>{
       if(r.result!==undefined&&!valid(r.result as ConversionOfflineProfile)){bad(new Error("foff_conversion_profile_corrupt"));return;}
@@ -61,7 +61,7 @@ export async function getConversionOfflineProfile(identity:OfflineVaultIdentity)
 export async function saveConversionOfflineProfile(profile:ConversionOfflineProfile):Promise<void>{
   if(!valid(profile))fail("invalid");
   // add() is atomic: no TOCTOU pin replacement in two concurrent tabs.
-  return useDb(db=>request<void>(db,"readwrite",(store,ok,bad)=>{
+  return withProfileDb(db=>request<void>(db,"readwrite",(store,ok,bad)=>{
     const r=store.add(profile);
     r.onsuccess=()=>ok(undefined);
     r.onerror=()=>bad(new Error("foff_conversion_profile_already_enrolled"));
