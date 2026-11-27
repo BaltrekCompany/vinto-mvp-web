@@ -219,8 +219,10 @@ El reporte se considera terminado cuando:
 - TUB-02 se implementó en la rama independiente `feat/tubetes-utilizados-report`, creada desde `main` (`b84562d9`).
 - PR de implementación: [#258](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258), separado del PR documental y de Calidad Offline.
 - La batería TUB-02 y la matriz de regresión de GitHub Actions terminaron PASS.
-- El PR #258 está abierto y listo para revisión; no está fusionado.
-- Los incrementos TUB-03 en adelante mantendrán PR separados.
+- PR #258 fue aprobado y fusionado mediante squash el 27/11/2026. Commit de integración: `5f66f6001d670b30fff99b44a08aa3286703dd81`.
+- TUB-03 está en implementación en la rama `feat/tubetes-report-ui`, PR #259 (Draft) con la pantalla en Bobinas → Seguimiento → Reportes.
+- TUB-03 consume la API TUB-02, conserva todas las fechas/repeticiones y no incorpora exportaciones.
+- TUB-04 (PDF) y TUB-05 (Excel) se desarrollarán como incrementos posteriores y PR independientes, usando el mismo contrato/API.
 - Despliegue controlado y validación posterior requieren autorización independiente.
 
 La documentación de este plan se mantiene en un PR documental independiente. Este PR no incorpora código funcional, migraciones, cambios de VPS ni despliegues.
@@ -233,12 +235,14 @@ La documentación de este plan se mantiene en un PR documental independiente. Es
 
 **Diseño técnico y resultado de implementación TUB-02:** [VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md](./VINTO-TUB-02-DISENO-TECNICO-2026-11-27.md).
 
-**PR de implementación:** [#258 — Backend de Tubetes](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258). Código implementado, CI específico y regresión PASS; abierto y listo para revisión, sin merge ni despliegue.
+**PR de implementación TUB-02:** [#258 — Backend de Tubetes](https://github.com/BaltrekCompany/vinto-mvp-web/pull/258). Aprobado y fusionado el 27/11/2026. Squash commit: `5f66f6001d670b30fff99b44a08aa3286703dd81`. Sin despliegue.
+
+**TUB-03:** [PR #259 — Pantalla Seguimiento → Reportes](https://github.com/BaltrekCompany/vinto-mvp-web/pull/259). En desarrollo/CI; muestra MP1 y MP3, código, cantidad de usos y todas las fechas con repetición preservada. No incluye PDF/Excel.
 
 **Reglas aprobadas:** código entero original sin prefijo/ceros; fecha `operating_date` en `America/La_Paz`; incluir consumos con Calidad liberada, rechazada o pendiente y excluir borradores, bloqueadas y órdenes `qa_retired`; permiso `report.read` para Jefatura/Supervisión con alcance BOBINAS/MP1/MP3; API con ambas máquinas en una respuesta y todas las fechas/repeticiones conservadas.
 
 **Estrategia de pruebas:** fixtures sintéticos en PostgreSQL efímero PG17, sin capturas artificiales ni escrituras de prueba en la VPS. La matriz de casos de TUB-02 ya pasó.
 
-**Siguiente acción:** revisar el PR #258 y decidir su merge. Después de integrar TUB-02, planificar TUB-03 (interfaz) como incremento independiente. El despliegue productivo requiere autorización separada.
+**Siguiente acción:** completar CI y revisión del PR #259 (TUB-03), aprobar y fusionar por separado. Luego iniciar TUB-04 (PDF con bloques de diez fechas y continuación) y TUB-05 (Excel con dos hojas, todas las fechas), cada uno con su PR. El despliegue productivo requiere autorización separada.
 
 **Fuera de alcance:** cualquier implementación de bobinas refiladas para exportación o de producción para Expertus hasta que se abra una planificación independiente.
