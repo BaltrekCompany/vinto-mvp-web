@@ -36,24 +36,24 @@ type OpenForm=Readonly<{
 }>;
 type Props=Readonly<{online:boolean;onExit:()=>void;currentUserId?:string|null}>;
 
-function Field({field,value,onChange}:{
-  field:ConversionField;value:unknown;onChange:(value:string)=>void;
+function Field({field,value,onChange,disabled=false}:{
+  field:ConversionField;value:unknown;onChange:(value:string)=>void;disabled?:boolean;
 }){
   const label=`${title(field.key)}${field.required?" *":""}${field.unit?" ("+field.unit+")":""}`;
   const common={className:"mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900",
-    value:value===undefined||value===null?"":String(value),onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.value)};
+    value:value===undefined||value===null?"":String(value),disabled,onChange:(e:React.ChangeEvent<HTMLInputElement>)=>onChange(e.target.value)};
   return <label className="block text-sm font-medium text-slate-800">{label}
     {field.options.length>0
-      ? <select className={common.className} value={common.value}
+      ? <select disabled={disabled} className={common.className} value={common.value}
           onChange={e=>onChange(e.target.value)}>
           <option value="">Seleccionar…</option>
           {field.options.map(option=><option key={option} value={option}>{option}</option>)}
         </select>
       : field.value_type==="textarea"
-        ? <textarea className={common.className} rows={3} value={common.value}
+        ? <textarea disabled={disabled} className={common.className} rows={3} value={common.value}
             onChange={e=>onChange(e.target.value)} />
       : field.value_type==="boolean"
-        ? <select className={common.className} value={common.value}
+        ? <select disabled={disabled} className={common.className} value={common.value}
             onChange={e=>onChange(e.target.value)}>
             <option value="">Seleccionar…</option>
             <option value="true">Sí</option><option value="false">No</option>
@@ -164,9 +164,10 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
     <p className="text-sm text-slate-600">Máquina {row.machineCode} · asignación {row.assignmentId}.
       Los valores quedan cifrados localmente. El servidor validará los datos al sincronizar.</p>
     {initializing?<p role="status">Abriendo borrador cifrado…</p>:<>
+      {alreadyQueued&&<p role="status" className="text-sm text-amber-800">Esta captura ya fue puesta en cola; su contenido es inmutable. Para una nueva captura, prepara otro formulario en línea.</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         {definition.fields.filter(f=>f.group_id===null).map(f=>
-          <Field key={f.key} field={f} value={draft[f.key]} onChange={v=>setSimple(f.key,v)}/>)}
+          <Field key={f.key} field={f} disabled={alreadyQueued} value={draft[f.key]} onChange={v=>setSimple(f.key,v)}/>)}
       </div>
       {definition.groups.map(g=>{
         const fields=definition.fields.filter(f=>f.group_id===g.id);
@@ -176,22 +177,22 @@ function EditForm({opened,online}:Readonly<{opened:OpenForm;online:boolean}>){
           <h4 className="font-medium">{title(g.code)} · {rows.length} filas</h4>
           {rows.map((line,i)=><div key={i} className="rounded border p-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              {fields.map(f=><Field key={f.key} field={f} value={line[f.key]}
+              {fields.map(f=><Field key={f.key} field={f} disabled={alreadyQueued} value={line[f.key]}
                 onChange={v=>editGroup(g.code,rows.map((r,j)=>i===j?{...r,[f.key]:v}:r))}/>)}
             </div>
-            <Button size="sm" variant="outline" onClick={()=>editGroup(g.code,rows.filter((_,j)=>j!==i))}>
+            <Button size="sm" variant="outline" disabled={alreadyQueued} onClick={()=>editGroup(g.code,rows.filter((_,j)=>j!==i))}>
               Retirar fila
             </Button>
           </div>)}
           {(g.max_rows===null||rows.length<g.max_rows)&&
-            <Button variant="outline" size="sm" onClick={()=>editGroup(g.code,[...rows,{}])}>Añadir fila</Button>}
+            <Button variant="outline" size="sm" disabled={alreadyQueued} onClick={()=>editGroup(g.code,[...rows,{}])}>Añadir fila</Button>}
         </div>;
       })}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={saving} onClick={()=>void save(valuesRef.current)
+        <Button variant="outline" disabled={saving||alreadyQueued} onClick={()=>void save(valuesRef.current)
           .then(()=>{setDirty(false);setMessage("Borrador cifrado guardado.");})
           .catch(e=>setMessage(errorText(e)))}>Guardar borrador</Button>
-        <Button disabled={saving||alreadyQueued} onClick={()=>void queueCurrent()}>
+        <Button disabled={saving||alreadyQueued||initializing} onClick={()=>void queueCurrent()}>
           {alreadyQueued?"Captura en cola":"Guardar captura pendiente de sincronización"}
         </Button>
       </div>
