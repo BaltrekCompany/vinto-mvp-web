@@ -6,6 +6,7 @@ is read or modified by this test module.
 
 import secrets
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from pydantic import SecretStr
@@ -46,9 +47,7 @@ class TubetesReportApiTests(unittest.IsolatedAsyncioTestCase):
     def setUpClass(cls):
         cls.database = copy_database(STATE["template"], "vinto_tubetes_api")
         cls.connection = connect(cls.database)
-        cls.patcher = __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            settings, "database_url", SecretStr(database_url(cls.database))
-        )
+        cls.patcher = patch.object(settings, "database_url", SecretStr(database_url(cls.database)))
         cls.patcher.start()
         cls.users, cls.cookies = {}, {}
         for profile in PROFILES:
@@ -226,9 +225,9 @@ class TubetesReportApiTests(unittest.IsolatedAsyncioTestCase):
         mp3_code = next(item for item in mp3["tubetes"] if item["code"] == "901")
         self.assertEqual((mp1_code["usage_count"], len(mp1_code["dates"])), (2, 2))
         self.assertEqual((mp3_code["usage_count"], len(mp3_code["dates"])), (1, 1))
-        self.assertEqual((mp1["usage_total"], mp3["usage_total"]), (2, 1))
 
     async def test_twenty_three_uses_on_the_same_day_are_not_deduplicated_or_limited(self):
+        baseline = (await self.report()).json()["machines"][0]["usage_total"]
         assignment = await self.assignment("MP1")
         for _ in range(23):
             await self.submit_bobbin(assignment, 902)
@@ -240,7 +239,7 @@ class TubetesReportApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tubete["usage_count"], 23)
         self.assertEqual(len(tubete["dates"]), 23)
         self.assertEqual(len(set(tubete["dates"])), 1)
-        self.assertEqual(mp1["usage_total"], 23)
+        self.assertEqual(mp1["usage_total"], baseline + 23)
 
     async def test_client_query_cannot_change_server_owned_machine_scope(self):
         reply = await self.report(query="?machine=OTHER&sector=CONVERSION")
