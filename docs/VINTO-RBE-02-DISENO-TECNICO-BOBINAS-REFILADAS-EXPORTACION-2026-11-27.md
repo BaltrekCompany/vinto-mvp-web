@@ -322,6 +322,7 @@ Todos bajo /api/reports/rewinding-export. Las mutaciones usan POST/PATCH para re
 | GET | /reports/{report_id}/pdf | Descargar los bytes originales |
 | POST | /reports/{report_id}/annul | Anular con motivo y autorización |
 | POST | /drafts/{report_id}/discard | Descartar borrador propio sin reservar crías |
+| POST | /work-orders/{work_order_id}/classification | Clasificar una OT como production_confirmed o qa (Jefatura) |
 
 Las rutas son un contrato de diseño, no código ya implementado. Los nombres finales se fijarán en RBE-04.
 
@@ -378,7 +379,7 @@ Los campos manuales camión y orden pueden estar vacíos en un borrador, pero so
 
 ### 8.1.1 Clasificación explícita de OT para RBE
 
-Tabla append-only rewinding_export_work_order_classification:
+Tabla append-only vinto_txn.rewinding_export_work_order_classification:
 
 - id UUID.
 - work_order_id.
@@ -587,7 +588,7 @@ Ninguna ruta puede invertir el orden: está prohibido bloquear primero el report
    - Sin resultado previo: continuar.
 5. Preleer IDs de OTs, paquetes, crías, madres y máquina sin bloquear; validar estructura básica.
 6. Aplicar el orden global de bloqueos anterior y revalidar que el reporte sigue en Borrador, pertenece al creador y conserva la selección enviada.
-7. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su clasificación de datos no es desconocida; todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
+7. Comprobar que las OTs siguen elegibles, no están archivadas ni marcadas como QA y que su última clasificación en vinto_txn.rewinding_export_work_order_classification es production_confirmed; sin fila vigente significa desconocido y se deniega. Todas las crías deben seguir released, tener peso/posición válidos, pertenecer a sus madres y no tener reserva activa.
 8. Verificar PV, artículo, destino, máquina, formulario P1-07 y alcance autorizado.
 9. Validar V01–V08 y reglas D01–D09.
 10. Construir snapshot inmutable con valores exactos de origen, entradas manuales, usuario generador, fecha/hora y warnings.
@@ -771,7 +772,7 @@ Crear/editar un borrador exige rewinding_export.create, propiedad del borrador y
 - read_sector: SUPERVISION y JEFATURA consultan el historial del sector REBOBINADO.
 - annul: solo JEFATURA; exige motivo y alcance REBOBINADO.
 
-Historial, detalle y descarga PDF aplican el mismo filtro de propietario/sector en cada endpoint, no solo en el listado. Un UUID fuera de alcance responde como recurso inexistente (404), sin revelar su existencia. La anulación verifica rewinding_export.annul y el sector, pero no exige concesión máquina/formulario P1-07: esa concesión limita la creación de Operación, no la consulta o gestión de Supervisión/Jefefatura. La comprobación se repite dentro de la transacción de anulación contra PostgreSQL, no se confía únicamente en AuthenticatedUser construido al inicio de la petición: user activo FOR SHARE → user_profile/profile activos FOR SHARE → permissions_for_profiles debe incluir rewinding_export.annul y el perfil debe incluir JEFATURA → user_sector debe contener REBOBINADO activo y operativo. El bloqueo FOR SHARE sobre user sincroniza con revoke_sector, que toma FOR NO KEY UPDATE sobre la misma fila antes de eliminar la concesión. Si la revocación confirmó primero, la anulación se deniega; si la anulación obtuvo primero el bloqueo, la revocación espera al COMMIT. No se toma ningún grant máquina/formulario para esta operación.
+Historial, detalle y descarga PDF aplican el mismo filtro de propietario/sector en cada endpoint, no solo en el listado. Un UUID fuera de alcance responde como recurso inexistente (404), sin revelar su existencia. La anulación verifica rewinding_export.annul y el sector, pero no exige concesión máquina/formulario P1-07: esa concesión limita la creación de Operación, no la consulta o gestión de Supervisión/Jefatura. La comprobación se repite dentro de la transacción de anulación contra PostgreSQL, no se confía únicamente en AuthenticatedUser construido al inicio de la petición: user activo FOR SHARE → user_profile/profile activos FOR SHARE → permissions_for_profiles debe incluir rewinding_export.annul y el perfil debe incluir JEFATURA → user_sector debe contener REBOBINADO activo y operativo. El bloqueo FOR SHARE sobre user sincroniza con revoke_sector, que toma FOR NO KEY UPDATE sobre la misma fila antes de eliminar la concesión. Si la revocación confirmó primero, la anulación se deniega; si la anulación obtuvo primero el bloqueo, la revocación espera al COMMIT. No se toma ningún grant máquina/formulario para esta operación.
 
 Para historial/detalle/PDF se usará una dependencia que acepte exactamente read_own o read_sector según el perfil, y que aplique el filtro correspondiente en SQL. No se sustituye por report.read.
 
@@ -889,7 +890,7 @@ La descarga no consulta los valores productivos actuales para reconstruir el doc
 - Solo máquinas P1-07 publicadas y dentro del alcance.
 - OT published, in_progress y closed.
 - OT archivada y qa_retired excluidas.
-- QA no marcado: debe bloquearse hasta criterio formal.
+- OT sin clasificación production_confirmed: debe bloquearse; QA y OT archivada siempre excluidas.
 - Crías released, pending, rejected/reutilizable y sin decisión.
 - Peso, posición, madre y operador original.
 - Operador sin concesión REBOBINADO: sin datos ni acceso.
@@ -956,6 +957,7 @@ La descarga no consulta los valores productivos actuales para reconstruir el doc
 - Jefatura anula con motivo; Operación y Supervisión reciben 403.
 - Consultar detalle/PDF por UUID ajeno no revela existencia.
 - Supervisión/Jefatura no dependen de user_machine_form_grant.
+- Solo Jefatura puede clasificar una OT; Operación, Supervisión, Calidad y Data Baltrek reciben 403.
 
 ### Regresión
 
@@ -982,7 +984,7 @@ Las pruebas de concurrencia, cambios de estado y reservas usan PostgreSQL 17 ef�
 - Cabecera: SELECT/INSERT/UPDATE para transiciones autorizadas; sin DELETE/TRUNCATE. Trigger valida estado, actor, motivo y snapshot.
 - Paquetes y package_child: SELECT/INSERT/UPDATE solo en Borrador; sin DELETE/TRUNCATE. Triggers permiten retirada lógica solo en Borrador y congelan todas las filas desde Generado.
 - Reservas: SELECT/INSERT/UPDATE solo para crear y liberar dentro de transacciones autorizadas; sin DELETE/TRUNCATE y con trigger de transición.
-- Clasificación de OT: SELECT/INSERT para Jefatura a través de rewinding_export.classify_source; append-only, sin UPDATE/DELETE/TRUNCATE.
+- Clasificación de OT: SELECT/INSERT para Jefatura a través de rewinding_export.classify_source; append-only, sin UPDATE/DELETE/TRUNCATE. La secuencia de clasificación se incrementa bajo bloqueo FOR UPDATE de work_order.
 - PDF: exclusivamente SELECT/INSERT para vinto_app; nunca UPDATE/DELETE/TRUNCATE.
 - Eventos: INSERT/SELECT; nunca UPDATE/DELETE/TRUNCATE.
 - Triggers de integridad referencial, transiciones, retirada lógica, auditoría, inmutabilidad de snapshot/PDF y paquetes/crías, coherencia diferible de reservas y sincronización con retirada QA.
