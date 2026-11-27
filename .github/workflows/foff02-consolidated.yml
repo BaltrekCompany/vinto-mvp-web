@@ -1,0 +1,55 @@
+name: FOFF-02 consolidated build and security tests
+on:
+  pull_request:
+    paths:
+      - "app/page.tsx"
+      - "components/vinto/foff-*.tsx"
+      - "lib/vinto/foff-*.ts"
+      - "backend/app/offline_production.py"
+      - "backend/app/foff_*.py"
+      - "backend/app/config.py"
+      - "backend/app/main.py"
+      - "backend/tests/test_foff*.py"
+      - "tests/foff*.test.ts"
+      - ".github/workflows/foff02-consolidated.yml"
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: FOFF TypeScript, tests, lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18.0"
+      - run: npm install -g pnpm@11.25.0
+      - run: pnpm install --frozen-lockfile
+      - name: Run FOFF TypeScript tests
+        run: node --experimental-strip-types --test tests/foff*.test.ts
+      - name: TypeScript compile check
+        run: pnpm exec tsc --noEmit
+      - name: ESLint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+  backend:
+    name: FOFF backend import, security and contracts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Import app and check Python syntax
+        run: |
+          python -m compileall -q app
+          PYTHONPATH=. python -c "from app.main import app; assert app is not None"
+      - name: FOFF new endpoint and signer unit tests
+        run: PYTHONPATH=. pytest -q tests/test_foff*.py
+      - name: Sector-scope static security regression
+        run: PYTHONPATH=tests:. python -m unittest -v test_sector_scope
