@@ -136,7 +136,7 @@ function drawPage(page: TubetesPdfPage): string {
             for (const x of xPositions.slice(1, -1)) {
                 content += lineCommand(x, top, x, top + ROW_HEIGHT);
             }
-            const codeLabel = row.continuation ? row.code + " (CONT.)" : row.code;
+            const codeLabel = row.continuation ? row.code + " (cont.)" : row.code;
             content += textCommand(codeLabel, LEFT + 4, top + 13, 6.5, row.continuation ? "F1" : "F2");
             row.dates.forEach((date, index) => {
                 const center = LEFT + CODE_WIDTH + DATE_WIDTH * (index + 0.5);
