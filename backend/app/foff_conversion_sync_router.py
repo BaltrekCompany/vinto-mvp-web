@@ -27,6 +27,7 @@ from app.capture_errors import AssignmentNotActiveError, AssignmentStaleError, L
 from app.config import settings
 from app.database import get_connection
 from app.foff_conversion_preparation import CONVERSION_CODES, DOMAIN
+from app.foff_conversion_capture_authority import DOMAIN as CAPTURE_DOMAIN, public_pin as capture_public_pin
 from app.quality.offline_capture_scope import _canonical
 
 router = APIRouter(prefix="/api/offline/production/conversion/captures",tags=["Conversión Offline"])
@@ -46,6 +47,7 @@ class OfflineConversionIn(BaseModel):
     payload_sha256: str
     values: dict[str, Any]
     preparation: dict[str, Any]
+    capture_authority: dict[str, Any] | None = None
     reference_package: dict[str, Any]
     client_captured_at: datetime | None = None
 
@@ -142,6 +144,66 @@ def _verified_preparation(body:OfflineConversionIn, user:AuthenticatedUser)->tup
     return context, datetime.now(timezone.utc)>=expires
 
 
+def _verified_capture_authority(body:OfflineConversionIn,user:AuthenticatedUser):
+    """Require independent CAPTURE signature, not a preparation_only token."""
+    import base64
+    from app.quality.offline_capture_scope import _b64
+    x=body.capture_authority
+    if not isinstance(x,dict) or set(x)!={"algorithm","key_id","public_key_b64url",
+                                         "payload","signature_b64url"} or x["algorithm"]!="Ed25519":
+        raise HTTPException(403,"Autoridad de captura requerida")
+    p=x.get("payload")
+    if not isinstance(p,dict) or set(p)!={
+        "schema","issuer","audience","kind","snapshot_id","subject_user_id",
+        "device_key","assignment_id","machine_code","form_code","form_version",
+        "grant_id","reference_sha256","issued_at","expires_at",
+    }:
+        raise HTTPException(422,"Autoridad de captura inválida")
+    if (p["schema"]!="vinto.foff.conversion_capture.v1" or
+        p["kind"]!="capture_authority" or
+        p["audience"]!="vinto-foff-conversion-capture" or
+        p["issuer"]!="vinto-backend" or
+        p["subject_user_id"]!=str(user.user_id) or
+        p["device_key"]!=str(body.device_key) or
+        p["assignment_id"]!=str(body.assignment_id) or
+        p["machine_code"]!=body.machine_code or
+        p["form_code"]!=body.form_code or
+        p["form_version"]!=body.form_version or
+        p["snapshot_id"]!=str(body.scope_snapshot_id)):
+        raise HTTPException(403,"Autoridad de captura no corresponde")
+    context=body.preparation["payload"]["context"]
+    if p["reference_sha256"]!=context["reference_sha256"]:
+        raise HTTPException(409,"Referencias de autoridad no coinciden")
+    secret=settings.offline_conversion_capture_signing_seed_hex
+    if secret is None:
+        raise HTTPException(503,"Semilla de captura no configurada")
+    try:
+        pin=capture_public_pin(secret.get_secret_value())
+    except ValueError as exc:
+        raise HTTPException(503,"Semilla de captura no válida") from exc
+    if x["key_id"]!=pin["key_id"] or x["public_key_b64url"]!=pin["public_key_b64url"]:
+        raise HTTPException(403,"Clave de captura no confiable")
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    private=Ed25519PrivateKey.from_private_bytes(bytes.fromhex(secret.get_secret_value()))
+    sig=x["signature_b64url"]
+    if not isinstance(sig,str) or not re.fullmatch("[A-Za-z0-9_-]+",sig):
+        raise HTTPException(422,"Firma de captura inválida")
+    try:
+        raw=base64.urlsafe_b64decode(sig+"="*((-len(sig))%4))
+        if len(raw)!=64 or _b64(raw)!=sig:raise ValueError("bad signature size")
+        private.public_key().verify(raw,CAPTURE_DOMAIN+_canonical(p))
+    except Exception as exc:
+        raise HTTPException(403,"Firma de captura no válida") from exc
+    try:
+        issued=datetime.strptime(p["issued_at"],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        expires=datetime.strptime(p["expires_at"],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        if not 0<(expires-issued).total_seconds()<=12*3600:
+            raise ValueError("invalid scope interval")
+    except (ValueError,TypeError) as exc:
+        raise HTTPException(422,"Vigencia de captura inválida") from exc
+    return datetime.now(timezone.utc)>=expires
+
+
 def _stored(connection,capture_id,author):
     return connection.execute(
         """SELECT c.id,c.created_by,f.code,fv.version_number,d.external_key,m.code,c.assignment_id,c.status
@@ -202,6 +264,7 @@ def receive_conversion_capture(
     if digest!=body.payload_sha256:
         raise HTTPException(409,"Integridad de captura no verificada")
     context,expired=_verified_preparation(body,user)
+    capture_expired=_verified_capture_authority(body,user)
     decision=authorize(connection,user,Operation.PRODUCTION_CAPTURE,
                        body.machine_code,body.form_code,lock=False)
     if not decision.allowed or decision.effective_version!=body.form_version:
@@ -226,8 +289,9 @@ def receive_conversion_capture(
         response.status_code=202
         return {"capture_id":str(body.capture_id),"outcome":"review",
                 "reason":reason,"operational_registered":False,"technical_acceptance":True}
-    if expired:
-        reason=_review(connection,body,user,context,"preparation_expired")
+    if expired or capture_expired:
+        reason=_review(connection,body,user,context,
+                       "preparation_expired" if expired else "capture_scope_expired")
         response.status_code=202
         return {"capture_id":str(body.capture_id),"outcome":"review",
                 "reason":reason,"operational_registered":False,"technical_acceptance":True}
