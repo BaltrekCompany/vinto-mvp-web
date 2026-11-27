@@ -132,7 +132,7 @@ test("hasPermission reads the permissions the backend sent and infers nothing", 
 
 test("DATA_BALTREK has no plant permissions in the UI", () => {
   const admin = user({ profiles: ["DATA_BALTREK"], permissions: ["assignment.read", "catalog.manage", "catalog.read", "user.manage", "work_order.read"] });
-  for (const permission of ["work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release"]) {
+  for (const permission of ["work_order.manage", "assignment.manage", "production.capture", "quality.capture", "quality.release", "report.read"]) {
     assert.equal(hasPermission(admin, permission), false, permission);
   }
   assert.deepEqual(operationalRolesFromProfiles(admin.profiles), []);
