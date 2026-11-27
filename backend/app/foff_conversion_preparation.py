@@ -17,6 +17,25 @@ DOMAIN = b"VINTO-FOFF-CONVERSION-PREPARATION-V1\x00"
 CONVERSION_CODES = frozenset({"VINTO-P1-11", "VINTO-P1-12", "VINTO-P1-13", "VINTO-P1-16"})
 
 
+def conversion_preparation_public_pin(seed_hex: str) -> dict:
+    """Return public pin only for an authenticated enrollment response.
+
+    Never publish seed or consider a pin embedded in an envelope trusted.
+    """
+    if not isinstance(seed_hex, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", seed_hex):
+        raise ValueError("invalid signing seed")
+    private = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(seed_hex))
+    public = private.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return {
+        "algorithm": "Ed25519",
+        "key_id": "ed25519-" + hashlib.sha256(public).digest()[:10].hex(),
+        "public_key_b64url": _b64(public),
+    }
+
+
 def sign_conversion_preparation(*, seed_hex: str, user_id: str, device_key: str,
                                 context: dict, now: datetime | None = None) -> dict:
     if not isinstance(seed_hex, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", seed_hex):
