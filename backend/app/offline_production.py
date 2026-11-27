@@ -17,6 +17,7 @@ from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.production_access import production_machines
 from app.foff_conversion_preparation import sign_conversion_preparation, CONVERSION_CODES
+from app.foff_conversion_references import conversion_reference_bundle, ConversionReferencesUnavailable
 from app.assignments import service as assignment_service, execution_read
 from app.authz import visibility
 from app.authz.engine import authorize
@@ -159,10 +160,28 @@ def prepare_conversion_context(
             "shift_code": a.shift_code,
             "operating_date": a.operating_date.isoformat(),
         }
+        try:
+            machine_row = connection.execute(
+                "SELECT id FROM vinto_master.machine WHERE code=%s AND active=true",
+                (a.machine_code,),
+            ).fetchone()
+            if machine_row is None:
+                raise ConversionReferencesUnavailable("machine_unavailable")
+            reference_package = conversion_reference_bundle(
+                connection,
+                machine_id=machine_row[0],
+                machine_code=a.machine_code,
+                article_code=a.line.article_code,
+                form_code=body.form_code,
+                form_version=decision.effective_version,
+            )
+        except ConversionReferencesUnavailable:
+            raise HTTPException(status_code=409, detail="Referencias de formulario no disponibles")
+        context["reference_sha256"] = reference_package["sha256"]
         digest = hashlib.sha256(_canonical(context)).hexdigest()
         signed_context = {**context, "context_digest": digest}
     envelope = sign_conversion_preparation(
         seed_hex=seed.get_secret_value(), user_id=str(user.user_id),
         device_key=device_key, context=signed_context,
     )
-    return {"envelope": envelope, "captureEnabled": False}
+    return {"envelope": envelope, "referencePackage": reference_package["bundle"], "captureEnabled": False}
