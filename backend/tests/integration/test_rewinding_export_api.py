@@ -60,15 +60,20 @@ def run_pg(tool, dsn, *args):
 class RewindingExportApiTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
-        cls.template = build_reference_template("vinto_rbe05_ref")
-        cls.addClassCleanup(drop_database, cls.template)
+        # Migrations conditionally grant operational tables to existing application roles.
+        # Provision roles before migrating the fixture DB, just as in the release runbook.
+        role_db = f"vinto_rbe05_roles_{uuid4().hex[:10]}_test"
+        create_database(role_db)
+        cls.addClassCleanup(drop_database, role_db)
         cls.password = secrets.token_urlsafe(24)
-        admin_dsn = database_url(cls.template)
-        sanitized, env = pg_connection(admin_dsn)
+        sanitized, env = pg_connection(database_url(role_db))
         env.update(APP_PASSWORD=cls.password, MIGRATOR_PASSWORD=secrets.token_urlsafe(24),
                    REFERENCE_PASSWORD=secrets.token_urlsafe(24))
         subprocess.run(["psql", "--dbname", sanitized, "-q", "-f", str(ROLES / "00_create_roles.sql")],
                        env=env, capture_output=True, check=True, timeout=30)
+        cls.template = build_reference_template("vinto_rbe05_ref")
+        cls.addClassCleanup(drop_database, cls.template)
+        admin_dsn = database_url(cls.template)
         for filename in ("02_schema_grants.sql", "03_table_grants.sql",
                          "03b_d3b1_restrict_catalog_writes.sql", "04_function_grants.sql"):
             run_pg("psql", admin_dsn, "-q", "-f", str(ROLES / filename))

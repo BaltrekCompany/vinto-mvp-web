@@ -82,7 +82,14 @@ jobs:
           sudo apt-get install -y poppler-utils
           python -m pip install -r backend/requirements.txt
           npm install --global pnpm@11.25.0
-      - name: PostgreSQL 17, API y PDF
+      - name: PDF sintético y paginación
+        id: pdf
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_rewinding_export_pdf.py -v 2>&1 | tee "$RBE05_EVIDENCE_DIR/pdf.log"
+      - name: PostgreSQL 17, API y regresión backend
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         id: backend
         working-directory: backend
         run: |
@@ -93,7 +100,7 @@ jobs:
             python prepare_test_db.py
             python migrate.py --target test --check
             PYTHONPATH=tests:. python -m unittest discover -s tests/integration -p test_rewinding_export_api.py -v
-            for suite in test_rewinding_export_contract.py test_rewinding_export_integrity.py test_rewinding_export_pdf.py \
+            for suite in test_rewinding_export_contract.py test_rewinding_export_integrity.py \
               test_schema.py test_sector_scope.py test_rb_crias_quality_api.py test_mf10_rebobinado_conversion.py test_quality_offline_receiver.py test_quality_offline_single_submit.py; do
               python -m unittest discover -s tests -p "$suite" -v
             done
@@ -118,7 +125,7 @@ jobs:
             pnpm build
           } 2>&1 | tee "$RBE05_EVIDENCE_DIR/frontend.log"
       - name: Renderizar vistas representativas
-        if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.pdf.outcome == 'success' }}
         id: render
         run: |
           cd "$RBE05_EVIDENCE_DIR"
@@ -129,6 +136,7 @@ jobs:
       - name: Generar resumen y manifiesto verificable
         if: ${{ !cancelled() }}
         env:
+          PDF_OUTCOME: ${{ steps.pdf.outcome }}
           BACKEND_OUTCOME: ${{ steps.backend.outcome }}
           FRONTEND_OUTCOME: ${{ steps.frontend.outcome }}
           RENDER_OUTCOME: ${{ steps.render.outcome }}
@@ -144,7 +152,7 @@ jobs:
           summary = {"pr_head": os.environ["RBE05_HEAD_SHA"]}
           checkout = directory / "checkout.sha"
           summary["checkout"] = checkout.read_text().strip() if checkout.exists() else None
-          for name in ("backend", "frontend", "render"):
+          for name in ("pdf", "backend", "frontend", "render"):
               log = directory / (name + ".log")
               text = log.read_text(errors="replace") if log.exists() else ""
               counts = re.findall(r"^Ran (\d+) tests? in |^(?:#|ℹ) tests (\d+)", text, re.M)
