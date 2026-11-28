@@ -76,12 +76,12 @@ test("Formato y Cortes conservan literalmente los decimales de P1-07; no convier
   assert.equal(formatRewindingExportCuts(mother({ formato_3: null })), "—");
 });
 
-test("el contexto de un reporte no mezcla PV, artículo, máquina, destino, Formato ni Cortes", () => {
+test("el contexto de un reporte no mezcla PV, artículo, máquina, destino ni Formato; Cortes es por paquete", () => {
   const base = mother();
   assert.deepEqual(rewindingExportContextDifferences(base, mother({ mother_capture_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })), []);
   assert.deepEqual(rewindingExportContextDifferences(base, mother({ destination: " Perú " })), []);
   assert.deepEqual(rewindingExportContextDifferences(base, mother({ machine: { code: "BELOIT", name: "Beloit" } })), ["máquina"]);
-  assert.deepEqual(rewindingExportContextDifferences(base, mother({ formato_3: "6" })), ["Cortes"]);
+  assert.deepEqual(rewindingExportContextDifferences(base, mother({ formato_3: "6" })), []);
   assert.deepEqual(rewindingExportContextDifferences(base, mother({ formato_2: null })), ["Formato"]);
   assert.deepEqual(rewindingExportContextDifferences(base, mother({ pv_reference: "PV-OTRO", destination: "Chile" })), ["PV", "destino"]);
 });

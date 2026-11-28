@@ -285,7 +285,6 @@ export function rewindingExportContextDifferences(first: RewindingExportMother, 
     if (first.machine.code !== next.machine.code) differences.push("máquina");
     if (first.destination.trim() !== next.destination.trim()) differences.push("destino");
     if (first.formato_1 !== next.formato_1 || first.formato_2 !== next.formato_2) differences.push("Formato");
-    if (first.formato_3 !== next.formato_3) differences.push("Cortes");
     return differences;
 }
 

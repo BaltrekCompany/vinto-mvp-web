@@ -36,7 +36,7 @@ Incluye:
 - No se convierten decimales, no se agregan unidades y no se genera un código como "0-C".
 - Cada selector muestra "Cría N - peso kg" usando posición y peso fuente.
 - La selección de interfaz evita repetir crías en paquetes activos del mismo borrador, pero el servidor vuelve a validar Calidad, pertenencia, disponibilidad y reservas.
-- La interfaz compara PV, artículo, máquina, destino, Formato y Cortes entre las madres de un mismo reporte.
+- La interfaz compara PV, artículo, máquina, destino y Formato entre las madres de un mismo reporte. Cortes se conserva literalmente como dato individual de cada paquete, conforme a D04.
 - Si el operador fuente no se puede resolver, se muestra la incidencia y no se promete que el reporte pueda generarse; el backend aplica la regla bloqueante.
 - Los cuatro warnings de origen definidos en RBE-02 se presentan como informativos; V01–V08 siguen siendo bloqueantes.
 
