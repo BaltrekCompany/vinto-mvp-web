@@ -1,0 +1,48 @@
+name: RBE-03 Frontend
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/page.tsx"
+      - "components/vinto/sector-central.tsx"
+      - "components/vinto/rewinding-export-*.tsx"
+      - "lib/vinto/auth.ts"
+      - "lib/vinto/central-http.ts"
+      - "lib/vinto/rewinding-export*.ts"
+      - "scripts/rbe03-ui.test.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/rbe03-frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rbe03-frontend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+      - name: Activate pnpm
+        run: |
+          npm install --global pnpm@11.25.0
+          pnpm --version
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: ESLint
+        run: pnpm lint
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: RBE-03 unit and SSR tests
+        run: node --experimental-strip-types --test scripts/rbe03-ui.test.mjs
+      - name: Production build
+        run: pnpm build

@@ -7,7 +7,7 @@ import { failureKindFromStatus, type FailureKind } from "@/lib/vinto/orders";
 export type ApiFailure = { ok: false; kind: FailureKind; status: number; code?: string };
 export type ApiResult<T> = { ok: true; data: T; status: number } | ApiFailure;
 
-type Init = { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal };
+type Init = { method?: "GET" | "POST" | "PATCH"; body?: unknown; signal?: AbortSignal };
 
 // Solo el código de error estable del backend (p. ej. ASSIGNMENT_STALE), validado por forma; nunca el mensaje ni el cuerpo.
 async function errorCode(response: Response): Promise<string | undefined> {
