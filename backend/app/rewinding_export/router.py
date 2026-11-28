@@ -209,7 +209,7 @@ def download_pdf(report_id: uuid.UUID,
 def annul(report_id: uuid.UUID, body: AnnulIn,
           user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_ANNUL)),
           connection=Depends(get_connection)):
-    return service.annul_report(connection, actor_id=user.user_id, request_id=_request_id(),
+    return service.annul_report(connection, user=user, actor_id=user.user_id, request_id=_request_id(),
                                  report_id=report_id, reason=body.reason, sectors=user.sectors)
 
 @router.get("/work-orders")
