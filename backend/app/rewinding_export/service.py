@@ -43,7 +43,7 @@ def _event(connection, report_id, actor_id, event_type, reason=None, metadata=No
 def _source_mother(connection, capture_id):
     cursor = connection.execute(
         """SELECT c.id AS mother_capture_id, c.revision, c.form_version_id, c.created_by AS operator_id,
-                  c.machine_id, c.status AS capture_status,
+                  c.machine_id, c.operating_date, c.status AS capture_status,
                   f.code AS form_code, fv.version_number,
                   m.code AS machine_code, m.name AS machine_name, m.active AS machine_active,
                   s.id AS sector_id, s.code AS sector_code, s.active AS sector_active,
@@ -108,8 +108,25 @@ def _source_mother(connection, capture_id):
         (capture_id,),
     ).fetchall()
     row["source_fields"] = {
-        key: {"type": value_type, "value": next((v for v in (text, decimal, integer, boolean, date, time) if v is not None), None)}
+        key: {
+            "type": value_type, "text": text,
+            "decimal": str(decimal) if decimal is not None else None,
+            "integer": str(integer) if integer is not None else None,
+            "boolean": boolean,
+            "date": date.isoformat() if date is not None else None,
+            "time": time.isoformat() if time is not None else None,
+        }
         for key, value_type, text, decimal, integer, boolean, date, time in fields
+    }
+    row["source_fields"]["__source"] = {
+        "operating_date": row["operating_date"].isoformat(),
+        "pv_reference": row["pv_reference"],
+        "mother_capture_id": str(row["mother_capture_id"]),
+        "article_id": str(row["article_id"]),
+        "article_code": row["article_code"],
+        "machine_id": str(row["machine_id"]),
+        "work_order_id": str(row["work_order_id"]),
+        "source_operator_user_id": str(row["operator_id"]) if row["operator_id"] else None,
     }
     return row
 
