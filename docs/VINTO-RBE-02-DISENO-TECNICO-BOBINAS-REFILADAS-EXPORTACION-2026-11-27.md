@@ -310,6 +310,7 @@ Todos bajo /api/reports/rewinding-export. Las mutaciones usan POST/PATCH para re
 | GET | /mothers?pv_reference=&article_id= | Madres elegibles |
 | GET | /mothers/{mother_capture_id}/children | Crías released y disponibles |
 | POST | /drafts | Crear borrador |
+| GET | /drafts | Listar borradores propios para recuperar tras recargar la interfaz |
 | GET | /drafts/{report_id} | Leer borrador propio |
 | PATCH | /drafts/{report_id} | Editar camión, orden y observaciones |
 | POST | /drafts/{report_id}/packages | Agregar paquete |
@@ -322,6 +323,7 @@ Todos bajo /api/reports/rewinding-export. Las mutaciones usan POST/PATCH para re
 | GET | /reports/{report_id}/pdf | Descargar los bytes originales |
 | POST | /reports/{report_id}/annul | Anular con motivo y autorización |
 | POST | /drafts/{report_id}/discard | Descartar borrador propio sin reservar crías |
+| GET | /work-orders/{work_order_id}/classification | Consultar la última decisión de clasificación de una OT (Jefatura) |
 | POST | /work-orders/{work_order_id}/classification | Clasificar una OT como production_confirmed o qa (Jefatura) |
 
 Las rutas son un contrato de diseño, no código ya implementado. Los nombres finales se fijarán en RBE-04.
