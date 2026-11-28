@@ -17,7 +17,7 @@ const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const FIELD=/^[a-zA-Z][a-zA-Z0-9_]{0,79}$/;
 const fail=():never=>{throw new Error("foff_conversion_definition_unsupported");};
 export function parseConversionDefinition(raw:unknown):ConversionDefinition{
-  if(!OBJECT(raw))fail();
+  if(!OBJECT(raw))throw new Error("foff_conversion_definition_unsupported");
   if(!Array.isArray(raw.fields)||!Array.isArray(raw.groups))throw new Error("foff_conversion_definition_unsupported");
   if(raw.fields.length>300||raw.groups.length>30)throw new Error("foff_conversion_definition_unsupported");
   const groups:ConversionGroup[]=raw.groups.map((value:unknown)=>{
