@@ -267,7 +267,7 @@ test("alcance actualizado: RG01 no altera los formularios MP1/MP3 y P1-07 madre 
   assert.deepEqual(rg.machines, ["MP3"], "nunca MP1");
   assert.equal(rg.fields.length, 133);
   const migrations = readdirSync(join(root, "backend/migrations")).filter((f) => f.endsWith(".sql"));
-  assert.equal(migrations.length, 31, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
+  assert.equal(migrations.filter(name => Number.parseInt(name, 10) <= 31).length, 31, "CV-P112-01/0028 y P1-07 madre 0029/0030 son migraciones aditivas");
   for (const name of ["0028_conversion_pallet_grants.sql", "0029_p107_rewinding_mother_identity.sql", "0030_p107_mother_quality_forms.sql"]) assert.ok(migrations.includes(name), `migración esperada: ${name}`);
   assert.ok(migrations.includes("0027_conversion_pallet.sql"));
   assert.ok(migrations.includes("0023_quality_release_decision.sql"));

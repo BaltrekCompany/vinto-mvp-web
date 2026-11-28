@@ -20,7 +20,7 @@ WIDTH, HEIGHT = A4
 COLUMNS = ("N.º", "Bobina madre", "Cría A", "Cría B", "Cría C", "Cría D", "Cría E",
            "Diámetro", "Cortes", "Tubete", "Ayudante", "Operador original")
 WIDTHS = tuple((WIDTH - 2 * MARGIN) * percent / 100
-               for percent in (4, 13, 7, 7, 7, 7, 7, 8, 7, 9, 10, 14))
+               for percent in (6, 12, 7, 7, 7, 7, 7, 8, 6, 9, 10, 14))
 
 
 class PDFTooLarge(ValueError):

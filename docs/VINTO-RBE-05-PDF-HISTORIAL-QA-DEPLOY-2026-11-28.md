@@ -4,8 +4,8 @@
 
 - Rama `feat/rbe-05-pdf-history-2026-11-28`. El HEAD remoto inicial era `ef7c5ecbaf3da906ca59d3c5afa6ee493981d99f`, el mismo del PR #279. El árbol inicial estaba limpio. No había commits adicionales en la rama.
 - RBE-02 define reglas y bloqueos. RBE-03 aporta Ejecución y clasificación de OT. RBE-04 aporta 0032, permisos y reserva. Se integró el HEAD de RBE-03 `c7047fcf1db177d9072c2e224f56791625239bf8` mediante merge local sin conflictos. [RBE-02 #274](https://github.com/BaltrekCompany/vinto-mvp-web/pull/274) · [RBE-03 #277](https://github.com/BaltrekCompany/vinto-mvp-web/pull/277) · [RBE-04 #279](https://github.com/BaltrekCompany/vinto-mvp-web/pull/279)
-- El PR RBE-05 es borrador y tiene como base RBE-04. El commit y la evidencia definitiva se registran en el PR y en `pr-head.sha`, `checkout.sha` y `resumen.json` del artefacto del workflow. Usar el run del HEAD vigente. [PR de RBE-05 por rama](https://github.com/BaltrekCompany/vinto-mvp-web/pulls?q=is%3Apr+head%3Afeat%2Frbe-05-pdf-history-2026-11-28) · [Ejecuciones RBE-05](https://github.com/BaltrekCompany/vinto-mvp-web/actions/workflows/rbe-05-pdf-history.yml)
-- Orden de integración recomendado para revisión posterior: #274, #277, #279 y RBE-05. Conservar la ascendencia al integrar #277 y #279, actualizar la base del PR RBE-05 cuando ambas estén integradas y volver a correr el candidato combinado si cambia su árbol o su SHA.
+- El PR RBE-05 es borrador y tiene como base RBE-04. El commit y la evidencia definitiva se registran en el PR y en `pr-head.sha`, `checkout.sha` y `resumen.json` del artefacto del workflow. Usar el run del HEAD vigente. [PR RBE-05 #280](https://github.com/BaltrekCompany/vinto-mvp-web/pull/280) · [Ejecuciones RBE-05](https://github.com/BaltrekCompany/vinto-mvp-web/actions/workflows/rbe-05-pdf-history.yml)
+- Para integrar después de la revisión, seguir el orden #274, #277, #279 y RBE-05. Conservar la ascendencia al integrar #277 y #279, actualizar la base del PR RBE-05 cuando ambas estén integradas y volver a correr el candidato combinado si cambia su árbol o su SHA.
 
 ## Funcionalidad y arquitectura
 
@@ -17,7 +17,7 @@ El renderizador usa ReportLab 4.5.1 con Vera incrustada y pypdf 6.14.0 para veri
 
 El producto procede del artículo de OT. La descripción aparece si coincide en las versiones de todos los paquetes activos. Formato concatena los componentes presentes y Cortes conserva el tercer valor por paquete. El operador es el nombre asociado a `capture.created_by`. El snapshot conserva los valores originales y las advertencias. El guardado de cabecera queda en la auditoría genérica de la tabla. El contrato anterior intentaba insertar `draft_updated`, que la lista de eventos de 0032 no admite.
 
-No se localizó la especificación funcional original de seis páginas en las ramas, PR o adjuntos disponibles. Se usó la sección 11 de RBE-02. La comparación con la página 6 original queda como puerta del QA visual.
+No se localizó la especificación funcional original de seis páginas en las ramas, PR, adjuntos disponibles o la búsqueda de Google Drive. Se usó la sección 11 de RBE-02. La comparación con la página 6 original queda como puerta del QA visual.
 
 ### Archivos y dependencias
 
@@ -26,7 +26,7 @@ No se localizó la especificación funcional original de seis páginas en las ra
 | Motor y API | `backend/app/rewinding_export/{service,router,repository,schemas,pdf_renderer}.py`, `backend/app/main.py` |
 | Dependencias | `backend/requirements.txt` fija ReportLab y pypdf. Playwright 1.65.1 se instala únicamente para la suite de navegador |
 | Interfaz | `app/page.tsx`, `components/vinto/{sector-central,rewinding-export-workspace,rewinding-export-history}.tsx`, `lib/vinto/{central-http,rewinding-export,rewinding-export-api}.ts` |
-| Verificación | `backend/tests/test_rewinding_export_*.py`, `scripts/rbe05-browser.test.mjs`, expectativa histórica de migraciones en `scripts/p1-30-p1-07-capture.test.mjs`, `.github/workflows/rbe-05-pdf-history.yml` |
+| Verificación | `backend/tests/test_rewinding_export_*.py`, `backend/tests/integration/test_rewinding_export_api.py`, `tests/rewinding-export/browser.test.mjs`, expectativas históricas de migraciones en `scripts/p1-30-p1-07-capture.test.mjs` y `scripts/p1-02-p1-01-capture.test.mjs`, `.github/workflows/rbe-05-pdf-history.yml` |
 
 ## Contrato HTTP
 
@@ -48,6 +48,7 @@ Raíz `/api/reports/rewinding-export`. Las consultas y mutaciones RBE-03 de sele
 - PostgreSQL 17 desechable migrado hasta 0032 con checksum SHA-256 `d95e74f56353fe25750dd30f753bbb623af898fb23ab247a944a2100448d23e1`.
 - Verificación local con PostgreSQL 17.12 y el rol `vinto_app`, usando login, capturas P1-07 y decisiones de Calidad sintéticas. Concurrencia real de dos operadores 200/409 con triggers habilitados. El perdedor conservó estado Borrador con cero PDFs, reservas y eventos de generación. Reintentos concurrentes con la misma clave devolvieron los mismos bytes. Anulación por Jefatura, liberación, reutilización y restauración por `pg_dump`/`pg_restore` comprobaron el SHA-256 original.
 - Verificación local con ESLint, TypeScript, build, suite RBE-03, regresiones dirigidas y Chromium. Chromium usa respuestas HTTP sintéticas para comprobar navegación del componente, doble clic, respuesta perdida, 401, 409, perfiles, historial, descarga y anulación. PostgreSQL HTTP usa FastAPI real.
+- En el primer ciclo GitHub rechazó el contexto `runner` usado en el nivel del job y el check histórico MP3 contó 0032 dentro del inventario hasta 0031. El ciclo correctivo conserva ese inventario histórico, inicializa el directorio temporal en el paso de ejecución y valida el YAML con `actionlint`. La prueba que instala Chromium y la que aprovisiona roles PostgreSQL se ejecutan en el workflow dedicado con sus dependencias. [Validación inicial del workflow](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/46167043179) · [Check histórico MP3](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/46167077653) · [Primer ciclo E1-08](https://github.com/BaltrekCompany/vinto-mvp-web/actions/runs/46167077565)
 - En GitHub verificar el resultado de todos los checks asociados al HEAD vigente. Descargar el artefacto `rbe05-<run_id>-<attempt>` del run correcto. Ejecutar `sha256sum -c SHA256SUMS`, comprobar `pr-head.sha` y `checkout.sha`, y consultar `resumen.json`, `concurrencia.json`, `conservacion.json` y `revocacion.json`. El artefacto contiene PDFs sintéticos, PNG, logs y hashes. Su retención es de 14 días. [Ejecuciones y artefactos de RBE-05](https://github.com/BaltrekCompany/vinto-mvp-web/actions/workflows/rbe-05-pdf-history.yml)
 - **GO de despliegue autorizado** exige SHA explícito, CI íntegro, comparación visual con la página 6, respaldo restaurado y verificado, historial de migraciones coherente, roles efectivos correctos, build y health correctos y aprobación del alcance de QA.
 - **NO-GO** ante un check obligatorio fallido o sin concluir, divergencia del SHA o checksum, backup sin restauración, ausencia de autorización, origen operativo de los datos de ensayo, concesión excesiva o regresión. Mantener reportes, PDFs y reservas para análisis.

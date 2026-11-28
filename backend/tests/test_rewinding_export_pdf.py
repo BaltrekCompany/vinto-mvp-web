@@ -49,7 +49,9 @@ class RewindingExportPDFTests(unittest.TestCase):
                     self.assertIn(f"Página {index} de {expected}", text)
                     self.assertEqual("Observaciones generales" in text, index == expected)
                     self.assertEqual(text.count("MADRE-"), min(count - (index - 1) * 20, 20))
-                    self.assertIn(f"MADRE-{(index - 1) * 20 + 1:05d}", text)
+                    first_package = (index - 1) * 20 + 1
+                    self.assertIn(f"MADRE-{first_package:05d}", text)
+                    self.assertIn(str(first_package), text.splitlines())
                 if evidence and count in {1, 20, 21, 2021}:
                     path = Path(evidence) / f"sintetico-{count}.pdf"
                     path.write_bytes(data)

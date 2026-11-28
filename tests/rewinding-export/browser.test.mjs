@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { createServer } from "vite";
 import { chromium } from "playwright";
 
-const root = resolve(import.meta.dirname, "..");
+const root = resolve(import.meta.dirname, "../..");
 const tmp = join(root, ".tmp-rbe05-" + process.pid);
 const id = "11111111-1111-4111-8111-111111111111";
 const article = "33333333-3333-4333-8333-333333333333";

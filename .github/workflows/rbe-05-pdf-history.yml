@@ -10,6 +10,7 @@ on:
       - 'components/**'
       - 'lib/**'
       - 'scripts/**'
+      - 'tests/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
   workflow_dispatch:
@@ -47,7 +48,6 @@ jobs:
       TEST_DATABASE_URL: postgresql://ci_admin:rbe05-disposable-only@127.0.0.1:5432/vinto_rbe05_ci_test
       TEST_ADMIN_DATABASE_URL: postgresql://ci_admin:rbe05-disposable-only@127.0.0.1:5432/postgres
       DATABASE_URL: postgresql://ci_admin:rbe05-disposable-only@127.0.0.1:5432/vinto_rbe05_unused
-      RBE05_EVIDENCE_DIR: ${{ runner.temp }}/rbe05-evidence
       RBE05_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -63,7 +63,9 @@ jobs:
           node-version: '22.18.0'
       - name: Registrar commit y preparar herramientas
         run: |
+          RBE05_EVIDENCE_DIR="$RUNNER_TEMP/rbe05-evidence"
           mkdir -p "$RBE05_EVIDENCE_DIR"
+          echo "RBE05_EVIDENCE_DIR=$RBE05_EVIDENCE_DIR" >> "$GITHUB_ENV"
           git rev-parse HEAD > "$RBE05_EVIDENCE_DIR/checkout.sha"
           printf '%s\n' "$RBE05_HEAD_SHA" > "$RBE05_EVIDENCE_DIR/pr-head.sha"
           git merge-base --is-ancestor "$RBE05_HEAD_SHA" HEAD
@@ -87,7 +89,8 @@ jobs:
             printf '%s  %s\n' d95e74f56353fe25750dd30f753bbb623af898fb23ab247a944a2100448d23e1 migrations/0032_rewinding_export_backend.sql | sha256sum -c -
             python prepare_test_db.py
             python migrate.py --target test --check
-            for suite in test_rewinding_export_api.py test_rewinding_export_contract.py test_rewinding_export_integrity.py test_rewinding_export_pdf.py \
+            PYTHONPATH=tests:. python -m unittest discover -s tests/integration -p test_rewinding_export_api.py -v
+            for suite in test_rewinding_export_contract.py test_rewinding_export_integrity.py test_rewinding_export_pdf.py \
               test_schema.py test_sector_scope.py test_rb_crias_quality_api.py test_mf10_rebobinado_conversion.py test_quality_offline_receiver.py test_quality_offline_single_submit.py; do
               python -m unittest discover -s tests -p "$suite" -v
             done
@@ -108,14 +111,14 @@ jobs:
             npm install --prefix "$RUNNER_TEMP/rbe05-browser" --no-save --package-lock=false playwright@1.65.1
             ln -s "$RUNNER_TEMP/rbe05-browser/node_modules/playwright" node_modules/playwright
             "$RUNNER_TEMP/rbe05-browser/node_modules/.bin/playwright" install --with-deps chromium
-            node --test scripts/rbe05-browser.test.mjs
+            node --test tests/rewinding-export/browser.test.mjs
             pnpm build
           } 2>&1 | tee "$RBE05_EVIDENCE_DIR/frontend.log"
       - name: Renderizar vistas representativas
         if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
         id: render
-        working-directory: ${{ env.RBE05_EVIDENCE_DIR }}
         run: |
+          cd "$RBE05_EVIDENCE_DIR"
           pdftoppm -f 1 -l 1 -scale-to 1400 -png sintetico-1.pdf vista-1
           pdftoppm -f 1 -l 1 -scale-to 1400 -png sintetico-20.pdf vista-20
           pdftoppm -f 1 -l 2 -scale-to 1400 -png sintetico-21.pdf vista-21
@@ -147,7 +150,9 @@ jobs:
           (directory / "resumen.json").write_text(json.dumps(summary, indent=2) + "\n")
           PY
           cd "$RBE05_EVIDENCE_DIR"
-          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          manifest="$RUNNER_TEMP/rbe05-SHA256SUMS"
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$manifest"
+          mv "$manifest" SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Publicar PDFs, capturas, logs y evidencia
         if: ${{ !cancelled() }}

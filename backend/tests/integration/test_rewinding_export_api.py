@@ -28,7 +28,7 @@ from test_assignments_api import call
 from test_rb_crias_quality_api import ARTICLE, DAY, P107
 
 ROOT = "/api/reports/rewinding-export"
-ROLES = Path(__file__).resolve().parents[1] / "roles"
+ROLES = Path(__file__).resolve().parents[2] / "roles"
 MACHINE = "COPASA"
 FORM = "VINTO-P1-07"
 REASON = "Revisión del ensayo sintético."
