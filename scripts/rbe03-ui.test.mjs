@@ -17,6 +17,7 @@ import {
   parseRewindingExportDraftSummaryList,
   parseRewindingExportPreview,
   parseRewindingWorkOrderClassification,
+  parseRewindingWorkOrderOptionList,
   rewindingExportChildLabel,
   rewindingExportContextDifferences,
   validateRewindingExportPackage,
@@ -175,6 +176,18 @@ test("la vista previa diferencia warnings informativos de validaciones bloqueant
   assert.equal(parseRewindingExportPreview({ ...preview, valid: true }), null);
 });
 
+test("la lista de clasificación incluye OTs cerradas y no infiere QA por estado", () => {
+  const items = parseRewindingWorkOrderOptionList({ items: [{
+    id: UUID.workOrder, number: "OT-2026-0045", status: "closed",
+    machine_code: "COPASA",
+  }] });
+  assert.equal(items?.[0]?.status, "closed");
+  assert.equal(parseRewindingWorkOrderOptionList({ items: [{
+    id: UUID.workOrder, number: "OT-2026-0045", status: "archived",
+    machine_code: "COPASA",
+  }] }), null);
+});
+
 test("la clasificación de OT distingue desconocida de production_confirmed y QA", () => {
   assert.deepEqual(parseRewindingWorkOrderClassification({
     work_order_id: UUID.workOrder, classification: null, sequence_no: null, recorded_at: null, reason: null, recorded_by: null,
@@ -243,12 +256,13 @@ test("la interfaz autorizada muestra carga del servidor y no rellena opciones co
   assert.equal(html.includes("Cría 1 - 317 kg"), false);
 });
 
-test("el panel de clasificación de Jefatura no inventa OTs cuando el listado está vacío", () => {
+test("el panel de clasificación de Jefatura carga las OTs del servidor, incluidas las cerradas", () => {
   const html = server.renderToStaticMarkup(React.createElement(ui.RewindingWorkOrderClassificationPanel, {
-    scope: "user:" + UUID.operator, workOrders: [], onSessionLost: noop,
+    scope: "user:" + UUID.operator, onSessionLost: noop,
   }));
   assert.ok(html.includes("Clasificación de órdenes para RBE"));
-  assert.ok(html.includes("No hay órdenes de Rebobinado disponibles"));
+  assert.ok(html.includes("Consultando OTs de Rebobinado, incluidas las cerradas"));
+  assert.equal(html.includes("OT-2026-0045"), false);
 });
 
 test("la interfaz no utiliza almacenamiento offline/local del navegador", () => {

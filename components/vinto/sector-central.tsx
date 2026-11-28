@@ -103,8 +103,8 @@ function Programming({ code, sector, canManageOrders, canManageAssignments, canR
         capabilityStatus={multiMachine.status} onCapabilitiesStale={multiMachineResource.refresh}
         workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} scope={scope} executionEnabled={executionEnabled}
         canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/>
-        {code === "REBOBINADO" && canClassifyRewindingWorkOrders && workOrders.view.status === "ready"
-            ? <RewindingWorkOrderClassificationPanel scope={scope} workOrders={workOrders.view.data} onSessionLost={onSessionLost}/>
+        {code === "REBOBINADO" && canClassifyRewindingWorkOrders
+            ? <RewindingWorkOrderClassificationPanel scope={scope} onSessionLost={onSessionLost}/>
             : null}
     </div>;
 }

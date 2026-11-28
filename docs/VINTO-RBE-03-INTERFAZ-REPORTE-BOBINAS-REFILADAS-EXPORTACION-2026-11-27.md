@@ -57,10 +57,11 @@ Raíz: /api/reports/rewinding-export.
 | PATCH | /drafts/{report_id}/packages/{package_id} | Editar paquete |
 | POST | /drafts/{report_id}/packages/{package_id}/remove | Retirar paquete |
 | POST | /drafts/{report_id}/preview | Validar y devolver warnings/bloqueantes |
+| GET | /work-orders | Listar OTs clasificables en REBOBINADO; incluye published, in_progress y closed, excluye archived/qa_retired |
 | GET | /work-orders/{work_order_id}/classification | Consultar última clasificación de OT |
 | POST | /work-orders/{work_order_id}/classification | Registrar nueva decisión append-only |
 
-RBE-02 ya proponía POST de clasificación. RBE-03 necesita además una lectura de la última decisión para que Jefatura no clasifique a ciegas. RBE-04 debe implementar GET y POST con el mismo permiso, alcance REBOBINADO y revalidación transaccional.
+RBE-02 ya proponía POST de clasificación. RBE-03 necesita además una lectura de la última decisión para que Jefatura no clasifique a ciegas. RBE-04 debe implementar GET y POST con el mismo permiso, alcance REBOBINADO y revalidación transaccional. La lista de clasificación usa exclusivamente rewinding_export.classify_source, no requiere work_order.read, incluye OTs cerradas (D02) y no infiere QA a partir del estado.
 
 La lectura GET /drafts es necesaria para recuperar borradores tras recargar el navegador. RBE-04 debe devolver solo borradores del usuario autenticado cuando se usa "rewinding_export.read_own".
 

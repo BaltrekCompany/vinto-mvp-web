@@ -8,6 +8,7 @@ import {
     parseRewindingExportProductList,
     parseRewindingExportPvList,
     parseRewindingWorkOrderClassification,
+    parseRewindingWorkOrderOptionList,
     type RewindingExportChild,
     type RewindingExportDraft,
     type RewindingExportDraftSummary,
@@ -17,6 +18,7 @@ import {
     type RewindingExportPv,
     type RewindingWorkOrderClassification,
     type RewindingWorkOrderClassificationRecord,
+    type RewindingWorkOrderOption,
 } from "@/lib/vinto/rewinding-export";
 
 const ROOT = "/api/reports/rewinding-export";
@@ -80,6 +82,9 @@ export function discardRewindingExportDraft(reportId: string, signal?: AbortSign
         if (typeof payload !== "object" || payload === null || !("discarded" in payload) || (payload as { discarded: unknown }).discarded !== true) return null;
         return true;
     });
+}
+export function listRewindingWorkOrdersForClassification(signal?: AbortSignal): Promise<ApiResult<RewindingWorkOrderOption[]>> {
+    return requestJson(ROOT + "/work-orders", { signal }, parseRewindingWorkOrderOptionList);
 }
 export function getRewindingWorkOrderClassification(workOrderId: string, signal?: AbortSignal): Promise<ApiResult<RewindingWorkOrderClassificationRecord>> {
     return requestJson(ROOT + "/work-orders/" + encodeURIComponent(workOrderId) + "/classification", { signal }, parseRewindingWorkOrderClassification);

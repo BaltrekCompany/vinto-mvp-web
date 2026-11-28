@@ -94,6 +94,12 @@ export type RewindingExportPreview = {
     warnings: { code: string; message: string }[];
     blocking_errors: { code: string; message: string }[];
 };
+export type RewindingWorkOrderOption = {
+    id: string;
+    number: string;
+    status: "published" | "in_progress" | "closed";
+    machine_code: string;
+};
 export type RewindingWorkOrderClassificationRecord = {
     work_order_id: string;
     classification: RewindingWorkOrderClassification | null;
@@ -234,6 +240,19 @@ export function parseRewindingExportPreview(value: unknown): RewindingExportPrev
         warnings: warnings as { code: string; message: string }[],
         blocking_errors: blocking as { code: string; message: string }[],
     };
+}
+export function parseRewindingWorkOrderOption(value: unknown): RewindingWorkOrderOption | null {
+    if (!isRec(value) || !isUuid(value.id) || !isString(value.number)
+        || (value.status !== "published" && value.status !== "in_progress" && value.status !== "closed")
+        || !isString(value.machine_code)) return null;
+    return {
+        id: value.id, number: value.number, status: value.status, machine_code: value.machine_code,
+    };
+}
+export function parseRewindingWorkOrderOptionList(value: unknown): RewindingWorkOrderOption[] | null {
+    if (!isRec(value) || !Array.isArray(value.items)) return null;
+    const items = value.items.map(parseRewindingWorkOrderOption);
+    return items.some(item => item === null) ? null : items as RewindingWorkOrderOption[];
 }
 export function parseRewindingWorkOrderClassification(value: unknown): RewindingWorkOrderClassificationRecord | null {
     if (!isRec(value) || !isUuid(value.work_order_id)) return null;
