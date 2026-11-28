@@ -128,31 +128,6 @@ def remove_package_for_ui(report_id: uuid.UUID, package_id: uuid.UUID,
         return repository.load_draft(connection, user.user_id, report_id)
 
 
-@router.post("/drafts/{report_id}/packages/{package_id}/children", response_model=ChildCreatedOut, status_code=201)
-def add_child(report_id: uuid.UUID, package_id: uuid.UUID, body: ChildCreateIn,
-              user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
-              connection=Depends(get_connection)):
-    child_id = service.add_child(connection, actor_id=user.user_id, request_id=_request_id(),
-                                 report_id=report_id, package_id=package_id,
-                                 child_bobbin_id=body.child_bobbin_id, package_slot=body.package_slot)
-    return {"id": child_id}
-
-@router.delete("/drafts/{report_id}/packages/{package_id}")
-def remove_package(report_id: uuid.UUID, package_id: uuid.UUID, body: LogicalRemoveIn,
-                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
-                   connection=Depends(get_connection)):
-    service.remove_package(connection, actor_id=user.user_id, request_id=_request_id(),
-                           report_id=report_id, package_id=package_id, reason=body.reason)
-    return {"id": package_id, "removed": True}
-
-@router.delete("/drafts/{report_id}/children/{child_id}")
-def remove_child(report_id: uuid.UUID, child_id: uuid.UUID, body: LogicalRemoveIn,
-                 user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
-                 connection=Depends(get_connection)):
-    service.remove_child(connection, actor_id=user.user_id, request_id=_request_id(),
-                         report_id=report_id, child_id=child_id, reason=body.reason)
-    return {"id": child_id, "removed": True}
-
 @router.post("/drafts/{report_id}/discard")
 def discard_draft(report_id: uuid.UUID, body: LogicalRemoveIn | None = None,
                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
