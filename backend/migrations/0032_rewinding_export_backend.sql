@@ -243,6 +243,8 @@ CREATE TABLE vinto_txn.rewinding_export_pdf (
 
 CREATE TABLE vinto_txn.rewinding_export_reservation (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_id uuid NOT NULL,
+  package_id uuid NOT NULL,
   package_child_id uuid NOT NULL,
   child_bobbin_id uuid NOT NULL,
   reserved_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -252,6 +254,9 @@ CREATE TABLE vinto_txn.rewinding_export_reservation (
   release_reason text,
   CONSTRAINT rewinding_export_reservation_package_child_uq UNIQUE (package_child_id),
   CONSTRAINT rewinding_export_reservation_package_child_fk
+    FOREIGN KEY (package_child_id, report_id, package_id)
+    REFERENCES vinto_txn.rewinding_export_package_child(id, report_id, package_id) ON DELETE RESTRICT,
+  CONSTRAINT rewinding_export_reservation_bobbin_selection_fk
     FOREIGN KEY (package_child_id, child_bobbin_id)
     REFERENCES vinto_txn.rewinding_export_package_child(id, child_bobbin_id) ON DELETE RESTRICT,
   CONSTRAINT rewinding_export_reservation_bobbin_fk
@@ -540,7 +545,8 @@ BEGIN
       FROM vinto_txn.rewinding_export_package_child c
       JOIN vinto_txn.rewinding_export_package p ON p.id=c.package_id AND p.report_id=c.report_id
       JOIN vinto_txn.rewinding_export_report r ON r.id=p.report_id
-      WHERE c.id=NEW.package_child_id AND c.child_bobbin_id=NEW.child_bobbin_id;
+      WHERE c.id=NEW.package_child_id AND c.child_bobbin_id=NEW.child_bobbin_id
+        AND c.report_id=NEW.report_id AND c.package_id=NEW.package_id;
     IF NOT FOUND OR report_status NOT IN ('generated','observed') OR NOT child_active
        OR actor IS NULL OR report_generator IS DISTINCT FROM actor
        OR NEW.reserved_by IS DISTINCT FROM actor THEN
@@ -558,6 +564,8 @@ BEGIN
   IF report_status <> 'annulled' OR actor IS NULL OR report_annuller IS DISTINCT FROM actor
      OR NEW.id IS DISTINCT FROM OLD.id
      OR NEW.package_child_id IS DISTINCT FROM OLD.package_child_id
+     OR NEW.report_id IS DISTINCT FROM OLD.report_id
+     OR NEW.package_id IS DISTINCT FROM OLD.package_id
      OR NEW.child_bobbin_id IS DISTINCT FROM OLD.child_bobbin_id
      OR NEW.reserved_at IS DISTINCT FROM OLD.reserved_at
      OR NEW.reserved_by IS DISTINCT FROM OLD.reserved_by
