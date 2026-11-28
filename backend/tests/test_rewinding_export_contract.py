@@ -29,7 +29,11 @@ class RewindingExportPermissionTests(unittest.TestCase):
         generate = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "generate_report")
         body = ast.get_source_segment(source, generate)
         self.assertIn("with connection.transaction()", body)
-        self.assertIn("FOR SHARE", body)
+        lock_sources = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_lock_sources")
+        self.assertIn("FOR SHARE", ast.get_source_segment(source, lock_sources))
+        self.assertLess(body.index("_lock_sources("), body.index("sector_id, lock=True)"))
+        self.assertLess(body.index("_validated_snapshot("), body.index("render_pdf("))
+        self.assertLess(body.index("render_pdf("), body.index("INSERT INTO vinto_txn.rewinding_export_pdf"))
         self.assertIn("INSERT INTO vinto_txn.rewinding_export_reservation", body)
         self.assertIn("rewinding_export_pdf", body)
         self.assertIn("report_generated", body)
@@ -47,6 +51,7 @@ class RewindingExportPermissionTests(unittest.TestCase):
             '@router.patch("/drafts/{report_id}/packages/{package_id}")',
             '@router.post("/drafts/{report_id}/packages/{package_id}/remove")',
             '@router.post("/drafts/{report_id}/preview")',
+            '@router.post("/drafts/{report_id}/generate",',
             '@router.get("/work-orders")',
             '@router.get("/work-orders/{work_order_id}/classification")',
             '@router.post("/work-orders/{work_order_id}/classification"',
@@ -72,7 +77,9 @@ class RewindingExportPermissionTests(unittest.TestCase):
         self.assertNotIn("DELETE FROM vinto_txn.rewinding_export_pdf", body)
         generate = next(node for node in ast.parse(source).body
                         if isinstance(node, ast.FunctionDef) and node.name == "generate_report")
-        self.assertIn('"annulled"', ast.get_source_segment(source, generate))
+        generation = ast.get_source_segment(source, generate)
+        self.assertLess(generation.index("if existing:"), generation.index('if report["status"] != "draft"'))
+        self.assertIn('return report["status"], _original_pdf', generation)
 
     def test_original_pdf_download_checks_the_stored_bytes_hash(self):
         source = (BACKEND / "app/rewinding_export/service.py").read_text(encoding="utf-8")

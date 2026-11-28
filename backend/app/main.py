@@ -50,10 +50,10 @@ app.include_router(assignments_router)
 app.include_router(admin_router)
 
 @app.middleware("http")
-async def private_tubetes_report_response(request: Request, call_next):
+async def private_report_response(request: Request, call_next):
     """El reporte contiene información operativa y nunca debe almacenarse en cachés compartidas."""
     response = await call_next(request)
-    if request.url.path == "/api/reports/tubetes-used":
+    if request.url.path == "/api/reports/tubetes-used" or request.url.path.startswith("/api/reports/rewinding-export/"):
         response.headers["Cache-Control"] = "private, no-store"
     return response
 

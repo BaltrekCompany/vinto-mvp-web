@@ -18,7 +18,7 @@ async function errorCode(response: Response): Promise<string | undefined> {
     } catch { return undefined; }
 }
 
-export async function requestJson<T>(path: string, init: Init, parse: (payload: unknown) => T | null): Promise<ApiResult<T>> {
+async function requestCentral(path: string, init: Init): Promise<ApiResult<Response>> {
     let response: Response;
     try {
         response = await fetch(`${apiBaseUrl()}${path}`, {
@@ -34,8 +34,29 @@ export async function requestJson<T>(path: string, init: Init, parse: (payload: 
         return { ok: false, kind: "unavailable", status: 0 };
     }
     if (!response.ok) return { ok: false, kind: failureKindFromStatus(response.status), status: response.status, code: await errorCode(response) };
+    return { ok: true, data: response, status: response.status };
+}
+
+export async function requestJson<T>(path: string, init: Init, parse: (payload: unknown) => T | null): Promise<ApiResult<T>> {
+    const result = await requestCentral(path, init);
+    if (!result.ok) return result;
+    const response = result.data;
     let payload: unknown = null;
     try { payload = await response.json(); } catch { /* cuerpo vacío o inválido: lo decide parse */ }
     const data = parse(payload);
     return data === null ? { ok: false, kind: "unavailable", status: response.status } : { ok: true, data, status: response.status };
+}
+
+export async function requestPdf(path: string, init: Init): Promise<ApiResult<Blob>> {
+    const result = await requestCentral(path, init);
+    if (!result.ok) return result;
+    try {
+        const pdf = await result.data.blob();
+        if (pdf.type === "application/pdf" && await pdf.slice(0, 5).text() === "%PDF-") {
+            return { ok: true, data: pdf, status: result.status };
+        }
+    } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+    }
+    return { ok: false, kind: "unavailable", status: result.status };
 }

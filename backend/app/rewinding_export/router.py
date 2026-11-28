@@ -12,7 +12,7 @@ from app.database import get_connection
 from app.sectors import SECTOR_REBOBINADO
 from app.rewinding_export import service, repository, lifecycle
 from app.rewinding_export.schemas import (
-    AnnulIn, AnnulOut, ChildCreateIn, ChildCreatedOut, ClassificationIn, ClassificationOut,
+    GenerateIn, AnnulIn, AnnulOut, ChildCreateIn, ChildCreatedOut, ClassificationIn, ClassificationOut,
     ClassifiableWorkOrderOut, DraftCreateIn, DraftCreatedOut, DraftHeaderIn, HistoryItemOut,
     LogicalRemoveIn, PackageCreateIn, PackageWithChildrenIn, PackageCreatedOut,
 )
@@ -187,11 +187,26 @@ def download_pdf(report_id: uuid.UUID,
     file_name, content, sha256, page_count = service.download_original_pdf(
         connection, report_id=report_id, actor_id=user.user_id, sectors=user.sectors,
         sector_wide=_sector_wide(user))
+    return _pdf_response(file_name, content, sha256, page_count)
+
+
+def _pdf_response(file_name, content, sha256, page_count, **headers):
     return RawResponse(content=content, media_type="application/pdf", headers={
         "Content-Disposition": f'attachment; filename="{file_name}"',
         "Cache-Control": "private, no-store", "ETag": f'"{sha256}"',
-        "X-RBE-PDF-Pages": str(page_count),
+        "X-RBE-PDF-Pages": str(page_count), **headers,
     })
+
+
+@router.post("/drafts/{report_id}/generate", response_class=RawResponse,
+             responses={200: {"content": {"application/pdf": {}}}})
+def generate(report_id: uuid.UUID, body: GenerateIn,
+             user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+             connection=Depends(get_connection)):
+    status, pdf = service.generate_report(connection, user=user, request_id=_request_id(),
+                                          report_id=report_id, idempotency_key=body.idempotency_key)
+    return _pdf_response(*pdf, **{"X-RBE-Report-ID": str(report_id), "X-RBE-Report-Status": status})
+
 
 @router.post("/reports/{report_id}/annul", response_model=AnnulOut)
 def annul(report_id: uuid.UUID, body: AnnulIn,
@@ -300,25 +315,4 @@ def load_draft(report_id: uuid.UUID,
 def preview_draft(report_id: uuid.UUID,
                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                   connection=Depends(get_connection)):
-    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
-    draft = repository.load_draft(connection, user.user_id, report_id)
-    errors = []
-    packages = draft["packages"]
-    if not packages:
-        errors.append({"code": "V01", "message": "Se requiere al menos un paquete."})
-    if not draft["truck_number"].strip() or not draft["order_number"].strip():
-        errors.append({"code": "V02", "message": "Camión y orden son obligatorios."})
-    total = sum(len(p["children"]) for p in packages)
-    used = set()
-    for package in packages:
-        children = package["children"]
-        slots = {child["package_slot"] for child in children}
-        if not 1 <= len(children) <= 5 or "A" not in slots:
-            errors.append({"code": "V03", "message": "Cada paquete requiere de una a cinco crías e incluir A."})
-        for child in children:
-            if child["bobbin_id"] in used:
-                errors.append({"code": "V04", "message": "Una cría se repite en el borrador."})
-            used.add(child["bobbin_id"])
-    # This is a draft preview; generation re-checks live grants, quality and reservations.
-    return {"valid": not errors, "package_count": len(packages), "child_count": total,
-            "warnings": [], "blocking_errors": errors}
+    return service.preview_report(connection, user=user, report_id=report_id)

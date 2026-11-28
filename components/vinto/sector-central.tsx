@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
+import { RewindingExportHistory } from "@/components/vinto/rewinding-export-history";
 import { RewindingExportWorkspace } from "@/components/vinto/rewinding-export-workspace";
 import { RewindingWorkOrderClassificationPanel } from "@/components/vinto/rewinding-work-order-classification";
 import { LineSelector } from "@/components/vinto/line-selector";
@@ -54,6 +55,8 @@ export type SectorCentralProps = {
     canReadAssignments: boolean;
     canCreateRewindingExport?: boolean;
     canReadOwnRewindingExport?: boolean;
+    canReadSectorRewindingExport?: boolean;
+    canAnnulRewindingExport?: boolean;
     canClassifyRewindingWorkOrders?: boolean;
     onOpenForm: (screen: FormScreen, context: CaptureContext) => void;
     refreshKey: number; // cambia tras un envío para refrescar el historial
@@ -190,7 +193,8 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
     </div>;
 }
 
-function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost }: Inner) {
+function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost,
+    canReadSectorRewindingExport, canAnnulRewindingExport }: Inner) {
     const label = SECTORS[code].label;
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const assignments = useAssignments(canReadAssignments, onSessionLost, scope);
@@ -210,9 +214,16 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
         p116: useResource(candidateHistoryKey("conv-p116", scope, refreshKey), canCapture && offered.has(CONVERSION_CANDIDATES.p116.code), signal => CONVERSION_CANDIDATES.p116.api.list(signal), onSessionLost),
     };
     const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); candidateHistory.p112.refresh(); candidateHistory.p113.refresh(); candidateHistory.p116.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p129.refresh(); };
-    if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;
+    const exportHistory = code === "REBOBINADO" && canReadSectorRewindingExport
+        ? <RewindingExportHistory scope={scope} canAnnul={canAnnulRewindingExport} onSessionLost={onSessionLost}/>
+        : null;
+    if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div className="space-y-5" {...tag(code, "seguimiento")}>
+        {exportHistory}
+        <CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/>
+    </div>;
     const orders = workOrders.view.data.filter(o => machines.has(o.machine.code)), asg = assignments.view.data.filter(a => machines.has(a.machine.code));
     return <div className="space-y-5" {...tag(code, "seguimiento")}>
+        {exportHistory}
         <Panel title={`Órdenes de trabajo de ${label}`} note="Datos centrales (PostgreSQL); sin OT locales ni de demostración.">
             {orders.length === 0 ? <p className="text-sm text-slate-600">Sin OT de {label}.</p>
                 : <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-600"><th className="px-2 py-2">OT</th><th className="px-2 py-2">Máquina</th><th className="px-2 py-2">Estado</th><th className="px-2 py-2">Líneas</th></tr></thead>

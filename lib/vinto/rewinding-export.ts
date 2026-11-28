@@ -351,3 +351,95 @@ export function buildRewindingExportDraftPayload(input: {
         observations: input.observations,
     };
 }
+
+export const REWINDING_EXPORT_STATUS = {
+    generated: "Generado",
+    observed: "Observado",
+    annulled: "Anulado",
+} as const;
+
+type RewindingExportStatus = keyof typeof REWINDING_EXPORT_STATUS;
+
+type RewindingExportHistoryItem = {
+    id: string;
+    status: RewindingExportStatus;
+    pv_reference: string;
+    article_code_snapshot: string;
+    machine_code: string | null;
+    generated_at: string;
+    truck_number: string;
+    order_number: string;
+};
+
+function parseHistoryItem(value: unknown): RewindingExportHistoryItem | null {
+    if (!isRec(value) || !isUuid(value.id) ||
+        !(value.status === "generated" || value.status === "observed" || value.status === "annulled") ||
+        !isString(value.pv_reference) || !isString(value.article_code_snapshot) ||
+        !isNullableText(value.machine_code) || !isOffsetDateTime(value.generated_at) ||
+        !isText(value.truck_number) || !isText(value.order_number)) return null;
+    return {
+        id: value.id, status: value.status, pv_reference: value.pv_reference,
+        article_code_snapshot: value.article_code_snapshot, machine_code: value.machine_code,
+        generated_at: value.generated_at, truck_number: value.truck_number, order_number: value.order_number,
+    };
+}
+
+export function parseRewindingExportHistory(value: unknown): RewindingExportHistoryItem[] | null {
+    if (!Array.isArray(value)) return null;
+    const items = value.map(parseHistoryItem);
+    return items.every(item => item !== null) ? items : null;
+}
+
+function parseReportLine(value: unknown) {
+    if (!isRec(value) || !isPositiveInteger(value.package_number) ||
+        !isString(value.mother_label_snapshot) || !isNullableText(value.operator_display_name_snapshot) ||
+        !REWINDING_EXPORT_SLOTS.some(slot => slot === value.package_slot) ||
+        !isPositiveInteger(value.source_position) || value.source_position > 22 || value.source_position === 12 ||
+        !isDecimal(value.weight_kg_snapshot)) return null;
+    return {
+        package_number: value.package_number, mother: value.mother_label_snapshot,
+        operator: value.operator_display_name_snapshot, slot: value.package_slot as RewindingExportSlot,
+        position: value.source_position, weight: value.weight_kg_snapshot,
+    };
+}
+
+export function parseRewindingExportReport(value: unknown) {
+    if (!isRec(value) || !isRec(value.report) || !Array.isArray(value.packages)) return null;
+    const report = parseHistoryItem(value.report);
+    if (!report || !isText(value.report.observations) || !isNullableText(value.report.annulled_reason) ||
+        !isNullableText(value.report.destination_snapshot)) return null;
+    const packages = value.packages.map(parseReportLine);
+    if (!packages.every(line => line !== null)) return null;
+    const snapshot = isRec(value.report.report_snapshot) ? value.report.report_snapshot : {};
+    const warnings = Array.isArray(snapshot.warnings) ? snapshot.warnings.flatMap(item =>
+        isRec(item) && isString(item.message) ? [item.message] : []) : [];
+    const linesByPackage = new Map<number, typeof packages>();
+    for (const line of packages) {
+        const lines = linesByPackage.get(line.package_number) ?? [];
+        lines.push(line);
+        linesByPackage.set(line.package_number, lines);
+    }
+    const snapshotPackages = new Map<number, Rec>();
+    if (Array.isArray(snapshot.packages)) {
+        for (const item of snapshot.packages) {
+            if (isRec(item) && isPositiveInteger(item.package_number)) snapshotPackages.set(item.package_number, item);
+        }
+    }
+    const grouped = Array.from(linesByPackage, ([number, lines]) => {
+        const fields = snapshotPackages.get(number) ?? {};
+        return { number, lines, mother: lines[0].mother, operator: lines[0].operator,
+            diameter: isText(fields.diameter) ? fields.diameter : null,
+            cuts: isText(fields.cuts) ? fields.cuts : null,
+            tubete: isText(fields.tubete) ? fields.tubete : null,
+            helper: isText(fields.helper) ? fields.helper : null };
+    });
+    return { ...report, observations: value.report.observations, annulled_reason: value.report.annulled_reason,
+        destination: value.report.destination_snapshot, format: isText(snapshot.format) ? snapshot.format : null,
+        articleDescription: isText(snapshot.article_description) ? snapshot.article_description : null,
+        packages: grouped, warnings };
+}
+
+export function parseRewindingExportAnnulment(value: unknown) {
+    if (!isRec(value) || !isUuid(value.report_id) || !isNonNegativeInteger(value.released_reservations)) return null;
+    return { report_id: value.report_id, released_reservations: value.released_reservations };
+}

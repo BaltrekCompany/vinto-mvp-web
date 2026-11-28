@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CentralStatus } from "@/components/vinto/central-status";
+import { RewindingExportHistory } from "@/components/vinto/rewinding-export-history";
 import { Panel } from "@/components/vinto/panels";
 import { failureMessage } from "@/lib/vinto/orders";
 import { useResource } from "@/lib/vinto/use-central";
@@ -14,6 +15,8 @@ import {
     createRewindingExportDraft,
     discardRewindingExportDraft,
     getRewindingExportDraft,
+    generateRewindingExport,
+    saveRewindingExportPdf,
     listRewindingExportChildren,
     listRewindingExportDrafts,
     listRewindingExportMothers,
@@ -47,6 +50,7 @@ type Props = {
     onSessionLost: () => void;
 };
 
+const EMPTY_PACKAGES: RewindingExportPackage[] = [];
 const emptySelection = (): RewindingExportSelection => ({});
 const isFailure = (result: { ok: boolean; kind?: string }, onSessionLost: () => void): string => {
     if (result.ok) return "";
@@ -59,17 +63,17 @@ const isFailure = (result: { ok: boolean; kind?: string }, onSessionLost: () => 
 };
 
 export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessionLost }: Props) {
-    const pvs = useResource("rewinding-export-pvs:" + scope, canCreate, signal => listRewindingExportPvs(signal), onSessionLost);
+    const pvs = useResource("rewinding-export-pvs:" + scope, canCreate, signal => listRewindingExportPvs(signal), onSessionLost, true);
     const [pvReference, setPvReference] = useState("");
     const products = useResource("rewinding-export-products:" + scope + ":" + pvReference, canCreate && pvReference !== "",
-        signal => listRewindingExportProducts(pvReference, signal), onSessionLost);
+        signal => listRewindingExportProducts(pvReference, signal), onSessionLost, true);
     const [articleId, setArticleId] = useState("");
     const mothers = useResource("rewinding-export-mothers:" + scope + ":" + pvReference + ":" + articleId,
         canCreate && pvReference !== "" && articleId !== "",
-        signal => listRewindingExportMothers(pvReference, articleId, signal), onSessionLost);
+        signal => listRewindingExportMothers(pvReference, articleId, signal), onSessionLost, true);
     const [motherCaptureId, setMotherCaptureId] = useState("");
     const children = useResource("rewinding-export-children:" + scope + ":" + motherCaptureId,
-        canCreate && motherCaptureId !== "", signal => listRewindingExportChildren(motherCaptureId, signal), onSessionLost);
+        canCreate && motherCaptureId !== "", signal => listRewindingExportChildren(motherCaptureId, signal), onSessionLost, true);
     const drafts = useResource("rewinding-export-drafts:" + scope, canReadOwn, signal => listRewindingExportDrafts(signal), onSessionLost);
 
     const [draft, setDraft] = useState<RewindingExportDraft | null>(null);
@@ -85,8 +89,14 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
     const [actionError, setActionError] = useState("");
     const [notice, setNotice] = useState("");
     const inFlight = useRef(false);
+    const generationKey = useRef<string | null>(null);
+    const generation = useRef<AbortController | null>(null);
+    useEffect(() => () => generation.current?.abort(), []);
+    const [generationOpen, setGenerationOpen] = useState(false);
+    const [generationPending, setGenerationPending] = useState(false);
+    const [historyVersion, setHistoryVersion] = useState(0);
 
-    const packageList = draft?.packages ?? [];
+    const packageList = draft?.packages ?? EMPTY_PACKAGES;
     const selectedMother = mothers.view.status === "ready"
         ? mothers.view.data.find(item => item.mother_capture_id === motherCaptureId) ?? null
         : null;
@@ -243,8 +253,51 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
             if (!result.ok) throw new Error(isFailure(result, onSessionLost));
             setPreview(result.data);
             setNotice(result.data.valid
-                ? "Vista previa validada. La generación PDF se habilitará en RBE-05."
+                ? "Vista previa validada. Puedes confirmar la generación del PDF."
                 : "La vista previa detectó condiciones que debes revisar.");
+        });
+    }
+    async function confirmGeneration() {
+        if (!canCreate || !draft || !preview?.valid || !generationOpen || inFlight.current) return;
+        const reportId = draft.id;
+        await runAction(async () => {
+            generationKey.current ??= crypto.randomUUID();
+            const controller = new AbortController();
+            generation.current = controller;
+            try {
+                const result = await generateRewindingExport(reportId, generationKey.current, controller.signal);
+                if (controller.signal.aborted) return;
+                if (!result.ok) {
+                    const uncertain = result.status === 0 || result.status >= 500 || result.status === 200;
+                    setGenerationPending(uncertain);
+                    if (uncertain) {
+                        setHistoryVersion(version => version + 1);
+                        throw new Error("No se pudo confirmar la respuesta. Reintenta con la misma solicitud o consulta el historial.");
+                    }
+                    generationKey.current = null;
+                    setGenerationOpen(false);
+                    setPreview(null);
+                    drafts.refresh();
+                    setHistoryVersion(version => version + 1);
+                    throw new Error(result.status === 413 ? "El PDF supera 25 MiB." : isFailure(result, onSessionLost));
+                }
+                generationKey.current = null;
+                setGenerationPending(false);
+                setGenerationOpen(false);
+                startNewDraft();
+                drafts.refresh();
+                pvs.refresh();
+                products.refresh();
+                mothers.refresh();
+                children.refresh();
+                setHistoryVersion(version => version + 1);
+                setNotice("El PDF original está disponible en Mis reportes de exportación.");
+                saveRewindingExportPdf(reportId, result.data);
+            } catch (error) {
+                if (!controller.signal.aborted) throw error;
+            } finally {
+                generation.current = null;
+            }
         });
     }
     async function discardDraft() {
@@ -279,7 +332,8 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
     return (
         <div className="mt-6 space-y-5" data-rewinding-export="workspace">
             <Panel title="Reporte de Bobinas Refiladas para Exportación"
-                note="Selecciona PV, producto, bobina madre y crías liberadas por Calidad. El servidor valida la disponibilidad; esta pantalla no reserva crías ni genera PDF.">
+                note="Selecciona PV, producto, bobina madre y crías liberadas por Calidad. Las crías se reservan al confirmar la generación del PDF.">
+                <fieldset disabled={generationOpen}>
                 {canReadOwn ? (
                     <div className="mb-5 rounded-xl border bg-slate-50 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -453,10 +507,10 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                                     })}>Guardar datos</Button>
                                     <Button type="button" className="bg-[#146b4f]" disabled={busy || !canEditDraft || draft.packages.length === 0} onClick={() => void savePreview()}>Vista previa</Button>
                                     <Button type="button" variant="outline" disabled={busy || !canEditDraft} onClick={() => setDiscardOpen(true)}>Descartar borrador</Button>
-                                    <Button type="button" disabled title="La generación y las reservas se habilitarán después de RBE-04 y RBE-05">Generar PDF</Button>
+                                    <Button type="button" disabled={busy || !canEditDraft || !preview?.valid} onClick={() => setGenerationOpen(true)}>Generar PDF</Button>
                                 </div>
                             ) : null}
-                            {draft ? <p className="mt-2 text-xs text-slate-600">El borrador no reserva crías. Generar PDF permanece deshabilitado hasta completar RBE-04 (reservas/backend) y RBE-05 (PDF).</p> : <p className="mt-2 text-xs text-slate-600">Camión y orden pueden quedar vacíos mientras el reporte esté en Borrador; serán obligatorios para generar.</p>}
+                            {draft ? <p className="mt-2 text-xs text-slate-600">El borrador no reserva crías.</p> : <p className="mt-2 text-xs text-slate-600">Camión y orden pueden quedar vacíos mientras el reporte esté en Borrador; serán obligatorios para generar.</p>}
                         </section>
 
                         {draft ? (
@@ -505,6 +559,18 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                     <p className="text-sm text-slate-700">Tu permiso permite consultar borradores propios, pero no crear ni modificarlos.</p>
                 )}
 
+                </fieldset>
+                {generationOpen && (
+                    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3" role="alertdialog" aria-label="Confirmar generación del PDF">
+                        <p className="text-sm font-semibold">¿Generar el PDF y reservar las crías seleccionadas?</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <Button type="button" size="sm" disabled={busy} onClick={() => void confirmGeneration()}>
+                                {generationPending ? "Reintentar generación" : "Confirmar generación"}
+                            </Button>
+                            {!generationPending && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setGenerationOpen(false)}>Cancelar</Button>}
+                        </div>
+                    </div>
+                )}
                 {actionError ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{actionError}</p> : null}
                 {notice ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status" aria-live="polite">{notice}</p> : null}
                 {removeCandidate ? (
@@ -528,6 +594,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                     </div>
                 ) : null}
             </Panel>
+            {canReadOwn && <RewindingExportHistory scope={scope} own refreshKey={historyVersion} onSessionLost={onSessionLost}/>}
         </div>
     );
 }

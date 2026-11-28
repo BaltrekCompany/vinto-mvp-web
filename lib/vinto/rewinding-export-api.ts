@@ -1,10 +1,13 @@
-import { requestJson, type ApiResult } from "@/lib/vinto/central-http";
+import { requestJson, requestPdf, type ApiResult } from "@/lib/vinto/central-http";
 import {
     parseRewindingExportChildList,
     parseRewindingExportDraft,
     parseRewindingExportDraftSummaryList,
     parseRewindingExportMotherList,
     parseRewindingExportPreview,
+    parseRewindingExportHistory,
+    parseRewindingExportReport,
+    parseRewindingExportAnnulment,
     parseRewindingExportProductList,
     parseRewindingExportPvList,
     parseRewindingWorkOrderClassification,
@@ -89,4 +92,40 @@ export function classifyRewindingWorkOrder(workOrderId: string, payload: {
     reason: string;
 }, signal?: AbortSignal): Promise<ApiResult<RewindingWorkOrderClassificationRecord>> {
     return requestJson(ROOT + "/work-orders/" + encodeURIComponent(workOrderId) + "/classification", { method: "POST", body: payload, signal }, parseRewindingWorkOrderClassification);
+}
+
+export function generateRewindingExport(reportId: string, idempotencyKey: string, signal?: AbortSignal) {
+    return requestPdf(ROOT + "/drafts/" + encodeURIComponent(reportId) + "/generate",
+        { method: "POST", body: { idempotency_key: idempotencyKey }, signal });
+}
+
+export const REWINDING_EXPORT_HISTORY_PAGE_SIZE = 50;
+
+export function listRewindingExportHistory(offset: number, signal?: AbortSignal) {
+    return requestJson(ROOT + "/history?limit=" + REWINDING_EXPORT_HISTORY_PAGE_SIZE + "&offset=" + offset,
+        { signal }, parseRewindingExportHistory);
+}
+
+export function getRewindingExportReport(reportId: string, signal?: AbortSignal) {
+    return requestJson(ROOT + "/reports/" + encodeURIComponent(reportId), { signal }, parseRewindingExportReport);
+}
+
+export function downloadRewindingExportPdf(reportId: string, signal?: AbortSignal) {
+    return requestPdf(ROOT + "/reports/" + encodeURIComponent(reportId) + "/pdf", { signal });
+}
+
+export function annulRewindingExport(reportId: string, reason: string, signal?: AbortSignal) {
+    return requestJson(ROOT + "/reports/" + encodeURIComponent(reportId) + "/annul",
+        { method: "POST", body: { reason }, signal }, parseRewindingExportAnnulment);
+}
+
+export function saveRewindingExportPdf(reportId: string, pdf: Blob) {
+    const url = URL.createObjectURL(pdf);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rbe-${reportId}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
