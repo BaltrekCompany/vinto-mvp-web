@@ -59,6 +59,23 @@ GRANT INSERT ON vinto_auth.auth_event TO vinto_app;
 
 -- vinto_meta: SIN GRANT para vinto_app. No ejecutar nada aquí a propósito (ver 02_schema_grants.sql).
 
+-- RBE-04: dedicated least-privilege grants. No DELETE/TRUNCATE on report history.
+GRANT SELECT, INSERT, UPDATE ON
+  vinto_txn.rewinding_export_report,
+  vinto_txn.rewinding_export_package,
+  vinto_txn.rewinding_export_package_child
+TO vinto_app;
+
+GRANT SELECT, INSERT, UPDATE ON
+  vinto_txn.rewinding_export_reservation
+TO vinto_app;
+
+GRANT SELECT, INSERT ON
+  vinto_txn.rewinding_export_work_order_classification,
+  vinto_txn.rewinding_export_pdf,
+  vinto_txn.rewinding_export_report_event
+TO vinto_app;
+
 -- ===== vinto_reference ===============================================================================
 
 -- vinto_master: solo las tablas que app/seed/reference.py escribe (backend/app/seed/reference.py:142-356).

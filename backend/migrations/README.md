@@ -205,3 +205,8 @@ Ese default **no protege retroactivamente** una función creada antes de aplicar
 necesitando su propio `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC;` explícito sobre el objeto ya
 existente, en `backend/roles/04_function_grants.sql` — la única vía fiable para un objeto que ya existía
 cuando se configuró el default.
+
+
+## 0032 — RBE-04: backend y reservas de crías
+
+Migración aditiva para clasificación explícita de OTs REBOBINADO, cabeceras/borradores, paquetes, selección de crías, reservas únicas globales, PDF original inmutable, eventos y triggers de integridad diferidos. No contiene backfill ni ejecuta cambios en entornos persistentes por sí sola. Los grants de aplicación se mantienen separados en `backend/roles/03_table_grants.sql`.

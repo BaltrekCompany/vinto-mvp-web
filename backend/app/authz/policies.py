@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from app.auth.permissions import PRODUCTION_CAPTURE, QUALITY_CAPTURE
+from app.auth.permissions import PRODUCTION_CAPTURE, QUALITY_CAPTURE, REWINDING_EXPORT_CREATE
 
 
 class Operation(str, Enum):
@@ -20,6 +20,7 @@ class Operation(str, Enum):
     BOBBIN_PRODUCTION = "bobbin_production"            # POST /api/bobbins (registro especializado F3, VINTO-P1-03)
     QUALITY_BOBBIN_CAPTURE = "quality_bobbin_capture"  # POST /api/quality/bobbins/{id}/captures (Calidad por bobina)
     QUALITY_MACHINE_CAPTURE = "quality_machine_capture"  # POST /api/quality/machines/{code}/captures (Calidad por máquina)
+    REWINDING_EXPORT_CREATE = "rewinding_export_create"  # RBE-04: P1-07 machine grant for report package
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,10 @@ def _quality_by_bobbin() -> frozenset:
     return frozenset(quality.CENTRAL_BOBBIN_FORM_CODES) | (frozenset(quality.BOBBIN_CANDIDATE_FORM_CODES) & frozenset(quality.ENABLED_BOBBIN_CANDIDATE_FORM_CODES))
 
 
+def _rewinding_export() -> frozenset:
+    return frozenset({"VINTO-P1-07"})
+
+
 def _quality_by_machine() -> frozenset:
     from app.quality import machine_capture_service
     return frozenset(machine_capture_service.MACHINE_QUALITY_FORM_CODES)
@@ -56,6 +61,7 @@ POLICIES: dict = {
     Operation.BOBBIN_PRODUCTION: OperationPolicy(Operation.BOBBIN_PRODUCTION, PRODUCTION_CAPTURE, "production", "POST /api/bobbins", _bobbin_f3),
     Operation.QUALITY_BOBBIN_CAPTURE: OperationPolicy(Operation.QUALITY_BOBBIN_CAPTURE, QUALITY_CAPTURE, "quality", "POST /api/quality/bobbins/{id}/captures", _quality_by_bobbin),
     Operation.QUALITY_MACHINE_CAPTURE: OperationPolicy(Operation.QUALITY_MACHINE_CAPTURE, QUALITY_CAPTURE, "quality", "POST /api/quality/machines/{code}/captures", _quality_by_machine),
+    Operation.REWINDING_EXPORT_CREATE: OperationPolicy(Operation.REWINDING_EXPORT_CREATE, REWINDING_EXPORT_CREATE, "production", "POST /api/reports/rewinding-export/drafts/{id}/packages", _rewinding_export),
 }
 
 

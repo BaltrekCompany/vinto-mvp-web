@@ -160,11 +160,14 @@ class PermissionMatrixRegressionTests(unittest.TestCase):
     def test_profile_permissions_match_the_approved_matrix(self):
         self.assertEqual(permissions.PROFILE_PERMISSIONS, {
             permissions.JEFATURA: frozenset({permissions.WORK_ORDER_READ, permissions.WORK_ORDER_MANAGE,
-                                             permissions.ASSIGNMENT_READ, permissions.CATALOG_READ, permissions.REPORT_READ}),
+                                             permissions.ASSIGNMENT_READ, permissions.CATALOG_READ, permissions.REPORT_READ,
+                                             permissions.REWINDING_EXPORT_READ_SECTOR, permissions.REWINDING_EXPORT_ANNUL, permissions.REWINDING_EXPORT_CLASSIFY_SOURCE}),
             permissions.SUPERVISION: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
-                                                permissions.ASSIGNMENT_MANAGE, permissions.CATALOG_READ, permissions.REPORT_READ}),
+                                                permissions.ASSIGNMENT_MANAGE, permissions.CATALOG_READ, permissions.REPORT_READ,
+                                                permissions.REWINDING_EXPORT_READ_SECTOR}),
             permissions.OPERACION: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
-                                              permissions.PRODUCTION_CAPTURE, permissions.CATALOG_READ}),
+                                              permissions.PRODUCTION_CAPTURE, permissions.CATALOG_READ,
+                                              permissions.REWINDING_EXPORT_CREATE, permissions.REWINDING_EXPORT_READ_OWN}),
             permissions.CALIDAD: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
                                             permissions.QUALITY_CAPTURE, permissions.QUALITY_RELEASE, permissions.CATALOG_READ}),
             permissions.DATA_BALTREK: frozenset({permissions.WORK_ORDER_READ, permissions.ASSIGNMENT_READ,
