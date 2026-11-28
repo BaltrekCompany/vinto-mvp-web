@@ -437,7 +437,7 @@ def generate_report(connection, *, user, actor_id, request_id, report_id, idempo
         ).fetchone()
         if report is None or report[1] != actor_id:
             raise HTTPException(status_code=404, detail="Reporte no encontrado")
-        if report[0] in ("generated", "observed"):
+        if report[0] in ("generated", "observed", "annulled"):
             if report[11] == idempotency_key and report[12] == request_hash:
                 return {"report_id": report_id, "already_generated": True}
             raise HTTPException(status_code=409, detail="El reporte ya fue generado con otra solicitud")
