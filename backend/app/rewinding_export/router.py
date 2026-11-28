@@ -116,6 +116,18 @@ def update_package(report_id: uuid.UUID, package_id: uuid.UUID, body: PackageWit
                               package_slot=child.package_slot)
         return repository.load_draft(connection, user.user_id, report_id)
 
+
+@router.post("/drafts/{report_id}/packages/{package_id}/remove")
+def remove_package_for_ui(report_id: uuid.UUID, package_id: uuid.UUID,
+                          user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+                          connection=Depends(get_connection)):
+    with connection.transaction():
+        repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        service.remove_package(connection, actor_id=user.user_id, request_id=_request_id(),
+                               report_id=report_id, package_id=package_id, reason="RBE draft package removed")
+        return repository.load_draft(connection, user.user_id, report_id)
+
+
 @router.post("/drafts/{report_id}/packages/{package_id}/children", response_model=ChildCreatedOut, status_code=201)
 def add_child(report_id: uuid.UUID, package_id: uuid.UUID, body: ChildCreateIn,
               user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
@@ -142,20 +154,21 @@ def remove_child(report_id: uuid.UUID, child_id: uuid.UUID, body: LogicalRemoveI
     return {"id": child_id, "removed": True}
 
 @router.post("/drafts/{report_id}/discard")
-def discard_draft(report_id: uuid.UUID, body: LogicalRemoveIn,
+def discard_draft(report_id: uuid.UUID, body: LogicalRemoveIn | None = None,
                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                   connection=Depends(get_connection)):
     with connection.transaction():
-        service._context(connection, user.user_id, _request_id(), body.reason)
+        service._context(connection, user.user_id, _request_id(), body.reason if body else "RBE draft discarded")
+        repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
         service._get_draft(connection, report_id, user.user_id, lock=True)
         connection.execute(
             """UPDATE vinto_txn.rewinding_export_report
                SET status='discarded',discarded_by=%s,discarded_at=clock_timestamp(),
                    discarded_reason=%s,updated_by=%s WHERE id=%s""",
-            (user.user_id, body.reason, user.user_id, report_id),
+            (user.user_id, body.reason if body else "RBE draft discarded", user.user_id, report_id),
         )
-        service._event(connection, report_id, user.user_id, "draft_discarded", body.reason)
-    return {"id": report_id, "status": "discarded"}
+        service._event(connection, report_id, user.user_id, "draft_discarded", body.reason if body else "RBE draft discarded")
+    return {"discarded": True}
 
 @router.get("/reports/{report_id}")
 def get_report(report_id: uuid.UUID, response: Response,
