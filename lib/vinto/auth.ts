@@ -4,7 +4,9 @@
 export type Permission =
     | "work_order.read" | "work_order.manage" | "assignment.read" | "assignment.manage"
     | "production.capture" | "quality.capture" | "quality.release"
-    | "catalog.read" | "report.read" | "catalog.manage" | "user.manage";
+    | "catalog.read" | "report.read" | "catalog.manage" | "user.manage"
+    | "rewinding_export.create" | "rewinding_export.read_own" | "rewinding_export.read_sector"
+    | "rewinding_export.annul" | "rewinding_export.classify_source";
 
 export type AuthUser = {
     id: string;

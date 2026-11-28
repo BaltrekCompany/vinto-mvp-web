@@ -1,18 +1,30 @@
 """Dominio RBE: borradores, clasificación positiva de OT, paquetes y reservas atómicas.
 
 La reserva se crea exclusivamente dentro de la transacción que congela el reporte.
-El renderizador PDF se inyecta desde RBE-05: este módulo recibe los bytes finales y
-los conserva sin reconstruirlos en lecturas posteriores.
+El PDF se renderiza desde el snapshot definitivo y se conserva para lecturas posteriores.
 """
 import hashlib
 import json
+import logging
 import uuid
+from collections import defaultdict
 from decimal import Decimal
 
 import psycopg
 from fastapi import HTTPException
+from psycopg.types.json import Jsonb
+
+from app.auth.permissions import REWINDING_EXPORT_CREATE
+from app.authz import Operation, require
+from app.rewinding_export import repository
+from app.rewinding_export.pdf_renderer import PDFLayoutError, PDFTooLarge, render_pdf
+from app.rewinding_export.repository import require_sector_permission
 
 from app.sectors import SECTOR_REBOBINADO, scoped_sector_codes
+
+
+SNAPSHOT_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 def _context(connection, actor_id, request_id, reason):
@@ -52,6 +64,7 @@ def _source_mother(connection, capture_id):
                   wol.id AS work_order_line_id, wol.machine_id AS line_machine_id,
                   wol.pv_reference, wol.article_version_id,
                   av.article_id, ar.code AS article_code, av.description AS article_description,
+                  ar.active AND ar.is_product AS article_eligible,
                   mother.id AS mother_bobbin_id, u.display_name AS operator_display_name,
                   label.value_text AS mother_label, destination.value_text AS destination
            FROM vinto_txn.capture c
@@ -86,7 +99,7 @@ def _source_mother(connection, capture_id):
     if (row["form_code"] != "VINTO-P1-07" or row["version_number"] < 3
             or row["capture_status"] not in ("submitted", "closed")
             or row["sector_code"] != SECTOR_REBOBINADO or not row["sector_active"]
-            or not row["machine_active"] or row["work_order_status"] not in ("published", "in_progress", "closed")
+            or not row["machine_active"] or not row["article_eligible"] or row["work_order_status"] not in ("published", "in_progress", "closed")
             or row["archived_at"] is not None or row["qa_retired"]
             or row["line_machine_id"] != row["machine_id"]
             or not row["mother_label"] or not row["destination"]):
@@ -104,7 +117,7 @@ def _source_mother(connection, capture_id):
                   d.value_boolean, d.value_date, d.value_time
            FROM vinto_txn.capture_detail d
            JOIN vinto_config.field_definition fd ON fd.id=d.field_definition_id
-           WHERE d.capture_id=%s ORDER BY fd.display_order, fd.key""",
+           WHERE d.capture_id=%s AND d.group_row_id IS NULL ORDER BY fd.display_order, fd.key""",
         (capture_id,),
     ).fetchall()
     row["source_fields"] = {
@@ -184,7 +197,7 @@ def update_draft(connection, *, actor_id, request_id, report_id, truck_number, o
             """UPDATE vinto_txn.rewinding_export_report
                SET truck_number=%s,order_number=%s,observations=%s,updated_by=%s
                WHERE id=%s""",
-            (truck_number.strip(), order_number.strip(), observations.strip(), actor_id, report_id),
+            (truck_number.strip(), order_number.strip(), observations, actor_id, report_id),
         )
     return report_id
 
@@ -250,11 +263,20 @@ def add_child(connection, *, actor_id, request_id, report_id, package_id, child_
         bobbin = connection.execute(
             """SELECT b.rewind_child_position,b.weight_kg,q.status
                FROM vinto_txn.bobbin b JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id
-               WHERE b.id=%s AND b.source_capture_id=%s""",
+               WHERE b.id=%s AND b.source_capture_id=%s AND NOT EXISTS (
+                   SELECT 1 FROM vinto_txn.rewinding_export_reservation r
+                   WHERE r.child_bobbin_id=b.id AND r.released_at IS NULL
+               )""",
             (child_bobbin_id, package[0]),
         ).fetchone()
         if bobbin is None or bobbin[2] != "released" or bobbin[0] is None or bobbin[0] == 12 or bobbin[1] is None or bobbin[1] <= 0:
             raise HTTPException(status_code=409, detail="La cría no pertenece a la madre o no está liberada por Calidad")
+        if connection.execute("""
+            SELECT 1 FROM vinto_txn.rewinding_export_package_child
+            WHERE report_id=%s AND removed_at IS NULL
+              AND (child_bobbin_id=%s OR (package_id=%s AND package_slot=%s))
+        """, (report_id, child_bobbin_id, package_id, slot)).fetchone():
+            raise HTTPException(status_code=422, detail="La cría o la posición del paquete ya está seleccionada")
         child_id = connection.execute(
             """INSERT INTO vinto_txn.rewinding_export_package_child
                (report_id,package_id,child_bobbin_id,package_slot,source_position,weight_kg_snapshot,created_by)
@@ -371,8 +393,9 @@ def get_report(connection, *, report_id, actor_id, sectors, sector_wide=False):
                   r.created_by,r.created_at,r.generated_at,r.annulled_at,r.annulled_reason
            FROM vinto_txn.rewinding_export_report r
            LEFT JOIN vinto_master.machine m ON m.id=r.machine_id
-           WHERE r.id=%s AND (r.created_by=%s OR (%s AND r.sector_id IN
-             (SELECT id FROM vinto_master.sector WHERE code=ANY(%s))))""",
+           WHERE r.id=%s AND (r.created_by=%s OR %s)
+             AND r.status IN ('generated','observed','annulled')
+             AND r.sector_id IN (SELECT id FROM vinto_master.sector WHERE code=ANY(%s))""",
         (report_id, actor_id, sector_wide, allowed),
     )
     row = _dict(cursor, cursor.fetchone())
@@ -382,7 +405,7 @@ def get_report(connection, *, report_id, actor_id, sectors, sector_wide=False):
         """SELECT p.id,p.package_number,p.mother_label_snapshot,p.work_order_number_snapshot,
                   p.article_code_snapshot,p.article_description_snapshot,p.machine_code_snapshot,
                   p.machine_name_snapshot,p.source_fields_snapshot,p.operator_display_name_snapshot,
-                  c.id AS child_id,c.child_bobbin_id,c.package_slot,c.source_position,c.weight_kg_snapshot
+                  c.id AS child_id,c.child_bobbin_id,c.package_slot,c.source_position,c.weight_kg_snapshot::text AS weight_kg_snapshot
            FROM vinto_txn.rewinding_export_package p
            LEFT JOIN vinto_txn.rewinding_export_package_child c ON c.package_id=p.id AND c.removed_at IS NULL
            WHERE p.report_id=%s AND p.removed_at IS NULL
@@ -399,147 +422,299 @@ def list_history(connection, *, actor_id, sectors, sector_wide=False, limit=50, 
                   r.created_at,r.generated_at,r.annulled_at,m.code AS machine_code
            FROM vinto_txn.rewinding_export_report r
            LEFT JOIN vinto_master.machine m ON m.id=r.machine_id
-           WHERE (r.created_by=%s OR (%s AND r.sector_id IN
-             (SELECT id FROM vinto_master.sector WHERE code=ANY(%s))))
+           WHERE (r.created_by=%s OR %s)
+             AND r.sector_id IN (SELECT id FROM vinto_master.sector WHERE code=ANY(%s))
+             AND r.status IN ('generated','observed','annulled')
            ORDER BY r.created_at DESC,r.id DESC LIMIT %s OFFSET %s""",
         (actor_id, sector_wide, allowed, limit, offset),
     )
     return [_dict(cursor, row) for row in cursor.fetchall()]
 
 
-def generate_report(connection, *, user, actor_id, request_id, report_id, idempotency_key, pdf_bytes, file_name, page_count):
-    """Commit report snapshot, original PDF and every reservation atomically. PDF bytes come from RBE-05."""
-    if not isinstance(pdf_bytes, bytes) or not pdf_bytes or len(pdf_bytes) > 26214400:
-        raise HTTPException(status_code=413, detail="El PDF supera el límite técnico de 25 MiB o está vacío")
-    if page_count < 1:
-        raise HTTPException(status_code=422, detail="El PDF debe contener al menos una página")
-    pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
-    request_seed = json.dumps({"report_id": str(report_id), "idempotency_key": str(idempotency_key),
-                               "pdf_sha256": pdf_hash, "file_name": file_name, "page_count": page_count}, sort_keys=True)
-    request_hash = hashlib.sha256(request_seed.encode()).hexdigest()
-    with connection.transaction():
-        _context(connection, actor_id, request_id, "RBE report generated")
-        from app.authz import require, Operation
-        from app.rewinding_export.repository import require_sector_permission
-        from app.auth.permissions import REWINDING_EXPORT_CREATE
-        require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
-        source_machines = connection.execute(
-            """SELECT DISTINCT machine_code_snapshot FROM vinto_txn.rewinding_export_package
-               WHERE report_id=%s AND removed_at IS NULL ORDER BY machine_code_snapshot""",
-            (report_id,),
-        ).fetchall()
-        for (machine_code,) in source_machines:
-            require(connection, user, Operation.REWINDING_EXPORT_CREATE, machine_code, "VINTO-P1-07", lock=True)
-        report = connection.execute(
-            """SELECT status,created_by,pv_reference,article_id,article_code_snapshot,machine_id,sector_id,
-                      destination_snapshot,truck_number,order_number,observations,generation_idempotency_key,
-                      generation_request_sha256
-               FROM vinto_txn.rewinding_export_report WHERE id=%s FOR UPDATE""", (report_id,),
-        ).fetchone()
-        if report is None or report[1] != actor_id:
-            raise HTTPException(status_code=404, detail="Reporte no encontrado")
-        if report[0] in ("generated", "observed", "annulled"):
-            if report[11] == idempotency_key and report[12] == request_hash:
-                return {"report_id": report_id, "already_generated": True}
-            raise HTTPException(status_code=409, detail="El reporte ya fue generado con otra solicitud")
-        if report[0] != "draft":
-            raise HTTPException(status_code=409, detail="El reporte no está en estado Borrador")
-        if not report[7] or not report[8].strip() or not report[9].strip():
-            raise HTTPException(status_code=422, detail="Destino, camión y orden son obligatorios para generar")
-        packages = connection.execute(
-            """SELECT p.id,p.work_order_id,p.work_order_line_id,p.article_version_id,p.source_work_order_classification_id,
-                      p.package_number,p.mother_label_snapshot,p.source_fields_snapshot,p.machine_code_snapshot,
-                      p.machine_name_snapshot,p.work_order_number_snapshot,p.article_code_snapshot,p.article_description_snapshot,
-                      p.operator_display_name_snapshot,p.mother_capture_id
-               FROM vinto_txn.rewinding_export_package p
-               WHERE p.report_id=%s AND p.removed_at IS NULL ORDER BY p.package_number FOR UPDATE""",
-            (report_id,),
-        ).fetchall()
-        if not packages:
-            raise HTTPException(status_code=422, detail="El reporte debe contener al menos un paquete")
-        # Lock OT rows in stable order: classification changes use FOR UPDATE on the same rows.
-        work_order_ids = sorted({row[1] for row in packages}, key=str)
-        locked = connection.execute(
-            "SELECT id FROM vinto_txn.work_order WHERE id = ANY(%s) ORDER BY id FOR SHARE",
-            (work_order_ids,),
-        ).fetchall()
-        if len(locked) != len(work_order_ids):
-            raise HTTPException(status_code=409, detail="Una OT de origen ya no está disponible")
-        snapshot_packages = []
-        for p in packages:
-            latest = connection.execute(
-                """SELECT id,classification FROM vinto_txn.rewinding_export_work_order_classification
-                   WHERE work_order_id=%s ORDER BY sequence_no DESC LIMIT 1""", (p[1],),
-            ).fetchone()
-            if latest is None or latest[1] != "production_confirmed":
-                raise HTTPException(status_code=409, detail="La OT dejó de estar clasificada como producción")
-            if latest[0] != p[4]:
-                connection.execute(
-                    """UPDATE vinto_txn.rewinding_export_package
-                       SET source_work_order_classification_id=%s,updated_by=%s WHERE id=%s""",
-                    (latest[0], actor_id, p[0]),
-                )
-            children = connection.execute(
-                """SELECT c.id,c.child_bobbin_id,c.package_slot,c.source_position,c.weight_kg_snapshot,
-                          b.rewind_child_position,b.weight_kg,q.status
-                   FROM vinto_txn.rewinding_export_package_child c
-                   JOIN vinto_txn.bobbin b ON b.id=c.child_bobbin_id
-                   JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id
-                   WHERE c.package_id=%s AND c.report_id=%s AND c.removed_at IS NULL
-                   ORDER BY c.package_slot FOR UPDATE OF b,q,c""", (p[0], report_id),
-            ).fetchall()
-            if not 1 <= len(children) <= 5 or not any(ch[2] == "A" for ch in children):
-                raise HTTPException(status_code=422, detail="Cada paquete necesita entre una y cinco crías y debe incluir la cría A")
-            for ch in children:
-                if ch[5] != ch[3] or ch[6] != ch[4] or ch[7] != "released":
-                    raise HTTPException(status_code=409, detail="Una cría cambió de posición, peso o estado de Calidad")
-            snapshot_packages.append({
-                "package_number": p[5], "mother_label": p[6], "work_order_number": p[10],
-                "article_code": p[11], "article_description": p[12], "machine_code": p[8],
-                "machine_name": p[9], "operator": p[13], "source_fields": p[7],
-                "children": [{"slot": ch[2], "position": ch[3], "weight_kg": str(ch[4]), "bobbin_id": str(ch[1])} for ch in children],
-            })
-        snapshot = {
-            "version": 1, "pv_reference": report[2], "article_code": report[4],
-            "destination": report[7], "truck_number": report[8], "order_number": report[9],
-            "observations": report[10], "packages": snapshot_packages,
+def _report_header(connection, report_id, actor_id, sector_id, *, lock=False):
+    suffix = " FOR UPDATE OF r" if lock else ""
+    report = repository.one(connection, """
+        SELECT r.*, m.code AS machine_code FROM vinto_txn.rewinding_export_report r
+        LEFT JOIN vinto_master.machine m ON m.id=r.machine_id
+        WHERE r.id=%s AND r.created_by=%s AND r.sector_id=%s
+    """ + suffix, (report_id, actor_id, sector_id))
+    if report is None:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    return report
+
+
+def _selection(connection, report_id, *, lock=False):
+    suffix = " FOR UPDATE" if lock else ""
+    packages = repository.rows(connection, """
+        SELECT * FROM vinto_txn.rewinding_export_package WHERE report_id=%s
+        ORDER BY package_number,id
+    """ + suffix, (report_id,))
+    children = repository.rows(connection, """
+        SELECT * FROM vinto_txn.rewinding_export_package_child WHERE report_id=%s
+        ORDER BY child_bobbin_id,id
+    """ + suffix, (report_id,))
+    grouped = defaultdict(list)
+    for child in children:
+        if child["removed_at"] is None:
+            grouped[child["package_id"]].append(child)
+    for package in packages:
+        package["children"] = sorted(grouped[package["id"]], key=lambda child: child["package_slot"])
+    return [package for package in packages if package["removed_at"] is None]
+
+
+def _source_ids(packages):
+    return (
+        sorted({p["work_order_id"] for p in packages}),
+        sorted({ch["child_bobbin_id"] for p in packages for ch in p["children"]}),
+        sorted({p["mother_capture_id"] for p in packages}),
+    )
+
+
+def _lock_sources(connection, orders, bobbins, mothers):
+    # RBE-02 global order. Explicit queries also order locks within each table.
+    connection.execute("SELECT id FROM vinto_txn.work_order WHERE id=ANY(%s) ORDER BY id FOR SHARE", (orders,))
+    connection.execute("SELECT bobbin_id FROM vinto_txn.quality_release WHERE bobbin_id=ANY(%s) ORDER BY bobbin_id FOR SHARE", (bobbins,))
+    connection.execute("SELECT id FROM vinto_txn.bobbin WHERE id=ANY(%s) ORDER BY id FOR SHARE", (bobbins,))
+    connection.execute("SELECT id FROM vinto_txn.capture WHERE id=ANY(%s) ORDER BY id FOR SHARE", (mothers,))
+
+
+def _lock_reservations(connection, bobbins):
+    connection.execute("""
+        SELECT id FROM vinto_txn.rewinding_export_reservation
+        WHERE child_bobbin_id=ANY(%s) AND released_at IS NULL ORDER BY child_bobbin_id,id FOR UPDATE
+    """, (bobbins,))
+
+
+def _fingerprint(report, packages):
+    header = {key: report[key] for key in (
+        "pv_reference", "article_id", "article_code_snapshot", "machine_id", "sector_id",
+        "destination_snapshot", "truck_number", "order_number", "observations",
+    )}
+    canonical = {
+        "report_id": report["id"], "header": header, "version": report["snapshot_version"] or SNAPSHOT_VERSION,
+        "packages": [
+            [p["package_number"], p["mother_capture_id"],
+             [[ch["package_slot"], ch["child_bobbin_id"]] for ch in p["children"]]]
+            for p in packages
+        ],
+    }
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+class ReportValidation(HTTPException):
+    def __init__(self, code, message, status=422):
+        super().__init__(status_code=status, detail={"code": code, "message": message})
+
+
+def _source_warnings(fields, package, *, child_count, child_weight):
+    value = repository._field
+    start, end = value(fields, "hora_inicio", "time"), value(fields, "hora_fin", "time")
+    weight, cuts = value(fields, "peso", "decimal"), package["cuts"]
+    checks = [
+        (start and end and end < start, "SOURCE_TIME_INVERTED", "La hora de fin precede a la hora de inicio."),
+        (weight is not None and child_weight > Decimal(weight),
+         "CHILD_WEIGHT_SUM_EXCEEDS_MOTHER", "El peso de las crías supera el peso declarado de la madre."),
+        (cuts is not None and Decimal(cuts) != child_count,
+         "SOURCE_CUTS_DO_NOT_MATCH_CHILD_COUNT", "Cortes difiere de la cantidad de crías de origen."),
+        (not package["helper"] or not value(fields, "producto_refilado", "text"),
+         "OPTIONAL_SOURCE_FIELD_MISSING", "Falta ayudante o producto refilado en la captura fuente."),
+    ]
+    return [{"code": code, "message": message, "package_number": package["package_number"]}
+            for condition, code, message in checks if condition]
+
+
+def _validated_snapshot(connection, report, packages):
+    if not report["pv_reference"].strip() or not report["article_id"] or not packages:
+        raise ReportValidation("V01", "Se requieren PV, producto y al menos un paquete.")
+    if not report["truck_number"].strip() or not report["order_number"].strip():
+        raise ReportValidation("V02", "Camión y orden son obligatorios.")
+    if any(not p["mother_capture_id"] or not 1 <= len(p["children"]) <= 5
+           or p["children"][0]["package_slot"] != "A" for p in packages):
+        raise ReportValidation("V03", "Cada paquete requiere madre y de una a cinco crías, incluida A.")
+    _, bobbins, mothers = _source_ids(packages)
+    if len(bobbins) != sum(len(p["children"]) for p in packages):
+        raise ReportValidation("V04", "Una cría se repite en el reporte.")
+    live_children = {row["id"]: row for row in repository.rows(connection, """
+        SELECT b.id,b.source_capture_id,b.rewind_child_position,b.weight_kg,q.status,
+               r.id IS NOT NULL AS reserved
+        FROM vinto_txn.bobbin b LEFT JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id
+        LEFT JOIN vinto_txn.rewinding_export_reservation r ON r.child_bobbin_id=b.id AND r.released_at IS NULL
+        WHERE b.id=ANY(%s)
+    """, (bobbins,))}
+    aggregates = {row["source_capture_id"]: row for row in repository.rows(connection, """
+        SELECT source_capture_id,count(*) AS child_count,coalesce(sum(weight_kg),0) AS child_weight
+        FROM vinto_txn.bobbin WHERE source_capture_id=ANY(%s) AND rewind_child_position IS NOT NULL
+        GROUP BY source_capture_id
+    """, (mothers,))}
+    source_by_id = {}
+    snapshot_packages = []
+    warnings = []
+    report_format = None
+    for package in packages:
+        mother_id = package["mother_capture_id"]
+        if mother_id not in source_by_id:
+            try:
+                source_by_id[mother_id] = _source_mother(connection, mother_id)
+            except HTTPException as error:
+                raise ReportValidation("V08", error.detail, 409) from error
+        source = source_by_id[mother_id]
+        fields = source["source_fields"]
+        format_value = repository.format_value(fields)
+        if (not format_value or (report_format is not None and report_format != format_value)
+                or any(source[key] != report[key] for key in ("pv_reference", "article_id", "machine_id", "sector_id"))
+                or source["article_code"] != report["article_code_snapshot"]
+                or source["destination"].strip() != (report["destination_snapshot"] or "").strip()):
+            raise ReportValidation("V07", "Los paquetes deben compartir PV, producto, formato, destino y máquina.")
+        report_format = format_value
+        if (source["revision"] != package["source_capture_revision"]
+                or source["form_version_id"] != package["source_form_version_id"]
+                or source["mother_label"] != package["mother_label_snapshot"]
+                or source["operator_id"] != package["source_operator_user_id"]
+                or any(source[key] != package[key] for key in
+                       ("work_order_id", "work_order_line_id", "article_version_id", "mother_bobbin_id"))):
+            raise ReportValidation("V08", "Cambió la captura de origen. Vuelva a seleccionar el paquete.", 409)
+        diameter = repository._field(fields, "diametro", "decimal")
+        tubete = repository._field(fields, "tubete", "text")
+        if not diameter or not tubete or not (source["operator_display_name"] or "").strip():
+            raise ReportValidation("V08", "La captura requiere diámetro, tubete y operador original.")
+        children = []
+        for child in package["children"]:
+            live = live_children.get(child["child_bobbin_id"])
+            if live and live["source_capture_id"] != mother_id:
+                raise ReportValidation("V06", "Una cría no pertenece a la madre del paquete.")
+            if not live or live["status"] != "released" or live["reserved"]:
+                raise ReportValidation("V05", "Una cría ya no está liberada o disponible.", 409)
+            position, weight = live["rewind_child_position"], live["weight_kg"]
+            if (position not in range(1, 23) or position == 12 or weight is None or weight <= 0
+                    or position != child["source_position"] or weight != child["weight_kg_snapshot"]):
+                raise ReportValidation("V08", "Cambió la posición o el peso de una cría.", 409)
+            children.append({"slot": child["package_slot"], "position": position, "weight_kg": str(weight),
+                             "bobbin_id": str(child["child_bobbin_id"])})
+        output = {
+            "package_number": package["package_number"], "mother_label": source["mother_label"],
+            "mother_capture_id": str(mother_id), "source_capture_revision": source["revision"],
+            "source_form_version_id": str(source["form_version_id"]),
+            "work_order_id": str(source["work_order_id"]), "work_order_number": source["work_order_number"],
+            "work_order_line_id": str(source["work_order_line_id"]), "classification": "production_confirmed",
+            "source_work_order_classification_id": str(source["classification_id"]),
+            "article_version_id": str(source["article_version_id"]), "article_code": source["article_code"],
+            "article_description": source["article_description"],
+            "machine_name": source["machine_name"], "machine_code": source["machine_code"],
+            "operator": source["operator_display_name"], "operator_id": str(source["operator_id"]),
+            "diameter": diameter, "tubete": tubete, "cuts": repository._field(fields, "formato_3", "decimal"),
+            "helper": repository._field(fields, "auxiliar", "text"), "children": children, "source_fields": fields,
         }
+        snapshot_packages.append(output)
+        aggregate = aggregates[mother_id]
+        warnings.extend(_source_warnings(fields, output, child_count=aggregate["child_count"],
+                                         child_weight=aggregate["child_weight"]))
+    descriptions = {p["article_description"] for p in snapshot_packages}
+    return {
+        "version": SNAPSHOT_VERSION, "report_id": str(report["id"]), "pv_reference": report["pv_reference"],
+        "article_code": report["article_code_snapshot"],
+        "article_description": next(iter(descriptions)) if len(descriptions) == 1 else None,
+        "machine_name": snapshot_packages[0]["machine_name"], "machine_code": report["machine_code"],
+        "format": report_format, "destination": report["destination_snapshot"],
+        "truck_number": report["truck_number"], "order_number": report["order_number"],
+        "observations": report["observations"], "packages": snapshot_packages, "warnings": warnings,
+    }
+
+
+def preview_report(connection, *, user, report_id):
+    sector_id = require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    report = _report_header(connection, report_id, user.user_id, sector_id)
+    if report["status"] != "draft":
+        raise HTTPException(status_code=409, detail="El reporte ya no es un borrador editable")
+    if report["machine_code"]:
+        require(connection, user, Operation.REWINDING_EXPORT_CREATE, report["machine_code"], "VINTO-P1-07", lock=False)
+    packages = _selection(connection, report_id)
+    errors, warnings = [], []
+    try:
+        warnings = _validated_snapshot(connection, report, packages)["warnings"]
+    except ReportValidation as error:
+        errors.append(error.detail)
+    return {"valid": not errors, "package_count": len(packages),
+            "child_count": sum(len(p["children"]) for p in packages),
+            "warnings": warnings, "blocking_errors": errors}
+
+
+def generate_report(connection, *, user, request_id, report_id, idempotency_key):
+    actor_id = user.user_id
+    with connection.transaction():
+        sector_id = require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        initial = _report_header(connection, report_id, actor_id, sector_id)
+        if initial["machine_code"]:
+            require(connection, user, Operation.REWINDING_EXPORT_CREATE, initial["machine_code"], "VINTO-P1-07", lock=True)
+        connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                           (f"rbe:{actor_id}:{idempotency_key}",))
+        # After waiting on the key, another request may already have committed.
+        preliminary = _selection(connection, report_id)
+        initial_sources = _source_ids(preliminary)
+        _lock_sources(connection, *initial_sources)
+        report = _report_header(connection, report_id, actor_id, sector_id, lock=True)
+        packages = _selection(connection, report_id, lock=True)
+        if initial_sources != _source_ids(packages) or initial["machine_id"] != report["machine_id"]:
+            raise ReportValidation("V08", "El borrador cambió durante la validación. Actualice la vista previa.", 409)
+        request_hash = _fingerprint(report, packages)
+        existing = repository.one(connection, """
+            SELECT id,generation_request_sha256 FROM vinto_txn.rewinding_export_report
+            WHERE generated_by=%s AND generation_idempotency_key=%s
+        """, (actor_id, idempotency_key))
+        if existing:
+            if existing["id"] != report_id or existing["generation_request_sha256"] != request_hash:
+                raise HTTPException(status_code=409, detail="La clave de generación ya se utilizó con otra solicitud")
+            return report["status"], _original_pdf(connection, report_id)
+        if report["status"] != "draft":
+            raise HTTPException(status_code=409, detail="El reporte no está en estado Borrador")
+        if _fingerprint(initial, preliminary) != request_hash:
+            raise ReportValidation("V08", "El borrador cambió durante la validación. Actualice la vista previa.", 409)
+        _lock_reservations(connection, initial_sources[1])
+        snapshot = _validated_snapshot(connection, report, packages)
         generated_at = connection.execute("SELECT clock_timestamp()").fetchone()[0]
-        connection.execute(
-            """UPDATE vinto_txn.rewinding_export_report
-               SET status='generated',generated_by=%s,generated_at=%s,
-                   generation_idempotency_key=%s,generation_request_sha256=%s,
-                   report_snapshot=%s::jsonb,snapshot_version=1,updated_by=%s
-               WHERE id=%s""",
-            (actor_id, generated_at, idempotency_key, request_hash,
-             json.dumps(snapshot, default=str, separators=(",", ":")), actor_id, report_id),
-        )
-        connection.execute(
-            """INSERT INTO vinto_txn.rewinding_export_pdf
-               (report_id,file_name,mime_type,pdf_bytes,sha256,size_bytes,page_count,generated_at)
-               VALUES (%s,%s,'application/pdf',%s,%s,%s,%s,%s)""",
-            (report_id, file_name, pdf_bytes, pdf_hash, len(pdf_bytes), page_count, generated_at),
-        )
-        for package in packages:
-            child_rows = connection.execute(
-                """SELECT c.id,c.child_bobbin_id FROM vinto_txn.rewinding_export_package_child c
-                   WHERE c.package_id=%s AND c.report_id=%s AND c.removed_at IS NULL""",
-                (package[0], report_id),
-            ).fetchall()
-            for child_id, bobbin_id in child_rows:
-                reservation = connection.execute(
-                    """INSERT INTO vinto_txn.rewinding_export_reservation
-                       (report_id,package_id,package_child_id,child_bobbin_id,reserved_by)
-                       VALUES (%s,%s,%s,%s,%s)
-                       ON CONFLICT DO NOTHING
-                       RETURNING id""",
-                    (report_id, package[0], child_id, bobbin_id, actor_id),
-                ).fetchone()
-                if reservation is None:
-                    raise HTTPException(status_code=409, detail="Una de las crías ya está reservada en otro reporte")
-                _event(connection, report_id, actor_id, "reservation_created", metadata={"child_id": str(child_id), "bobbin_id": str(bobbin_id)})
-        _event(connection, report_id, actor_id, "report_generated", metadata={"pdf_sha256": pdf_hash, "size_bytes": len(pdf_bytes), "page_count": page_count})
-    return {"report_id": report_id, "already_generated": False, "pdf_sha256": pdf_hash}
+        snapshot.update(generated_at=generated_at.isoformat(), generated_by=str(actor_id))
+        try:
+            pdf_bytes, page_count = render_pdf(snapshot)
+        except PDFTooLarge as error:
+            raise HTTPException(status_code=413, detail=str(error)) from error
+        except PDFLayoutError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        file_name = f"rbe-{report_id}.pdf"
+        _context(connection, actor_id, request_id, "RBE report generated")
+        for package, output in zip(packages, snapshot["packages"], strict=True):
+            classification_id = uuid.UUID(output["source_work_order_classification_id"])
+            if package["source_work_order_classification_id"] != classification_id:
+                connection.execute("""
+                    UPDATE vinto_txn.rewinding_export_package
+                    SET source_work_order_classification_id=%s,updated_by=%s WHERE id=%s
+                """, (classification_id, actor_id, package["id"]))
+        connection.execute("""
+            UPDATE vinto_txn.rewinding_export_report
+            SET status='generated',generated_by=%s,generated_at=%s,generation_idempotency_key=%s,
+                generation_request_sha256=%s,report_snapshot=%s,snapshot_version=%s,updated_by=%s
+            WHERE id=%s
+        """, (actor_id, generated_at, idempotency_key, request_hash, Jsonb(snapshot),
+              SNAPSHOT_VERSION, actor_id, report_id))
+        connection.execute("""
+            INSERT INTO vinto_txn.rewinding_export_pdf
+                (report_id,file_name,mime_type,pdf_bytes,sha256,size_bytes,page_count,generated_at)
+            VALUES (%s,%s,'application/pdf',%s,%s,%s,%s,%s)
+        """, (report_id, file_name, pdf_bytes, pdf_hash, len(pdf_bytes), page_count, generated_at))
+        children = sorted((ch for p in packages for ch in p["children"]), key=lambda ch: ch["child_bobbin_id"])
+        for child in children:
+            reservation = connection.execute("""
+                INSERT INTO vinto_txn.rewinding_export_reservation
+                    (report_id,package_id,package_child_id,child_bobbin_id,reserved_by)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT DO NOTHING RETURNING id
+            """, (report_id, child["package_id"], child["id"], child["child_bobbin_id"], actor_id)).fetchone()
+            if reservation is None:
+                raise ReportValidation("V05", "Una cría ya está reservada en otro reporte.", 409)
+            _event(connection, report_id, actor_id, "reservation_created",
+                   metadata={"child_id": str(child["id"]), "bobbin_id": str(child["child_bobbin_id"])})
+        _event(connection, report_id, actor_id, "report_generated",
+               metadata={"pdf_sha256": pdf_hash, "size_bytes": len(pdf_bytes), "page_count": page_count})
+    return "generated", (file_name, pdf_bytes, pdf_hash, page_count)
 
 
 def annul_report(connection, *, user, actor_id, request_id, report_id, reason, sectors):
@@ -551,15 +726,20 @@ def annul_report(connection, *, user, actor_id, request_id, report_id, reason, s
         _context(connection, actor_id, request_id, clean)
         from app.auth.permissions import REWINDING_EXPORT_ANNUL
         from app.rewinding_export.repository import require_sector_permission
-        require_sector_permission(connection, user, REWINDING_EXPORT_ANNUL, lock=True)
+        sector_id = require_sector_permission(connection, user, REWINDING_EXPORT_ANNUL, lock=True)
+        sources = _source_ids(_selection(connection, report_id))
+        _lock_sources(connection, *sources)
         report = connection.execute(
-            """SELECT status,created_by FROM vinto_txn.rewinding_export_report WHERE id=%s FOR UPDATE""",
-            (report_id,),
+            """SELECT status,created_by FROM vinto_txn.rewinding_export_report WHERE id=%s AND sector_id=%s FOR UPDATE""",
+            (report_id, sector_id),
         ).fetchone()
         if report is None:
             raise HTTPException(status_code=404, detail="Reporte no encontrado")
         if report[0] not in ("generated", "observed"):
             raise HTTPException(status_code=409, detail="Solo se pueden anular reportes Generados u Observados")
+        if sources != _source_ids(_selection(connection, report_id, lock=True)):
+            raise HTTPException(status_code=409, detail="El reporte cambió durante la validación")
+        _lock_reservations(connection, sources[1])
         connection.execute(
             """UPDATE vinto_txn.rewinding_export_report
                SET status='annulled',annulled_by=%s,annulled_at=clock_timestamp(),
@@ -584,14 +764,20 @@ def download_original_pdf(connection, *, report_id, actor_id, sectors, sector_wi
     report = get_report(connection, report_id=report_id, actor_id=actor_id, sectors=sectors, sector_wide=sector_wide)
     if report["report"]["status"] not in ("generated", "observed", "annulled"):
         raise HTTPException(status_code=404, detail="PDF no encontrado")
+    return _original_pdf(connection, report_id)
+
+
+def _original_pdf(connection, report_id):
     pdf = connection.execute(
         """SELECT file_name,pdf_bytes,sha256,size_bytes,page_count
            FROM vinto_txn.rewinding_export_pdf WHERE report_id=%s""", (report_id,),
     ).fetchone()
     if pdf is None:
+        logger.error("RBE: PDF original ausente para reporte %s", report_id)
         raise HTTPException(status_code=503, detail="PDF original no disponible")
     file_name, content, expected, size, pages = pdf
     if len(content) != size or hashlib.sha256(content).hexdigest() != expected:
+        logger.error("RBE: PDF original corrupto para reporte %s", report_id)
         raise HTTPException(status_code=503, detail="No se pudo verificar la integridad del PDF original")
     return file_name, content, expected, pages
 

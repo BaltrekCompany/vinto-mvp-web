@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
+import { RewindingExportHistory } from "@/components/vinto/rewinding-export-history";
+import { RewindingExportWorkspace } from "@/components/vinto/rewinding-export-workspace";
+import { RewindingWorkOrderClassificationPanel } from "@/components/vinto/rewinding-work-order-classification";
 import { LineSelector } from "@/components/vinto/line-selector";
 import { P110History, P111History, P129History } from "@/components/vinto/central-form-history";
 import { CandidateHistory } from "@/components/vinto/candidate-history";
@@ -50,6 +53,11 @@ export type SectorCentralProps = {
     canCapture: boolean;
     canReadOrders: boolean;
     canReadAssignments: boolean;
+    canCreateRewindingExport?: boolean;
+    canReadOwnRewindingExport?: boolean;
+    canReadSectorRewindingExport?: boolean;
+    canAnnulRewindingExport?: boolean;
+    canClassifyRewindingWorkOrders?: boolean;
     onOpenForm: (screen: FormScreen, context: CaptureContext) => void;
     refreshKey: number; // cambia tras un envío para refrescar el historial
     scope: string; // sessionScope(user): las claves de disponibilidad, OT, asignaciones e historiales incluyen a la cuenta (otra cuenta en el mismo navegador nunca ve la vista anterior)
@@ -71,7 +79,7 @@ export function SectorCentral(props: Props) {
     return <Tracking {...props} sector={view.sector}/>;
 }
 
-function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost }: Inner) {
+function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost, canClassifyRewindingWorkOrders = false }: Inner) {
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const machines = sector.machines.map(m => m.code);
     // Keep the same server-authoritative multi-machine gate used by Bobinas:
@@ -97,10 +105,14 @@ function Programming({ code, sector, canManageOrders, canManageAssignments, canR
         creation={creation} catalog={catalog} capabilities={multiMachine.capabilities}
         capabilityStatus={multiMachine.status} onCapabilitiesStale={multiMachineResource.refresh}
         workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} scope={scope} executionEnabled={executionEnabled}
-        canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
+        canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/>
+        {code === "REBOBINADO" && canClassifyRewindingWorkOrders
+            ? <RewindingWorkOrderClassificationPanel scope={scope} onSessionLost={onSessionLost}/>
+            : null}
+    </div>;
 }
 
-function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost }: Inner) {
+function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost, canCreateRewindingExport = false, canReadOwnRewindingExport = false }: Inner) {
     const [machineCode, setMachineCode] = useState(sector.machines[0]?.code ?? "");
     const [lineChoice, setLineChoice] = useState<Selection | null>(null);
     const machine = sector.machines.find(m => m.code === machineCode) ?? sector.machines[0];
@@ -175,10 +187,14 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
                 <p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">
                     {screen ? "Abrir captura central" : "Sin pantalla central"}</p>
             </button>)}</div>
+        {code === "REBOBINADO" && (canCreateRewindingExport || canReadOwnRewindingExport)
+            ? <RewindingExportWorkspace scope={scope} canCreate={canCreateRewindingExport} canReadOwn={canReadOwnRewindingExport} onSessionLost={onSessionLost}/>
+            : null}
     </div>;
 }
 
-function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost }: Inner) {
+function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture, refreshKey, scope, onSessionLost,
+    canReadSectorRewindingExport, canAnnulRewindingExport }: Inner) {
     const label = SECTORS[code].label;
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const assignments = useAssignments(canReadAssignments, onSessionLost, scope);
@@ -198,9 +214,16 @@ function Tracking({ code, sector, canReadOrders, canReadAssignments, canCapture,
         p116: useResource(candidateHistoryKey("conv-p116", scope, refreshKey), canCapture && offered.has(CONVERSION_CANDIDATES.p116.code), signal => CONVERSION_CANDIDATES.p116.api.list(signal), onSessionLost),
     };
     const refresh = () => { candidateHistory.p130.refresh(); candidateHistory.p107.refresh(); candidateHistory.p112.refresh(); candidateHistory.p113.refresh(); candidateHistory.p116.refresh(); workOrders.refresh(); assignments.refresh(); p110.refresh(); p111.refresh(); p129.refresh(); };
-    if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div {...tag(code, "seguimiento")}><CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/></div>;
+    const exportHistory = code === "REBOBINADO" && canReadSectorRewindingExport
+        ? <RewindingExportHistory scope={scope} canAnnul={canAnnulRewindingExport} onSessionLost={onSessionLost}/>
+        : null;
+    if (workOrders.view.status !== "ready" || assignments.view.status !== "ready") return <div className="space-y-5" {...tag(code, "seguimiento")}>
+        {exportHistory}
+        <CentralStatus state={workOrders.view.status !== "ready" ? workOrders.view : assignments.view} onRetry={refresh}/>
+    </div>;
     const orders = workOrders.view.data.filter(o => machines.has(o.machine.code)), asg = assignments.view.data.filter(a => machines.has(a.machine.code));
     return <div className="space-y-5" {...tag(code, "seguimiento")}>
+        {exportHistory}
         <Panel title={`Órdenes de trabajo de ${label}`} note="Datos centrales (PostgreSQL); sin OT locales ni de demostración.">
             {orders.length === 0 ? <p className="text-sm text-slate-600">Sin OT de {label}.</p>
                 : <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-600"><th className="px-2 py-2">OT</th><th className="px-2 py-2">Máquina</th><th className="px-2 py-2">Estado</th><th className="px-2 py-2">Líneas</th></tr></thead>

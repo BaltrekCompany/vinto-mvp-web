@@ -94,7 +94,7 @@ def require_sector_permission(connection, user: Any, permission: str, *, lock: b
     actor = one(connection, 'SELECT id,active FROM vinto_master."user" WHERE id=%s' + user_lock, (actor_id,))
     if not actor or not actor["active"]:
         raise HTTPException(status_code=403, detail={"code":"ACTOR_INACTIVE","message":"La cuenta no está activa."})
-    profile_lock = " FOR SHARE OF up" if lock else ""
+    profile_lock = " FOR SHARE OF up, p" if lock else ""
     profile_rows = rows(
         connection,
         """

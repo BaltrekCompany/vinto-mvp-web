@@ -41,6 +41,11 @@ class ClassificationIn(BaseModel):
     classification: Literal["production_confirmed", "qa"]
     reason: str = Field(min_length=10, max_length=300)
 
+class GenerateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: UUID
+
+
 class AnnulIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=10, max_length=300)

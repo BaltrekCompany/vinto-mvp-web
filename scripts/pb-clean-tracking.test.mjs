@@ -84,7 +84,7 @@ test("6 · Seguimiento de Calidad no simula liberaciones ni usa OT o registros l
 
 test("7 · los reportes inexistentes no aparecen como operativos y Seguimiento no ofrece descargas de registros locales", () => {
   assert.equal(/Se generan desde registros fuente|ya no se vuelven a llenar|derivado de Producción|suma de intervalos de pallets/.test(page), false);
-  assert.match(trackingBody, /title="Reportes" note="Todavía no existen reportes centrales: solo están definidos por nombre y no se generan\."/);
+  assert.match(trackingBody, /canReadTubetes \? <TubetesReportPanel onSessionLost=\{onSessionLost\}\/> : <Panel title="Reportes" note="Tu usuario no tiene permiso para consultar los reportes de Bobinas\.">/);
   assert.match(trackingBody, /REPORT_DEFINITIONS\.map\(r => <div key=\{r\.id\}[^\n]*<Badge variant="outline">Pendiente<\/Badge>/);
   assert.equal(/emerald-300 bg-emerald-50/.test(trackingBody), false, "sin tarjetas verdes que simulen reportes derivados");
   assert.equal(/17 productos activos|MFRutaMaterialOP/.test(page), false, "sin cifras ni afirmaciones heredadas de la demo");
