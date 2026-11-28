@@ -15,10 +15,7 @@ import {
 } from "@/lib/vinto/rewinding-export-api";
 import type { RewindingWorkOrderClassification } from "@/lib/vinto/rewinding-export";
 
-type Props = {
-    scope: string;
-    onSessionLost: () => void;
-};
+type Props = { scope: string; onSessionLost: () => void };
 
 export function RewindingWorkOrderClassificationPanel({ scope, onSessionLost }: Props) {
     const workOrders = useResource(
@@ -132,7 +129,6 @@ export function RewindingWorkOrderClassificationPanel({ scope, onSessionLost }: 
                         ) : null}
                     </div>
                 </div>
-
                 {workOrderId && current.view.status === "ready" ? (
                     <div className="mt-5 border-t pt-4">
                         <h3 className="font-semibold">Registrar una nueva decisión</h3>

@@ -245,9 +245,7 @@ export function parseRewindingWorkOrderOption(value: unknown): RewindingWorkOrde
     if (!isRec(value) || !isUuid(value.id) || !isString(value.number)
         || (value.status !== "published" && value.status !== "in_progress" && value.status !== "closed")
         || !isString(value.machine_code)) return null;
-    return {
-        id: value.id, number: value.number, status: value.status, machine_code: value.machine_code,
-    };
+    return { id: value.id, number: value.number, status: value.status, machine_code: value.machine_code };
 }
 export function parseRewindingWorkOrderOptionList(value: unknown): RewindingWorkOrderOption[] | null {
     if (!isRec(value) || !Array.isArray(value.items)) return null;

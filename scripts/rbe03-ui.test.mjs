@@ -178,13 +178,11 @@ test("la vista previa diferencia warnings informativos de validaciones bloqueant
 
 test("la lista de clasificación incluye OTs cerradas y no infiere QA por estado", () => {
   const items = parseRewindingWorkOrderOptionList({ items: [{
-    id: UUID.workOrder, number: "OT-2026-0045", status: "closed",
-    machine_code: "COPASA",
+    id: UUID.workOrder, number: "OT-2026-0045", status: "closed", machine_code: "COPASA",
   }] });
   assert.equal(items?.[0]?.status, "closed");
   assert.equal(parseRewindingWorkOrderOptionList({ items: [{
-    id: UUID.workOrder, number: "OT-2026-0045", status: "archived",
-    machine_code: "COPASA",
+    id: UUID.workOrder, number: "OT-2026-0045", status: "archived", machine_code: "COPASA",
   }] }), null);
 });
 
