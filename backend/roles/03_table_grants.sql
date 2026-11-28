@@ -89,3 +89,21 @@ GRANT INSERT ON vinto_audit.import_record, vinto_audit.audit_event TO vinto_refe
 -- vinto_txn, vinto_auth, vinto_meta: SIN GRANT para vinto_reference (no tiene USAGE sobre esos
 -- esquemas desde 02_schema_grants.sql; esto es además una segunda barrera por si USAGE se concediera
 -- por error en el futuro).
+
+
+-- RBE-04: dedicated least-privilege grants. No DELETE/TRUNCATE on report history.
+GRANT SELECT, INSERT, UPDATE ON
+  vinto_txn.rewinding_export_report,
+  vinto_txn.rewinding_export_package,
+  vinto_txn.rewinding_export_package_child
+TO vinto_app;
+
+GRANT SELECT, INSERT, UPDATE ON
+  vinto_txn.rewinding_export_reservation
+TO vinto_app;
+
+GRANT SELECT, INSERT ON
+  vinto_txn.rewinding_export_work_order_classification,
+  vinto_txn.rewinding_export_pdf,
+  vinto_txn.rewinding_export_report_event
+TO vinto_app;

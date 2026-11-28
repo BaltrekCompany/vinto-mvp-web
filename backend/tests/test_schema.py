@@ -116,14 +116,14 @@ class SchemaTests(unittest.TestCase):
                 self.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
     def test_all_tables_have_primary_keys_and_valid_constraints(self):
-        expected = set(re.findall(r'CREATE TABLE (vinto_(?:master|config|txn|audit))\."(\w+)"', "\n".join(m.sql for m in read_migrations())))
+        expected = set(re.findall(r'CREATE TABLE (vinto_(?:master|config|txn|audit))\."?(\w+)"?', "\n".join(m.sql for m in read_migrations())))
         actual = set(self.connection.execute("""
             SELECT table_schema,table_name FROM information_schema.tables
             WHERE table_schema IN ('vinto_master','vinto_config','vinto_txn','vinto_audit')
               AND table_type='BASE TABLE'
         """).fetchall())
         self.assertEqual(expected,actual)
-        self.assertEqual(len(actual),43)  # 39 from 0001 + article_version_spec and bobbin_sequence from 0004 + user_sector from 0006 + user_machine_form_grant from 0007
+        self.assertEqual(len(actual),50)  # 43 existing tables plus 7 additive RBE-04 tables
         missing = self.connection.execute("""
             SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname IN ('vinto_master','vinto_config','vinto_txn','vinto_audit') AND c.relkind='r'
@@ -135,6 +135,46 @@ class SchemaTests(unittest.TestCase):
             WHERE n.nspname IN ('vinto_master','vinto_config','vinto_txn','vinto_audit') AND NOT convalidated
         """).fetchall()
         self.assertEqual(invalid,[])
+
+    def test_rbe_backend_tables_and_global_reservation_guard_are_installed(self):
+        expected = {
+            "rewinding_export_work_order_classification",
+            "rewinding_export_report",
+            "rewinding_export_package",
+            "rewinding_export_package_child",
+            "rewinding_export_reservation",
+            "rewinding_export_pdf",
+            "rewinding_export_report_event",
+        }
+        actual = {row[0] for row in self.connection.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='vinto_txn'"
+        ).fetchall()}
+        self.assertTrue(expected.issubset(actual))
+        reservation_indexes = self.connection.execute(
+            """SELECT indexdef FROM pg_indexes
+               WHERE schemaname='vinto_txn' AND tablename='rewinding_export_reservation'"""
+        ).fetchall()
+        definitions = "\n".join(row[0] for row in reservation_indexes)
+        self.assertIn("UNIQUE INDEX", definitions)
+        self.assertIn("child_bobbin_id", definitions)
+        self.assertIn("WHERE (released_at IS NULL)", definitions)
+        reservation_columns = {row[0] for row in self.connection.execute(
+            """SELECT column_name FROM information_schema.columns
+               WHERE table_schema='vinto_txn' AND table_name='rewinding_export_reservation'"""
+        ).fetchall()}
+        self.assertNotIn("report_id", reservation_columns)
+        self.assertNotIn("package_id", reservation_columns)
+        self.assertIn("package_child_id", reservation_columns)
+
+    def test_rbe_pdf_is_insert_only_and_report_history_is_not_deletable(self):
+        rows = self.connection.execute(
+            """SELECT event_object_table,trigger_name,event_manipulation
+               FROM information_schema.triggers
+               WHERE trigger_schema='vinto_txn' AND trigger_name LIKE '%rewinding_export%'"""
+        ).fetchall()
+        triggers = {(table, name, event) for table, name, event in rows}
+        self.assertTrue(any(table == "rewinding_export_pdf" and event == "UPDATE" for table, _, event in triggers))
+        self.assertTrue(any(table == "rewinding_export_report" and event == "DELETE" for table, _, event in triggers))
 
     def test_foreign_keys_reject_unknown_machine(self):
         self.reject(lambda: self.insert("vinto_master.device","external_key,machine_id",("BAD",uuid4())))

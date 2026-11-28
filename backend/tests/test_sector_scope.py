@@ -34,9 +34,9 @@ F6_VALUES = {"cantidad_fardos": 1, "punto_merma": "recorte_maquina", "tipo_produ
 
 # Matriz de permisos vigente tras la decisión TUB-02: report.read solo para JEFATURA y SUPERVISION. Cualquier otro cambio exige revisión explícita.
 PINNED_PROFILE_PERMISSIONS = {
-    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read", "report.read"},
-    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read", "report.read"},
-    "OPERACION": {"work_order.read", "assignment.read", "production.capture", "catalog.read"},
+    "JEFATURA": {"work_order.read", "work_order.manage", "assignment.read", "catalog.read", "report.read", "rewinding_export.read_sector", "rewinding_export.annul", "rewinding_export.classify_source"},
+    "SUPERVISION": {"work_order.read", "assignment.read", "assignment.manage", "catalog.read", "report.read", "rewinding_export.read_sector"},
+    "OPERACION": {"work_order.read", "assignment.read", "production.capture", "catalog.read", "rewinding_export.create", "rewinding_export.read_own"},
     "CALIDAD": {"work_order.read", "assignment.read", "quality.capture", "quality.release", "catalog.read"},
     "DATA_BALTREK": {"work_order.read", "assignment.read", "catalog.read", "catalog.manage", "user.manage"},
 }
@@ -70,6 +70,9 @@ PINNED_E2C_MIGRATIONS = [
 ]
 PINNED_E2C2_MIGRATIONS = [
     ("0018_supervision_revision_receipts.sql", "eaa44a698ca506246e88b1bf821191b5107079e9471f1a372345a8c2de89a08b"),
+]
+PINNED_RBE_MIGRATIONS = [
+    ("0032_rewinding_export_backend.sql", "5a2af33c0af805e8de5aff81471de639b995e51833958373fb03c88c72805649"),
 ]
 
 
@@ -153,7 +156,7 @@ class StaticScopeTests(unittest.TestCase):
     def test_the_permission_matrix_is_explicit_and_independent_of_sectors(self):
         self.assertEqual({k: set(v) for k, v in permissions.PROFILE_PERMISSIONS.items()}, PINNED_PROFILE_PERMISSIONS)
         self.assertEqual(permissions.ALL_PERMISSIONS, frozenset().union(*PINNED_PROFILE_PERMISSIONS.values()))
-        self.assertEqual(len(permissions.ALL_PERMISSIONS), 11)
+        self.assertEqual(len(permissions.ALL_PERMISSIONS), 16)
         for profile, expected in PINNED_PROFILE_PERMISSIONS.items():
             self.assertEqual(set(permissions.permissions_for_profiles([profile])), expected, profile)
         with patch.object(sectors, "_OPERATIONAL", ("BOBINAS", "REBOBINADO")):  # habilitar un sector no cambia ningún permiso
@@ -191,7 +194,7 @@ class StaticScopeTests(unittest.TestCase):
                        ("0030_p107_mother_quality_forms.sql",
                         "05abd8a54debce78b43517fc6ea5c720762c7f52211d7c6aece7f490e3ffd5ab"),
                        ("0031_p113_napkin_pallet_weights.sql",
-                        "cdbb5fecac90f687a8144463720c4024e5bf9eb5add59260476be51cbf63b496")])
+                        "cdbb5fecac90f687a8144463720c4024e5bf9eb5add59260476be51cbf63b496")]) + PINNED_RBE_MIGRATIONS
         self.assertEqual([(m.filename, m.checksum) for m in read_migrations()], expected)
         self.assertEqual(sorted(p.name for p in MIGRATIONS.glob("*.sql")), [name for name, _ in expected])
 

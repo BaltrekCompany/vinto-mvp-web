@@ -102,3 +102,8 @@ nada**, en vez de sobrescribir o asumir que es el mismo rol.
 - No se adopta en ninguna base persistente (DEV compartido, QA, operativo). CLOUD-01B-2B.2 decidirá esa estrategia, reutilizando el "despliegue paralelo" de CLOUD-01B-2A (§5): `GRANT` sobre objetos existentes sin cambiar su propietario legacy, antes de considerar un `ALTER ... OWNER TO` explícito objeto por objeto (nunca `REASSIGN OWNED BY` como operación por defecto).
 - No crea ni modifica ninguna regla industrial, sector, formulario ni política de autorización del producto: estos scripts son exclusivamente de PostgreSQL (roles y privilegios), nunca tocan `backend/app/sectors.py`, `capture_service.py` ni ningún archivo de política de negocio.
 - No concede ningún privilegio automático sobre objetos futuros (PG54-01): cada migración nueva es responsable de sus propios `GRANT`.
+
+
+## RBE-04 — Bobinas Refiladas para Exportación
+
+Después de aplicar la migración `0032_rewinding_export_backend.sql`, ejecutar el bloque RBE-04 de `03_table_grants.sql` con `vinto_migrator`. El rol `vinto_app` recibe SELECT/INSERT/UPDATE en reportes, paquetes, selecciones y reservas; clasificación, PDF original y eventos reciben SELECT/INSERT. No se concede DELETE ni TRUNCATE. Esta PR no aplica la migración ni modifica grants de ningún entorno; el rollout requiere backup, preflight y aprobación independiente.
