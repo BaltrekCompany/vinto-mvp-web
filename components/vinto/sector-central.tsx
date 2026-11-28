@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BobbinasProgramming } from "@/components/vinto/bobinas-programming";
+import { RewindingExportWorkspace } from "@/components/vinto/rewinding-export-workspace";
+import { RewindingWorkOrderClassificationPanel } from "@/components/vinto/rewinding-work-order-classification";
 import { LineSelector } from "@/components/vinto/line-selector";
 import { P110History, P111History, P129History } from "@/components/vinto/central-form-history";
 import { CandidateHistory } from "@/components/vinto/candidate-history";
@@ -50,6 +52,9 @@ export type SectorCentralProps = {
     canCapture: boolean;
     canReadOrders: boolean;
     canReadAssignments: boolean;
+    canCreateRewindingExport?: boolean;
+    canReadOwnRewindingExport?: boolean;
+    canClassifyRewindingWorkOrders?: boolean;
     onOpenForm: (screen: FormScreen, context: CaptureContext) => void;
     refreshKey: number; // cambia tras un envío para refrescar el historial
     scope: string; // sessionScope(user): las claves de disponibilidad, OT, asignaciones e historiales incluyen a la cuenta (otra cuenta en el mismo navegador nunca ve la vista anterior)
@@ -71,7 +76,7 @@ export function SectorCentral(props: Props) {
     return <Tracking {...props} sector={view.sector}/>;
 }
 
-function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost }: Inner) {
+function Programming({ code, sector, canManageOrders, canManageAssignments, canReadOrders, scope, onSessionLost, canClassifyRewindingWorkOrders = false }: Inner) {
     const workOrders = useWorkOrders(canReadOrders, onSessionLost, scope);
     const machines = sector.machines.map(m => m.code);
     // Keep the same server-authoritative multi-machine gate used by Bobinas:
@@ -97,10 +102,14 @@ function Programming({ code, sector, canManageOrders, canManageAssignments, canR
         creation={creation} catalog={catalog} capabilities={multiMachine.capabilities}
         capabilityStatus={multiMachine.status} onCapabilitiesStale={multiMachineResource.refresh}
         workOrders={workOrders.view} onChanged={workOrders.refresh} onSessionLost={onSessionLost} scope={scope} executionEnabled={executionEnabled}
-        canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/></div>;
+        canManageOrders={canManageOrders} canManageAssignments={canManageAssignments}/>
+        {code === "REBOBINADO" && canClassifyRewindingWorkOrders
+            ? <RewindingWorkOrderClassificationPanel scope={scope} onSessionLost={onSessionLost}/>
+            : null}
+    </div>;
 }
 
-function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost }: Inner) {
+function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, scope, onSessionLost, canCreateRewindingExport = false, canReadOwnRewindingExport = false }: Inner) {
     const [machineCode, setMachineCode] = useState(sector.machines[0]?.code ?? "");
     const [lineChoice, setLineChoice] = useState<Selection | null>(null);
     const machine = sector.machines.find(m => m.code === machineCode) ?? sector.machines[0];
@@ -175,6 +184,9 @@ function Execution({ code, sector, canCapture, canReadAssignments, onOpenForm, s
                 <p className="mt-4 border-t pt-3 text-xs font-semibold text-emerald-800">
                     {screen ? "Abrir captura central" : "Sin pantalla central"}</p>
             </button>)}</div>
+        {code === "REBOBINADO" && (canCreateRewindingExport || canReadOwnRewindingExport)
+            ? <RewindingExportWorkspace scope={scope} canCreate={canCreateRewindingExport} canReadOwn={canReadOwnRewindingExport} onSessionLost={onSessionLost}/>
+            : null}
     </div>;
 }
 
