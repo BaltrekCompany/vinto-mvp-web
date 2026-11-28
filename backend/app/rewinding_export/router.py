@@ -27,12 +27,16 @@ def _sector_wide(user: AuthenticatedUser) -> bool:
 @router.get("/mothers")
 def eligible_mothers(response: Response,
                     pv_reference: str | None = Query(default=None, max_length=100),
+                    article_id: uuid.UUID | None = Query(default=None),
                     article_code: str | None = Query(default=None, max_length=64),
                     user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                     connection=Depends(get_connection)):
     response.headers["Cache-Control"] = "private, no-store"
-    return service.list_eligible_mothers(connection, sectors=user.sectors,
-                                         pv_reference=pv_reference, article_code=article_code)
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    rows = repository.visible_mother_rows(connection, user, pv_reference=pv_reference, article_id=article_id)
+    return {"items": [option for row in rows
+                      if (article_code is None or row["article_code"] == article_code)
+                      for option in [repository.mother_row_to_option(row)] if option is not None]}
 
 @router.post("/drafts", response_model=DraftCreatedOut, status_code=201)
 def create_draft(body: DraftCreateIn, user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
