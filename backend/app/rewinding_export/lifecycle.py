@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
-from app.auth.permissions import Permission
+from app.auth.permissions import REWINDING_EXPORT_CLASSIFY_SOURCE, REWINDING_EXPORT_ANNUL, REWINDING_EXPORT_CREATE
 from app.authz import Operation, require
 
 from .repository import event, format_value, mother_row_to_option, one, require_sector_permission, rows, set_actor_context, visible_mother_rows
@@ -23,7 +23,7 @@ def _http(status: int, code: str, message: str) -> HTTPException:
 
 
 def list_work_orders_for_classification(connection,user:Any)->list[dict[str,Any]]:
-    require_sector_permission(connection,user,Permission.REWINDING_EXPORT_CLASSIFY_SOURCE,lock=False)
+    require_sector_permission(connection,user,REWINDING_EXPORT_CLASSIFY_SOURCE,lock=False)
     return rows(
         connection,
         """
@@ -40,7 +40,7 @@ def list_work_orders_for_classification(connection,user:Any)->list[dict[str,Any]
 
 
 def get_work_order_classification(connection,user:Any,work_order_id:UUID)->dict[str,Any]:
-    require_sector_permission(connection,user,Permission.REWINDING_EXPORT_CLASSIFY_SOURCE,lock=False)
+    require_sector_permission(connection,user,REWINDING_EXPORT_CLASSIFY_SOURCE,lock=False)
     wo=one(connection,"SELECT wo.id FROM vinto_txn.work_order wo JOIN vinto_master.machine m ON m.id=wo.machine_id JOIN vinto_master.sector s ON s.id=m.sector_id WHERE wo.id=%s AND s.code='REBOBINADO' AND s.active",(work_order_id,))
     if not wo: raise _http(404,"WORK_ORDER_NOT_FOUND","No se encontró la OT en REBOBINADO.")
     latest=one(
@@ -64,7 +64,7 @@ def classify_work_order(connection,user:Any,work_order_id:UUID,payload:Any,*,req
     actor=_actor(user)
     with connection.transaction():
         set_actor_context(connection,actor,request_id,payload.reason)
-        require_sector_permission(connection,user,Permission.REWINDING_EXPORT_CLASSIFY_SOURCE,lock=True)
+        require_sector_permission(connection,user,REWINDING_EXPORT_CLASSIFY_SOURCE,lock=True)
         wo=one(
             connection,
             """
@@ -115,7 +115,7 @@ def annul_report(connection,user:Any,report_id:UUID,reason:str,*,request_id:str|
     mother_ids=[x["mother_capture_id"] for x in rows(connection,"SELECT DISTINCT mother_capture_id FROM vinto_txn.rewinding_export_package WHERE report_id=%s ORDER BY mother_capture_id",(report_id,))]
     with connection.transaction():
         set_actor_context(connection,actor,request_id,reason)
-        require_sector_permission(connection,user,Permission.REWINDING_EXPORT_ANNUL,lock=True)
+        require_sector_permission(connection,user,REWINDING_EXPORT_ANNUL,lock=True)
         if work_orders: connection.execute("SELECT id FROM vinto_txn.work_order WHERE id=ANY(%s::uuid[]) ORDER BY id FOR SHARE",(work_orders,)).fetchall()
         if child_ids:
             connection.execute("SELECT bobbin_id FROM vinto_txn.quality_release WHERE bobbin_id=ANY(%s::uuid[]) ORDER BY bobbin_id FOR SHARE",(child_ids,)).fetchall()
@@ -125,9 +125,9 @@ def annul_report(connection,user:Any,report_id:UUID,reason:str,*,request_id:str|
         if not report or report["status"] not in {"generated","observed"}: raise _http(409,"REPORT_NOT_ANNULABLE","El estado del reporte cambió; vuelve a consultar.")
         connection.execute("SELECT id FROM vinto_txn.rewinding_export_package WHERE report_id=%s ORDER BY package_number,id FOR UPDATE",(report_id,)).fetchall()
         connection.execute("SELECT id FROM vinto_txn.rewinding_export_package_child WHERE report_id=%s ORDER BY child_bobbin_id,id FOR UPDATE",(report_id,)).fetchall()
-        active=rows(connection,"SELECT id FROM vinto_txn.rewinding_export_child_reservation WHERE report_id=%s AND released_at IS NULL ORDER BY child_bobbin_id,id FOR UPDATE",(report_id,))
+        active=rows(connection,"SELECT id FROM vinto_txn.rewinding_export_reservation WHERE report_id=%s AND released_at IS NULL ORDER BY child_bobbin_id,id FOR UPDATE",(report_id,))
         connection.execute("UPDATE vinto_txn.rewinding_export_report SET status='annulled',annulled_by=%s,annulled_at=clock_timestamp(),annulled_reason=%s,updated_by=%s WHERE id=%s",(actor,reason.strip(),actor,report_id))
-        connection.execute("UPDATE vinto_txn.rewinding_export_child_reservation SET released_at=clock_timestamp(),released_by=%s,release_reason=%s,updated_by=%s WHERE report_id=%s AND released_at IS NULL",(actor,reason.strip(),actor,report_id))
+        connection.execute("UPDATE vinto_txn.rewinding_export_reservation SET released_at=clock_timestamp(),released_by=%s,release_reason=%s,updated_by=%s WHERE report_id=%s AND released_at IS NULL",(actor,reason.strip(),actor,report_id))
         event(connection,report_id,"report_annulled",actor,reason=reason.strip(),metadata={"released_reservations":len(active)})
         if active: event(connection,report_id,"reservation_released",actor,reason=reason.strip(),metadata={"count":len(active)})
     return {"report_id":report_id,"status":"annulled","released_reservations":len(active)}
@@ -188,7 +188,7 @@ def generate_report(connection,user:Any,report_id:UUID,idempotency_key:UUID,rend
             WHERE c.report_id=%s AND c.removed_at IS NULL AND p.removed_at IS NULL
             ORDER BY c.child_bobbin_id,c.id FOR UPDATE OF c
             """,(report_id,))
-        connection.execute("SELECT id FROM vinto_txn.rewinding_export_child_reservation WHERE report_id=%s ORDER BY child_bobbin_id,id FOR UPDATE",(report_id,)).fetchall()
+        connection.execute("SELECT id FROM vinto_txn.rewinding_export_reservation WHERE report_id=%s ORDER BY child_bobbin_id,id FOR UPDATE",(report_id,)).fetchall()
         if not packages or not children: raise _http(422,"NO_PACKAGES","El reporte debe contener paquetes y crías.")
         if not report["truck_number"].strip() or not report["order_number"].strip(): raise _http(422,"HEADER_REQUIRED","Camión y orden son obligatorios.")
         sources={x["mother_capture_id"]:x for x in visible_mother_rows(connection,user)}
@@ -214,7 +214,7 @@ def generate_report(connection,user:Any,report_id:UUID,idempotency_key:UUID,rend
             current=one(connection,
                 """
                 SELECT b.source_capture_id,b.rewind_child_position,b.weight_kg,q.status,
-                  EXISTS (SELECT 1 FROM vinto_txn.rewinding_export_child_reservation r WHERE r.child_bobbin_id=b.id AND r.released_at IS NULL) AS reserved
+                  EXISTS (SELECT 1 FROM vinto_txn.rewinding_export_reservation r WHERE r.child_bobbin_id=b.id AND r.released_at IS NULL) AS reserved
                 FROM vinto_txn.bobbin b LEFT JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id WHERE b.id=%s
                 """,(child["child_bobbin_id"],))
             package=next(p for p in packages if p["id"]==child["package_id"])
@@ -266,7 +266,7 @@ def generate_report(connection,user:Any,report_id:UUID,idempotency_key:UUID,rend
         for child in children:
             connection.execute(
                 """
-                INSERT INTO vinto_txn.rewinding_export_child_reservation
+                INSERT INTO vinto_txn.rewinding_export_reservation
                   (report_id,package_id,package_child_id,child_bobbin_id,reserved_by,created_by)
                 VALUES (%s,%s,%s,%s,%s,%s)
                 """,(report_id,child["package_id"],child["id"],child["child_bobbin_id"],actor,actor))
