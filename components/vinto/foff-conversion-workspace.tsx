@@ -36,7 +36,7 @@ type OpenForm=Readonly<{
 }>;
 type Props=Readonly<{online:boolean;onExit:()=>void;currentUserId?:string|null}>;
 
-function Field({field,value,onChange,disabled=false,options}:
+function Field({field,value,onChange,disabled=false,options}:{
   field:ConversionField;value:unknown;onChange:(value:string)=>void;disabled?:boolean;options?:readonly string[];
 }){
   const label=`${title(field.key)}${field.required?" *":""}${field.unit?" ("+field.unit+")":""}`;
