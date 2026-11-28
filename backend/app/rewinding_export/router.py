@@ -9,13 +9,13 @@ from app.auth.permissions import (
 )
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
-from app.rewinding_export import service
+from app.rewinding_export import service, repository, lifecycle
 from app.rewinding_export.schemas import (
     AnnulIn, AnnulOut, ChildCreateIn, ChildCreatedOut, ClassificationIn, ClassificationOut,
     ClassifiableWorkOrderOut, DraftCreateIn, DraftCreatedOut, DraftHeaderIn, HistoryItemOut,
     LogicalRemoveIn, PackageCreateIn, PackageCreatedOut,
 )
-router = APIRouter(prefix="/api/rewinding-export", tags=["Bobinas refiladas para exportación"])
+router = APIRouter(prefix="/api/reports/rewinding-export", tags=["Bobinas refiladas para exportación"])
 
 def _request_id():
     return str(uuid.uuid4())
@@ -160,3 +160,110 @@ def get_work_order_classification(work_order_id: uuid.UUID,
                                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CLASSIFY_SOURCE)),
                                   connection=Depends(get_connection)):
     return service.get_work_order_classification(connection, work_order_id=work_order_id, sectors=user.sectors)
+
+
+# RBE-03: read contracts are response-compatible, and each request checks live grants.
+@router.get("/pvs")
+def list_pvs(response: Response, user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+             connection=Depends(get_connection)):
+    response.headers["Cache-Control"] = "private, no-store"
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    mothers = repository.visible_mother_rows(connection, user)
+    counts = {}
+    for mother in mothers:
+        pv = mother["pv_reference"]
+        counts[pv] = counts.get(pv, 0) + 1
+    return {"items": [{"pv_reference": pv, "eligible_mothers": count} for pv, count in sorted(counts.items())]}
+
+
+@router.get("/products")
+def list_products(pv_reference: str = Query(min_length=1, max_length=100),
+                  response: Response = None,
+                  user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+                  connection=Depends(get_connection)):
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    mothers = repository.visible_mother_rows(connection, user, pv_reference=pv_reference)
+    products = {}
+    for row in mothers:
+        item = products.get(row["article_id"])
+        if item is None:
+            products[row["article_id"]] = {"article_id": row["article_id"], "code": row["article_code"],
+                                           "description": row["article_description"]}
+        elif item["description"] != row["article_description"]:
+            item["description"] = ""
+    return {"items": sorted(products.values(), key=lambda item: (item["code"], str(item["article_id"])))}
+
+
+@router.get("/mothers/{mother_capture_id}/children")
+def list_children(mother_capture_id: uuid.UUID,
+                  user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+                  connection=Depends(get_connection)):
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    candidates = repository.visible_mother_rows(connection, user)
+    if not any(row["mother_capture_id"] == mother_capture_id for row in candidates):
+        raise HTTPException(status_code=404, detail="Madre no elegible")
+    return {"items": repository.rows(connection, """
+        SELECT b.id AS bobbin_id, b.source_capture_id AS mother_capture_id,
+               b.rewind_child_position AS position, b.weight_kg::text AS weight_kg,
+               'released'::text AS quality_status
+        FROM vinto_txn.bobbin b
+        JOIN vinto_txn.quality_release q ON q.bobbin_id=b.id AND q.status='released'
+        WHERE b.source_capture_id=%s AND b.rewind_child_position BETWEEN 1 AND 22
+          AND b.rewind_child_position<>12 AND b.weight_kg>0
+          AND NOT EXISTS (SELECT 1 FROM vinto_txn.rewinding_export_reservation res
+                          WHERE res.child_bobbin_id=b.id AND res.released_at IS NULL)
+        ORDER BY b.rewind_child_position,b.id
+    """, (mother_capture_id,))}
+
+
+@router.get("/drafts")
+def list_drafts(user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_READ_OWN)),
+                connection=Depends(get_connection)):
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_READ_OWN, lock=False)
+    return {"items": repository.rows(connection, """
+        SELECT r.id, r.created_at, r.pv_reference, r.article_code_snapshot AS article_code,
+               m.code AS machine_code,
+               (SELECT count(*) FROM vinto_txn.rewinding_export_package p
+                WHERE p.report_id=r.id AND p.removed_at IS NULL)::integer AS package_count
+        FROM vinto_txn.rewinding_export_report r
+        LEFT JOIN vinto_master.machine m ON m.id=r.machine_id
+        WHERE r.created_by=%s AND r.status='draft' AND r.sector_id=(
+          SELECT id FROM vinto_master.sector WHERE code='REBOBINADO')
+        ORDER BY r.created_at DESC,r.id
+    """, (user.user_id,))}
+
+
+@router.get("/drafts/{report_id}")
+def load_draft(report_id: uuid.UUID,
+               user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_READ_OWN)),
+               connection=Depends(get_connection)):
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_READ_OWN, lock=False)
+    return repository.load_draft(connection, user.user_id, report_id)
+
+
+@router.post("/drafts/{report_id}/preview")
+def preview_draft(report_id: uuid.UUID,
+                  user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+                  connection=Depends(get_connection)):
+    repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=False)
+    draft = repository.load_draft(connection, user.user_id, report_id)
+    errors = []
+    packages = draft["packages"]
+    if not packages:
+        errors.append({"code": "V01", "message": "Se requiere al menos un paquete."})
+    if not draft["truck_number"].strip() or not draft["order_number"].strip():
+        errors.append({"code": "V02", "message": "Camión y orden son obligatorios."})
+    total = sum(len(p["children"]) for p in packages)
+    used = set()
+    for package in packages:
+        children = package["children"]
+        slots = {child["package_slot"] for child in children}
+        if not 1 <= len(children) <= 5 or "A" not in slots:
+            errors.append({"code": "V03", "message": "Cada paquete requiere de una a cinco crías e incluir A."})
+        for child in children:
+            if child["bobbin_id"] in used:
+                errors.append({"code": "V04", "message": "Una cría se repite en el borrador."})
+            used.add(child["bobbin_id"])
+    # This is a draft preview; generation re-checks live grants, quality and reservations.
+    return {"valid": not errors, "package_count": len(packages), "child_count": total,
+            "warnings": [], "blocking_errors": errors}
