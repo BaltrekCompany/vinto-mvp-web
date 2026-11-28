@@ -26,6 +26,9 @@ jobs:
     name: RBE-04 migration, permissions and reservation contract (isolated PG17)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:17
