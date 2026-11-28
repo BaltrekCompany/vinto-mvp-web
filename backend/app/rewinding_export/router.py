@@ -212,27 +212,22 @@ def annul(report_id: uuid.UUID, body: AnnulIn,
     return service.annul_report(connection, actor_id=user.user_id, request_id=_request_id(),
                                  report_id=report_id, reason=body.reason, sectors=user.sectors)
 
-@router.get("/work-orders", response_model=list[ClassifiableWorkOrderOut])
+@router.get("/work-orders")
 def classifiable_work_orders(user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CLASSIFY_SOURCE)),
                              connection=Depends(get_connection)):
-    return service.list_classifiable_work_orders(connection, sectors=user.sectors)
+    return {"items": lifecycle.list_work_orders_for_classification(connection, user)}
 
-@router.post("/work-orders/{work_order_id}/classification", response_model=ClassificationOut, status_code=201)
+@router.post("/work-orders/{work_order_id}/classification", status_code=201)
 def classify_work_order(work_order_id: uuid.UUID, body: ClassificationIn,
                         user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CLASSIFY_SOURCE)),
                         connection=Depends(get_connection)):
-    classification_id = service.classify_work_order(
-        connection, actor_id=user.user_id, request_id=_request_id(), work_order_id=work_order_id,
-        classification=body.classification, reason=body.reason, sectors=user.sectors)
-    return {"id": classification_id}
-
+    return lifecycle.classify_work_order(connection, user, work_order_id, body, request_id=_request_id())
 
 @router.get("/work-orders/{work_order_id}/classification")
 def get_work_order_classification(work_order_id: uuid.UUID,
                                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CLASSIFY_SOURCE)),
                                   connection=Depends(get_connection)):
-    return service.get_work_order_classification(connection, work_order_id=work_order_id, sectors=user.sectors)
-
+    return lifecycle.get_work_order_classification(connection, user, work_order_id)
 
 # RBE-03: read contracts are response-compatible, and each request checks live grants.
 @router.get("/pvs")
