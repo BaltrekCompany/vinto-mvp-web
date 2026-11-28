@@ -237,6 +237,8 @@ test("la interfaz autorizada muestra carga del servidor y no rellena opciones co
   assert.ok(html.includes("Reporte de Bobinas Refiladas para Exportación"));
   assert.ok(html.includes("Consultando PV con crías elegibles"));
   assert.ok(html.includes("Consultando borradores"));
+  assert.ok(html.includes("Fecha (automática)"));
+  assert.ok(html.includes("Se asigna al crear el borrador"));
   assert.equal(html.includes("PV-2026-0158"), false);
   assert.equal(html.includes("Cría 1 - 317 kg"), false);
 });

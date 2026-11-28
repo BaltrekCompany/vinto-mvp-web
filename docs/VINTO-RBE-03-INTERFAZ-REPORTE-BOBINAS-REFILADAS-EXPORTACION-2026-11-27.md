@@ -15,6 +15,7 @@ Incluye:
 - La misma madre puede repetirse en paquetes distintos; una cría no puede repetirse dentro del reporte.
 - Alta, edición y retirada lógica de paquetes mientras el reporte sea Borrador.
 - Camión, orden y observaciones generales.
+- Fecha automática de creación del borrador, en modo solo lectura.
 - Presentación de Formato/Cortes con los valores originales de P1-07.
 - Vista previa de validaciones, warnings y errores bloqueantes devueltos por el backend.
 - Recuperación de borradores propios desde el servidor después de recargar.

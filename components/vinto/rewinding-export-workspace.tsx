@@ -436,6 +436,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                             <div className="mt-3 grid gap-4 md:grid-cols-3">
                                 <div><Label htmlFor="rbe-truck">N.° camión *</Label><Input id="rbe-truck" value={truckNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => setTruckNumber(event.target.value)} className="mt-1"/></div>
                                 <div><Label htmlFor="rbe-order">N.° orden *</Label><Input id="rbe-order" value={orderNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => setOrderNumber(event.target.value)} className="mt-1"/></div>
+                                <div><Label htmlFor="rbe-date">Fecha (automática)</Label><Input id="rbe-date" value={draft ? new Date(draft.created_at).toLocaleDateString("es-PE", { timeZone: "America/Lima" }) : "Se asigna al crear el borrador"} readOnly disabled className="mt-1"/></div>
                                 <div className="md:col-span-3"><Label htmlFor="rbe-observations">Observaciones generales</Label><textarea id="rbe-observations" value={observations} maxLength={2000} rows={3} disabled={busy || Boolean(draft && !canEditDraft)}
                                     onChange={event => setObservations(event.target.value)} className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"/></div>
                             </div>
