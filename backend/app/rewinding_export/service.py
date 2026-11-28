@@ -500,11 +500,11 @@ def generate_report(connection, *, actor_id, request_id, report_id, idempotency_
             for child_id, bobbin_id in child_rows:
                 reservation = connection.execute(
                     """INSERT INTO vinto_txn.rewinding_export_reservation
-                       (package_child_id,child_bobbin_id,reserved_by)
-                       VALUES (%s,%s,%s)
+                       (report_id,package_id,package_child_id,child_bobbin_id,reserved_by)
+                       VALUES (%s,%s,%s,%s,%s)
                        ON CONFLICT DO NOTHING
                        RETURNING id""",
-                    (child_id, bobbin_id, actor_id),
+                    (report_id, package[0], child_id, bobbin_id, actor_id),
                 ).fetchone()
                 if reservation is None:
                     raise HTTPException(status_code=409, detail="Una de las crías ya está reservada en otro reporte")
