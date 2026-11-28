@@ -238,7 +238,7 @@ CREATE TABLE vinto_txn.rewinding_export_pdf (
   generated_at timestamptz NOT NULL,
   CONSTRAINT rewinding_export_pdf_size_ck CHECK (size_bytes = octet_length(pdf_bytes)),
   CONSTRAINT rewinding_export_pdf_report_fk
-    FOREIGN KEY (report_id) REFERENCES vinto_txn.rewinding_export_report(id) ON DELETE RESTRICT,
+    FOREIGN KEY (report_id) REFERENCES vinto_txn.rewinding_export_report(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE vinto_txn.rewinding_export_reservation (
