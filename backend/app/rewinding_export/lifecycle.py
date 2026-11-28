@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 
 from app.auth.permissions import REWINDING_EXPORT_CLASSIFY_SOURCE, REWINDING_EXPORT_ANNUL, REWINDING_EXPORT_CREATE
 from app.authz import Operation, require
+from app.sectors import SECTOR_REBOBINADO
 
 from .repository import event, format_value, mother_row_to_option, one, require_sector_permission, rows, set_actor_context, visible_mother_rows
 
@@ -31,17 +32,18 @@ def list_work_orders_for_classification(connection,user:Any)->list[dict[str,Any]
         FROM vinto_txn.work_order wo
         JOIN vinto_master.machine m ON m.id=wo.machine_id
         JOIN vinto_master.sector s ON s.id=m.sector_id
-        WHERE s.code='REBOBINADO' AND s.active
+        WHERE s.code=%s AND s.active
           AND wo.status IN ('published','in_progress','closed')
           AND wo.archived_at IS NULL AND COALESCE(wo.qa_retired,false)=false
         ORDER BY wo.number,wo.id
         """,
+        (SECTOR_REBOBINADO,),
     )
 
 
 def get_work_order_classification(connection,user:Any,work_order_id:UUID)->dict[str,Any]:
     require_sector_permission(connection,user,REWINDING_EXPORT_CLASSIFY_SOURCE,lock=False)
-    wo=one(connection,"SELECT wo.id FROM vinto_txn.work_order wo JOIN vinto_master.machine m ON m.id=wo.machine_id JOIN vinto_master.sector s ON s.id=m.sector_id WHERE wo.id=%s AND s.code='REBOBINADO' AND s.active",(work_order_id,))
+    wo=one(connection,"SELECT wo.id FROM vinto_txn.work_order wo JOIN vinto_master.machine m ON m.id=wo.machine_id JOIN vinto_master.sector s ON s.id=m.sector_id WHERE wo.id=%s AND s.code=%s AND s.active",(work_order_id, SECTOR_REBOBINADO))
     if not wo: raise _http(404,"WORK_ORDER_NOT_FOUND","No se encontró la OT en REBOBINADO.")
     latest=one(
         connection,
@@ -71,9 +73,9 @@ def classify_work_order(connection,user:Any,work_order_id:UUID,payload:Any,*,req
             SELECT wo.id,wo.status,wo.archived_at,wo.qa_retired
             FROM vinto_txn.work_order wo JOIN vinto_master.machine m ON m.id=wo.machine_id
             JOIN vinto_master.sector s ON s.id=m.sector_id
-            WHERE wo.id=%s AND s.code='REBOBINADO' AND s.active FOR UPDATE OF wo
+            WHERE wo.id=%s AND s.code=%s AND s.active FOR UPDATE OF wo
             """,
-            (work_order_id,),
+            (work_order_id, SECTOR_REBOBINADO),
         )
         if not wo or wo["status"] not in {"published","in_progress","closed"} or wo["archived_at"] is not None or wo["qa_retired"]:
             raise _http(409,"WORK_ORDER_NOT_CLASSIFIABLE","La OT está archivada, retirada como QA o fuera del alcance REBOBINADO.")

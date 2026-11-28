@@ -72,7 +72,7 @@ PINNED_E2C2_MIGRATIONS = [
     ("0018_supervision_revision_receipts.sql", "eaa44a698ca506246e88b1bf821191b5107079e9471f1a372345a8c2de89a08b"),
 ]
 PINNED_RBE_MIGRATIONS = [
-    ("0032_rewinding_export_backend.sql", "5a2af33c0af805e8de5aff81471de639b995e51833958373fb03c88c72805649"),
+    ("0032_rewinding_export_backend.sql", "d95e74f56353fe25750dd30f753bbb623af898fb23ab247a944a2100448d23e1"),
 ]
 
 

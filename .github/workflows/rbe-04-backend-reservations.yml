@@ -19,6 +19,10 @@ on:
       - 'docs/VINTO-RBE-04-BACKEND-RESERVAS-CIERRE-TECNICO-2026-11-28.md'
   workflow_dispatch:
 
+concurrency:
+  group: rbe04-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

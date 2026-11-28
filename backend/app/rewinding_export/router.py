@@ -9,6 +9,7 @@ from app.auth.permissions import (
 )
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
+from app.sectors import SECTOR_REBOBINADO
 from app.rewinding_export import service, repository, lifecycle
 from app.rewinding_export.schemas import (
     AnnulIn, AnnulOut, ChildCreateIn, ChildCreatedOut, ClassificationIn, ClassificationOut,
@@ -282,9 +283,9 @@ def list_drafts(user: AuthenticatedUser = Depends(require_permission(REWINDING_E
         FROM vinto_txn.rewinding_export_report r
         LEFT JOIN vinto_master.machine m ON m.id=r.machine_id
         WHERE r.created_by=%s AND r.status='draft' AND r.sector_id=(
-          SELECT id FROM vinto_master.sector WHERE code='REBOBINADO')
+          SELECT id FROM vinto_master.sector WHERE code=%s)
         ORDER BY r.created_at DESC,r.id
-    """, (user.user_id,))}
+    """, (user.user_id, SECTOR_REBOBINADO))}
 
 
 @router.get("/drafts/{report_id}")

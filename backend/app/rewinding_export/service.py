@@ -354,10 +354,11 @@ def list_classifiable_work_orders(connection, *, sectors):
              FROM vinto_txn.rewinding_export_work_order_classification
              WHERE work_order_id=wo.id ORDER BY sequence_no DESC LIMIT 1
            ) latest ON true
-           WHERE s.code='REBOBINADO' AND s.active AND m.active
+           WHERE s.code=%s AND s.active AND m.active
              AND wo.status IN ('published','in_progress','closed')
              AND wo.archived_at IS NULL AND NOT wo.qa_retired
-           ORDER BY wo.number DESC"""
+           ORDER BY wo.number DESC""",
+        (SECTOR_REBOBINADO,),
     )
     return [_dict(cursor, row) for row in cursor.fetchall()]
 
@@ -635,7 +636,7 @@ def list_eligible_mothers(connection, *, sectors, pv_reference=None, article_cod
              ON r.child_bobbin_id=b.id AND r.released_at IS NULL
            WHERE f.code='VINTO-P1-07' AND fv.version_number>=3
              AND c.status IN ('submitted','closed')
-             AND s.code='REBOBINADO' AND s.active AND m.active
+             AND s.code=%s AND s.active AND m.active
              AND wo.status IN ('published','in_progress','closed')
              AND wo.archived_at IS NULL AND NOT wo.qa_retired
              AND wc.classification='production_confirmed' AND ar.active AND ar.is_product
@@ -646,7 +647,7 @@ def list_eligible_mothers(connection, *, sectors, pv_reference=None, article_cod
            GROUP BY c.id,label.value_text,wo.number,wol.pv_reference,ar.code,av.description,
                     m.code,m.name,destination.value_text,u.display_name
            ORDER BY wol.pv_reference,wo.number,label.value_text""",
-        (pv_reference, pv_reference, article_code, article_code),
+        (SECTOR_REBOBINADO, pv_reference, pv_reference, article_code, article_code),
     )
     return [_dict(cursor, row) for row in cursor.fetchall()]
 
@@ -660,9 +661,9 @@ def get_work_order_classification(connection, *, work_order_id, sectors):
            JOIN vinto_txn.work_order wo ON wo.id=c.work_order_id
            JOIN vinto_master.machine m ON m.id=wo.machine_id
            JOIN vinto_master.sector s ON s.id=m.sector_id
-           WHERE c.work_order_id=%s AND s.code='REBOBINADO'
+           WHERE c.work_order_id=%s AND s.code=%s
            ORDER BY c.sequence_no DESC LIMIT 1""",
-        (work_order_id,),
+        (work_order_id, SECTOR_REBOBINADO),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Clasificación no encontrada")

@@ -136,7 +136,7 @@ class LoginTests(ApiCase):
         self.assertEqual(reply.status, 200)
         self.assertEqual(reply.json(), {"user": {
             "id": str(created.user_id), "username": created.username, "display_name": "Api Fixture",
-            "profiles": ["SUPERVISION"], "permissions": ["assignment.manage", "assignment.read", "catalog.read", "report.read", "work_order.read"],
+            "profiles": ["SUPERVISION"], "permissions": ["assignment.manage", "assignment.read", "catalog.read", "report.read", "rewinding_export.read_sector", "work_order.read"],
             "must_change": False}})
         self.assertEqual(reply.header("cache-control"), "no-store")
 

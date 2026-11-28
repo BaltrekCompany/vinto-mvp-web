@@ -10,7 +10,7 @@ from app.auth.permissions import permissions_for_profiles
 from app.authz import Operation, authorize
 
 P107_FORM_CODE = "VINTO-P1-07"
-REWINDING_SECTOR_CODE = "REBOBINADO"
+from app.sectors import SECTOR_REBOBINADO
 
 SOURCE_MOTHERS_SQL = """
 SELECT
@@ -53,7 +53,7 @@ JOIN LATERAL (
 WHERE f.code='VINTO-P1-07' AND fv.version_number>=3
   AND c.status IN ('submitted','closed')
   AND wol.machine_id=c.machine_id AND a.machine_id=c.machine_id
-  AND s.code='REBOBINADO' AND s.active AND m.active
+  AND s.code=%s AND s.active AND m.active
   AND wo.status IN ('published','in_progress','closed')
   AND wo.archived_at IS NULL AND COALESCE(wo.qa_retired,false)=false
   AND EXISTS (
@@ -107,7 +107,7 @@ def require_sector_permission(connection, user: Any, permission: str, *, lock: b
     granted = permissions_for_profiles([item["code"] for item in profile_rows])
     if permission not in granted:
         raise HTTPException(status_code=403, detail={"code":"PERMISSION_DENIED","message":"Tu usuario no tiene permiso para esta operación."})
-    sector = one(connection,"SELECT id,active FROM vinto_master.sector WHERE code=%s",(REWINDING_SECTOR_CODE,))
+    sector = one(connection,"SELECT id,active FROM vinto_master.sector WHERE code=%s",(SECTOR_REBOBINADO,))
     if not sector or not sector["active"]:
         raise HTTPException(status_code=403, detail={"code":"SECTOR_INACTIVE","message":"El sector REBOBINADO no está habilitado."})
     grant = one(connection,"SELECT 1 AS granted FROM vinto_master.user_sector WHERE user_id=%s AND sector_id=%s",(actor_id,sector["id"]))
@@ -184,7 +184,7 @@ def event(connection, report_id: UUID, event_type: str, actor_id: UUID, *, reaso
 
 
 def visible_mother_rows(connection, user: Any, *, pv_reference: str | None = None, article_id: UUID | None = None) -> list[dict[str, Any]]:
-    candidates=rows(connection,SOURCE_MOTHERS_SQL)
+    candidates=rows(connection,SOURCE_MOTHERS_SQL, (SECTOR_REBOBINADO,))
     visible=[]
     decisions={}
     for row in candidates:
