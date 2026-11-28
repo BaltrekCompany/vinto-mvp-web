@@ -102,6 +102,6 @@ test("the tracking view passes the authenticated user and the session-lost handl
   const page = read("app/page.tsx");
   const usages = page.match(/<Tracking [^\n]*?\/>/g) ?? [];
   assert.equal(usages.length, 1); // PB-CLEAN: Calidad ya no usa Tracking (resumen central pendiente)
-  for (const usage of usages) assert.match(usage, /userKey=\{user\.id\} onSessionLost=\{sessionLost\}/);
+  for (const usage of usages) assert.match(usage, /userKey=\{user\.id\}(?:\s+[^>]*?)?\s+onSessionLost=\{sessionLost\}/);
   assert.match(page, /<CaptureCount front=\{front\} userKey=\{userKey\} onSessionLost=\{onSessionLost\}\/>/);
 });

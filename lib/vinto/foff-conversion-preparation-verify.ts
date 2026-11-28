@@ -17,7 +17,7 @@ const ENVELOPE = ["algorithm","key_id","public_key_b64url","payload","signature_
 const PAYLOAD = ["schema","kind","issuer","audience","snapshot_id","subject_user_id",
   "device_key","issued_at","expires_at","context"];
 const CONTEXT = ["assignment_id","work_order_id","line_id","machine_code","form_code",
-  "form_version","article_code","shift_code","operating_date","context_digest"];
+  "form_version","article_code","shift_code","operating_date","reference_sha256","context_digest"];
 type Obj = Record<string,unknown>;
 const object = (v:unknown):v is Obj => v!==null && typeof v==="object" && !Array.isArray(v);
 const exact = (v:unknown,keys:string[]):v is Obj =>
@@ -51,10 +51,30 @@ export type VerifiedConversionPreparation=Readonly<{
   context:Readonly<{
     assignment_id:string;work_order_id:string;line_id:string;machine_code:string;
     form_code:string;form_version:number;article_code:string;shift_code:string;
-    operating_date:string;context_digest:string;
+    operating_date:string;reference_sha256:string;context_digest:string;
   }>;
   captureEnabled:false;
 }>;
+
+/** The reference bundle must match the signed digest, not just the response body. */
+export async function verifyConversionReferencePackage(
+  referencePackage:unknown,
+  verified:VerifiedConversionPreparation,
+):Promise<void>{
+  if(!globalThis.crypto?.subtle || !object(referencePackage))
+    throw new ConversionPreparationError("unavailable");
+  const c=verified.context;
+  if(referencePackage.schema!=="vinto.foff.conversion.references.v1" ||
+     referencePackage.machine_code!==c.machine_code ||
+     referencePackage.form_code!==c.form_code ||
+     referencePackage.form_version!==c.form_version ||
+     referencePackage.article_code!==c.article_code ||
+     !object(referencePackage.definition) || !object(referencePackage.references))
+    throw new ConversionPreparationError("target");
+  const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(canonicalOfflineJson(referencePackage))));
+  if(hex(digest)!==c.reference_sha256)throw new ConversionPreparationError("digest");
+}
 
 export async function verifyConversionPreparation(
   input:unknown, trustedPublicKeyB64url:string,
@@ -91,6 +111,7 @@ export async function verifyConversionPreparation(
      typeof c.article_code!=="string" || !c.article_code ||
      typeof c.shift_code!=="string" || !c.shift_code ||
      typeof c.operating_date!=="string" || !DAY.test(c.operating_date) ||
+     typeof c.reference_sha256!=="string" || !HEX.test(c.reference_sha256) ||
      typeof c.context_digest!=="string" || !HEX.test(c.context_digest))
     throw new ConversionPreparationError("invalid");
   if(!equal(c.assignment_id,target.assignmentId) ||

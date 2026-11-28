@@ -21,6 +21,7 @@ def _context():
         "article_code": "10342",
         "shift_code": "MANANA",
         "operating_date": "2026-11-27",
+        "reference_sha256": "b" * 64,
         "context_digest": "a" * 64,
     }
 

@@ -1,5 +1,5 @@
-import { apiBaseUrl } from "@/lib/vinto/api";
-import { interpretLogin, interpretLogout, interpretSession, type LoginResult, type SessionResult } from "@/lib/vinto/auth";
+import { apiBaseUrl } from "./api.ts";
+import { interpretLogin, interpretLogout, interpretSession, type LoginResult, type SessionResult } from "./auth.ts";
 
 // Cliente de los endpoints de autenticación. La cookie de sesión es HttpOnly: el navegador la envía y la recibe
 // gracias a credentials: "include"; este código nunca la lee ni la escribe. Toda la interpretación de respuestas

@@ -16,7 +16,9 @@ from app.auth.permissions import PRODUCTION_CAPTURE
 from app.auth.service import AuthenticatedUser
 from app.database import get_connection
 from app.production_access import production_machines
-from app.foff_conversion_preparation import sign_conversion_preparation, CONVERSION_CODES
+from app.foff_conversion_preparation import sign_conversion_preparation, conversion_preparation_public_pin, CONVERSION_CODES
+from app.foff_conversion_references import conversion_reference_bundle, ConversionReferencesUnavailable
+from app.foff_conversion_capture_authority import sign_conversion_capture_authority, public_pin as capture_public_pin
 from app.assignments import service as assignment_service, execution_read
 from app.authz import visibility
 from app.authz.engine import authorize
@@ -91,7 +93,16 @@ def enroll_production_device(
     with connection.transaction():
         central_captures._context(connection, user.user_id, str(uuid.uuid4()))
         central_captures._resolve_device(connection, device_key, None)
-    return {"device_key": device_key, "enrolled": True, "captureEnabled": False}
+    # Public pin is delivered only over this authenticated enrollment response.
+    # The client must store/pin it in its own encrypted device profile and
+    # reject an envelope whose embedded key differs from this pin.
+    seed = settings.offline_conversion_preparation_signing_seed_hex
+    pin = conversion_preparation_public_pin(seed.get_secret_value()) if seed else None
+    capture_seed = settings.offline_conversion_capture_signing_seed_hex
+    capture_pin = capture_public_pin(capture_seed.get_secret_value()) if capture_seed else None
+    return {"device_key": device_key, "enrolled": True,
+            "preparation_signing_pin": pin, "capture_signing_pin": capture_pin,
+            "captureEnabled": False}
 
 
 class ConversionPreparationIn(BaseModel):
@@ -159,10 +170,46 @@ def prepare_conversion_context(
             "shift_code": a.shift_code,
             "operating_date": a.operating_date.isoformat(),
         }
+        try:
+            machine_row = connection.execute(
+                "SELECT id FROM vinto_master.machine WHERE code=%s AND active=true",
+                (a.machine_code,),
+            ).fetchone()
+            if machine_row is None:
+                raise ConversionReferencesUnavailable("machine_unavailable")
+            reference_package = conversion_reference_bundle(
+                connection,
+                machine_id=machine_row[0],
+                machine_code=a.machine_code,
+                article_code=a.line.article_code,
+                form_code=body.form_code,
+                form_version=decision.effective_version,
+            )
+        except ConversionReferencesUnavailable:
+            raise HTTPException(status_code=409, detail="Referencias de formulario no disponibles")
+        context["reference_sha256"] = reference_package["sha256"]
         digest = hashlib.sha256(_canonical(context)).hexdigest()
         signed_context = {**context, "context_digest": digest}
     envelope = sign_conversion_preparation(
         seed_hex=seed.get_secret_value(), user_id=str(user.user_id),
         device_key=device_key, context=signed_context,
     )
-    return {"envelope": envelope, "captureEnabled": False}
+    capture_authority = None
+    if settings.offline_conversion_capture_enabled:
+        capture_seed = settings.offline_conversion_capture_signing_seed_hex
+        if capture_seed is None:
+            raise HTTPException(503, detail="Autoridad de captura no configurada")
+        try:
+            capture_authority = sign_conversion_capture_authority(
+                seed_hex=capture_seed.get_secret_value(), user_id=str(user.user_id),
+                device_key=device_key, snapshot_id=envelope["payload"]["snapshot_id"],
+                assignment_id=str(a.id), machine_code=a.machine_code,
+                form_code=body.form_code, form_version=decision.effective_version,
+                grant_id=str(decision.grant_id),
+                reference_sha256=reference_package["sha256"],
+            )
+        except ValueError as exc:
+            raise HTTPException(503, detail="Autoridad de captura no disponible") from exc
+    return {"envelope": envelope, "captureAuthority": capture_authority,
+            "referencePackage": reference_package["bundle"],
+            "captureEnabled": capture_authority is not None}
