@@ -127,7 +127,13 @@ test("la misma madre puede repetirse en paquetes distintos y las crías nuevas p
   const payload = buildRewindingExportPackagePayload({
     mother: m, availableChildren: available, selection: { A: UUID.child2, B: UUID.child3 },
   });
-  assert.deepEqual(payload, { mother_capture_id: UUID.mother, child_bobbin_ids: [UUID.child2, UUID.child3] });
+  assert.deepEqual(payload, { mother_capture_id: UUID.mother, children: [{ package_slot: "A", child_bobbin_id: UUID.child2 }, { package_slot: "B", child_bobbin_id: UUID.child3 }] });
+});
+
+test("conserva las posiciones no consecutivas de las crías", () => {
+  const m = mother();
+  const available = [child(UUID.child1, 1), child(UUID.child3, 3)];
+  assert.deepEqual(buildRewindingExportPackagePayload({ mother: m, availableChildren: available, selection: { A: UUID.child1, E: UUID.child3 } }), { mother_capture_id: UUID.mother, children: [{ package_slot: "A", child_bobbin_id: UUID.child1 }, { package_slot: "E", child_bobbin_id: UUID.child3 }] });
 });
 
 test("la selección rechaza crías que pertenecen a otra madre o que ya no están disponibles", () => {
@@ -249,7 +255,7 @@ test("la interfaz autorizada muestra carga del servidor y no rellena opciones co
   assert.ok(html.includes("Consultando PV con crías elegibles"));
   assert.ok(html.includes("Consultando borradores"));
   assert.ok(html.includes("Fecha (automática)"));
-  assert.ok(html.includes("Se asigna al crear el borrador"));
+  assert.ok(html.includes("Se asigna al generar el reporte"));
   assert.equal(html.includes("PV-2026-0158"), false);
   assert.equal(html.includes("Cría 1 - 317 kg"), false);
 });

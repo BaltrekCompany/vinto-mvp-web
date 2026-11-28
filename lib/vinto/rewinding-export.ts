@@ -322,17 +322,19 @@ export function validateRewindingExportPackage(input: {
     return [...new Set(errors)];
 }
 
+export type RewindingExportPackagePayload = { mother_capture_id: string; children: { package_slot: RewindingExportSlot; child_bobbin_id: string }[] };
+
 export function buildRewindingExportPackagePayload(input: {
     mother: RewindingExportMother;
     availableChildren: readonly RewindingExportChild[];
     selection: RewindingExportSelection;
-}): { mother_capture_id: string; child_bobbin_ids: string[] } {
+}): RewindingExportPackagePayload {
     const byId = new Map(input.availableChildren.map(child => [child.bobbin_id, child]));
-    const child_bobbin_ids = REWINDING_EXPORT_SLOTS.flatMap(slot => {
+    const children = REWINDING_EXPORT_SLOTS.flatMap(slot => {
         const id = input.selection[slot];
-        return id && byId.has(id) ? [id] : [];
+        return id && byId.has(id) ? [{ package_slot: slot, child_bobbin_id: id }] : [];
     });
-    return { mother_capture_id: input.mother.mother_capture_id, child_bobbin_ids };
+    return { mother_capture_id: input.mother.mother_capture_id, children };
 }
 
 export function buildRewindingExportDraftPayload(input: {

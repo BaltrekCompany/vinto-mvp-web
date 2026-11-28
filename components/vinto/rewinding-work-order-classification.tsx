@@ -122,7 +122,7 @@ export function RewindingWorkOrderClassificationPanel({ scope, onSessionLost }: 
                                     <Badge className={currentRecord.classification === "production_confirmed" ? "bg-emerald-700" : "bg-slate-700"}>
                                         {currentRecord.classification === "production_confirmed" ? "Producción confirmada" : "QA"}
                                     </Badge>
-                                    <p className="text-xs text-slate-700">Secuencia {currentRecord.sequence_no} · {currentRecord.recorded_by?.display_name} · {currentRecord.recorded_at ? new Date(currentRecord.recorded_at).toLocaleString("es-PE", { timeZone: "America/Lima" }) : ""}</p>
+                                    <p className="text-xs text-slate-700">Secuencia {currentRecord.sequence_no} · {currentRecord.recorded_by?.display_name} · {currentRecord.recorded_at ? new Date(currentRecord.recorded_at).toLocaleString("es-PE", { timeZone: "America/La_Paz" }) : ""}</p>
                                     <p className="text-sm text-slate-700">{currentRecord.reason}</p>
                                 </div>
                             )

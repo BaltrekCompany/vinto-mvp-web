@@ -13,6 +13,7 @@ import {
     type RewindingExportDraft,
     type RewindingExportDraftSummary,
     type RewindingExportMother,
+    type RewindingExportPackagePayload,
     type RewindingExportPreview,
     type RewindingExportProduct,
     type RewindingExportPv,
@@ -59,16 +60,10 @@ export function updateRewindingExportDraft(reportId: string, payload: {
 }, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {
     return requestJson(ROOT + "/drafts/" + encodeURIComponent(reportId), { method: "PATCH", body: payload, signal }, parseRewindingExportDraft);
 }
-export function addRewindingExportPackage(reportId: string, payload: {
-    mother_capture_id: string;
-    child_bobbin_ids: string[];
-}, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {
+export function addRewindingExportPackage(reportId: string, payload: RewindingExportPackagePayload, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {
     return requestJson(ROOT + "/drafts/" + encodeURIComponent(reportId) + "/packages", { method: "POST", body: payload, signal }, parseRewindingExportDraft);
 }
-export function updateRewindingExportPackage(reportId: string, packageId: string, payload: {
-    mother_capture_id: string;
-    child_bobbin_ids: string[];
-}, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {
+export function updateRewindingExportPackage(reportId: string, packageId: string, payload: RewindingExportPackagePayload, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {
     return requestJson(ROOT + "/drafts/" + encodeURIComponent(reportId) + "/packages/" + encodeURIComponent(packageId), { method: "PATCH", body: payload, signal }, parseRewindingExportDraft);
 }
 export function removeRewindingExportPackage(reportId: string, packageId: string, signal?: AbortSignal): Promise<ApiResult<RewindingExportDraft>> {

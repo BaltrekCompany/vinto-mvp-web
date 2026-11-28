@@ -15,7 +15,7 @@ Incluye:
 - La misma madre puede repetirse en paquetes distintos; una cría no puede repetirse dentro del reporte.
 - Alta, edición y retirada lógica de paquetes mientras el reporte sea Borrador.
 - Camión, orden y observaciones generales.
-- Fecha automática de creación del borrador, en modo solo lectura.
+- Fecha oficial pendiente hasta generar el reporte; el backend la asignará con su reloj y se mostrará en America/La_Paz. La creación del borrador es un dato distinto.
 - Presentación de Formato/Cortes con los valores originales de P1-07.
 - Vista previa de validaciones, warnings y errores bloqueantes devueltos por el backend.
 - Recuperación de borradores propios desde el servidor después de recargar.
@@ -56,6 +56,7 @@ Raíz: /api/reports/rewinding-export.
 | POST | /drafts/{report_id}/packages | Agregar paquete |
 | PATCH | /drafts/{report_id}/packages/{package_id} | Editar paquete |
 | POST | /drafts/{report_id}/packages/{package_id}/remove | Retirar paquete |
+| POST | /drafts/{report_id}/discard | Descartar borrador propio sin reservas |
 | POST | /drafts/{report_id}/preview | Validar y devolver warnings/bloqueantes |
 | GET | /work-orders | Listar OTs clasificables en REBOBINADO; incluye published, in_progress y closed, excluye archived/qa_retired |
 | GET | /work-orders/{work_order_id}/classification | Consultar última clasificación de OT |
@@ -71,7 +72,7 @@ La interfaz no invoca /generate ni /pdf en RBE-03. El botón Generar PDF permane
 
 - IDs de madre y crías son UUIDs fuente; no se construyen códigos artificiales.
 - formato_1, formato_2, formato_3, peso y posición se reciben como valores fuente.
-- El cliente envía mother_capture_id y UUIDs de crías ordenados por slot A–E; nunca envía valores técnicos como autoridad.
+- El cliente envía mother_capture_id y children: objetos con package_slot (A–E) y child_bobbin_id. Conserva posiciones no consecutivas; nunca envía pesos ni valores técnicos como autoridad. Editar un paquete no permite cambiar su madre: debe retirarse y crearse otro. La vista previa se invalida cuando cambia el borrador.
 - La respuesta del borrador incluye paquetes, madre fuente y snapshots de crías para reabrir y editar.
 - Los parsers rechazan respuestas incompletas, crías no released, posición 12 y valores decimales mal formados.
 - Las claves de recursos incluyen el identificador de sesión para evitar reutilización de respuestas entre cuentas.

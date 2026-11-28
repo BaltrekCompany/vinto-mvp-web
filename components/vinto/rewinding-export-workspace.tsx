@@ -105,6 +105,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
 
     function setSlot(slot: RewindingExportSlot, value: string) {
         setSelection(previous => ({ ...previous, [slot]: value || undefined }));
+        setPreview(null);
         setActionError("");
         setNotice("");
     }
@@ -152,6 +153,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
             return null;
         }
         setDraft(result.data);
+        setPreview(null);
         return result.data;
     }
     async function openDraft(reportId: string) {
@@ -203,12 +205,14 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                 : await addRewindingExportPackage(currentDraft.id, payload);
             if (!result.ok) throw new Error(isFailure(result, onSessionLost));
             setDraft(result.data);
+            setPreview(null);
             drafts.refresh();
             resetPackageEditor();
             setNotice(editingPackageId ? "Paquete actualizado en el borrador." : "Paquete agregado al borrador.");
         });
     }
     async function beginEditPackage(item: RewindingExportPackage) {
+        setPreview(null);
         setEditingPackageId(item.id);
         setMotherCaptureId(item.mother_capture_id);
         const next: RewindingExportSelection = {};
@@ -297,7 +301,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                                     <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                                         <div className="text-sm">
                                             <p className="font-semibold">{item.pv_reference} · {item.article_code}</p>
-                                            <p className="text-xs text-slate-600">{item.machine_code ?? "Máquina pendiente"} · {item.package_count} paquetes · {new Date(item.created_at).toLocaleString("es-PE", { timeZone: "America/Lima" })}</p>
+                                            <p className="text-xs text-slate-600">{item.machine_code ?? "Máquina pendiente"} · {item.package_count} paquetes · {new Date(item.created_at).toLocaleString("es-PE", { timeZone: "America/La_Paz" })}</p>
                                         </div>
                                         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void openDraft(item.id)}>
                                             {draft?.id === item.id ? "Borrador abierto" : "Abrir borrador"}
@@ -354,7 +358,7 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                                 <div>
                                     <Label htmlFor="rbe-mother">Bobina madre *</Label>
                                     <select id="rbe-mother" className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={motherCaptureId}
-                                        disabled={busy || !articleId || mothers.view.status !== "ready"} onChange={event => {
+                                        disabled={busy || Boolean(editingPackageId) || !articleId || mothers.view.status !== "ready"} onChange={event => {
                                             setMotherCaptureId(event.target.value); setSelection(emptySelection()); setEditingPackageId(null); setPreview(null);
                                         }}>
                                         <option value="">Seleccionar madre…</option>
@@ -434,11 +438,11 @@ export function RewindingExportWorkspace({ scope, canCreate, canReadOwn, onSessi
                         <section aria-labelledby="rbe-manual-title">
                             <h3 id="rbe-manual-title" className="font-bold">3. Datos del reporte</h3>
                             <div className="mt-3 grid gap-4 md:grid-cols-3">
-                                <div><Label htmlFor="rbe-truck">N.° camión *</Label><Input id="rbe-truck" value={truckNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => setTruckNumber(event.target.value)} className="mt-1"/></div>
-                                <div><Label htmlFor="rbe-order">N.° orden *</Label><Input id="rbe-order" value={orderNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => setOrderNumber(event.target.value)} className="mt-1"/></div>
-                                <div><Label htmlFor="rbe-date">Fecha (automática)</Label><Input id="rbe-date" value={draft ? new Date(draft.created_at).toLocaleDateString("es-PE", { timeZone: "America/Lima" }) : "Se asigna al crear el borrador"} readOnly disabled className="mt-1"/></div>
+                                <div><Label htmlFor="rbe-truck">N.° camión *</Label><Input id="rbe-truck" value={truckNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => { setTruckNumber(event.target.value); setPreview(null); }} className="mt-1"/></div>
+                                <div><Label htmlFor="rbe-order">N.° orden *</Label><Input id="rbe-order" value={orderNumber} maxLength={80} disabled={busy || Boolean(draft && !canEditDraft)} onChange={event => { setOrderNumber(event.target.value); setPreview(null); }} className="mt-1"/></div>
+                                <div><Label htmlFor="rbe-date">Fecha (automática)</Label><Input id="rbe-date" value="Se asigna al generar el reporte" readOnly disabled className="mt-1"/></div>
                                 <div className="md:col-span-3"><Label htmlFor="rbe-observations">Observaciones generales</Label><textarea id="rbe-observations" value={observations} maxLength={2000} rows={3} disabled={busy || Boolean(draft && !canEditDraft)}
-                                    onChange={event => setObservations(event.target.value)} className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"/></div>
+                                    onChange={event => { setObservations(event.target.value); setPreview(null); }} className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"/></div>
                             </div>
                             {draft ? (
                                 <div className="mt-3 flex flex-wrap gap-2">
