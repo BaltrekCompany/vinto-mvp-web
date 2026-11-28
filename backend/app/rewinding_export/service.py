@@ -406,7 +406,7 @@ def list_history(connection, *, actor_id, sectors, sector_wide=False, limit=50, 
     return [_dict(cursor, row) for row in cursor.fetchall()]
 
 
-def generate_report(connection, *, actor_id, request_id, report_id, idempotency_key, pdf_bytes, file_name, page_count):
+def generate_report(connection, *, user, actor_id, request_id, report_id, idempotency_key, pdf_bytes, file_name, page_count):
     """Commit report snapshot, original PDF and every reservation atomically. PDF bytes come from RBE-05."""
     if not isinstance(pdf_bytes, bytes) or not pdf_bytes or len(pdf_bytes) > 26214400:
         raise HTTPException(status_code=413, detail="El PDF supera el límite técnico de 25 MiB o está vacío")
@@ -418,6 +418,17 @@ def generate_report(connection, *, actor_id, request_id, report_id, idempotency_
     request_hash = hashlib.sha256(request_seed.encode()).hexdigest()
     with connection.transaction():
         _context(connection, actor_id, request_id, "RBE report generated")
+        from app.authz import require, Operation
+        from app.rewinding_export.repository import require_sector_permission
+        from app.auth.permissions import REWINDING_EXPORT_CREATE
+        require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        source_machines = connection.execute(
+            """SELECT DISTINCT machine_code_snapshot FROM vinto_txn.rewinding_export_package
+               WHERE report_id=%s AND removed_at IS NULL ORDER BY machine_code_snapshot""",
+            (report_id,),
+        ).fetchall()
+        for (machine_code,) in source_machines:
+            require(connection, user, Operation.REWINDING_EXPORT_CREATE, machine_code, "VINTO-P1-07", lock=True)
         report = connection.execute(
             """SELECT status,created_by,pv_reference,article_id,article_code_snapshot,machine_id,sector_id,
                       destination_snapshot,truck_number,order_number,observations,generation_idempotency_key,
@@ -530,13 +541,16 @@ def generate_report(connection, *, actor_id, request_id, report_id, idempotency_
     return {"report_id": report_id, "already_generated": False, "pdf_sha256": pdf_hash}
 
 
-def annul_report(connection, *, actor_id, request_id, report_id, reason, sectors):
+def annul_report(connection, *, user, actor_id, request_id, report_id, reason, sectors):
     _scope(sectors)
     clean = reason.strip() if isinstance(reason, str) else ""
     if not 10 <= len(clean) <= 300:
         raise HTTPException(status_code=422, detail="El motivo de anulación debe tener entre 10 y 300 caracteres")
     with connection.transaction():
         _context(connection, actor_id, request_id, clean)
+        from app.auth.permissions import REWINDING_EXPORT_ANNUL
+        from app.rewinding_export.repository import require_sector_permission
+        require_sector_permission(connection, user, REWINDING_EXPORT_ANNUL, lock=True)
         report = connection.execute(
             """SELECT status,created_by FROM vinto_txn.rewinding_export_report WHERE id=%s FOR UPDATE""",
             (report_id,),
