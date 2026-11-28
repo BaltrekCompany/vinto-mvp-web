@@ -152,6 +152,8 @@ def get_report(report_id: uuid.UUID, response: Response,
     response.headers["Cache-Control"] = "private, no-store"
     if not (user.can(REWINDING_EXPORT_READ_OWN) or user.can(REWINDING_EXPORT_READ_SECTOR)):
         raise HTTPException(status_code=403, detail="Permiso insuficiente")
+    permission = REWINDING_EXPORT_READ_SECTOR if _sector_wide(user) else REWINDING_EXPORT_READ_OWN
+    repository.require_sector_permission(connection, user, permission, lock=False)
     return service.get_report(connection, report_id=report_id, actor_id=user.user_id,
                               sectors=user.sectors, sector_wide=_sector_wide(user))
 
@@ -162,6 +164,8 @@ def history(response: Response, limit: int = Query(default=50, ge=1, le=200), of
     if not (user.can(REWINDING_EXPORT_READ_OWN) or user.can(REWINDING_EXPORT_READ_SECTOR)):
         raise HTTPException(status_code=403, detail="Permiso insuficiente")
     response.headers["Cache-Control"] = "private, no-store"
+    permission = REWINDING_EXPORT_READ_SECTOR if _sector_wide(user) else REWINDING_EXPORT_READ_OWN
+    repository.require_sector_permission(connection, user, permission, lock=False)
     return service.list_history(connection, actor_id=user.user_id, sectors=user.sectors,
                                 sector_wide=_sector_wide(user), limit=limit, offset=offset)
 
@@ -171,6 +175,8 @@ def download_pdf(report_id: uuid.UUID,
                  connection=Depends(get_connection)):
     if not (user.can(REWINDING_EXPORT_READ_OWN) or user.can(REWINDING_EXPORT_READ_SECTOR)):
         raise HTTPException(status_code=403, detail="Permiso insuficiente")
+    permission = REWINDING_EXPORT_READ_SECTOR if _sector_wide(user) else REWINDING_EXPORT_READ_OWN
+    repository.require_sector_permission(connection, user, permission, lock=False)
     file_name, content, sha256, page_count = service.download_original_pdf(
         connection, report_id=report_id, actor_id=user.user_id, sectors=user.sectors,
         sector_wide=_sector_wide(user))
