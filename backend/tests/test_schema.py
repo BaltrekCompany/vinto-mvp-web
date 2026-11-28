@@ -162,8 +162,8 @@ class SchemaTests(unittest.TestCase):
             """SELECT column_name FROM information_schema.columns
                WHERE table_schema='vinto_txn' AND table_name='rewinding_export_reservation'"""
         ).fetchall()}
-        self.assertNotIn("report_id", reservation_columns)
-        self.assertNotIn("package_id", reservation_columns)
+        self.assertIn("report_id", reservation_columns)
+        self.assertIn("package_id", reservation_columns)
         self.assertIn("package_child_id", reservation_columns)
 
     def test_rbe_pdf_is_insert_only_and_report_history_is_not_deletable(self):
