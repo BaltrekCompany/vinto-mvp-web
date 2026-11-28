@@ -325,19 +325,22 @@ class RewindingExportApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.generate(draft, key)).status, 413)
         self.assertEqual(self.counts(draft), ("draft", 0, 0, 0, 0))
 
-        started = threading.Event()
-        true_require = service.require
-
-        def observe_grant(*args, **kwargs):
-            started.set()
-            return true_require(*args, **kwargs)
-
-        with patch.object(service, "require", side_effect=observe_grant), connect(self.database) as revoker:
+        with connect(self.database) as revoker:
             with revoker.transaction():
                 self.assertTrue(revoke_machine_form(revoker, user_id=self.users["operator"], machine_code=MACHINE,
                                                    form_code=FORM, actor_id=self.users["lead"]))
                 pending = asyncio.create_task(self.generate(draft, key))
-                self.assertTrue(await asyncio.to_thread(started.wait, 5))
+                for _ in range(100):
+                    waiting = self.connection.execute("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_stat_activity
+                            WHERE datname=current_database() AND %s=ANY(pg_blocking_pids(pid))
+                        )
+                    """, (revoker.info.backend_pid,)).fetchone()[0]
+                    if waiting or pending.done():
+                        break
+                    await asyncio.sleep(0.025)
+                self.assertTrue(waiting, "PostgreSQL must observe generation waiting for the pending revocation")
                 self.assertFalse(pending.done())
             denied = await pending
         self.assertEqual(denied.status, 403)

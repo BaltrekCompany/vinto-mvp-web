@@ -53,6 +53,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          # On pull_request, HEAD is the merge result and the source is its parent.
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -62,6 +64,7 @@ jobs:
         with:
           node-version: '22.18.0'
       - name: Registrar commit y preparar herramientas
+        id: setup
         run: |
           RBE05_EVIDENCE_DIR="$RUNNER_TEMP/rbe05-evidence"
           mkdir -p "$RBE05_EVIDENCE_DIR"
@@ -96,7 +99,7 @@ jobs:
             done
           } 2>&1 | tee "$RBE05_EVIDENCE_DIR/backend.log"
       - name: ESLint, TypeScript, navegador, regresión y build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         id: frontend
         run: |
           set -euo pipefail
