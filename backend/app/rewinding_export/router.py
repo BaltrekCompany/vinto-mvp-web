@@ -122,7 +122,13 @@ def remove_package_for_ui(report_id: uuid.UUID, package_id: uuid.UUID,
                           user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                           connection=Depends(get_connection)):
     with connection.transaction():
-        repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        from app.authz import require, Operation
+        package = repository.one(connection,
+            "SELECT machine_code_snapshot FROM vinto_txn.rewinding_export_package WHERE id=%s AND report_id=%s AND removed_at IS NULL",
+            (package_id, report_id))
+        if package is None:
+            raise HTTPException(status_code=404, detail="Paquete no encontrado")
+        require(connection, user, Operation.REWINDING_EXPORT_CREATE, package["machine_code_snapshot"], "VINTO-P1-07", lock=True)
         service.remove_package(connection, actor_id=user.user_id, request_id=_request_id(),
                                report_id=report_id, package_id=package_id, reason="RBE draft package removed")
         return repository.load_draft(connection, user.user_id, report_id)
