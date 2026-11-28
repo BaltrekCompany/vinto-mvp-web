@@ -13,7 +13,7 @@ from app.rewinding_export import service, repository, lifecycle
 from app.rewinding_export.schemas import (
     AnnulIn, AnnulOut, ChildCreateIn, ChildCreatedOut, ClassificationIn, ClassificationOut,
     ClassifiableWorkOrderOut, DraftCreateIn, DraftCreatedOut, DraftHeaderIn, HistoryItemOut,
-    LogicalRemoveIn, PackageCreateIn, PackageCreatedOut,
+    LogicalRemoveIn, PackageCreateIn, PackageWithChildrenIn, PackageCreatedOut,
 )
 router = APIRouter(prefix="/api/reports/rewinding-export", tags=["Bobinas refiladas para exportación"])
 
@@ -38,28 +38,83 @@ def eligible_mothers(response: Response,
                       if (article_code is None or row["article_code"] == article_code)
                       for option in [repository.mother_row_to_option(row)] if option is not None]}
 
-@router.post("/drafts", response_model=DraftCreatedOut, status_code=201)
+@router.post("/drafts", status_code=201)
 def create_draft(body: DraftCreateIn, user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                  connection=Depends(get_connection)):
-    report_id = service.create_draft(connection, actor_id=user.user_id, request_id=_request_id(),
-                                     pv_reference=body.pv_reference, article_code=body.article_code, sectors=user.sectors)
-    return {"id": report_id}
+    with connection.transaction():
+        repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        article = repository.one(connection,
+            "SELECT code FROM vinto_master.article WHERE id=%s AND active AND is_product",
+            (body.article_id,))
+        if article is None:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        report_id = service.create_draft(connection, actor_id=user.user_id, request_id=_request_id(),
+                                         pv_reference=body.pv_reference, article_code=article["code"], sectors=user.sectors)
+        service.update_draft(connection, actor_id=user.user_id, request_id=_request_id(), report_id=report_id,
+                             truck_number=body.truck_number, order_number=body.order_number,
+                             observations=body.observations)
+        return repository.load_draft(connection, user.user_id, report_id)
 
 @router.patch("/drafts/{report_id}")
 def update_draft(report_id: uuid.UUID, body: DraftHeaderIn,
                  user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                  connection=Depends(get_connection)):
-    service.update_draft(connection, actor_id=user.user_id, request_id=_request_id(), report_id=report_id,
-                         truck_number=body.truck_number, order_number=body.order_number, observations=body.observations)
-    return {"id": report_id, "status": "draft"}
+    with connection.transaction():
+        repository.require_sector_permission(connection, user, REWINDING_EXPORT_CREATE, lock=True)
+        service.update_draft(connection, actor_id=user.user_id, request_id=_request_id(), report_id=report_id,
+                             truck_number=body.truck_number, order_number=body.order_number,
+                             observations=body.observations)
+        return repository.load_draft(connection, user.user_id, report_id)
 
-@router.post("/drafts/{report_id}/packages", response_model=PackageCreatedOut, status_code=201)
-def add_package(report_id: uuid.UUID, body: PackageCreateIn,
+@router.post("/drafts/{report_id}/packages", status_code=201)
+def add_package(report_id: uuid.UUID, body: PackageWithChildrenIn,
                 user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
                 connection=Depends(get_connection)):
-    package_id = service.add_package(connection, actor_id=user.user_id, request_id=_request_id(),
-                                     report_id=report_id, mother_capture_id=body.mother_capture_id, sectors=user.sectors)
-    return {"id": package_id}
+    if len({child.package_slot for child in body.children}) != len(body.children) or not any(
+        child.package_slot == "A" for child in body.children
+    ) or len({child.child_bobbin_id for child in body.children}) != len(body.children):
+        raise HTTPException(status_code=422, detail="Paquete requiere cría A y selecciones únicas")
+    with connection.transaction():
+        source = service._source_mother(connection, body.mother_capture_id)
+        from app.authz import require, Operation
+        require(connection, user, Operation.REWINDING_EXPORT_CREATE, source["machine_code"], "VINTO-P1-07", lock=True)
+        package_id = service.add_package(connection, actor_id=user.user_id, request_id=_request_id(),
+                                         report_id=report_id, mother_capture_id=body.mother_capture_id, sectors=user.sectors)
+        for child in body.children:
+            service.add_child(connection, actor_id=user.user_id, request_id=_request_id(),
+                              report_id=report_id, package_id=package_id, child_bobbin_id=child.child_bobbin_id,
+                              package_slot=child.package_slot)
+        return repository.load_draft(connection, user.user_id, report_id)
+
+
+@router.patch("/drafts/{report_id}/packages/{package_id}")
+def update_package(report_id: uuid.UUID, package_id: uuid.UUID, body: PackageWithChildrenIn,
+                   user: AuthenticatedUser = Depends(require_permission(REWINDING_EXPORT_CREATE)),
+                   connection=Depends(get_connection)):
+    if len({child.package_slot for child in body.children}) != len(body.children) or not any(
+        child.package_slot == "A" for child in body.children
+    ) or len({child.child_bobbin_id for child in body.children}) != len(body.children):
+        raise HTTPException(status_code=422, detail="Paquete requiere cría A y selecciones únicas")
+    with connection.transaction():
+        source = service._source_mother(connection, body.mother_capture_id)
+        from app.authz import require, Operation
+        require(connection, user, Operation.REWINDING_EXPORT_CREATE, source["machine_code"], "VINTO-P1-07", lock=True)
+        service._context(connection, user.user_id, _request_id(), "RBE package children updated")
+        service._get_draft(connection, report_id, user.user_id, lock=True)
+        package = repository.one(connection,
+            "SELECT mother_capture_id FROM vinto_txn.rewinding_export_package WHERE id=%s AND report_id=%s AND removed_at IS NULL FOR UPDATE",
+            (package_id, report_id))
+        if not package or package["mother_capture_id"] != body.mother_capture_id:
+            raise HTTPException(status_code=409, detail="La madre no puede cambiarse en un paquete existente")
+        connection.execute("""UPDATE vinto_txn.rewinding_export_package_child
+            SET removed_at=clock_timestamp(), removed_by=%s, updated_by=%s
+            WHERE report_id=%s AND package_id=%s AND removed_at IS NULL""",
+            (user.user_id, user.user_id, report_id, package_id))
+        for child in body.children:
+            service.add_child(connection, actor_id=user.user_id, request_id=_request_id(),
+                              report_id=report_id, package_id=package_id, child_bobbin_id=child.child_bobbin_id,
+                              package_slot=child.package_slot)
+        return repository.load_draft(connection, user.user_id, report_id)
 
 @router.post("/drafts/{report_id}/packages/{package_id}/children", response_model=ChildCreatedOut, status_code=201)
 def add_child(report_id: uuid.UUID, package_id: uuid.UUID, body: ChildCreateIn,
