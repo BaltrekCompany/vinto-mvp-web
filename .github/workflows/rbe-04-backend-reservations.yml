@@ -61,17 +61,26 @@ jobs:
       - name: Compile RBE backend and prepare disposable PostgreSQL 17
         working-directory: backend
         run: |
-          python -B -m compileall -q app/rewinding_export tests/test_rewinding_export_contract.py
-          python -B prepare_test_db.py
-          python -B migrate.py --target test --check
+          mkdir -p ../rbe04-ci-evidence
+          python -B -m compileall -q app/rewinding_export tests/test_rewinding_export_contract.py tests/test_rewinding_export_concurrency.py
+          python -B prepare_test_db.py 2>&1 | tee ../rbe04-ci-evidence/migration.log
+          python -B migrate.py --target test --check 2>&1 | tee -a ../rbe04-ci-evidence/migration.log
       - name: RBE permission, transaction and immutable PDF contract tests
         working-directory: backend
-        run: python -B -m unittest discover -s tests -p 'test_rewinding_export_contract.py' -v
+        run: python -B -m unittest discover -s tests -p 'test_rewinding_export_contract.py' -v 2>&1 | tee ../rbe04-ci-evidence/contracts.log
       - name: PostgreSQL schema, trigger and historical sector regression
         working-directory: backend
         run: |
-          python -B -m unittest discover -s tests -p 'test_schema.py' -v
-          python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
+          python -B -m unittest discover -s tests -p 'test_schema.py' -v 2>&1 | tee ../rbe04-ci-evidence/schema.log
+          python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v 2>&1 | tee ../rbe04-ci-evidence/sector.log
       - name: RBE concurrent operators and reservation chain on disposable PostgreSQL 17
         working-directory: backend
-        run: python -B -m unittest discover -s tests -p 'test_rewinding_export_concurrency.py' -v
+        run: python -B -m unittest discover -s tests -p 'test_rewinding_export_concurrency.py' -v 2>&1 | tee ../rbe04-ci-evidence/concurrency.log
+      - name: Publish RBE-04 PG17 evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbe04-pg17-${{ github.run_id }}
+          path: rbe04-ci-evidence/
+          if-no-files-found: warn
+          retention-days: 14
