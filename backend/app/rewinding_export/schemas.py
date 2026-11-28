@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class DraftCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     pv_reference: str = Field(min_length=1, max_length=100)
-    article_code: str = Field(min_length=1, max_length=64)
+    article_id: UUID
+    truck_number: str = Field(default="", max_length=80)
+    order_number: str = Field(default="", max_length=80)
+    observations: str = Field(default="", max_length=2000)
 
 class DraftHeaderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -19,6 +22,11 @@ class PackageCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mother_capture_id: UUID
 
+class PackageWithChildrenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mother_capture_id: UUID
+    children: list["ChildCreateIn"] = Field(min_length=1, max_length=5)
+
 class ChildCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     child_bobbin_id: UUID
@@ -26,7 +34,7 @@ class ChildCreateIn(BaseModel):
 
 class LogicalRemoveIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    reason: str = Field(min_length=1, max_length=300)
+    reason: str = Field(default="RBE draft edit", min_length=1, max_length=300)
 
 class ClassificationIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
