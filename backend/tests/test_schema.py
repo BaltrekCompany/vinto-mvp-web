@@ -123,7 +123,7 @@ class SchemaTests(unittest.TestCase):
               AND table_type='BASE TABLE'
         """).fetchall())
         self.assertEqual(expected,actual)
-        self.assertEqual(len(actual),50)  # 43 existing tables plus 7 additive RBE-04 tables
+        # La igualdad de conjuntos anterior verifica todas las tablas sin un total fijo obsoleto.
         missing = self.connection.execute("""
             SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname IN ('vinto_master','vinto_config','vinto_txn','vinto_audit') AND c.relkind='r'
