@@ -323,6 +323,7 @@ Todos bajo /api/reports/rewinding-export. Las mutaciones usan POST/PATCH para re
 | GET | /reports/{report_id}/pdf | Descargar los bytes originales |
 | POST | /reports/{report_id}/annul | Anular con motivo y autorización |
 | POST | /drafts/{report_id}/discard | Descartar borrador propio sin reservar crías |
+| GET | /work-orders | Listar OTs clasificables en REBOBINADO para Jefatura; incluye published, in_progress y closed; excluye archived_at/qa_retired |
 | GET | /work-orders/{work_order_id}/classification | Consultar la última decisión de clasificación de una OT (Jefatura) |
 | POST | /work-orders/{work_order_id}/classification | Clasificar una OT como production_confirmed o qa (Jefatura) |
 
@@ -398,7 +399,7 @@ Restricciones y garantías:
 - No admite UPDATE/DELETE/TRUNCATE. Una rectificación es una nueva fila que supersedes la anterior.
 - La última decisión por sequence_no es la efectiva. Solo production_confirmed habilita la OT; qa la excluye.
 - La ausencia de una fila significa desconocido y deniega la elegibilidad.
-- La clasificación se realiza con FOR UPDATE sobre work_order, actor JEFATURA, permiso rewinding_export.classify_source, sector REBOBINADO y motivo de 10–300 caracteres. La secuencia se asigna dentro de esa transacción y supersedes_id debe apuntar a la decisión efectiva anterior.
+- La clasificación se realiza con FOR UPDATE sobre work_order, actor JEFATURA, permiso rewinding_export.classify_source, sector REBOBINADO y motivo de 10–300 caracteres. La lectura de candidatos GET /work-orders exige el mismo permiso y sector, no depende de work_order.read, incluye OTs published/in_progress/closed y excluye archived_at/qa_retired; no usa el estado de la OT para inferir QA. La secuencia se asigna dentro de esa transacción y supersedes_id debe apuntar a la decisión efectiva anterior.
 - Cambiar una OT a qa exige que no existan reportes RBE Generados/Observados; primero Jefatura debe anularlos.
 - archived_at IS NOT NULL o qa_retired=true siempre excluyen la OT, incluso si la última clasificación es production_confirmed.
 
