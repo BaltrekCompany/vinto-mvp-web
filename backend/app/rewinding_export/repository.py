@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
-from app.auth.permissions import Permission, permissions_for_profiles
+from app.auth.permissions import permissions_for_profiles
 from app.authz import Operation, authorize
 
 P107_FORM_CODE = "VINTO-P1-07"
@@ -62,7 +62,7 @@ WHERE f.code='VINTO-P1-07' AND fv.version_number>=3
     WHERE b.source_capture_id=c.id AND b.rewind_child_position BETWEEN 1 AND 22
       AND b.rewind_child_position<>12 AND b.weight_kg>0 AND q.status='released'
       AND NOT EXISTS (
-        SELECT 1 FROM vinto_txn.rewinding_export_child_reservation r
+        SELECT 1 FROM vinto_txn.rewinding_export_reservation r
         WHERE r.child_bobbin_id=b.id AND r.released_at IS NULL
       )
   )
@@ -88,7 +88,7 @@ def set_actor_context(connection, actor_id: UUID, request_id: str | None = None,
     )
 
 
-def require_sector_permission(connection, user: Any, permission: Permission, *, lock: bool) -> UUID:
+def require_sector_permission(connection, user: Any, permission: str, *, lock: bool) -> UUID:
     actor_id = UUID(str(user.user_id))
     user_lock = " FOR SHARE" if lock else ""
     actor = one(connection, 'SELECT id,active FROM vinto_master."user" WHERE id=%s' + user_lock, (actor_id,))
