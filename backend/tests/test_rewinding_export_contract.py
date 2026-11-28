@@ -34,6 +34,46 @@ class RewindingExportPermissionTests(unittest.TestCase):
         self.assertIn("rewinding_export_pdf", body)
         self.assertIn("report_generated", body)
 
+
+    def test_rbe03_http_paths_and_response_contract_are_exposed(self):
+        router = (BACKEND / "app/rewinding_export/router.py").read_text(encoding="utf-8")
+        self.assertIn('prefix="/api/reports/rewinding-export"', router)
+        for route in (
+            '@router.get("/pvs")', '@router.get("/products")',
+            '@router.get("/mothers")', '@router.get("/mothers/{mother_capture_id}/children")',
+            '@router.get("/drafts")', '@router.get("/drafts/{report_id}")',
+            '@router.post("/drafts",', '@router.patch("/drafts/{report_id}")',
+            '@router.post("/drafts/{report_id}/packages",',
+            '@router.patch("/drafts/{report_id}/packages/{package_id}")',
+            '@router.post("/drafts/{report_id}/packages/{package_id}/remove")',
+            '@router.post("/drafts/{report_id}/preview")',
+            '@router.get("/work-orders")',
+            '@router.get("/work-orders/{work_order_id}/classification")',
+            '@router.post("/work-orders/{work_order_id}/classification"',
+        ):
+            self.assertIn(route, router)
+        self.assertIn('"items":', router)
+
+    def test_effective_authorization_is_registered_for_rewinding_p107(self):
+        from app.authz.policies import Operation, policy_for
+        policy = policy_for(Operation.REWINDING_EXPORT_CREATE)
+        self.assertEqual(policy.permission, permissions.REWINDING_EXPORT_CREATE)
+        self.assertEqual(policy.admitted(), frozenset({"VINTO-P1-07"}))
+        self.assertEqual(policy.area, "production")
+
+    def test_annulment_retains_pdf_and_releases_active_reservations(self):
+        source = (BACKEND / "app/rewinding_export/service.py").read_text(encoding="utf-8")
+        annul = next(node for node in ast.parse(source).body
+                     if isinstance(node, ast.FunctionDef) and node.name == "annul_report")
+        body = ast.get_source_segment(source, annul)
+        self.assertIn("require_sector_permission(connection, user, REWINDING_EXPORT_ANNUL, lock=True)", body)
+        self.assertIn("released_at=clock_timestamp()", body)
+        self.assertIn("report_annulled", body)
+        self.assertNotIn("DELETE FROM vinto_txn.rewinding_export_pdf", body)
+        generate = next(node for node in ast.parse(source).body
+                        if isinstance(node, ast.FunctionDef) and node.name == "generate_report")
+        self.assertIn('"annulled"', ast.get_source_segment(source, generate))
+
     def test_original_pdf_download_checks_the_stored_bytes_hash(self):
         source = (BACKEND / "app/rewinding_export/service.py").read_text(encoding="utf-8")
         self.assertIn("hashlib.sha256(content).hexdigest() != expected", source)
