@@ -16,6 +16,7 @@ on:
       - 'backend/app/authz/policies.py'
       - 'backend/tests/test_schema.py'
       - 'backend/tests/test_sector_scope.py'
+      - 'docs/VINTO-RBE-04-BACKEND-RESERVAS-CIERRE-TECNICO-2026-11-28.md'
   workflow_dispatch:
 
 permissions:
