@@ -12,6 +12,8 @@ on:
       - 'backend/app/main.py'
       - 'backend/app/rewinding_export/**'
       - 'backend/tests/test_rewinding_export_contract.py'
+      - 'backend/tests/test_rewinding_export_concurrency.py'
+      - 'backend/app/authz/policies.py'
       - 'backend/tests/test_schema.py'
       - 'backend/tests/test_sector_scope.py'
   workflow_dispatch:
@@ -70,3 +72,6 @@ jobs:
         run: |
           python -B -m unittest discover -s tests -p 'test_schema.py' -v
           python -B -m unittest discover -s tests -p 'test_sector_scope.py' -v
+      - name: RBE concurrent operators and reservation chain on disposable PostgreSQL 17
+        working-directory: backend
+        run: python -B -m unittest discover -s tests -p 'test_rewinding_export_concurrency.py' -v
